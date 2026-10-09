@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://www.authelia.com/schemas/v4.39/json-schema/configuration.json
+#
+# Authelia de DESENVOLVIMENTO, usado como provedor OIDC de integração do Saldo360.
+# Este arquivo não contém segredos: eles são lidos de dev/authelia/secrets (ignorado pelo git),
+# gerados por scripts/setup-dev-auth.ps1. Requer X_AUTHELIA_CONFIG_FILTERS=template.
+
+theme: auto
+
+server:
+  address: 'tcp://0.0.0.0:9091/'
+  tls:
+    key: /secrets/tls/private.pem
+    certificate: /secrets/tls/public.crt
+
+log:
+  level: info
+
+authentication_backend:
+  password_reset:
+    disable: true
+  password_change:
+    disable: true
+  file:
+    path: /data/users_database.yml
+    password:
+      algorithm: argon2
+
+access_control:
+  default_policy: one_factor
+
+session:
+  cookies:
+    - domain: saldo360.localhost
+      authelia_url: https://auth.saldo360.localhost:9091
+
+storage:
+  local:
+    path: /data/db.sqlite3
+
+notifier:
+  filesystem:
+    filename: /data/notification.txt
+
+identity_providers:
+  oidc:
+    jwks:
+      - key_id: saldo360-dev
+        algorithm: RS256
+        use: sig
+        key: {{ secret "/secrets/oidc_jwks.pem" | mindent 10 "|" | msquote }}
+    clients:
+      - client_id: saldo360
+        client_name: Saldo360 (desenvolvimento)
+        client_secret: {{ secret "/secrets/oidc_client_secret.digest" | msquote }}
+        public: false
+        authorization_policy: one_factor
+        consent_mode: implicit
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          - http://localhost:5173/signin-oidc
+        scopes: [openid, profile, email]
+        response_types: [code]
+        grant_types: [authorization_code]
+        response_modes: [query]
+        token_endpoint_auth_method: client_secret_post
+        userinfo_signed_response_alg: none

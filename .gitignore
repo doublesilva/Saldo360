@@ -431,3 +431,7 @@ FodyWeavers.xsd
 .env
 .env.*
 !.env.example
+
+# Authelia de desenvolvimento — segredos e dados gerados por scripts/setup-dev-auth.ps1
+dev/authelia/secrets/
+dev/authelia/data/

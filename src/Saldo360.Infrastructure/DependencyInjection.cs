@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Saldo360.Infrastructure.Authentication;
 using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure;
@@ -22,10 +25,19 @@ public static class DependencyInjection
                 $"'ConnectionStrings__{ConnectionStringName}'.");
         }
 
-        services.AddDbContext<Saldo360DbContext>(options => options.UseNpgsql(connectionString));
+        services.AddDbContext<Saldo360DbContext>(options => options
+            .UseNpgsql(connectionString)
+            .UseSnakeCaseNamingConvention());
 
         services.AddHealthChecks()
             .AddDbContextCheck<Saldo360DbContext>(DatabaseHealthCheckName);
+
+        services.AddDataProtection()
+            .SetApplicationName("Saldo360")
+            .PersistKeysToDbContext<Saldo360DbContext>();
+
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ITicketStore, DatabaseTicketStore>();
 
         return services;
     }

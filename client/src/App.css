@@ -70,3 +70,44 @@ button:disabled {
   cursor: wait;
   opacity: 0.6;
 }
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.5rem;
+  margin-top: 1.5rem;
+}
+
+.user-menu__name {
+  font-weight: 600;
+}
+
+.user-menu__error {
+  font-size: 0.85rem;
+  color: var(--fail);
+}
+
+.button--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.notice {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid currentColor;
+}
+
+.notice--error {
+  color: var(--fail);
+}

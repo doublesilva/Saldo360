@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchHealth, type HealthResponse } from './api/health'
+import { UserMenu } from './components/UserMenu'
 import './App.css'
 
 type State =
@@ -38,12 +39,24 @@ function App() {
     setAttempt((n) => n + 1)
   }
 
+  // A API redireciona para "/?login=failed" quando o provedor não conclui o login.
+  const loginFailed = new URLSearchParams(window.location.search).get('login') === 'failed'
+
   return (
     <main className="page">
-      <header>
-        <h1>Saldo360</h1>
-        <p className="subtitle">Orçamento familiar</p>
+      <header className="page-header">
+        <div>
+          <h1>Saldo360</h1>
+          <p className="subtitle">Orçamento familiar</p>
+        </div>
+        <UserMenu />
       </header>
+
+      {loginFailed && (
+        <p className="notice notice--error" role="alert">
+          Não foi possível concluir o login. Tente novamente.
+        </p>
+      )}
 
       <section className="card" aria-live="polite">
         <h2>Conexão com a API</h2>

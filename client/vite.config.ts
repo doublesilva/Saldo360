@@ -7,13 +7,20 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiTarget = env.API_PROXY_TARGET || 'http://localhost:5080'
 
+  // changeOrigin: false mantém o Host do navegador (localhost:5173). Assim a API monta o
+  // redirect_uri do OIDC (http://localhost:5173/signin-oidc) e os cookies no mesmo site do frontend.
+  const toApi = { target: apiTarget, changeOrigin: false }
+
   return {
     plugins: [react()],
     server: {
       port: 5173,
+      strictPort: true,
       proxy: {
-        '/health': { target: apiTarget, changeOrigin: true },
-        '/api': { target: apiTarget, changeOrigin: true },
+        '/health': toApi,
+        '/api': toApi,
+        '/auth': toApi,
+        '/signin-oidc': toApi,
       },
     },
   }

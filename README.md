@@ -1,6 +1,6 @@
 # Saldo360
 
-Aplicação de orçamento familiar. Esta é a estrutura inicial: API ASP.NET Core 10 com EF Core + PostgreSQL e frontend React + TypeScript (Vite).
+Aplicação de orçamento familiar: API ASP.NET Core 10 com EF Core + PostgreSQL, frontend React + TypeScript (Vite) e login via OpenID Connect com sessão mantida pela API.
 
 ## Estrutura
 
@@ -9,12 +9,15 @@ Saldo360.slnx
 src/
   Saldo360.Domain/          Entidades e regras de negócio (sem dependências externas)
   Saldo360.Application/     Casos de uso; depende apenas do Domain
-  Saldo360.Infrastructure/  EF Core (Npgsql), DbContext, health check do banco
-  Saldo360.Api/             Host ASP.NET Core; expõe GET /health
+  Saldo360.Infrastructure/  EF Core (Npgsql), migrations, sessões no banco, Data Protection
+  Saldo360.Api/             Host ASP.NET Core: /health, /auth/*, /api/*
 tests/
   Saldo360.Tests/           Testes de integração da API (xUnit + WebApplicationFactory)
 client/                     React + TypeScript (Vite)
-docker-compose.yml          PostgreSQL para desenvolvimento
+dev/authelia/               Configuração do Authelia de desenvolvimento (provedor OIDC)
+scripts/                    Setup do provedor de desenvolvimento e smoke test de login
+docs/autenticacao.md        Configuração de autenticação, URLs de callback, produção
+docker-compose.yml          PostgreSQL e Authelia para desenvolvimento
 ```
 
 Dependências: `Api → Application, Infrastructure`; `Infrastructure → Application, Domain`; `Application → Domain`.
@@ -23,20 +26,34 @@ Dependências: `Api → Application, Infrastructure`; `Infrastructure → Applic
 
 - .NET SDK 10
 - Node.js 20+ e npm
-- Docker (para o PostgreSQL local)
+- Docker
+- PowerShell 7.4+ (para `scripts/setup-dev-auth.ps1`)
 
 ## Configuração de desenvolvimento
 
-Nenhuma credencial fica no repositório. Os valores reais ficam em arquivos ignorados pelo git (`.env`) ou no user-secrets do .NET.
+Nenhuma credencial fica no repositório. Os valores reais ficam em arquivos ignorados pelo git (`.env`, `dev/authelia/secrets/`, `dev/authelia/data/`) ou no user-secrets do .NET.
 
-1. **Banco de dados** — copie o exemplo, troque a senha e suba o PostgreSQL:
+1. **Banco de dados** — copie o exemplo e troque a senha:
 
    ```bash
    cp .env.example .env        # edite POSTGRES_PASSWORD
+   ```
+
+2. **Provedor OIDC (Authelia)** — gere certificados, segredos e um usuário de teste. O script também grava o client secret no user-secrets da API:
+
+   ```powershell
+   ./scripts/setup-dev-auth.ps1
+   ```
+
+   A senha do usuário `familia` fica em `dev/authelia/secrets/dev_user_password.txt`.
+
+3. **Suba os serviços** (PostgreSQL e Authelia):
+
+   ```bash
    docker compose up -d --wait
    ```
 
-2. **Connection string da API** — guarde no user-secrets (fica no seu perfil de usuário, fora do projeto). Use os mesmos valores do `.env`:
+4. **Connection string da API** — guarde no user-secrets (fica no seu perfil de usuário, fora do projeto). Use os mesmos valores do `.env`:
 
    ```bash
    dotnet user-secrets set "ConnectionStrings:Saldo360" \
@@ -44,15 +61,30 @@ Nenhuma credencial fica no repositório. Os valores reais ficam em arquivos igno
      --project src/Saldo360.Api
    ```
 
-   Em outros ambientes, use a variável de ambiente `ConnectionStrings__Saldo360`. As chaves esperadas estão documentadas em [src/Saldo360.Api/appsettings.Example.json](src/Saldo360.Api/appsettings.Example.json) (arquivo apenas de referência; não é carregado nem publicado).
+5. **Migrations do banco**:
 
-3. **Frontend** — instale as dependências:
+   ```bash
+   dotnet tool restore
+   dotnet ef database update -p src/Saldo360.Infrastructure -s src/Saldo360.Api -- --environment Development
+   ```
+
+6. **Frontend**:
 
    ```bash
    cd client && npm install
    ```
 
-   O Vite encaminha `/health` e `/api` para `http://localhost:5080`. Para outro endereço, copie `client/.env.example` para `client/.env.local` e ajuste `API_PROXY_TARGET`.
+   O Vite encaminha `/health`, `/api`, `/auth` e `/signin-oidc` para `http://localhost:5080`, preservando o host `localhost:5173`. Para outro endereço da API, copie `client/.env.example` para `client/.env.local` e ajuste `API_PROXY_TARGET`.
+
+7. **Certificado do provedor no navegador** — o Authelia usa uma CA local (`dev/authelia/secrets/tls/ca.public.crt`). Aceite o aviso do navegador em `https://auth.saldo360.localhost:9091` ou confie na CA apenas para o seu usuário:
+
+   ```powershell
+   Import-Certificate -FilePath dev/authelia/secrets/tls/ca.public.crt -CertStoreLocation Cert:\CurrentUser\Root
+   ```
+
+   A API não depende disso: ela confia somente nessa CA, configurada em `Authentication:Oidc:BackchannelCaCertificatePath`.
+
+Em outros ambientes, use variáveis de ambiente (`ConnectionStrings__Saldo360`, `Authentication__Oidc__ClientSecret`, …). As chaves esperadas estão em [src/Saldo360.Api/appsettings.Example.json](src/Saldo360.Api/appsettings.Example.json) (só referência; não é carregado nem publicado). Detalhes em [docs/autenticacao.md](docs/autenticacao.md).
 
 ## Executando
 
@@ -61,19 +93,24 @@ dotnet run --project src/Saldo360.Api   # API em http://localhost:5080
 cd client && npm run dev                # Frontend em http://localhost:5173
 ```
 
-A página inicial consulta `GET /health` e mostra se a API e o banco estão acessíveis.
+Acesse **<http://localhost:5173>** (não a porta da API): a página mostra **Entrar** ou o usuário conectado com **Sair**, além do status da API.
 
-### GET /health
+## Endpoints
+
+| Método | Caminho | Autenticação | Descrição |
+| --- | --- | --- | --- |
+| GET | `/health` | pública | Saúde da API e do banco. `200` saudável, `503` com falha. |
+| GET | `/auth/login?returnUrl=/caminho` | pública | Inicia o login no provedor. Ao final volta para `returnUrl` (só URLs locais). |
+| GET | `/signin-oidc` | — | Callback do provedor (tratado pelo middleware OIDC). |
+| GET | `/auth/csrf` | pública | Devolve `{ "token" }` para o header `X-CSRF-TOKEN`. |
+| POST | `/auth/logout` | sessão + CSRF | Remove a sessão no servidor e apaga o cookie. `204`; `400` sem token CSRF válido. |
+| GET | `/api/me` | sessão | `{ id, displayName, username, email }`; `401` sem sessão. |
+
+`/health` traz apenas nome, status e duração dos checks — mensagens de erro e detalhes de conexão não são expostos:
 
 ```json
-{
-  "status": "Healthy",
-  "totalDurationMs": 12.3,
-  "checks": [{ "name": "postgresql", "status": "Healthy", "durationMs": 11.8 }]
-}
+{ "status": "Healthy", "totalDurationMs": 12.3, "checks": [{ "name": "postgresql", "status": "Healthy", "durationMs": 11.8 }] }
 ```
-
-Retorna `200` quando saudável e `503` quando algum check falha. A resposta traz apenas nome, status e duração: mensagens de erro e detalhes de conexão não são expostos.
 
 ## Testes e build
 
@@ -83,4 +120,10 @@ dotnet test Saldo360.slnx
 cd client && npm run lint && npm run build
 ```
 
-Os testes não precisam de PostgreSQL: o cenário saudável usa EF Core InMemory e o cenário de falha aponta para uma porta fechada, verificando que a senha não aparece na resposta nem nos logs.
+Os testes não precisam de PostgreSQL nem do provedor: usam EF Core InMemory e uma discovery OIDC estática. Eles cobrem `/api/me` (401/200), logout com e sem CSRF, invalidação da sessão no servidor (cookie antigo reenviado → 401), atributos do cookie em produção e o redirecionamento de login (code + PKCE).
+
+**Login real** contra o Authelia (com serviços, API e frontend rodando):
+
+```bash
+bash scripts/smoke-login.sh
+```
