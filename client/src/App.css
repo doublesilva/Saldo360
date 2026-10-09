@@ -1,0 +1,72 @@
+.page {
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 3rem 1rem;
+}
+
+.subtitle {
+  margin-top: -0.75rem;
+  color: var(--muted);
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--surface);
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+.status {
+  font-weight: 600;
+}
+
+.status::before {
+  content: '';
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status--pending { color: var(--muted); }
+.status--up { color: var(--ok); }
+.status--down { color: var(--fail); }
+
+.checks {
+  list-style: none;
+  padding: 0;
+}
+
+.checks li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}

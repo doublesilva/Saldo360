@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Saldo360.Api/Saldo360.Api.csproj" />
+    <Project Path="src/Saldo360.Application/Saldo360.Application.csproj" />
+    <Project Path="src/Saldo360.Domain/Saldo360.Domain.csproj" />
+    <Project Path="src/Saldo360.Infrastructure/Saldo360.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Saldo360.Tests/Saldo360.Tests.csproj" />
+  </Folder>
+</Solution>
