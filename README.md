@@ -88,6 +88,27 @@ Em outros ambientes, use variáveis de ambiente (`ConnectionStrings__Saldo360`, 
 
 ## Executando
 
+O `package.json` da raiz reúne os atalhos. Depois de criar o `.env` e a connection string (passos 1 e 4):
+
+```bash
+npm install          # instala o orquestrador (concurrently)
+npm run setup        # segredos do Authelia, dotnet tools e dependências do frontend (uma vez)
+npm run dev          # sobe PostgreSQL + Authelia no Docker, aplica migrations e roda API + frontend
+```
+
+| Script | O que faz |
+| --- | --- |
+| `npm run dev` | `docker:up` → `db:migrate` → `start` |
+| `npm start` | API (`:5080`) e frontend (`:5173`) juntos, sem mexer no Docker |
+| `npm run docker:up` / `docker:down` | Sobe/para PostgreSQL e Authelia (os dados ficam nos volumes) |
+| `npm run docker:logs` / `docker:ps` | Logs e status dos containers |
+| `npm run db:migrate` | Aplica as migrations no banco de desenvolvimento |
+| `npm run api` / `npm run web` | Só a API / só o frontend |
+| `npm run check` | Build, testes e lint |
+| `npm run smoke:login` | Login real contra o Authelia (com `npm run dev` rodando) |
+
+Ou, manualmente:
+
 ```bash
 dotnet run --project src/Saldo360.Api   # API em http://localhost:5080
 cd client && npm run dev                # Frontend em http://localhost:5173

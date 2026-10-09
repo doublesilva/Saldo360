@@ -1,0 +1,27 @@
+{
+  "name": "saldo360",
+  "private": true,
+  "description": "Atalhos para rodar o Saldo360 localmente: PostgreSQL e Authelia no Docker, API e frontend na máquina.",
+  "scripts": {
+    "setup": "npm run setup:auth && npm run setup:tools && npm --prefix client install",
+    "setup:auth": "pwsh -NoProfile -File scripts/setup-dev-auth.ps1",
+    "setup:tools": "dotnet tool restore",
+    "docker:up": "docker compose up -d --wait",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:ps": "docker compose ps",
+    "db:migrate": "dotnet ef database update -p src/Saldo360.Infrastructure -s src/Saldo360.Api -- --environment Development",
+    "api": "dotnet run --project src/Saldo360.Api",
+    "web": "npm --prefix client run dev",
+    "start": "concurrently --kill-others-on-fail --names api,web --prefix-colors blue,magenta \"npm:api\" \"npm:web\"",
+    "dev": "npm run docker:up && npm run db:migrate && npm start",
+    "build": "dotnet build Saldo360.slnx && npm --prefix client run build",
+    "lint": "npm --prefix client run lint",
+    "test": "dotnet test Saldo360.slnx",
+    "check": "npm run build && npm test && npm run lint",
+    "smoke:login": "bash scripts/smoke-login.sh"
+  },
+  "devDependencies": {
+    "concurrently": "9.2.5"
+  }
+}
