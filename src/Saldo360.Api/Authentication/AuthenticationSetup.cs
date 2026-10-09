@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Saldo360.Infrastructure.Authentication;
 
 namespace Saldo360.Api.Authentication;
 
@@ -14,8 +15,12 @@ public static class AuthenticationSetup
     public const string OidcScheme = OpenIdConnectDefaults.AuthenticationScheme;
     public const string CsrfHeaderName = "X-CSRF-TOKEN";
 
-    // Claims guardadas na sessão. Tokens e demais claims do provedor são descartados.
-    private static readonly HashSet<string> SessionClaimTypes = ["sub", "name", "preferred_username", "email"];
+    // Claims de exibição guardadas na sessão, além de iss e sub. Tokens e demais claims do provedor são descartados.
+    private static readonly HashSet<string> ProfileClaimTypes = ["name", "preferred_username", "email"];
+
+    // Identidade do ID token validado, mantida só durante o callback. As ClaimActions padrão do handler
+    // apagam a claim "iss" depois do OnTokenValidated, então ela não pode ser relida do principal depois.
+    private static readonly object ValidatedIdentityKey = new();
 
     public static IServiceCollection AddSaldo360Authentication(
         this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
@@ -97,9 +102,30 @@ public static class AuthenticationSetup
                     options.BackchannelHttpHandler = CreateHandlerTrustingOnly(backchannelCa);
                 }
 
+                // iss e sub vêm do ID token já validado pelo middleware (assinatura, emissor, audiência, nonce),
+                // nunca da requisição, do navegador ou da configuração (Authority).
+                options.Events.OnTokenValidated = context =>
+                {
+                    var issuer = context.SecurityToken?.Issuer;
+                    var subject = context.SecurityToken?.Subject;
+                    if (!ExternalIdentity.IsValid(issuer) || !ExternalIdentity.IsValid(subject))
+                    {
+                        context.Fail("O ID token não contém issuer ou subject válidos.");
+                        return Task.CompletedTask;
+                    }
+
+                    context.HttpContext.Items[ValidatedIdentityKey] = new ExternalIdentity(issuer, subject);
+                    return Task.CompletedTask;
+                };
                 options.Events.OnTicketReceived = context =>
                 {
-                    context.Principal = KeepSessionClaims(context.Principal!);
+                    if (context.HttpContext.Items[ValidatedIdentityKey] is not ExternalIdentity identity)
+                    {
+                        context.Fail("Identidade validada do ID token ausente.");
+                        return Task.CompletedTask;
+                    }
+
+                    context.Principal = CreateSessionPrincipal(context.Principal!, identity);
                     return Task.CompletedTask;
                 };
                 options.Events.OnRemoteFailure = context =>
@@ -161,11 +187,19 @@ public static class AuthenticationSetup
         return X509CertificateLoader.LoadCertificateFromFile(path);
     }
 
-    private static ClaimsPrincipal KeepSessionClaims(ClaimsPrincipal principal)
+    /// <summary>
+    /// Principal da sessão: a identidade validada (iss + sub) e apenas as claims de exibição.
+    /// Qualquer iss/sub vindo de outra fonte (ex.: userinfo) é ignorado.
+    /// </summary>
+    private static ClaimsPrincipal CreateSessionPrincipal(ClaimsPrincipal principal, ExternalIdentity identity)
     {
-        var claims = principal.Claims.Where(claim => SessionClaimTypes.Contains(claim.Type));
-        var identity = new ClaimsIdentity(claims, principal.Identity?.AuthenticationType, "name", "role");
-        return new ClaimsPrincipal(identity);
+        var claims = principal.Claims
+            .Where(claim => ProfileClaimTypes.Contains(claim.Type))
+            .Select(claim => new Claim(claim.Type, claim.Value))
+            .Prepend(new Claim(ExternalIdentity.SubjectClaimType, identity.Subject))
+            .Prepend(new Claim(ExternalIdentity.IssuerClaimType, identity.Issuer));
+
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, principal.Identity?.AuthenticationType, "name", "role"));
     }
 
     /// <summary>

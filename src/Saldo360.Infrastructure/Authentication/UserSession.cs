@@ -8,7 +8,13 @@ public sealed class UserSession
 {
     public required string Id { get; init; }
 
-    /// <summary>Identificador do usuário no provedor (claim <c>sub</c>).</summary>
+    /// <summary>
+    /// Emissor (claim <c>iss</c>) que autenticou o usuário. Nulo apenas em sessões criadas antes
+    /// de o emissor ser registrado; essas sessões são recusadas e exigem novo login.
+    /// </summary>
+    public string? Issuer { get; init; }
+
+    /// <summary>Identificador do usuário no emissor (claim <c>sub</c>). Só é único junto com <see cref="Issuer"/>.</summary>
     public required string Subject { get; init; }
 
     public required byte[] ProtectedTicket { get; set; }

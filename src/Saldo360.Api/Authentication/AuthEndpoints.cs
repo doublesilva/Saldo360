@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
+using Saldo360.Infrastructure.Authentication;
 
 namespace Saldo360.Api.Authentication;
 
@@ -42,12 +43,13 @@ public static class AuthEndpoints
     /// <summary>Remove a sessão do servidor e apaga o cookie. Idempotente.</summary>
     private static async Task<IResult> Logout(HttpContext context, ILoggerFactory loggerFactory)
     {
-        var subject = context.User.FindFirstValue("sub");
+        var hadIdentity = ExternalIdentity.TryFromPrincipal(context.User, out var identity);
         await context.SignOutAsync(AuthenticationSetup.CookieScheme);
 
-        if (subject is not null)
+        if (hadIdentity)
         {
-            loggerFactory.CreateLogger(typeof(AuthEndpoints)).LogInformation("Sessão encerrada para o usuário {Subject}.", subject);
+            loggerFactory.CreateLogger(typeof(AuthEndpoints)).LogInformation(
+                "Sessão encerrada para o usuário {Subject} do emissor {Issuer}.", identity!.Subject, identity.Issuer);
         }
 
         return Results.NoContent();
@@ -55,8 +57,7 @@ public static class AuthEndpoints
 
     private static IResult GetCurrentUser(HttpContext context, ClaimsPrincipal user)
     {
-        var id = user.FindFirstValue("sub");
-        if (string.IsNullOrEmpty(id))
+        if (!ExternalIdentity.TryFromPrincipal(user, out var identity))
         {
             return Results.Unauthorized();
         }
@@ -64,10 +65,12 @@ public static class AuthEndpoints
         var username = user.FindFirstValue("preferred_username");
         context.Response.Headers.CacheControl = "no-store";
         return Results.Ok(new CurrentUserResponse(
-            id,
-            user.FindFirstValue("name") ?? username ?? id,
-            username,
-            user.FindFirstValue("email")));
+            Id: identity.Subject,
+            Issuer: identity.Issuer,
+            Subject: identity.Subject,
+            DisplayName: user.FindFirstValue("name") ?? username ?? identity.Subject,
+            Username: username,
+            Email: user.FindFirstValue("email")));
     }
 
     // Mesma regra do UrlHelper do MVC: caminho absoluto local, sem "//" ou "/\" (que levariam a outro host).
@@ -78,7 +81,21 @@ public static class AuthEndpoints
         && !url.Any(char.IsControl);
 }
 
-public sealed record CurrentUserResponse(string Id, string DisplayName, string? Username, string? Email);
+/// <summary>Usuário da sessão atual.</summary>
+/// <param name="Id">
+/// Igual a <paramref name="Subject"/>, mantido temporariamente por compatibilidade com o frontend.
+/// Sozinho NÃO identifica o usuário globalmente: o mesmo subject pode existir em outro emissor.
+/// Vínculos (ex.: com famílias) devem usar o par <paramref name="Issuer"/> + <paramref name="Subject"/>.
+/// </param>
+/// <param name="Issuer">Emissor que autenticou o usuário (claim <c>iss</c> do ID token validado).</param>
+/// <param name="Subject">Identificador do usuário no emissor (claim <c>sub</c>), string opaca.</param>
+public sealed record CurrentUserResponse(
+    string Id,
+    string Issuer,
+    string Subject,
+    string DisplayName,
+    string? Username,
+    string? Email);
 
 public sealed record CsrfTokenResponse(string Token);
 

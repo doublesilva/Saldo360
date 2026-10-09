@@ -60,6 +60,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<string>("Issuer")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("issuer");
+
                     b.Property<byte[]>("ProtectedTicket")
                         .IsRequired()
                         .HasColumnType("bytea")
@@ -77,8 +82,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("ExpiresAt")
                         .HasDatabaseName("ix_user_sessions_expires_at");
 
-                    b.HasIndex("Subject")
-                        .HasDatabaseName("ix_user_sessions_subject");
+                    b.HasIndex("Issuer", "Subject")
+                        .HasDatabaseName("ix_user_sessions_issuer_subject");
 
                     b.ToTable("user_sessions", (string)null);
                 });

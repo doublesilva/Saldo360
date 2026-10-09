@@ -13,21 +13,26 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Saldo360.Api.Authentication;
+using Saldo360.Infrastructure.Authentication;
 using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Tests.Support;
 
 /// <summary>
 /// Sobe a API em memória. Sem connection string explícita, troca o PostgreSQL por um banco InMemory.
-/// O provedor OIDC é simulado por uma discovery estática; <see cref="SignInPath"/> cria sessões nos testes.
+/// O provedor OIDC é o <see cref="FakeOidcProvider"/>; <see cref="SignInPath"/> cria sessões diretamente nos testes.
 /// </summary>
 public sealed class Saldo360ApiFactory(string? connectionString = null) : WebApplicationFactory<Program>
 {
     public const string TestClientSecret = "segredo-do-cliente-que-nao-pode-vazar";
-    public const string TestAuthority = "https://auth.test.invalid";
-    public const string TestAuthorizationEndpoint = TestAuthority + "/authorize";
+    public const string TestAuthority = FakeOidcProvider.Issuer;
+    public const string TestAuthorizationEndpoint = FakeOidcProvider.AuthorizationEndpoint;
 
-    /// <summary>Endpoint exclusivo dos testes: cria uma sessão real (cookie + ticket store) para o usuário informado.</summary>
+    /// <summary>
+    /// Endpoint exclusivo dos testes: cria uma sessão real (cookie + ticket store) com as claims
+    /// <c>iss</c> e <c>sub</c> informadas na query (padrão: <see cref="TestAuthority"/> e "user-123").
+    /// Não passa pelo fluxo OIDC; para isso, use o callback com <see cref="OidcProvider"/>.
+    /// </summary>
     public const string SignInPath = "/test/sign-in";
 
     private const string InMemoryPlaceholder = "Host=in-memory;Database=saldo360_tests";
@@ -36,6 +41,8 @@ public sealed class Saldo360ApiFactory(string? connectionString = null) : WebApp
 
     public CapturingLoggerProvider Logs { get; } = new();
 
+    public FakeOidcProvider OidcProvider { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // "Testing" evita carregar user-secrets do ambiente de desenvolvimento e
@@ -43,7 +50,7 @@ public sealed class Saldo360ApiFactory(string? connectionString = null) : WebApp
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:Saldo360", connectionString ?? InMemoryPlaceholder);
         builder.UseSetting("Authentication:Oidc:Authority", TestAuthority);
-        builder.UseSetting("Authentication:Oidc:ClientId", "saldo360-tests");
+        builder.UseSetting("Authentication:Oidc:ClientId", FakeOidcProvider.ClientId);
         builder.UseSetting("Authentication:Oidc:ClientSecret", TestClientSecret);
 
         builder.ConfigureLogging(logging => logging.AddProvider(Logs));
@@ -52,14 +59,10 @@ public sealed class Saldo360ApiFactory(string? connectionString = null) : WebApp
         {
             services.PostConfigure<OpenIdConnectOptions>(AuthenticationSetup.OidcScheme, options =>
             {
-                var configuration = new OpenIdConnectConfiguration
-                {
-                    Issuer = TestAuthority,
-                    AuthorizationEndpoint = TestAuthorizationEndpoint,
-                    TokenEndpoint = TestAuthority + "/token",
-                };
+                var configuration = OidcProvider.Configuration;
                 options.Configuration = configuration;
                 options.ConfigurationManager = new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration);
+                options.Backchannel = new HttpClient(OidcProvider);
             });
 
             services.AddSingleton<IStartupFilter, TestSignInStartupFilter>();
@@ -81,7 +84,8 @@ public sealed class Saldo360ApiFactory(string? connectionString = null) : WebApp
             {
                 var claims = new[]
                 {
-                    new Claim("sub", context.Request.Query["sub"].FirstOrDefault() ?? "user-123"),
+                    new Claim(ExternalIdentity.IssuerClaimType, context.Request.Query["iss"].FirstOrDefault() ?? TestAuthority),
+                    new Claim(ExternalIdentity.SubjectClaimType, context.Request.Query["sub"].FirstOrDefault() ?? "user-123"),
                     new Claim("name", "Maria Silva"),
                     new Claim("preferred_username", "maria"),
                     new Claim("email", "maria@example.com"),

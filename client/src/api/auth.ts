@@ -1,5 +1,13 @@
 export interface CurrentUser {
+  /**
+   * Igual a `subject`, mantido por compatibilidade. Sozinho NÃO identifica o usuário:
+   * o mesmo subject pode existir em outro emissor. Use o par `issuer` + `subject`.
+   */
   id: string
+  /** Emissor (provedor OIDC) que autenticou o usuário. */
+  issuer: string
+  /** Identificador do usuário no emissor; string opaca, não normalizar. */
+  subject: string
   displayName: string
   username: string | null
   email: string | null

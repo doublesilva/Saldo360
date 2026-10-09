@@ -125,7 +125,7 @@ Acesse **<http://localhost:5173>** (não a porta da API): a página mostra **Ent
 | GET | `/signin-oidc` | — | Callback do provedor (tratado pelo middleware OIDC). |
 | GET | `/auth/csrf` | pública | Devolve `{ "token" }` para o header `X-CSRF-TOKEN`. |
 | POST | `/auth/logout` | sessão + CSRF | Remove a sessão no servidor e apaga o cookie. `204`; `400` sem token CSRF válido. |
-| GET | `/api/me` | sessão | `{ id, displayName, username, email }`; `401` sem sessão. |
+| GET | `/api/me` | sessão | `{ id, issuer, subject, displayName, username, email }`; `401` sem sessão. A identidade é o par `issuer` + `subject` (`id` = `subject`, só por compatibilidade). |
 
 `/health` traz apenas nome, status e duração dos checks — mensagens de erro e detalhes de conexão não são expostos:
 
@@ -141,7 +141,7 @@ dotnet test Saldo360.slnx
 cd client && npm run lint && npm run build
 ```
 
-Os testes não precisam de PostgreSQL nem do provedor: usam EF Core InMemory e uma discovery OIDC estática. Eles cobrem `/api/me` (401/200), logout com e sem CSRF, invalidação da sessão no servidor (cookie antigo reenviado → 401), atributos do cookie em produção e o redirecionamento de login (code + PKCE).
+Os testes não precisam de PostgreSQL nem do provedor: usam EF Core InMemory e um provedor OIDC simulado (`FakeOidcProvider`, que assina ID tokens e atende token/userinfo). Eles cobrem `/api/me` (401/200 com `issuer` e `subject`), o callback OIDC completo (o `iss` validado sobrevive às `ClaimActions`), identidades com o mesmo `subject` em emissores diferentes, recusa de sessões antigas sem `issuer` ou com identidade divergente, logout com e sem CSRF, invalidação no servidor (cookie antigo reenviado → 401), atributos do cookie e o redirecionamento de login (code + PKCE).
 
 **Login real** contra o Authelia (com serviços, API e frontend rodando):
 

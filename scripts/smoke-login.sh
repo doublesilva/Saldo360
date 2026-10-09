@@ -51,6 +51,10 @@ step "Com sessão"
 ME=$($C -w '\n%{http_code}' "$FRONT/api/me")
 expect 200 "$(printf '%s' "$ME" | tail -1)" "/api/me"
 echo "     $(printf '%s' "$ME" | head -1)"
+ME_JSON=$(printf '%s' "$ME" | head -1)
+expect "\"issuer\":\"$AUTHELIA\"" "$(printf '%s' "$ME_JSON" | grep -o '"issuer":"[^"]*"')" "issuer vem do ID token do Authelia"
+SUBJECT=$(printf '%s' "$ME_JSON" | grep -o '"subject":"[^"]*"' | cut -d'"' -f4)
+expect "\"id\":\"$SUBJECT\"" "$(printf '%s' "$ME_JSON" | grep -o '"id":"[^"]*"')" "id = subject (compatibilidade)"
 cp "$JAR" "$JAR.before-logout"
 
 step "Logout"

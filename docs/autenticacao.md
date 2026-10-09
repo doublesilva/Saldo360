@@ -7,9 +7,9 @@ O Saldo360 usa **OpenID Connect** (authorization code + PKCE) com um provedor co
 1. O frontend navega para `GET /auth/login?returnUrl=/`.
 2. A API redireciona ao provedor. Se ele anunciar suporte, a API usa PAR (Pushed Authorization Request).
 3. O usuário se autentica no provedor, que redireciona para `{origem do frontend}/signin-oidc?code=…`.
-4. A API troca o `code` por tokens no canal servidor→provedor, lê o *userinfo* e cria a sessão:
-   - guarda apenas as claims `sub`, `name`, `preferred_username` e `email`; os tokens são descartados (`SaveTokens = false`);
-   - grava o ticket da sessão no PostgreSQL (`user_sessions`), protegido com Data Protection;
+4. A API troca o `code` por tokens no canal servidor→provedor, valida o ID token, lê o *userinfo* e cria a sessão:
+   - guarda a identidade externa (`iss` + `sub`, ver abaixo) e apenas as claims de exibição `name`, `preferred_username` e `email`; os tokens são descartados (`SaveTokens = false`);
+   - grava o ticket da sessão no PostgreSQL (`user_sessions`), protegido com Data Protection, junto com `issuer` e `subject` na própria linha;
    - envia ao navegador um cookie que contém só a referência à sessão.
 5. A API redireciona para o `returnUrl`. O frontend consulta `GET /api/me`.
 
@@ -17,7 +17,37 @@ O Saldo360 usa **OpenID Connect** (authorization code + PKCE) com um provedor co
 
 > **Limitação:** o Authelia 4.39 não oferece *RP-initiated logout* (`end_session_endpoint`), então a sessão **no provedor** continua ativa até expirar. Depois de "Sair", clicar em "Entrar" pode logar de novo sem pedir senha. A sessão do Saldo360 é encerrada de fato.
 
-**Identidade:** `/api/me.id` é a claim `sub` do provedor, um identificador estável e opaco (no Authelia, um UUID por usuário). O vínculo ao núcleo familiar e às permissões fica para a T03.
+## Identidade externa: issuer + subject
+
+O usuário é identificado pelo **par `issuer` + `subject`**:
+
+- `subject` (claim `sub`) só é único **dentro** de um emissor. Dois provedores podem emitir o mesmo `sub` para pessoas diferentes.
+- `issuer` (claim `iss`) é o emissor que autenticou o usuário.
+
+Regras:
+
+- **Origem do issuer:** o `iss` é lido do **ID token já validado** pelo middleware (assinatura, emissor esperado, audiência, nonce), no evento `OnTokenValidated`. Nunca vem da requisição, de parâmetros do navegador, do *userinfo* ou da configuração (`Authority`). Um ID token sem `iss` ou sem `sub` válidos faz o login falhar (`/?login=failed`).
+  - Detalhe de implementação: as `ClaimActions` padrão do handler OIDC apagam a claim `iss` depois do `OnTokenValidated`. Por isso a identidade validada é guardada durante o callback e reaplicada ao montar a sessão, em `OnTicketReceived`.
+- **Valores opacos:** `issuer` e `subject` são strings opacas, comparadas de forma ordinal, sem conversão para Guid, mudança de caixa, *trim* ou outra normalização.
+- **Persistência:** cada sessão guarda o par na linha (`user_sessions.issuer`, `user_sessions.subject`) e no ticket protegido. Na leitura, a API exige `iss` e `sub` nos dois lugares e exige que coincidam. Se não coincidirem, a sessão é recusada e removida.
+- **Várias sessões:** o índice `(issuer, subject)` **não é único**, pois um usuário pode ter várias sessões (dispositivos, abas).
+
+`GET /api/me` devolve `issuer` e `subject`. O campo `id` continua igual a `subject` apenas por compatibilidade com o frontend: **`id` sozinho não é uma identidade global**. O vínculo ao núcleo familiar e às permissões (T03) deve usar o par `issuer` + `subject`.
+
+```json
+{
+  "id": "df0ca80a-…",
+  "issuer": "https://auth.saldo360.localhost:9091",
+  "subject": "df0ca80a-…",
+  "displayName": "Família Teste",
+  "username": "familia",
+  "email": "familia@saldo360.localhost"
+}
+```
+
+### Sessões anteriores a esta mudança
+
+A migration `AddIssuerToUserSessions` adiciona a coluna `issuer` como **nula** e não apaga nenhuma sessão ou tabela. Sessões criadas antes dela (sem `issuer` na linha ou sem `iss` no ticket) são recusadas na primeira vez em que forem usadas e removidas. **O usuário precisa fazer login de novo**, uma única vez.
 
 ## Configuração
 
@@ -102,4 +132,4 @@ O `docker-compose.yml` sobe um Authelia em `https://auth.saldo360.localhost:9091
 - Uma falha de login gera só um `warn` com o erro OIDC (ex.: `invalid_request`), sem parâmetros sensíveis.
 - O logout registra apenas o `sub` do usuário.
 
-Os testes verificam que o client secret não aparece em logs nem no redirecionamento. O smoke test foi acompanhado de uma varredura que procurou o client secret, a senha do usuário e a senha do banco nos logs da API e do Authelia, sem nenhuma ocorrência.
+Os testes verificam que o client secret e o access token não aparecem em logs nem no redirecionamento. O smoke test foi acompanhado de uma varredura que procurou o client secret, a senha do usuário e a senha do banco nos logs da API e do Authelia, sem nenhuma ocorrência.
