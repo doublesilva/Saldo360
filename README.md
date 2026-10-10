@@ -125,6 +125,9 @@ Acesse **<http://localhost:5173>** (não a porta da API): a página mostra **Ent
 | GET | `/auth/csrf` | pública | Devolve `{ "token" }` para o header `X-CSRF-TOKEN`. |
 | POST | `/auth/logout` | sessão + CSRF | Remove a sessão no servidor e apaga o cookie. `204`; `400` sem token CSRF válido. |
 | GET | `/api/me` | sessão | `{ id, issuer, subject, displayName, username, email }`; `401` sem sessão. A identidade é o par `issuer` + `subject` (`id` = `subject`, só por compatibilidade). |
+| POST | `/api/families` | sessão + CSRF | Corpo `{ "name" }` (obrigatório, até 100 caracteres). Cria o núcleo com o usuário da sessão como único `Owner`. `201`; `400` com `errors.name`, campos extras ou sem CSRF. |
+| GET | `/api/families` | sessão | Núcleos dos quais o usuário é membro: `[{ id, name, createdAt, myRole, memberCount }]`. |
+| GET | `/api/families/{id}` | sessão | `{ id, name, createdAt, myRole, members: [{ displayName, role, joinedAt, isCurrentUser }] }`; `404` se não existir ou se o usuário não for membro. |
 
 `/health` traz apenas nome, status e duração dos checks — mensagens de erro e detalhes de conexão não são expostos:
 
@@ -140,7 +143,7 @@ dotnet test Saldo360.slnx
 cd client && npm run lint && npm run build
 ```
 
-Os testes não precisam de PostgreSQL nem do provedor: usam EF Core InMemory e um provedor OIDC simulado (`FakeOidcProvider`, que assina ID tokens e atende PAR, token e userinfo). Eles cobrem:
+Os testes não dependem do provedor: usam um provedor OIDC simulado (`FakeOidcProvider`, que assina ID tokens e atende PAR, token e userinfo). Os de autenticação usam EF Core InMemory; os de núcleo familiar usam **PostgreSQL real** via Testcontainers (requer Docker), com um banco novo e migrado por teste. Eles cobrem:
 
 - `/api/me` (401/200 com `issuer` e `subject`) e o callback OIDC completo (o `iss` validado sobrevive às `ClaimActions`);
 - `client_secret_post` no PAR e no token endpoint e o segredo lido de arquivo;
@@ -148,7 +151,8 @@ Os testes não precisam de PostgreSQL nem do provedor: usam EF Core InMemory e u
 - logout com e sem CSRF e a invalidação no servidor (cookie antigo reenviado → 401);
 - forwarded headers: proxy confiável gera callback HTTPS com o host público, e origem não confiável é ignorada;
 - logs de falha sem `code`, tokens, segredos ou texto do provedor;
-- validação TLS com CA própria (intermediária, nome do servidor, `serverAuth`).
+- validação TLS com CA própria (intermediária, nome do servidor, `serverAuth`);
+- núcleo familiar: criação com um único `Owner`, validação do nome, CSRF, campos de identidade recusados, isolamento entre famílias (404), mesmo `subject` em emissores diferentes, logins repetidos sem duplicar usuário, criação concorrente do usuário, unicidades e check de papel no banco e atomicidade da criação.
 
 **Login real via curl** (com API e frontend rodando). O script pede usuário e senha sem eco:
 

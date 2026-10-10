@@ -14,6 +14,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
+      // IPv4 explícito: com "localhost" o Node escuta só em ::1, e clientes que resolvem
+      // localhost para 127.0.0.1 (ex.: curl do Git Bash) não conectam.
+      host: '127.0.0.1',
       port: 5173,
       strictPort: true,
       proxy: {

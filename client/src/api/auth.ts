@@ -1,3 +1,5 @@
+import { CSRF_HEADER, getCsrfToken } from './csrf'
+
 export interface CurrentUser {
   /**
    * Igual a `subject`, mantido por compatibilidade. Sozinho NÃO identifica o usuário:
@@ -31,10 +33,8 @@ export function login(): void {
 
 /** Encerra a sessão na API. O token CSRF é obtido na hora e enviado no header. */
 export async function logout(): Promise<void> {
-  const csrf = await fetch('/auth/csrf', { headers: { Accept: 'application/json' } })
-  if (!csrf.ok) throw new Error(`Falha ao obter o token CSRF (HTTP ${csrf.status}).`)
-  const { token } = (await csrf.json()) as { token: string }
+  const token = await getCsrfToken()
 
-  const response = await fetch('/auth/logout', { method: 'POST', headers: { 'X-CSRF-TOKEN': token } })
+  const response = await fetch('/auth/logout', { method: 'POST', headers: { [CSRF_HEADER]: token } })
   if (!response.ok) throw new Error(`Falha ao sair (HTTP ${response.status}).`)
 }

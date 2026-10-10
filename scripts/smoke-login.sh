@@ -20,6 +20,14 @@
 # Usa a API interna do portal do Authelia (/api/firstfactor), que é o que a página de login chama.
 set -euo pipefail
 
+# No Windows, "bash" no PowerShell/cmd costuma ser o do WSL, onde localhost é a VM Linux,
+# não o Windows em que a API e o Vite estão rodando. Use o Git Bash.
+if grep -qi microsoft /proc/version 2>/dev/null; then
+  echo "Este script está rodando no WSL; localhost:5173 aqui não é o seu Windows." >&2
+  echo "Rode pelo Git Bash: & \"C:\\Program Files\\Git\\bin\\bash.exe\" scripts/smoke-login.sh" >&2
+  exit 2
+fi
+
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 if [ "${1:-}" = "--authelia-local" ]; then
   AUTHORITY=${AUTHORITY:-https://auth.saldo360.localhost:9091}

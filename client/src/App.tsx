@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { fetchHealth, type HealthResponse } from './api/health'
+import { Families } from './components/Families'
 import { UserMenu } from './components/UserMenu'
+import { useSession } from './session'
 import './App.css'
 
 type State =
@@ -20,6 +22,7 @@ function toErrorState(error: unknown): State {
 }
 
 function App() {
+  const session = useSession()
   const [state, setState] = useState<State>({ kind: 'loading' })
   // Incrementado pelo botão para disparar uma nova verificação.
   const [attempt, setAttempt] = useState(0)
@@ -51,7 +54,7 @@ function App() {
           <h1>Saldo360</h1>
           <p className="subtitle">Orçamento familiar</p>
         </div>
-        <UserMenu />
+        <UserMenu session={session} />
       </header>
 
       {loginFailed && (
@@ -60,6 +63,8 @@ function App() {
           {failureRef && <> Código de referência: <code>{failureRef}</code></>}
         </p>
       )}
+
+      {session.state.kind === 'authenticated' && <Families key={`${session.state.user.issuer}|${session.state.user.subject}`} />}
 
       <section className="card" aria-live="polite">
         <h2>Conexão com a API</h2>

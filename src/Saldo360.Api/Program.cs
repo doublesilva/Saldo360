@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
+using Saldo360.Api.Families;
 using Saldo360.Api.Health;
 using Saldo360.Application;
 using Saldo360.Infrastructure;
@@ -11,6 +13,13 @@ builder.Services
     .AddInfrastructure(builder.Configuration)
     .AddSaldo360ForwardedHeaders(builder.Configuration)
     .AddSaldo360Authentication(builder.Configuration, builder.Environment);
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<CurrentUser>();
+
+// Enums (ex.: papel na família) trafegam pelo nome: "Owner", "Member".
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 var app = builder.Build();
 
@@ -27,5 +36,6 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 });
 
 app.MapAuthEndpoints();
+app.MapFamilyEndpoints();
 
 app.Run();

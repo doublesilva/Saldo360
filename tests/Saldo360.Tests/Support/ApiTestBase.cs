@@ -17,9 +17,15 @@ public abstract class ApiTestBase : IAsyncLifetime
 {
     protected const string SessionCookieName = "__Host-saldo360.session";
 
-    protected ApiTestBase(IReadOnlyDictionary<string, string?>? settings = null, string baseAddress = "https://localhost")
+    /// <param name="settings">Configurações extras da API.</param>
+    /// <param name="baseAddress">Origem usada pelo cliente HTTP.</param>
+    /// <param name="connectionString">PostgreSQL real; sem ela, a API usa EF Core InMemory.</param>
+    protected ApiTestBase(
+        IReadOnlyDictionary<string, string?>? settings = null,
+        string baseAddress = "https://localhost",
+        string? connectionString = null)
     {
-        Factory = new Saldo360ApiFactory(settings: settings);
+        Factory = new Saldo360ApiFactory(connectionString, settings);
         BaseAddress = new Uri(baseAddress);
     }
 
@@ -29,16 +35,19 @@ public abstract class ApiTestBase : IAsyncLifetime
 
     protected HttpClient Client { get; private set; } = null!;
 
-    public Task InitializeAsync()
+    public async Task InitializeAsync()
     {
+        await BeforeApiStartsAsync();
         Client = Factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = BaseAddress,
             AllowAutoRedirect = false,
             HandleCookies = false,
         });
-        return Task.CompletedTask;
     }
+
+    /// <summary>Executado antes de a API subir (ex.: criar e migrar o banco do teste).</summary>
+    protected virtual Task BeforeApiStartsAsync() => Task.CompletedTask;
 
     public async Task DisposeAsync()
     {
