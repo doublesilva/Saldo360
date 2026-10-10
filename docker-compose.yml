@@ -1,6 +1,8 @@
 # Serviços de desenvolvimento local.
 # Credenciais do PostgreSQL vêm do arquivo .env (não versionado): copie .env.example para .env.
-# Segredos do Authelia vêm de dev/authelia/secrets (não versionado): rode scripts/setup-dev-auth.ps1.
+# Authelia LOCAL é opcional (profile "authelia-local"); o provedor padrão é https://auth.home.doublesilva.com.
+#   Ativar: pwsh scripts/setup-dev-auth.ps1  e  docker compose --profile authelia-local up -d --wait
+#   Segredos dele vêm de dev/authelia/secrets (não versionado).
 services:
   postgres:
     image: postgres:17-alpine
@@ -20,10 +22,11 @@ services:
       timeout: 3s
       retries: 10
 
-  # Provedor OIDC de integração: https://auth.saldo360.localhost:9091
+  # Provedor OIDC local opcional: https://auth.saldo360.localhost:9091
   authelia:
     image: authelia/authelia:4.39
     container_name: saldo360-authelia
+    profiles: [authelia-local]
     restart: unless-stopped
     environment:
       TZ: America/Sao_Paulo

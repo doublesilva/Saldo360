@@ -39,8 +39,10 @@ function App() {
     setAttempt((n) => n + 1)
   }
 
-  // A API redireciona para "/?login=failed" quando o provedor não conclui o login.
-  const loginFailed = new URLSearchParams(window.location.search).get('login') === 'failed'
+  // A API redireciona para "/?login=failed&ref=<correlação>" quando o login não é concluído.
+  const params = new URLSearchParams(window.location.search)
+  const loginFailed = params.get('login') === 'failed'
+  const failureRef = params.get('ref')
 
   return (
     <main className="page">
@@ -55,6 +57,7 @@ function App() {
       {loginFailed && (
         <p className="notice notice--error" role="alert">
           Não foi possível concluir o login. Tente novamente.
+          {failureRef && <> Código de referência: <code>{failureRef}</code></>}
         </p>
       )}
 

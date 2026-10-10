@@ -58,24 +58,41 @@ public sealed class OidcCallbackTests : ApiTestBase
         var callback = await CompleteLoginAsync();
 
         Assert.Equal(HttpStatusCode.Redirect, callback.StatusCode);
-        Assert.Equal("/?login=failed", callback.Headers.Location!.ToString());
+        Assert.StartsWith("/?login=failed&ref=", callback.Headers.Location!.ToString());
         Assert.False(HasCookie(callback, SessionCookieName));
         await WithDbAsync(async db => Assert.Empty(await db.UserSessions.ToListAsync()));
     }
 
-    /// <summary>Inicia o login, simula o provedor devolvendo o code e chama o callback com os cookies de correlação.</summary>
-    private async Task<HttpResponseMessage> CompleteLoginAsync()
+    [Fact]
+    public async Task ParAndTokenEndpoints_ReceiveClientSecretInBody_AsClientSecretPost()
     {
-        var login = await Client.GetAsync("/auth/login?returnUrl=%2F");
-        Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
+        Factory.OidcProvider.EnablePushedAuthorization = true;
+        Factory.OidcProvider.IdTokenClaims["sub"] = "usuario-par";
+        Factory.OidcProvider.UserInfo["sub"] = "usuario-par";
 
-        var authorize = QueryHelpers.ParseQuery(login.Headers.Location!.Query);
-        Factory.OidcProvider.Nonce = authorize["nonce"];
-        var correlationCookies = string.Join("; ", login.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
+        var start = await StartLoginAsync();
 
-        return await SendAsync(
-            HttpMethod.Get,
-            $"/signin-oidc?code=code-de-teste&state={Uri.EscapeDataString(authorize["state"]!)}",
-            correlationCookies);
+        // Com PAR, o navegador só leva client_id e request_uri; o resto foi pelo backchannel.
+        var authorize = QueryHelpers.ParseQuery(start.Location.Query);
+        Assert.Equal(["client_id", "request_uri"], authorize.Keys.Order());
+
+        var callback = await CallbackAsync(start, "code=code-de-teste");
+        Assert.Equal("/", callback.Headers.Location!.ToString());
+        Assert.Equal("usuario-par", (await GetMeAsync(FindCookie(callback, SessionCookieName))).Subject);
+
+        foreach (var path in new[] { "/par", "/token" })
+        {
+            var request = Assert.Single(Factory.OidcProvider.Requests, r => r.Path == path);
+            Assert.False(request.HasAuthorizationHeader, $"{path}: não deve usar client_secret_basic");
+            Assert.Equal(FakeOidcProvider.ClientId, request.Form["client_id"]);
+            Assert.Equal(Saldo360ApiFactory.TestClientSecret, request.Form["client_secret"]);
+        }
+
+        Assert.Equal("S256", Assert.Single(Factory.OidcProvider.Requests, r => r.Path == "/par").Form["code_challenge_method"]);
+        Assert.True(Assert.Single(Factory.OidcProvider.Requests, r => r.Path == "/token").Form.ContainsKey("code_verifier"));
     }
+
+    /// <summary>Inicia o login, simula o provedor devolvendo o code e chama o callback com os cookies de correlação.</summary>
+    private async Task<HttpResponseMessage> CompleteLoginAsync() =>
+        await CallbackAsync(await StartLoginAsync(), "code=code-de-teste");
 }

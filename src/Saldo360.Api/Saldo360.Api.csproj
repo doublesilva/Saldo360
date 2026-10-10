@@ -23,4 +23,8 @@
     <Content Update="appsettings.Example.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Saldo360.Tests" />
+  </ItemGroup>
+
 </Project>

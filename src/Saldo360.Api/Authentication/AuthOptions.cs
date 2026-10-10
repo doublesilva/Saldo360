@@ -2,7 +2,8 @@ namespace Saldo360.Api.Authentication;
 
 /// <summary>
 /// Configuração do provedor OpenID Connect (seção <c>Authentication:Oidc</c>).
-/// <see cref="ClientSecret"/> deve vir de user-secrets ou variável de ambiente, nunca de appsettings.
+/// O segredo vem de <see cref="ClientSecretFile"/> ou de <see cref="ClientSecret"/> (user-secrets ou
+/// variável de ambiente), nunca de appsettings.
 /// </summary>
 public sealed class OidcOptions
 {
@@ -14,6 +15,12 @@ public sealed class OidcOptions
     public string ClientId { get; set; } = string.Empty;
 
     public string ClientSecret { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Opcional: arquivo com o segredo original do client (ex.: <c>/run/secrets/…</c> montado só para leitura).
+    /// Quando definido, tem precedência sobre <see cref="ClientSecret"/>. Caminho absoluto ou relativo ao content root.
+    /// </summary>
+    public string? ClientSecretFile { get; set; }
 
     public string[] Scopes { get; set; } = ["openid", "profile", "email"];
 
@@ -38,4 +45,26 @@ public sealed class SessionOptions
 
     /// <summary>Tempo de inatividade até a sessão expirar (renovação deslizante).</summary>
     public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromHours(8);
+}
+
+/// <summary>
+/// Proxies reversos confiáveis (seção <c>ReverseProxy</c>). Só requisições vindas deles podem definir
+/// esquema e host por <c>X-Forwarded-Proto</c>/<c>X-Forwarded-Host</c>; de qualquer outra origem os headers são ignorados.
+/// O loopback (127.0.0.0/8 e ::1) continua confiável, como no padrão do ASP.NET Core.
+/// </summary>
+public sealed class ReverseProxyOptions
+{
+    public const string SectionName = "ReverseProxy";
+
+    /// <summary>IPs exatos dos proxies (ex.: <c>172.20.0.2</c>).</summary>
+    public string[] KnownProxies { get; set; } = [];
+
+    /// <summary>Redes em notação CIDR (ex.: <c>172.20.0.0/16</c> da rede Docker do Caddy).</summary>
+    public string[] KnownNetworks { get; set; } = [];
+
+    /// <summary>
+    /// Hosts aceitos em <c>X-Forwarded-Host</c> (ex.: <c>saldo360.exemplo.com.br</c>).
+    /// Vazio aceita qualquer host enviado por um proxy confiável.
+    /// </summary>
+    public string[] AllowedHosts { get; set; } = [];
 }

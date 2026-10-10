@@ -1,19 +1,44 @@
 #!/usr/bin/env bash
-# Smoke test de login REAL contra o Authelia de desenvolvimento, simulando o navegador com curl:
+# Smoke test de login REAL contra um Authelia, simulando o navegador com curl:
 #   frontend (Vite :5173) -> API -> Authelia -> callback -> sessão -> /api/me -> logout.
 #
-# Pré-requisitos: docker compose up -d --wait; API (dotnet run) e frontend (npm run dev) rodando;
-# segredos gerados por scripts/setup-dev-auth.ps1. Uso: bash scripts/smoke-login.sh
+# Uso:
+#   bash scripts/smoke-login.sh                    # Authelia do servidor (padrão)
+#   bash scripts/smoke-login.sh --authelia-local   # Authelia local (profile authelia-local)
+#
+# Configuração por variáveis de ambiente (todas opcionais):
+#   AUTHORITY      emissor esperado          (padrão: https://auth.home.doublesilva.com)
+#   CA_FILE        CA (PEM) do provedor      (padrão: dev/certs/caddy-local-root.crt)
+#   SMOKE_USER     usuário no Authelia       (padrão servidor: pergunta; local: familia)
+#   PASSWORD_FILE  arquivo com a senha       (padrão servidor: pergunta sem eco; local: dev/authelia/secrets/…)
+#   FRONT          origem do frontend        (padrão: http://localhost:5173)
+#
+# A senha nunca vai para argumentos de comando: é lida de arquivo ou do prompt sem eco e enviada
+# ao curl pela entrada padrão. Só funciona com política one_factor e consentimento implícito/pré-aprovado;
+# com segundo fator ou tela de consentimento, valide pelo navegador.
 #
 # Usa a API interna do portal do Authelia (/api/firstfactor), que é o que a página de login chama.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-CA=$ROOT/dev/authelia/secrets/tls/ca.public.crt
-AUTHELIA=https://auth.saldo360.localhost:9091
+if [ "${1:-}" = "--authelia-local" ]; then
+  AUTHORITY=${AUTHORITY:-https://auth.saldo360.localhost:9091}
+  CA_FILE=${CA_FILE:-$ROOT/dev/authelia/secrets/tls/ca.public.crt}
+  SMOKE_USER=${SMOKE_USER:-familia}
+  PASSWORD_FILE=${PASSWORD_FILE:-$ROOT/dev/authelia/secrets/dev_user_password.txt}
+fi
+AUTHELIA=${AUTHORITY:-https://auth.home.doublesilva.com}
+CA=${CA_FILE:-$ROOT/dev/certs/caddy-local-root.crt}
 FRONT=${FRONT:-http://localhost:5173}
-USER_NAME=${USER_NAME:-familia}
-USER_PASS=$(cat "$ROOT/dev/authelia/secrets/dev_user_password.txt")
+
+[ -f "$CA" ] || { echo "CA não encontrada: $CA (defina CA_FILE)"; exit 1; }
+if [ -z "${SMOKE_USER:-}" ]; then read -rp "Usuário no Authelia ($AUTHELIA): " SMOKE_USER; fi
+USER_NAME=$SMOKE_USER
+if [ -n "${PASSWORD_FILE:-}" ]; then
+  USER_PASS=$(cat "$PASSWORD_FILE")
+else
+  read -rsp "Senha de $USER_NAME (não será exibida): " USER_PASS; echo
+fi
 
 JAR=$(mktemp)
 trap 'rm -f "$JAR" "$JAR.before-logout"' EXIT
@@ -35,9 +60,11 @@ expect "$AUTHELIA/api/oidc/authorization" "${AUTHZ%%\?*}" "/auth/login redirecio
 PORTAL=$($C -o /dev/null -w '%{redirect_url}' "$AUTHZ")
 FLOW_ID=$(printf '%s' "$PORTAL" | grep -o 'flow_id=[^&]*' | cut -d= -f2)
 
-BODY=$(printf '{"username":"%s","password":"%s","keepMeLoggedIn":false,"flowID":"%s","flow":"openid_connect"}' \
-  "$USER_NAME" "$USER_PASS" "$FLOW_ID")
-FIRST=$($C -H 'Content-Type: application/json' -H "Origin: $AUTHELIA" -d "$BODY" "$AUTHELIA/api/firstfactor")
+# printf é builtin: o corpo com a senha vai ao curl pela entrada padrão, não pela linha de comando.
+FIRST=$(printf '{"username":"%s","password":"%s","keepMeLoggedIn":false,"flowID":"%s","flow":"openid_connect"}' \
+    "$USER_NAME" "$USER_PASS" "$FLOW_ID" |
+  $C -H 'Content-Type: application/json' -H "Origin: $AUTHELIA" --data-binary @- "$AUTHELIA/api/firstfactor")
+unset USER_PASS
 expect '"status":"OK"' "$(printf '%s' "$FIRST" | grep -o '"status":"[A-Z]*"')" "usuário e senha aceitos"
 NEXT=$(printf '%s' "$FIRST" | grep -o '"redirect":"[^"]*"' | cut -d'"' -f4 | sed 's/\\u0026/\&/g')
 
@@ -55,6 +82,8 @@ ME_JSON=$(printf '%s' "$ME" | head -1)
 expect "\"issuer\":\"$AUTHELIA\"" "$(printf '%s' "$ME_JSON" | grep -o '"issuer":"[^"]*"')" "issuer vem do ID token do Authelia"
 SUBJECT=$(printf '%s' "$ME_JSON" | grep -o '"subject":"[^"]*"' | cut -d'"' -f4)
 expect "\"id\":\"$SUBJECT\"" "$(printf '%s' "$ME_JSON" | grep -o '"id":"[^"]*"')" "id = subject (compatibilidade)"
+# Equivalente a recarregar a página: nova requisição só com o cookie.
+expect "$ME_JSON" "$($C "$FRONT/api/me")" "sessão mantida em nova requisição (refresh)"
 cp "$JAR" "$JAR.before-logout"
 
 step "Logout"

@@ -1,7 +1,7 @@
 #Requires -Version 7.4
 <#
 .SYNOPSIS
-    Gera os segredos do Authelia de desenvolvimento e configura o client secret da API no user-secrets.
+    Gera os segredos do Authelia LOCAL (opcional; profile "authelia-local" do Compose).
 
 .DESCRIPTION
     Cria, em dev/authelia/secrets e dev/authelia/data (ambos ignorados pelo git):
@@ -9,7 +9,9 @@
       - segredos de sessão, armazenamento e HMAC do OIDC
       - chave RSA de assinatura (JWKS) e o digest do client secret
       - um usuário de teste com senha aleatória (salva em secrets/dev_user_password.txt)
-    O client secret em texto puro vai apenas para o user-secrets da API; nada é impresso no console.
+    O client secret em texto puro vai para secrets/oidc_client_secret.txt, lido pelo launch profile
+    "http-authelia-local" da API. O user-secrets (segredo do Authelia do servidor) não é alterado.
+    Nada secreto é impresso no console.
 
 .PARAMETER Username
     Login do usuário de teste.
@@ -29,7 +31,6 @@ $root = Split-Path $PSScriptRoot -Parent
 $autheliaDir = Join-Path $root 'dev/authelia'
 $secretsDir = Join-Path $autheliaDir 'secrets'
 $dataDir = Join-Path $autheliaDir 'data'
-$apiProject = Join-Path $root 'src/Saldo360.Api'
 $image = 'authelia/authelia:4.39'
 
 if ((Test-Path (Join-Path $secretsDir 'oidc_client_secret.digest')) -and -not $Force) {
@@ -95,9 +96,10 @@ users:
     groups: []
 "@ | Set-Content -NoNewline (Join-Path $dataDir 'users_database.yml')
 
-Write-Host '> Client secret da API no user-secrets'
-dotnet user-secrets set 'Authentication:Oidc:ClientSecret' $client.Plain --project $apiProject | Out-Null
+Write-Host '> Client secret da API (arquivo lido pelo launch profile http-authelia-local)'
+Write-Secret 'oidc_client_secret.txt' $client.Plain
 
 Write-Host ''
-Write-Host 'Pronto. Suba o provedor com: docker compose up -d --wait'
+Write-Host 'Pronto. Suba o provedor local com: npm run docker:up:authelia-local'
+Write-Host 'e rode a API com: npm run api:authelia-local'
 Write-Host "Senha do usuário '$Username': dev/authelia/secrets/dev_user_password.txt"

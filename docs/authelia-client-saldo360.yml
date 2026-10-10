@@ -1,0 +1,43 @@
+# Cadastro do client "saldo360" no Authelia do servidor (https://auth.home.doublesilva.com).
+#
+# ACRESCENTE este item à lista existente em identity_providers.oidc.clients do configuration.yml do
+# Authelia. Não substitua a lista: os clients homeautomation-panel, homeautomation-outhome etc. continuam.
+#
+#   identity_providers:
+#     oidc:
+#       clients:
+#         - client_id: homeautomation-panel      # (existente — não alterar)
+#           ...
+#         - <ESTE ITEM>
+#
+# Placeholders:
+#   <DIGEST_DO_SEGREDO_SALDO360>  saída de: pwsh scripts/new-oidc-client-secret.ps1
+#                                 (o texto puro fica só no user-secrets da API / arquivo de segredo)
+#   <ORIGEM_PUBLICA_DO_SALDO360>  origem HTTPS em que o frontend do Saldo360 for publicado.
+#                                 Ainda não definida: mantenha a linha comentada até existir.
+#
+# Depois de editar: valide e reinicie o Authelia (ex.: authelia validate-config; restart do container).
+
+      - client_id: saldo360
+        client_name: Saldo360
+        client_secret: '<DIGEST_DO_SEGREDO_SALDO360>'
+        public: false
+        # Mesma política dos demais apps da casa. Com two_factor o login exige o 2º fator
+        # (o smoke test em curl só cobre one_factor; valide pelo navegador).
+        authorization_policy: one_factor
+        # App próprio da casa: sem tela de consentimento. Remova para exigir consentimento explícito.
+        consent_mode: implicit
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          - http://localhost:5173/signin-oidc
+          # - https://<ORIGEM_PUBLICA_DO_SALDO360>/signin-oidc
+        scopes: [openid, profile, email]
+        response_types: [code]
+        grant_types: [authorization_code]
+        response_modes: [query]
+        # O handler OIDC do .NET envia o segredo no corpo do POST tanto no PAR quanto no token endpoint;
+        # o padrão do Authelia para os dois é client_secret_basic.
+        token_endpoint_auth_method: client_secret_post
+        pushed_authorization_request_endpoint_auth_method: client_secret_post
+        userinfo_signed_response_alg: none

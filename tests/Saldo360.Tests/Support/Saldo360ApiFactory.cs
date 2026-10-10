@@ -22,7 +22,9 @@ namespace Saldo360.Tests.Support;
 /// Sobe a API em memória. Sem connection string explícita, troca o PostgreSQL por um banco InMemory.
 /// O provedor OIDC é o <see cref="FakeOidcProvider"/>; <see cref="SignInPath"/> cria sessões diretamente nos testes.
 /// </summary>
-public sealed class Saldo360ApiFactory(string? connectionString = null) : WebApplicationFactory<Program>
+public sealed class Saldo360ApiFactory(
+    string? connectionString = null,
+    IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
 {
     public const string TestClientSecret = "segredo-do-cliente-que-nao-pode-vazar";
     public const string TestAuthority = FakeOidcProvider.Issuer;
@@ -34,6 +36,12 @@ public sealed class Saldo360ApiFactory(string? connectionString = null) : WebApp
     /// Não passa pelo fluxo OIDC; para isso, use o callback com <see cref="OidcProvider"/>.
     /// </summary>
     public const string SignInPath = "/test/sign-in";
+
+    /// <summary>
+    /// Header exclusivo dos testes que define o IP remoto da conexão (o TestServer não tem um),
+    /// para simular requisições vindas de um proxy confiável ou de outra origem.
+    /// </summary>
+    public const string TestRemoteIpHeader = "X-Test-Remote-IP";
 
     private const string InMemoryPlaceholder = "Host=in-memory;Database=saldo360_tests";
 
@@ -52,6 +60,10 @@ public sealed class Saldo360ApiFactory(string? connectionString = null) : WebApp
         builder.UseSetting("Authentication:Oidc:Authority", TestAuthority);
         builder.UseSetting("Authentication:Oidc:ClientId", FakeOidcProvider.ClientId);
         builder.UseSetting("Authentication:Oidc:ClientSecret", TestClientSecret);
+        foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
+        {
+            builder.UseSetting(key, value);
+        }
 
         builder.ConfigureLogging(logging => logging.AddProvider(Logs));
 
@@ -80,6 +92,16 @@ public sealed class Saldo360ApiFactory(string? connectionString = null) : WebApp
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
         {
+            app.Use((context, nextMiddleware) =>
+            {
+                if (context.Request.Headers.TryGetValue(TestRemoteIpHeader, out var ip))
+                {
+                    context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(ip.ToString());
+                }
+
+                return nextMiddleware(context);
+            });
+
             app.Map(SignInPath, signIn => signIn.Run(async context =>
             {
                 var claims = new[]

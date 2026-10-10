@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 using Saldo360.Api.Authentication;
 using Saldo360.Infrastructure.Persistence;
 
@@ -15,7 +17,15 @@ public abstract class ApiTestBase : IAsyncLifetime
 {
     protected const string SessionCookieName = "__Host-saldo360.session";
 
-    protected Saldo360ApiFactory Factory { get; } = new();
+    protected ApiTestBase(IReadOnlyDictionary<string, string?>? settings = null, string baseAddress = "https://localhost")
+    {
+        Factory = new Saldo360ApiFactory(settings: settings);
+        BaseAddress = new Uri(baseAddress);
+    }
+
+    protected Saldo360ApiFactory Factory { get; }
+
+    protected Uri BaseAddress { get; }
 
     protected HttpClient Client { get; private set; } = null!;
 
@@ -23,7 +33,7 @@ public abstract class ApiTestBase : IAsyncLifetime
     {
         Client = Factory.CreateClient(new WebApplicationFactoryClientOptions
         {
-            BaseAddress = new Uri("https://localhost"),
+            BaseAddress = BaseAddress,
             AllowAutoRedirect = false,
             HandleCookies = false,
         });
@@ -71,6 +81,35 @@ public abstract class ApiTestBase : IAsyncLifetime
 
         return Client.SendAsync(request);
     }
+
+    /// <summary>
+    /// Inicia o login (GET /auth/login) e captura state, nonce e cookies de correlação, lendo-os da URL
+    /// de autorização ou, com PAR, do corpo enviado ao provedor simulado.
+    /// </summary>
+    protected async Task<LoginStart> StartLoginAsync(HttpRequestMessage? request = null)
+    {
+        var login = await Client.SendAsync(request ?? new HttpRequestMessage(HttpMethod.Get, "/auth/login?returnUrl=%2F"));
+        Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
+
+        var location = login.Headers.Location!;
+        var query = QueryHelpers.ParseQuery(location.Query);
+        var parameters = query.ContainsKey("request_uri")
+            ? Factory.OidcProvider.Requests.Last(r => r.Path == "/par").Form
+            : query;
+        Factory.OidcProvider.Nonce = parameters["nonce"];
+
+        var cookies = string.Join("; ", login.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
+        return new LoginStart(location, parameters, cookies);
+    }
+
+    /// <summary>Simula o provedor redirecionando o navegador ao callback com <paramref name="query"/> e o state original.</summary>
+    protected Task<HttpResponseMessage> CallbackAsync(LoginStart start, string query) =>
+        SendAsync(
+            HttpMethod.Get,
+            $"/signin-oidc?{query}&state={Uri.EscapeDataString(start.Parameters["state"]!)}",
+            start.Cookies);
+
+    protected sealed record LoginStart(Uri Location, Dictionary<string, StringValues> Parameters, string Cookies);
 
     /// <summary>Acesso direto ao banco da API (InMemory) para inspecionar ou adulterar sessões.</summary>
     protected async Task WithDbAsync(Func<Saldo360DbContext, Task> action)

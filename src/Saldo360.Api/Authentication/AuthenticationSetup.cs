@@ -1,10 +1,12 @@
 using System.Net.Security;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 using Saldo360.Infrastructure.Authentication;
 
 namespace Saldo360.Api.Authentication;
@@ -22,12 +24,31 @@ public static class AuthenticationSetup
     // apagam a claim "iss" depois do OnTokenValidated, então ela não pode ser relida do principal depois.
     private static readonly object ValidatedIdentityKey = new();
 
+    private const string OidcHandlerLogCategory = "Microsoft.AspNetCore.Authentication.OpenIdConnect";
+
+    // Códigos de erro padronizados (RFC 6749, OIDC Core, RFC 9126) que podem ir para o log como estão.
+    // Qualquer outro valor vindo do provedor é tratado como texto livre e não é registrado.
+    private static readonly HashSet<string> StandardProviderErrors =
+    [
+        "invalid_request", "unauthorized_client", "access_denied", "unsupported_response_type", "invalid_scope",
+        "server_error", "temporarily_unavailable", "invalid_client", "invalid_grant", "unsupported_grant_type",
+        "interaction_required", "login_required", "account_selection_required", "consent_required",
+        "invalid_request_uri", "invalid_request_object", "request_not_supported", "request_uri_not_supported",
+        "registration_not_supported",
+    ];
+
     public static IServiceCollection AddSaldo360Authentication(
         this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
         var oidc = configuration.GetSection(OidcOptions.SectionName).Get<OidcOptions>() ?? new OidcOptions();
         var session = configuration.GetSection(SessionOptions.SectionName).Get<SessionOptions>() ?? new SessionOptions();
+        oidc.ClientSecret = ResolveClientSecret(oidc, environment);
         EnsureConfigured(oidc);
+
+        // O handler OIDC registra mensagens do provedor (error_description) e, em níveis detalhados, URLs
+        // de callback com o code. Ele fica silenciado; as falhas são registradas por OnRemoteFailure
+        // com motivo controlado e id de correlação.
+        services.AddLogging(logging => logging.AddFilter(OidcHandlerLogCategory, LogLevel.None));
 
         // Carregada já na inicialização: um caminho errado falha no startup, não no primeiro login.
         var backchannelCa = string.IsNullOrWhiteSpace(oidc.BackchannelCaCertificatePath)
@@ -110,7 +131,7 @@ public static class AuthenticationSetup
                     var subject = context.SecurityToken?.Subject;
                     if (!ExternalIdentity.IsValid(issuer) || !ExternalIdentity.IsValid(subject))
                     {
-                        context.Fail("O ID token não contém issuer ou subject válidos.");
+                        context.Fail(new OidcIdentityException("O ID token não contém issuer ou subject válidos."));
                         return Task.CompletedTask;
                     }
 
@@ -121,7 +142,7 @@ public static class AuthenticationSetup
                 {
                     if (context.HttpContext.Items[ValidatedIdentityKey] is not ExternalIdentity identity)
                     {
-                        context.Fail("Identidade validada do ID token ausente.");
+                        context.Fail(new OidcIdentityException("Identidade validada do ID token ausente."));
                         return Task.CompletedTask;
                     }
 
@@ -130,12 +151,15 @@ public static class AuthenticationSetup
                 };
                 options.Events.OnRemoteFailure = context =>
                 {
-                    var logger = context.HttpContext.RequestServices
+                    // Nunca registra a mensagem/exceção original: ela pode conter texto livre do provedor.
+                    var reason = ClassifyFailure(context.Failure);
+                    var correlationId = context.HttpContext.TraceIdentifier;
+                    context.HttpContext.RequestServices
                         .GetRequiredService<ILoggerFactory>()
-                        .CreateLogger(typeof(AuthenticationSetup));
-                    logger.LogWarning("Login OIDC não concluído: {Reason}", context.Failure?.Message);
+                        .CreateLogger(typeof(AuthenticationSetup))
+                        .LogWarning("Login OIDC não concluído. Motivo: {Reason}. Correlação: {CorrelationId}.", reason, correlationId);
 
-                    context.Response.Redirect("/?login=failed");
+                    context.Response.Redirect($"/?login=failed&ref={Uri.EscapeDataString(correlationId)}");
                     context.HandleResponse();
                     return Task.CompletedTask;
                 };
@@ -159,6 +183,30 @@ public static class AuthenticationSetup
         return services;
     }
 
+
+    /// <summary>Lê o segredo de <see cref="OidcOptions.ClientSecretFile"/>, quando configurado; senão usa ClientSecret.</summary>
+    private static string ResolveClientSecret(OidcOptions oidc, IHostEnvironment environment)
+    {
+        if (string.IsNullOrWhiteSpace(oidc.ClientSecretFile))
+        {
+            return oidc.ClientSecret;
+        }
+
+        var path = Path.GetFullPath(oidc.ClientSecretFile, environment.ContentRootPath);
+        if (!File.Exists(path))
+        {
+            throw new InvalidOperationException(
+                $"Arquivo do segredo do client não encontrado ({OidcOptions.SectionName}:ClientSecretFile = '{path}').");
+        }
+
+        // Só remove a quebra de linha final que editores costumam acrescentar.
+        var secret = File.ReadAllText(path).TrimEnd('\r', '\n');
+        return string.IsNullOrWhiteSpace(secret)
+            ? throw new InvalidOperationException(
+                $"O arquivo do segredo do client está vazio ({OidcOptions.SectionName}:ClientSecretFile = '{path}').")
+            : secret;
+    }
+
     private static void EnsureConfigured(OidcOptions oidc)
     {
         var missing = new List<string>();
@@ -171,7 +219,8 @@ public static class AuthenticationSetup
             // Lista apenas as chaves ausentes, nunca valores.
             throw new InvalidOperationException(
                 $"Configuração de autenticação incompleta. Defina: {string.Join(", ", missing)}. " +
-                "O ClientSecret deve vir de user-secrets ou da variável de ambiente Authentication__Oidc__ClientSecret.");
+                "O segredo deve vir de user-secrets, da variável de ambiente Authentication__Oidc__ClientSecret " +
+                "ou de um arquivo indicado em Authentication__Oidc__ClientSecretFile.");
         }
     }
 
@@ -181,7 +230,7 @@ public static class AuthenticationSetup
         {
             throw new InvalidOperationException(
                 $"Certificado de CA do provedor não encontrado em '{path}' ({OidcOptions.SectionName}:BackchannelCaCertificatePath). " +
-                "Em desenvolvimento, gere-o com scripts/setup-dev-auth.ps1.");
+                "Veja docs/autenticacao.md (CA do Caddy do servidor ou CA do Authelia local).");
         }
 
         return X509CertificateLoader.LoadCertificateFromFile(path);
@@ -203,32 +252,69 @@ public static class AuthenticationSetup
     }
 
     /// <summary>
+    /// Motivo controlado para o log de uma falha de login: só categorias fixas e códigos de erro padronizados.
+    /// Mensagens, descrições e respostas do provedor nunca são devolvidas.
+    /// </summary>
+    internal static string ClassifyFailure(Exception? failure) => failure switch
+    {
+        OidcIdentityException => "identidade_invalida",
+        OpenIdConnectProtocolException protocol when protocol.Data["error"] is string code
+            && StandardProviderErrors.Contains(code) => $"provedor:{code}",
+        OpenIdConnectProtocolException => "provedor:erro_nao_padronizado",
+        SecurityTokenException => "id_token_invalido",
+        HttpRequestException => "provedor_inacessivel",
+        { Message: "Correlation failed." } => "correlacao_invalida",
+        { Message: "The oauth state was missing or invalid." } => "state_invalido",
+        { Message: "Access was denied by the resource owner or by the remote server." } => "provedor:access_denied",
+        null => "falha_nao_informada",
+        _ => "falha_nao_classificada",
+    };
+
+    /// <summary>
     /// Handler que só aceita certificados emitidos pela CA informada (sem cair no repositório do sistema).
     /// </summary>
-    private static SocketsHttpHandler CreateHandlerTrustingOnly(X509Certificate2 ca)
+    private static SocketsHttpHandler CreateHandlerTrustingOnly(X509Certificate2 ca) => new()
     {
-        return new SocketsHttpHandler
+        SslOptions =
         {
-            SslOptions =
+            RemoteCertificateValidationCallback = (_, certificate, presentedChain, errors) =>
+                ValidateServerCertificate(ca, certificate, presentedChain, errors),
+        },
+    };
+
+    /// <summary>
+    /// Aceita o certificado do provedor somente se: não houver erro de nome nem ausência de certificado
+    /// (verificados pelo TLS do sistema), a cadeia terminar em <paramref name="ca"/> e o certificado servir
+    /// para autenticação de servidor. Intermediárias enviadas no handshake (ex.: a do Caddy) são usadas
+    /// apenas para montar a cadeia, nunca como raiz confiável.
+    /// </summary>
+    internal static bool ValidateServerCertificate(
+        X509Certificate2 ca, X509Certificate? certificate, X509Chain? presentedChain, SslPolicyErrors errors)
+    {
+        if (certificate is null || (errors & ~SslPolicyErrors.RemoteCertificateChainErrors) != 0)
+        {
+            return false;
+        }
+
+        using var chain = new X509Chain();
+        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        chain.ChainPolicy.CustomTrustStore.Add(ca);
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1")); // serverAuth
+
+        if (presentedChain is not null)
+        {
+            foreach (var element in presentedChain.ChainElements)
             {
-                RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
-                {
-                    // Erros de nome ou ausência de certificado nunca são aceitos; só a cadeia é revalidada.
-                    if (certificate is null || (errors & ~SslPolicyErrors.RemoteCertificateChainErrors) != 0)
-                    {
-                        return false;
-                    }
+                chain.ChainPolicy.ExtraStore.Add(element.Certificate);
+            }
+        }
 
-                    using var chain = new X509Chain();
-                    chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-                    chain.ChainPolicy.CustomTrustStore.Add(ca);
-                    chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-
-                    var leaf = certificate as X509Certificate2
-                        ?? X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
-                    return chain.Build(leaf);
-                },
-            },
-        };
+        var leaf = certificate as X509Certificate2
+            ?? X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
+        return chain.Build(leaf);
     }
 }
+
+/// <summary>Falha do Saldo360 ao extrair a identidade do ID token validado.</summary>
+internal sealed class OidcIdentityException(string message) : Exception(message);

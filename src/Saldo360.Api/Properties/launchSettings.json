@@ -9,6 +9,18 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "http-authelia-local": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Authentication__Oidc__Authority": "https://auth.saldo360.localhost:9091",
+        "Authentication__Oidc__BackchannelCaCertificatePath": "../../dev/authelia/secrets/tls/ca.public.crt",
+        "Authentication__Oidc__ClientSecretFile": "../../dev/authelia/secrets/oidc_client_secret.txt"
+      }
     }
   }
 }

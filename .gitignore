@@ -435,3 +435,6 @@ FodyWeavers.xsd
 # Authelia de desenvolvimento — segredos e dados gerados por scripts/setup-dev-auth.ps1
 dev/authelia/secrets/
 dev/authelia/data/
+
+# CA do Caddy do servidor (específica do ambiente; veja docs/autenticacao.md)
+dev/certs/

@@ -9,9 +9,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration)
+    .AddSaldo360ForwardedHeaders(builder.Configuration)
     .AddSaldo360Authentication(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
+
+// Antes da autenticação: o callback OIDC é montado com o esquema e o host públicos do proxy confiável.
+app.UseForwardedHeaders();
 
 app.UseAuthentication();
 app.UseAuthorization();

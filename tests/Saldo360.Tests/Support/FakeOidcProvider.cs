@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
@@ -8,8 +11,8 @@ using Microsoft.IdentityModel.Tokens;
 namespace Saldo360.Tests.Support;
 
 /// <summary>
-/// Provedor OIDC em memória: atende o token endpoint e o userinfo pelo backchannel da API e emite
-/// ID tokens assinados com uma chave de teste. Permite exercitar o callback real (/signin-oidc),
+/// Provedor OIDC em memória: atende PAR (opcional), token endpoint e userinfo pelo backchannel da API
+/// e emite ID tokens assinados com uma chave de teste. Permite exercitar o callback real (/signin-oidc),
 /// incluindo validação do token e as ClaimActions do handler.
 /// </summary>
 public sealed class FakeOidcProvider : HttpMessageHandler
@@ -29,6 +32,15 @@ public sealed class FakeOidcProvider : HttpMessageHandler
     /// <summary>Nonce enviado no pedido de autorização; precisa ir no ID token.</summary>
     public string? Nonce { get; set; }
 
+    /// <summary>Quando definido, o token endpoint responde 400 com este corpo (erro OAuth).</summary>
+    public Dictionary<string, object>? TokenError { get; set; }
+
+    /// <summary>Anuncia e atende o endpoint de PAR (como o Authelia do servidor).</summary>
+    public bool EnablePushedAuthorization { get; set; }
+
+    /// <summary>Requisições recebidas, por endpoint ("/par", "/token", "/userinfo").</summary>
+    public ConcurrentQueue<ReceivedRequest> Requests { get; } = new();
+
     public OpenIdConnectConfiguration Configuration
     {
         get
@@ -40,15 +52,36 @@ public sealed class FakeOidcProvider : HttpMessageHandler
                 TokenEndpoint = Issuer + "/token",
                 UserInfoEndpoint = Issuer + "/userinfo",
             };
+            if (EnablePushedAuthorization)
+            {
+                configuration.PushedAuthorizationRequestEndpoint = Issuer + "/par";
+            }
+
             configuration.SigningKeys.Add(_signingKey);
             return configuration;
         }
     }
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var response = request.RequestUri!.AbsolutePath switch
+        var path = request.RequestUri!.AbsolutePath;
+        var body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken);
+        Requests.Enqueue(new ReceivedRequest(path, QueryHelpers.ParseQuery(body), request.Headers.Authorization is not null));
+
+        return path switch
         {
+            "/par" when EnablePushedAuthorization => new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = JsonContent.Create(new Dictionary<string, object>
+                {
+                    ["request_uri"] = "urn:ietf:params:oauth:request_uri:teste",
+                    ["expires_in"] = 60,
+                }),
+            },
+            "/token" when TokenError is not null => new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = JsonContent.Create(TokenError),
+            },
             "/token" => Json(new Dictionary<string, object>
             {
                 ["access_token"] = "access-token-de-teste",
@@ -59,7 +92,6 @@ public sealed class FakeOidcProvider : HttpMessageHandler
             "/userinfo" => Json(UserInfo),
             _ => new HttpResponseMessage(HttpStatusCode.NotFound),
         };
-        return Task.FromResult(response);
     }
 
     private string CreateIdToken()
@@ -86,3 +118,8 @@ public sealed class FakeOidcProvider : HttpMessageHandler
     private static HttpResponseMessage Json(object body) =>
         new(HttpStatusCode.OK) { Content = JsonContent.Create(body) };
 }
+
+/// <param name="Path">Caminho do endpoint chamado.</param>
+/// <param name="Form">Corpo form-urlencoded recebido.</param>
+/// <param name="HasAuthorizationHeader">Se veio header Authorization (ex.: client_secret_basic).</param>
+public sealed record ReceivedRequest(string Path, Dictionary<string, StringValues> Form, bool HasAuthorizationHeader);
