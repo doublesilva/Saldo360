@@ -17,6 +17,7 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
+                .HasAnnotation("Npgsql:CollationDefinition:case_insensitive", "und-u-ks-level2,und-u-ks-level2,icu,False")
                 .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
@@ -136,6 +137,61 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_accounts_scope", "scope IN ('PF', 'PJ')");
 
                             t.HasCheckConstraint("ck_financial_accounts_type", "type IN ('Checking', 'Savings', 'Cash')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Categories.FinancialCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name")
+                        .UseCollation("case_insensitive");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_categories");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_categories_created_by_user_id");
+
+                    b.HasIndex("FamilyId", "Type", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_financial_categories_family_id_type_name");
+
+                    b.ToTable("financial_categories", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_categories_name_not_blank", "btrim(name) <> ''");
+
+                            t.HasCheckConstraint("ck_financial_categories_name_trimmed", "octet_length(name) = octet_length(btrim(name))");
+
+                            t.HasCheckConstraint("ck_financial_categories_type", "type IN ('Income', 'Expense')");
                         });
                 });
 
@@ -373,6 +429,23 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("FamilyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_financial_accounts_family_members_responsible");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Categories.FinancialCategory", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_categories_application_users_created_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_categories_families_family_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Families.FamilyInvitation", b =>

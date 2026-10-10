@@ -372,6 +372,97 @@ button {
   margin: 0;
 }
 
+.categories {
+  margin-top: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.categories h3 {
+  margin-bottom: 0;
+}
+
+/* Receitas e despesas lado a lado quando há espaço; empilhadas no celular. */
+.categories__sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.category-section h4 {
+  margin: 0 0 0.5rem;
+}
+
+.category-add,
+.category-rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.category-add input,
+.category-rename input {
+  font: inherit;
+  flex: 1 1 10rem;
+  min-width: 0;
+  min-height: 2.75rem;
+  box-sizing: border-box;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.category-add input[aria-invalid='true'],
+.category-rename input[aria-invalid='true'] {
+  border-color: var(--fail);
+}
+
+.category-rename .field-error {
+  flex-basis: 100%;
+}
+
+.category-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.category {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.category > .category-rename {
+  flex: 1;
+}
+
+.category--inactive {
+  opacity: 0.7;
+  border-style: dashed;
+}
+
+.category__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.category__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .form select {
   font: inherit;
   width: 100%;

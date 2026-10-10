@@ -1,0 +1,27 @@
+using Saldo360.Domain.Categories;
+
+namespace Saldo360.Application.Categories;
+
+public interface IFinancialCategoryRepository
+{
+    /// <summary>Grava a categoria; false se o banco recusar por nome duplicado (família + tipo).</summary>
+    Task<bool> TryAddAsync(FinancialCategory category, CancellationToken cancellationToken);
+
+    /// <summary>A categoria, se pertencer à família (rastreada para atualização).</summary>
+    Task<FinancialCategory?> FindAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken);
+
+    /// <summary>Salva as alterações rastreadas; false se o banco recusar por nome duplicado.</summary>
+    Task<bool> TrySaveChangesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Se já existe outra categoria (ativa ou inativa) com o mesmo nome e tipo na família, sem diferenciar
+    /// maiúsculas de minúsculas. Verificação prévia: a garantia final é o índice único do banco.
+    /// </summary>
+    Task<bool> NameExistsAsync(
+        Guid familyId, CategoryType type, string name, Guid? exceptCategoryId, CancellationToken cancellationToken);
+
+    /// <summary>Ativas primeiro; depois receitas antes de despesas; depois por nome.</summary>
+    Task<IReadOnlyList<FinancialCategoryDto>> ListAsync(Guid familyId, bool includeInactive, CancellationToken cancellationToken);
+
+    Task<FinancialCategoryDto?> GetAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken);
+}
