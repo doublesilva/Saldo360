@@ -49,7 +49,6 @@ Regras:
 
 A migration `AddIssuerToUserSessions` adiciona a coluna `issuer` como **nula** e não apaga nenhuma sessão ou tabela. Sessões criadas antes dela (sem `issuer` na linha ou sem `iss` no ticket) são recusadas na primeira vez em que forem usadas e removidas. **O usuário precisa fazer login de novo**, uma única vez.
 
-
 ## Provedor padrão: Authelia do servidor
 
 | Item | Valor |
@@ -80,7 +79,14 @@ Use o trecho [docs/authelia-client-saldo360.yml](authelia-client-saldo360.yml). 
 
 Depois de editar, valide a configuração e reinicie o Authelia. Um `invalid_client` no login (motivo `provedor:invalid_client` no log) indica cadastro ausente, digest que não corresponde ao segredo ou método de autenticação diferente de `client_secret_post`.
 
-**Acesso ao servidor:** a configuração do Authelia e a CA ficam no host `home-server` (192.168.0.162). Os segredos e certificados do HomeAutomation ficam em `/etc/homeautomation/secrets` e `/etc/homeautomation/certs`. Aplicar o cadastro exige acesso de administração a esse host.
+**Acesso ao servidor:** o Authelia roda no host `home-server` (192.168.0.162), container `authelia`, com compose em `/home/diego/containers/authelia` e configuração em `config/configuration.yml` (arquivo do root; montado como `/config` no container). Os segredos e certificados do HomeAutomation ficam em `/etc/homeautomation/secrets` e `/etc/homeautomation/certs`.
+
+- A chave SSH do host tem passphrase e está carregada no **agente do Windows**. Use o `ssh.exe` do Windows (`C:\Windows\System32\OpenSSH\ssh.exe home-server`). O `ssh` do Git Bash não enxerga esse agente e falha com `Permission denied (publickey)`, mesmo com o servidor aceitando a chave.
+- Edite a configuração sempre a partir de uma cópia (candidata) e valide antes de trocar a ativa: `docker exec authelia authelia validate-config --config /config/<arquivo>`.
+- Faça backup no mesmo padrão dos anteriores (`configuration.yml.bak-before-<mudança>-<data>`).
+- O Authelia guarda as sessões em memória: o reinício (`docker restart authelia`) exige novo login no SSO. As sessões próprias dos apps não são afetadas.
+
+**Estado:** client `saldo360` cadastrado em 2026-10-10, só com o callback de desenvolvimento, `one_factor` e `consent_mode: implicit`. O backup é `configuration.yml.bak-before-saldo360-20261010-103124`. O callback de produção continua pendente.
 
 ### 3. Confiança na CA do Caddy
 
