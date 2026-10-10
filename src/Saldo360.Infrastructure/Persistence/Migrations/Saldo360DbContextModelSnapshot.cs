@@ -85,6 +85,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("name");
 
+                    b.Property<decimal?>("OpeningBalance")
+                        .HasColumnType("numeric")
+                        .HasColumnName("opening_balance");
+
+                    b.Property<DateOnly?>("OpeningBalanceDate")
+                        .HasColumnType("date")
+                        .HasColumnName("opening_balance_date");
+
                     b.Property<Guid?>("ResponsibleMemberId")
                         .HasColumnType("uuid")
                         .HasColumnName("responsible_member_id");
@@ -118,6 +126,12 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_accounts_currency", "currency = 'BRL'");
 
                             t.HasCheckConstraint("ck_financial_accounts_name_not_blank", "btrim(name) <> ''");
+
+                            t.HasCheckConstraint("ck_financial_accounts_opening_balance_pair", "(opening_balance IS NULL) = (opening_balance_date IS NULL)");
+
+                            t.HasCheckConstraint("ck_financial_accounts_opening_balance_range", "abs(opening_balance) < 10000000000000");
+
+                            t.HasCheckConstraint("ck_financial_accounts_opening_balance_scale", "scale(opening_balance) <= 2");
 
                             t.HasCheckConstraint("ck_financial_accounts_scope", "scope IN ('PF', 'PJ')");
 

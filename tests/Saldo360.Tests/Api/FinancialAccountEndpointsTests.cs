@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Tests.Support;
@@ -289,6 +290,154 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
         }
     }
 
+    [Theory]
+    [InlineData("1234.56", "1234.56")]
+    [InlineData("0", "0")]
+    [InlineData("0.00", "0.00")]
+    [InlineData("-1500.75", "-1500.75")]
+    [InlineData("-0.01", "-0.01")]
+    [InlineData("9999999999999.99", "9999999999999.99")]
+    [InlineData("-9999999999999.99", "-9999999999999.99")]
+    public async Task OpeningBalance_PositiveZeroOrNegative_IsStoredExactly_AndSurvivesReload(string json, string expected)
+    {
+        await ArrangeAsync();
+
+        var response = await SendRawWithCsrfAsync(HttpMethod.Post, AccountsUrl, _owner,
+            $$"""{ "name": "Itaú PF", "type": "Checking", "financialScope": "PF", "openingBalance": {{json}}, "openingBalanceDate": "2026-10-01" }""");
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await ReadAsync<AccountDto>(response);
+        var expectedAmount = decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture);
+
+        // Recarrega pela API e direto do banco: mesmo valor, mesma data, sem horário.
+        var reloaded = await ReadAsync<AccountDto>(await SendAsync(HttpMethod.Get, $"{AccountsUrl}/{created.Id}", _member));
+        Assert.Equal((expectedAmount, new DateOnly(2026, 10, 1)), (reloaded.OpeningBalance, reloaded.OpeningBalanceDate));
+        await using var db = Db();
+        var stored = await db.FinancialAccounts.SingleAsync();
+        Assert.Equal((expectedAmount, new DateOnly(2026, 10, 1)), (stored.OpeningBalance, stored.OpeningBalanceDate));
+        var text = await db.Database.SqlQueryRaw<string>(
+            "SELECT opening_balance::text || ' ' || opening_balance_date::text AS \"Value\" FROM financial_accounts").SingleAsync();
+        Assert.Equal($"{expected} 2026-10-01", text);
+    }
+
+    [Fact]
+    public async Task AccountWithoutOpeningBalance_ReturnsNulls_NotZero()
+    {
+        await ArrangeAsync();
+        var account = await CreateAccountAsync(_owner, "Itaú PF", "Checking", "PF", OwnerMemberId);
+
+        Assert.Equal((null, null), (account.OpeningBalance, account.OpeningBalanceDate));
+        var body = await (await SendAsync(HttpMethod.Get, $"{AccountsUrl}/{account.Id}", _owner)).Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("openingBalance").ValueKind);
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("openingBalanceDate").ValueKind);
+    }
+
+    [Theory]
+    [InlineData("\"openingBalance\": 100.00", "openingBalanceDate")]
+    [InlineData("\"openingBalance\": 100.00, \"openingBalanceDate\": null", "openingBalanceDate")]
+    [InlineData("\"openingBalanceDate\": \"2026-10-01\"", "openingBalance")]
+    [InlineData("\"openingBalance\": null, \"openingBalanceDate\": \"2026-10-01\"", "openingBalance")]
+    public async Task IncompleteOpeningBalance_Returns400(string fields, string field)
+    {
+        await ArrangeAsync();
+
+        var response = await SendRawWithCsrfAsync(HttpMethod.Post, AccountsUrl, _owner,
+            $$"""{ "name": "Conta", "type": "Cash", "financialScope": "PF", {{fields}} }""");
+
+        await AssertValidationErrorAsync(response, field);
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialAccounts.CountAsync());
+    }
+
+    [Theory]
+    [InlineData("10.005")]
+    [InlineData("1.500")]
+    [InlineData("-0.001")]
+    [InlineData("0.1234567890123456789012345678901")]
+    [InlineData("10000000000000")]
+    [InlineData("-10000000000000.00")]
+    public async Task OpeningBalance_WithMoreThanTwoDecimalsOrOutOfRange_IsRejected_NotRounded(string json)
+    {
+        await ArrangeAsync();
+
+        var response = await SendRawWithCsrfAsync(HttpMethod.Post, AccountsUrl, _owner,
+            $$"""{ "name": "Conta", "type": "Cash", "financialScope": "PF", "openingBalance": {{json}}, "openingBalanceDate": "2026-10-01" }""");
+
+        await AssertValidationErrorAsync(response, "openingBalance");
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialAccounts.CountAsync());
+    }
+
+    [Theory]
+    [InlineData("\"2026-10-01T00:00:00\"")]
+    [InlineData("\"2026-10-01T00:00:00Z\"")]
+    [InlineData("\"01/10/2026\"")]
+    [InlineData("\"2026-02-30\"")]
+    public async Task OpeningBalanceDate_WithTimeOrInvalid_IsRejected(string json)
+    {
+        await ArrangeAsync();
+
+        var response = await SendRawWithCsrfAsync(HttpMethod.Post, AccountsUrl, _owner,
+            $$"""{ "name": "Conta", "type": "Cash", "financialScope": "PF", "openingBalance": 10, "openingBalanceDate": {{json}} }""");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialAccounts.CountAsync());
+    }
+
+    [Fact]
+    public async Task Update_SetsChangesAndClearsOpeningBalance_PreservingOtherFields()
+    {
+        await ArrangeAsync();
+        var account = await CreateAccountAsync(_owner, "Itaú Empresas", "Checking", "PJ", GuestMemberId);
+        var url = $"{AccountsUrl}/{account.Id}";
+        object Body(decimal? amount, string? date) => new
+        {
+            name = "Itaú Empresas", institution = "Itaú", type = "Checking", financialScope = "PJ",
+            responsibleMemberId = GuestMemberId, openingBalance = amount, openingBalanceDate = date, isActive = true,
+        };
+
+        var set = await ReadAsync<AccountDto>(await SendWithCsrfAsync(HttpMethod.Put, url, _member, Body(-250.40m, "2026-09-30")));
+        Assert.Equal((-250.40m, new DateOnly(2026, 9, 30)), (set.OpeningBalance, set.OpeningBalanceDate));
+        Assert.Equal(("PJ", "Checking", GuestMemberId), (set.FinancialScope, set.Type, set.Responsible!.MemberId));
+
+        var changed = await ReadAsync<AccountDto>(await SendWithCsrfAsync(HttpMethod.Put, url, _owner, Body(0m, "2026-10-01")));
+        Assert.Equal((0m, new DateOnly(2026, 10, 1)), (changed.OpeningBalance, changed.OpeningBalanceDate));
+
+        // Edição incompleta é recusada e não altera o que estava gravado.
+        await AssertValidationErrorAsync(await SendWithCsrfAsync(HttpMethod.Put, url, _owner, Body(10m, null)), "openingBalanceDate");
+        await using (var db = Db())
+        {
+            var stored = await db.FinancialAccounts.SingleAsync();
+            Assert.Equal((0m, new DateOnly(2026, 10, 1)), (stored.OpeningBalance, stored.OpeningBalanceDate));
+        }
+
+        var cleared = await ReadAsync<AccountDto>(await SendWithCsrfAsync(HttpMethod.Put, url, _owner, Body(null, null)));
+        Assert.Equal((null, null), (cleared.OpeningBalance, cleared.OpeningBalanceDate));
+    }
+
+    [Fact]
+    public async Task OpeningBalance_OfAnotherFamilysAccount_CannotBeReadOrChanged()
+    {
+        await ArrangeAsync();
+        var response = await SendWithCsrfAsync(HttpMethod.Post, AccountsUrl, _owner, new
+        {
+            name = "Itaú PF", type = "Checking", financialScope = "PF", openingBalance = 500m, openingBalanceDate = "2026-10-01",
+        });
+        var account = await ReadAsync<AccountDto>(response);
+
+        var put = await SendWithCsrfAsync(HttpMethod.Put, $"/api/families/{_otherFamily.Id}/accounts/{account.Id}", _outsider, new
+        {
+            name = "Itaú PF", type = "Checking", financialScope = "PF", openingBalance = 0m, openingBalanceDate = "2026-10-01", isActive = true,
+        });
+
+        Assert.Equal(HttpStatusCode.NotFound, put.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, $"{AccountsUrl}/{account.Id}", _outsider)).StatusCode);
+        await using var db = Db();
+        Assert.Equal(500m, (await db.FinancialAccounts.SingleAsync()).OpeningBalance);
+    }
+
     [Fact]
     public async Task Endpoints_RequireAuthentication()
     {
@@ -319,9 +468,20 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
         Assert.True(problem.RootElement.GetProperty("errors").TryGetProperty(field, out _), $"esperado erro em '{field}'");
     }
 
+    /// <summary>Envia o JSON exatamente como escrito (para testar números com casas decimais extras).</summary>
+    private async Task<HttpResponseMessage> SendRawWithCsrfAsync(HttpMethod method, string url, string session, string json)
+    {
+        var (csrfCookie, csrfToken) = await GetCsrfAsync(session);
+        var request = new HttpRequestMessage(method, url) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        request.Headers.Add("Cookie", $"{session}; {csrfCookie}");
+        request.Headers.Add("X-CSRF-TOKEN", csrfToken);
+        return await Client.SendAsync(request);
+    }
+
     private sealed record ResponsibleDto(Guid MemberId, string DisplayName);
 
     private sealed record AccountDto(
         Guid Id, string Name, string? Institution, string Type, string FinancialScope,
-        ResponsibleDto? Responsible, bool IsActive, string Currency, DateTimeOffset CreatedAt);
+        ResponsibleDto? Responsible, decimal? OpeningBalance, DateOnly? OpeningBalanceDate,
+        bool IsActive, string Currency, DateTimeOffset CreatedAt);
 }

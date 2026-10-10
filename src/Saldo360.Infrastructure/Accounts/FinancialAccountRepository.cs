@@ -62,6 +62,8 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             account.Scope,
             account.ResponsibleMemberId,
             user.DisplayName,
+            account.OpeningBalance,
+            account.OpeningBalanceDate,
             account.IsActive,
             account.Currency,
             account.CreatedAt);
@@ -73,6 +75,8 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         row.Type,
         row.Scope,
         row.ResponsibleMemberId is { } memberId ? new AccountResponsibleDto(memberId, row.ResponsibleName ?? UnnamedMember) : null,
+        row.OpeningBalance,
+        row.OpeningBalanceDate,
         row.IsActive,
         row.Currency,
         row.CreatedAt);
@@ -85,6 +89,8 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         FinancialScope Scope,
         Guid? ResponsibleMemberId,
         string? ResponsibleName,
+        decimal? OpeningBalance,
+        DateOnly? OpeningBalanceDate,
         bool IsActive,
         string Currency,
         DateTimeOffset CreatedAt);

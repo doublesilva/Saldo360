@@ -338,6 +338,40 @@ button {
   color: var(--ok);
 }
 
+.account__opening {
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.amount--negative {
+  color: var(--fail);
+}
+
+.opening-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 1rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.opening-balance legend {
+  font-weight: 600;
+  padding: 0 0.25rem;
+}
+
+.opening-balance .meta {
+  margin: 0;
+}
+
 .form select {
   font: inherit;
   width: 100%;

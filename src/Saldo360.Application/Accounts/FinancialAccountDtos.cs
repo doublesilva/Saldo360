@@ -4,7 +4,7 @@ namespace Saldo360.Application.Accounts;
 
 /// <summary>
 /// Conta como exibida aos integrantes da família. Não expõe o criador nem dados de autenticação.
-/// Não há saldo nesta etapa.
+/// Traz só o saldo inicial configurado (valor no início da data de referência); não há saldo atual nesta etapa.
 /// </summary>
 public sealed record FinancialAccountDto(
     Guid Id,
@@ -13,6 +13,8 @@ public sealed record FinancialAccountDto(
     AccountType Type,
     FinancialScope FinancialScope,
     AccountResponsibleDto? Responsible,
+    decimal? OpeningBalance,
+    DateOnly? OpeningBalanceDate,
     bool IsActive,
     string Currency,
     DateTimeOffset CreatedAt);
@@ -26,7 +28,9 @@ public sealed record AccountInput(
     string? Institution,
     string? Type,
     string? FinancialScope,
-    Guid? ResponsibleMemberId);
+    Guid? ResponsibleMemberId,
+    decimal? OpeningBalance,
+    DateOnly? OpeningBalanceDate);
 
 public enum AccountAccess
 {

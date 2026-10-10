@@ -17,7 +17,10 @@ export interface AccountResponsible {
   displayName: string
 }
 
-/** Conta da família. Sem saldo nesta etapa. */
+/**
+ * Conta da família. Traz apenas o saldo inicial configurado (no início de openingBalanceDate, antes das
+ * movimentações desse dia); não há saldo atual nesta etapa.
+ */
 export interface FinancialAccount {
   id: string
   name: string
@@ -26,6 +29,10 @@ export interface FinancialAccount {
   financialScope: FinancialScope
   /** null = conta conjunta. */
   responsible: AccountResponsible | null
+  /** Pode ser negativo. null (junto com a data) = saldo inicial não informado, que não é zero. */
+  openingBalance: number | null
+  /** "yyyy-MM-dd", sem horário. */
+  openingBalanceDate: string | null
   isActive: boolean
   currency: string
   createdAt: string
@@ -38,6 +45,9 @@ export interface AccountInput {
   type: AccountType
   financialScope: FinancialScope
   responsibleMemberId: string | null
+  /** Valor e data juntos ou ambos null. */
+  openingBalance: number | null
+  openingBalanceDate: string | null
 }
 
 export type SaveAccountResult =
@@ -95,5 +105,7 @@ export function toInput(account: FinancialAccount): AccountInput {
     type: account.type,
     financialScope: account.financialScope,
     responsibleMemberId: account.responsible?.memberId ?? null,
+    openingBalance: account.openingBalance,
+    openingBalanceDate: account.openingBalanceDate,
   }
 }

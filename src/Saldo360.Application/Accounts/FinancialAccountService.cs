@@ -77,7 +77,8 @@ public sealed class FinancialAccountService(
         Guid familyId, AccountInput input, CancellationToken cancellationToken)
     {
         var details = AccountDetails.TryCreate(
-            input.Name, input.Institution, input.Type, input.FinancialScope, input.ResponsibleMemberId, out var errors);
+            input.Name, input.Institution, input.Type, input.FinancialScope, input.ResponsibleMemberId,
+            input.OpeningBalance, input.OpeningBalanceDate, out var errors);
 
         // Responsável precisa ser vínculo desta família. A mensagem não diz se o Id existe em outra.
         if (input.ResponsibleMemberId is { } memberId && !errors.ContainsKey(ResponsibleField)

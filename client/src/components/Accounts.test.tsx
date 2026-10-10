@@ -16,6 +16,8 @@ const itauPf: FinancialAccount = {
   type: 'Checking',
   financialScope: 'PF',
   responsible: { memberId: 'm-ana', displayName: 'Ana' },
+  openingBalance: null,
+  openingBalanceDate: null,
   isActive: true,
   currency: 'BRL',
   createdAt: '2026-10-10T00:00:00Z',
@@ -35,7 +37,7 @@ const antiga: FinancialAccount = { ...itauPf, id: 'a3', name: 'Conta antiga', is
 type Call = { url: string; init?: RequestInit }
 
 /** API simulada: lista conforme includeInactive, CSRF e gravações. */
-function mockApi() {
+function mockApi(active: FinancialAccount[] = [itauPf, dinheiro]) {
   const calls: Call[] = []
   vi.stubGlobal(
     'fetch',
@@ -45,7 +47,7 @@ function mockApi() {
       if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
       if (init?.method === 'PUT') return Response.json({ ...itauPf, ...JSON.parse(String(init.body)) })
       if (init?.method === 'POST') return Response.json({ ...itauPf, id: 'novo' }, { status: 201 })
-      return Response.json(url.includes('includeInactive=true') ? [itauPf, dinheiro, antiga] : [itauPf, dinheiro])
+      return Response.json(url.includes('includeInactive=true') ? [...active, antiga] : active)
     }),
   )
   return calls
@@ -110,6 +112,8 @@ describe('Accounts', () => {
       type: 'Checking',
       financialScope: 'PF',
       responsibleMemberId: 'm-ana',
+      openingBalance: null,
+      openingBalanceDate: null,
       isActive: false,
     })
   })
@@ -134,6 +138,8 @@ describe('Accounts', () => {
       type: 'Checking',
       financialScope: 'PJ',
       responsibleMemberId: 'm-bruno',
+      openingBalance: null,
+      openingBalanceDate: null,
     })
   })
 
@@ -151,5 +157,145 @@ describe('Accounts', () => {
     const body = JSON.parse(String(calls.find((c) => c.init?.method === 'POST')!.init!.body))
     expect(body.responsibleMemberId).toBeNull()
     expect(body.institution).toBeNull()
+  })
+})
+
+describe('Accounts — saldo inicial', () => {
+  const comSaldo: FinancialAccount = { ...itauPf, openingBalance: 1234.56, openingBalanceDate: '2026-10-01' }
+  const negativo: FinancialAccount = {
+    ...itauPf,
+    id: 'a4',
+    name: 'Itaú Empresas',
+    openingBalance: -1500.75,
+    openingBalanceDate: '2026-09-30',
+  }
+  const zerado: FinancialAccount = { ...dinheiro, openingBalance: 0, openingBalanceDate: '2026-10-01' }
+
+  const saveCall = (calls: Call[]) => calls.find((c) => c.init?.method === 'POST' || c.init?.method === 'PUT')
+
+  async function openNewForm() {
+    const calls = mockApi()
+    render(<Accounts familyId="f1" members={members} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova conta' }))
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Itaú PF' } })
+    return calls
+  }
+
+  it('mostra "Saldo inicial não informado" para conta sem configuração, sem assumir zero', async () => {
+    mockApi([itauPf])
+    render(<Accounts familyId="f1" members={members} />)
+
+    const item = (await screen.findByText('Itaú PF')).closest('li')!
+    expect(within(item).getByText('Saldo inicial não informado')).toBeTruthy()
+    expect(item.textContent).not.toMatch(/R\$/)
+  })
+
+  it('mostra valor e data de referência, inclusive negativo e zero, sem chamar de saldo atual', async () => {
+    mockApi([comSaldo, negativo, zerado])
+    render(<Accounts familyId="f1" members={members} />)
+
+    const item = (await screen.findByText('Itaú PF')).closest('li')!
+    expect(item.textContent).toMatch(/Saldo inicial em 01\/10\/2026:\s*R\$\s1\.234,56/)
+    expect(item.textContent).toContain('no início do dia, antes das movimentações dessa data')
+    expect(item.textContent).toContain('Não é o saldo atual')
+
+    const empresas = screen.getByText('Itaú Empresas').closest('li')!
+    expect(empresas.textContent).toMatch(/Saldo inicial em 30\/09\/2026:\s*-R\$\s1\.500,75/)
+    const cash = screen.getByText('Dinheiro', { selector: '.account__name' }).closest('li')!
+    expect(cash.textContent).toMatch(/R\$\s0,00/)
+    expect(document.body.textContent).not.toMatch(/Saldo atual:/i)
+  })
+
+  it('cria conta com saldo negativo em formato brasileiro e data sem horário', async () => {
+    const calls = await openNewForm()
+
+    fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '-1.500,75' } })
+    fireEvent.change(screen.getByLabelText('Data de referência'), { target: { value: '2026-10-01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(saveCall(calls)).toBeTruthy())
+    const body = JSON.parse(String(saveCall(calls)!.init!.body))
+    expect(body.openingBalance).toBe(-1500.75)
+    expect(body.openingBalanceDate).toBe('2026-10-01')
+    expect(String(saveCall(calls)!.init!.body)).toContain('"openingBalance":-1500.75')
+  })
+
+  it('aceita saldo zero (diferente de não informado)', async () => {
+    const calls = await openNewForm()
+
+    fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '0,00' } })
+    fireEvent.change(screen.getByLabelText('Data de referência'), { target: { value: '2026-10-01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(saveCall(calls)).toBeTruthy())
+    const body = JSON.parse(String(saveCall(calls)!.init!.body))
+    expect([body.openingBalance, body.openingBalanceDate]).toEqual([0, '2026-10-01'])
+  })
+
+  it.each([
+    ['100,00', '', 'Informe a data de referência do saldo inicial.'],
+    ['', '2026-10-01', 'Informe o valor do saldo inicial ou remova a data de referência.'],
+    ['10,005', '2026-10-01', 'O saldo inicial deve ter no máximo duas casas decimais.'],
+    ['abc', '2026-10-01', 'Valor inválido. Use o formato 1.234,56 (negativo: -1.234,56).'],
+  ])('recusa valor "%s" com data "%s" sem enviar nem arredondar', async (amount, date, message) => {
+    const calls = await openNewForm()
+
+    fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: amount } })
+    fireEvent.change(screen.getByLabelText('Data de referência'), { target: { value: date } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    expect(await screen.findByText(message)).toBeTruthy()
+    expect(saveCall(calls)).toBeUndefined()
+  })
+
+  it('edição preenche valor e data, e apagar ambos remove a configuração', async () => {
+    const calls = mockApi([comSaldo])
+    render(<Accounts familyId="f1" members={members} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+
+    expect((screen.getByLabelText('Valor (R$)') as HTMLInputElement).value).toBe('1234,56')
+    expect((screen.getByLabelText('Data de referência') as HTMLInputElement).value).toBe('2026-10-01')
+
+    fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Data de referência'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(saveCall(calls)).toBeTruthy())
+    const body = JSON.parse(String(saveCall(calls)!.init!.body))
+    expect([body.openingBalance, body.openingBalanceDate, body.isActive]).toEqual([null, null, true])
+  })
+
+  it('desativar preserva o saldo inicial configurado', async () => {
+    const calls = mockApi([comSaldo])
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(true)
+    render(<Accounts familyId="f1" members={members} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Desativar' }))
+
+    await waitFor(() => expect(saveCall(calls)).toBeTruthy())
+    const body = JSON.parse(String(saveCall(calls)!.init!.body))
+    expect([body.openingBalance, body.openingBalanceDate, body.isActive]).toEqual([1234.56, '2026-10-01', false])
+  })
+
+  it('exibe o erro devolvido pela API no campo do saldo', async () => {
+    const calls: Call[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ url: String(input), init })
+        if (String(input) === '/auth/csrf') return Response.json({ token: 'csrf' })
+        if (init?.method === 'POST')
+          return Response.json({ errors: { openingBalance: ['Erro do servidor no saldo.'] } }, { status: 400 })
+        return Response.json([])
+      }),
+    )
+    render(<Accounts familyId="f1" members={members} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova conta' }))
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Itaú PF' } })
+    fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '10' } })
+    fireEvent.change(screen.getByLabelText('Data de referência'), { target: { value: '2026-10-01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    expect(await screen.findByText('Erro do servidor no saldo.')).toBeTruthy()
+    expect(screen.getByLabelText('Valor (R$)').getAttribute('aria-invalid')).toBe('true')
   })
 })

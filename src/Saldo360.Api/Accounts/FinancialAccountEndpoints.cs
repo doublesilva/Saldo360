@@ -74,7 +74,8 @@ public static class FinancialAccountEndpoints
         }
 
         var input = new AccountInput(
-            request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleMemberId);
+            request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleMemberId,
+            request?.OpeningBalance, request?.OpeningBalanceDate);
         var result = await accounts.UpdateAsync(familyId, accountId, userId, input, request?.IsActive, cancellationToken);
         return result.Access switch
         {
@@ -85,12 +86,15 @@ public static class FinancialAccountEndpoints
     }
 
     private static AccountInput ToInput(CreateAccountRequest? request) =>
-        new(request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleMemberId);
+        new(request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleMemberId,
+            request?.OpeningBalance, request?.OpeningBalanceDate);
 }
 
 /// <summary>
 /// Cadastro de conta. Família vem da rota e criador da sessão; campos como familyId, createdByUserId,
 /// isActive ou currency são recusados (400). Agência, número e credenciais bancárias não existem aqui.
+/// Saldo inicial opcional: <c>openingBalance</c> (número JSON, até duas casas) e <c>openingBalanceDate</c>
+/// (<c>yyyy-MM-dd</c>, sem horário), juntos ou ambos ausentes/nulos.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreateAccountRequest(
@@ -98,9 +102,14 @@ public sealed record CreateAccountRequest(
     string? Institution,
     string? Type,
     string? FinancialScope,
-    Guid? ResponsibleMemberId);
+    Guid? ResponsibleMemberId,
+    decimal? OpeningBalance,
+    DateOnly? OpeningBalanceDate);
 
-/// <summary>Edição: os mesmos campos cadastrais mais a situação. familyId e createdByUserId são recusados.</summary>
+/// <summary>
+/// Edição (substituição completa): os mesmos campos cadastrais mais a situação. Saldo inicial ausente ou nulo
+/// remove a configuração. familyId e createdByUserId são recusados.
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record UpdateAccountRequest(
     string? Name,
@@ -108,4 +117,6 @@ public sealed record UpdateAccountRequest(
     string? Type,
     string? FinancialScope,
     Guid? ResponsibleMemberId,
+    decimal? OpeningBalance,
+    DateOnly? OpeningBalanceDate,
     bool? IsActive);

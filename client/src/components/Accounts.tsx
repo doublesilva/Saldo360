@@ -13,6 +13,7 @@ import {
   type FinancialScope,
 } from '../api/accounts'
 import type { FamilyMember } from '../api/families'
+import { formatAmountInput, formatBrl, formatDate, parseAmount } from '../money'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -133,6 +134,7 @@ export function Accounts({ familyId, members }: { familyId: string; members: Fam
                   <dd>{account.isActive ? 'Ativa' : 'Inativa'}</dd>
                 </div>
               </dl>
+              <OpeningBalanceSummary account={account} />
               <div className="form__actions">
                 <button type="button" onClick={() => setEditing(account)}>
                   Editar
@@ -153,12 +155,33 @@ export function Accounts({ familyId, members }: { familyId: string; members: Fam
   )
 }
 
+/**
+ * Saldo inicial configurado, nunca apresentado como saldo atual: ainda não há movimentações.
+ * Sem configuração, diz isso explicitamente (não é zero).
+ */
+function OpeningBalanceSummary({ account }: { account: FinancialAccount }) {
+  if (account.openingBalance === null || account.openingBalanceDate === null) {
+    return <p className="account__opening meta">Saldo inicial não informado</p>
+  }
+  return (
+    <p className="account__opening">
+      Saldo inicial em {formatDate(account.openingBalanceDate)}:{' '}
+      <strong className={account.openingBalance < 0 ? 'amount amount--negative' : 'amount'}>
+        {formatBrl(account.openingBalance)}
+      </strong>
+      <span className="meta"> — no início do dia, antes das movimentações dessa data. Não é o saldo atual.</span>
+    </p>
+  )
+}
+
 const emptyInput: AccountInput = {
   name: '',
   institution: null,
   type: 'Checking',
   financialScope: 'PF',
   responsibleMemberId: null,
+  openingBalance: null,
+  openingBalanceDate: null,
 }
 
 function AccountForm({
@@ -175,6 +198,10 @@ function AccountForm({
   onCancel: () => void
 }) {
   const [input, setInput] = useState<AccountInput>(account ? toInput(account) : emptyInput)
+  // Texto digitado no valor (pt-BR); convertido sem arredondar só no envio.
+  const [balanceText, setBalanceText] = useState(
+    account?.openingBalance != null ? formatAmountInput(account.openingBalance) : '',
+  )
   const [errors, setErrors] = useState<Record<string, string[]>>({})
   const [busy, setBusy] = useState(false)
 
@@ -183,15 +210,31 @@ function AccountForm({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (input.name.trim().length === 0) {
-      setErrors({ name: ['Informe o nome da conta.'] })
+    const clientErrors: Record<string, string[]> = {}
+    if (input.name.trim().length === 0) clientErrors.name = ['Informe o nome da conta.']
+
+    // Valor e data juntos ou ambos em branco; mais de duas casas é erro, não arredondamento.
+    const amount = parseAmount(balanceText)
+    const date = input.openingBalanceDate || null
+    if (amount.kind === 'invalid') clientErrors.openingBalance = [amount.message]
+    else if (amount.kind === 'empty' && date)
+      clientErrors.openingBalance = ['Informe o valor do saldo inicial ou remova a data de referência.']
+    else if (amount.kind === 'ok' && !date) clientErrors.openingBalanceDate = ['Informe a data de referência do saldo inicial.']
+
+    if (Object.keys(clientErrors).length > 0) {
+      setErrors(clientErrors)
       return
     }
 
     setBusy(true)
     setErrors({})
     try {
-      const payload = { ...input, institution: input.institution?.trim() || null }
+      const payload: AccountInput = {
+        ...input,
+        institution: input.institution?.trim() || null,
+        openingBalance: amount.kind === 'ok' ? amount.value : null,
+        openingBalanceDate: date,
+      }
       const result = account
         ? await updateAccount(familyId, account.id, payload, account.isActive)
         : await createAccount(familyId, payload)
@@ -276,6 +319,39 @@ function AccountForm({
         ))}
       </select>
       {fieldError('responsibleMemberId')}
+
+      <fieldset className="opening-balance" aria-describedby="account-opening-help">
+        <legend>Saldo inicial (opcional)</legend>
+        <p id="account-opening-help" className="meta">
+          Saldo da conta no <strong>início</strong> da data de referência, antes de qualquer movimentação desse dia.
+          Pode ser negativo (por exemplo, cheque especial já utilizado) — não é o limite disponível nem o saldo atual.
+          Para não informar, deixe valor e data em branco.
+        </p>
+
+        <label htmlFor="account-opening-balance">Valor (R$)</label>
+        <input
+          id="account-opening-balance"
+          value={balanceText}
+          onChange={(event) => setBalanceText(event.target.value)}
+          inputMode="decimal"
+          placeholder="Ex.: 1.234,56 ou -250,00"
+          autoComplete="off"
+          aria-invalid={Boolean(errors.openingBalance)}
+          aria-describedby={errors.openingBalance ? 'account-openingBalance-error' : undefined}
+        />
+        {fieldError('openingBalance')}
+
+        <label htmlFor="account-opening-balance-date">Data de referência</label>
+        <input
+          id="account-opening-balance-date"
+          type="date"
+          value={input.openingBalanceDate ?? ''}
+          onChange={(event) => set('openingBalanceDate', event.target.value || null)}
+          aria-invalid={Boolean(errors.openingBalanceDate)}
+          aria-describedby={errors.openingBalanceDate ? 'account-openingBalanceDate-error' : undefined}
+        />
+        {fieldError('openingBalanceDate')}
+      </fieldset>
 
       <p className="meta">Não informe agência, número de conta nem senhas: o Saldo360 não guarda esses dados.</p>
       {fieldError('form')}

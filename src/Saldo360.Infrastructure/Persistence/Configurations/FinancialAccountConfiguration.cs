@@ -18,6 +18,15 @@ internal sealed class FinancialAccountConfiguration : IEntityTypeConfiguration<F
                 $"scope IN ({string.Join(", ", FinancialScopes.Names.Select(name => $"'{name}'"))})");
             table.HasCheckConstraint("ck_financial_accounts_currency", $"currency = '{FinancialAccount.DefaultCurrency}'");
             table.HasCheckConstraint("ck_financial_accounts_name_not_blank", "btrim(name) <> ''");
+
+            // Saldo inicial: valor e data juntos ou ambos nulos. Coluna numeric sem escala fixa de propósito:
+            // numeric(p,2) arredondaria em silêncio 10.005 → 10.01; aqui o banco recusa mais de 2 casas.
+            table.HasCheckConstraint("ck_financial_accounts_opening_balance_pair",
+                "(opening_balance IS NULL) = (opening_balance_date IS NULL)");
+            table.HasCheckConstraint("ck_financial_accounts_opening_balance_scale",
+                $"scale(opening_balance) <= {OpeningBalance.MaxScale}");
+            table.HasCheckConstraint("ck_financial_accounts_opening_balance_range",
+                $"abs(opening_balance) < {OpeningBalance.Limit}");
         });
 
         builder.HasKey(account => account.Id);
@@ -26,6 +35,8 @@ internal sealed class FinancialAccountConfiguration : IEntityTypeConfiguration<F
         builder.Property(account => account.Institution).HasMaxLength(FinancialAccount.InstitutionMaxLength);
         builder.Property(account => account.Type).HasConversion<string>().HasMaxLength(20);
         builder.Property(account => account.Scope).HasConversion<string>().HasMaxLength(2);
+        builder.Property(account => account.OpeningBalance).HasColumnType("numeric");
+        builder.Property(account => account.OpeningBalanceDate).HasColumnType("date");
         builder.Property(account => account.Currency).HasMaxLength(3).IsFixedLength();
         builder.HasIndex(account => new { account.FamilyId, account.IsActive });
 

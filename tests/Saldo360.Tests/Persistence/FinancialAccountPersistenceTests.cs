@@ -1,4 +1,7 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Families;
@@ -13,6 +16,8 @@ namespace Saldo360.Tests.Persistence;
 [Collection(PostgresCollection.Name)]
 public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
+    private const string PreviousMigration = "20261010161724_AddFinancialAccounts";
+
     private string _connectionString = null!;
     private Guid _userA;
     private Family _familyA = null!;
@@ -146,11 +151,121 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Equal(_userA, stored.CreatedByUserId);
     }
 
+    [Fact]
+    public async Task ExistingAccount_StaysWithoutOpeningBalance_AfterMigration()
+    {
+        // Volta o banco ao esquema anterior, grava uma conta "antiga" e reaplica a migration do saldo inicial.
+        var accountId = Guid.CreateVersion7();
+        await using (var db = Db())
+        {
+            await db.GetService<IMigrator>().MigrateAsync(PreviousMigration);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO financial_accounts (id, family_id, name, institution, type, scope, responsible_member_id, is_active, currency, created_at, created_by_user_id)
+                VALUES ({accountId}, {_familyA.Id}, 'Itaú PF', 'Itaú', 'Checking', 'PF', {MemberOfA}, TRUE, 'BRL', now(), {_userA})
+                """);
+            await db.Database.MigrateAsync();
+        }
+
+        await using var verify = Db();
+        var stored = await verify.FinancialAccounts.SingleAsync(a => a.Id == accountId);
+        Assert.Equal((null, null), (stored.OpeningBalance, stored.OpeningBalanceDate));
+        Assert.Equal(("Itaú PF", "Itaú", AccountType.Checking, FinancialScope.PF, MemberOfA, true),
+            (stored.Name, stored.Institution, stored.Type, stored.Scope, stored.ResponsibleMemberId, stored.IsActive));
+    }
+
+    [Fact]
+    public async Task OpeningBalance_RoundTripsAsNumericAndDate()
+    {
+        Guid id;
+        await using (var db = Db())
+        {
+            var account = Account("Itaú PF", MemberOfA, openingBalance: -1234.56m, openingBalanceDate: new DateOnly(2026, 10, 1));
+            db.FinancialAccounts.Add(account);
+            await db.SaveChangesAsync();
+            id = account.Id;
+        }
+
+        await using var verify = Db();
+        var stored = await verify.FinancialAccounts.SingleAsync(a => a.Id == id);
+        Assert.Equal((-1234.56m, new DateOnly(2026, 10, 1)), (stored.OpeningBalance, stored.OpeningBalanceDate));
+        var types = await verify.Database.SqlQueryRaw<string>("""
+            SELECT string_agg(data_type, ',' ORDER BY column_name) AS "Value" FROM information_schema.columns
+            WHERE table_name = 'financial_accounts' AND column_name IN ('opening_balance', 'opening_balance_date')
+            """).SingleAsync();
+        Assert.Equal("numeric,date", types);
+    }
+
+    [Theory]
+    [InlineData("100.00", null)]
+    [InlineData(null, "2026-10-01")]
+    public async Task IncompleteOpeningBalance_ViolatesPairCheck(string? amount, string? date)
+    {
+        await using (var db = Db())
+        {
+            db.FinancialAccounts.Add(Account("Itaú PF", MemberOfA));
+            await db.SaveChangesAsync();
+        }
+
+        await using var update = Db();
+        var exception = await Assert.ThrowsAsync<PostgresException>(() => update.Database.ExecuteSqlRawAsync(
+            "UPDATE financial_accounts SET opening_balance = @amount::numeric, opening_balance_date = @date::date",
+            new NpgsqlParameter("amount", (object?)amount ?? DBNull.Value) { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text },
+            new NpgsqlParameter("date", (object?)date ?? DBNull.Value) { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text }));
+        Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
+        Assert.Equal("ck_financial_accounts_opening_balance_pair", exception.ConstraintName);
+    }
+
+    [Theory]
+    [InlineData("10.005", "ck_financial_accounts_opening_balance_scale")]
+    [InlineData("1.500", "ck_financial_accounts_opening_balance_scale")]
+    [InlineData("10000000000000", "ck_financial_accounts_opening_balance_range")]
+    [InlineData("-10000000000000", "ck_financial_accounts_opening_balance_range")]
+    public async Task InvalidOpeningBalance_ViolatesCheck_InsteadOfRounding(string amount, string constraint)
+    {
+        await using (var db = Db())
+        {
+            db.FinancialAccounts.Add(Account("Itaú PF", MemberOfA));
+            await db.SaveChangesAsync();
+        }
+
+        await using var update = Db();
+        var exception = await Assert.ThrowsAsync<PostgresException>(() => update.Database.ExecuteSqlRawAsync(
+            "UPDATE financial_accounts SET opening_balance = @amount::numeric, opening_balance_date = DATE '2026-10-01'",
+            new NpgsqlParameter("amount", amount) { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text }));
+        Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
+        Assert.Equal(constraint, exception.ConstraintName);
+        Assert.Null((await update.FinancialAccounts.SingleAsync()).OpeningBalance);
+    }
+
+    [Theory]
+    [InlineData("1234.5", null, "openingBalanceDate")]
+    [InlineData(null, "2026-10-01", "openingBalance")]
+    [InlineData("0.001", "2026-10-01", "openingBalance")]
+    [InlineData("1.500", "2026-10-01", "openingBalance")]
+    public void Domain_RejectsIncompleteOrImpreciseOpeningBalance(string? amount, string? date, string field)
+    {
+        var details = AccountDetails.TryCreate(
+            "Conta", null, nameof(AccountType.Cash), nameof(FinancialScope.PF), null,
+            amount is null ? null : decimal.Parse(amount, CultureInfo.InvariantCulture),
+            date is null ? null : DateOnly.ParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture),
+            out var errors);
+
+        Assert.Null(details);
+        Assert.Equal([field], errors.Keys);
+    }
+
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 
-    private FinancialAccount Account(string name, Guid? responsibleMemberId, FinancialScope scope = FinancialScope.PF) =>
-        FinancialAccount.Create(_familyA.Id, Details(name, responsibleMemberId, scope), _userA, DateTimeOffset.UtcNow);
+    private FinancialAccount Account(
+        string name, Guid? responsibleMemberId, FinancialScope scope = FinancialScope.PF,
+        decimal? openingBalance = null, DateOnly? openingBalanceDate = null) =>
+        FinancialAccount.Create(
+            _familyA.Id, Details(name, responsibleMemberId, scope, openingBalance, openingBalanceDate), _userA, DateTimeOffset.UtcNow);
 
-    private static AccountDetails Details(string name, Guid? responsibleMemberId, FinancialScope scope = FinancialScope.PF) =>
-        AccountDetails.TryCreate(name, "Itaú", nameof(AccountType.Checking), scope.ToString(), responsibleMemberId, out _)!;
+    private static AccountDetails Details(
+        string name, Guid? responsibleMemberId, FinancialScope scope = FinancialScope.PF,
+        decimal? openingBalance = null, DateOnly? openingBalanceDate = null) =>
+        AccountDetails.TryCreate(
+            name, "Itaú", nameof(AccountType.Checking), scope.ToString(), responsibleMemberId,
+            openingBalance, openingBalanceDate, out _)!;
 }
