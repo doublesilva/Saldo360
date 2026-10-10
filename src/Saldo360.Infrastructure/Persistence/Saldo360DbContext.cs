@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Families;
 using Saldo360.Domain.Users;
 using Saldo360.Infrastructure.Authentication;
@@ -21,6 +22,8 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FamilyMember> FamilyMembers => Set<FamilyMember>();
 
     public DbSet<FamilyInvitation> FamilyInvitations => Set<FamilyInvitation>();
+
+    public DbSet<FinancialAccount> FinancialAccounts => Set<FinancialAccount>();
 
     /// <summary>Configuração do provedor usada pela API, pelas ferramentas de migration e pelos testes.</summary>
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder builder, string connectionString) =>

@@ -60,12 +60,34 @@ public abstract class PostgresApiTestBase : ApiTestBase
     protected Task<HttpResponseMessage> PostFamilyAsync(string session, object body) =>
         SendWithCsrfAsync(HttpMethod.Post, "/api/families", session, body);
 
+    /// <summary>Cria uma família para a sessão e devolve seus dados.</summary>
+    protected async Task<FamilyDto> CreateFamilyAsync(string session, string name = "Família Silva")
+    {
+        var response = await PostFamilyAsync(session, new { name });
+        Assert.Equal(System.Net.HttpStatusCode.Created, response.StatusCode);
+        return await ReadAsync<FamilyDto>(response);
+    }
+
+    /// <summary>O Owner convida e <paramref name="guestSession"/> aceita; devolve a família vista pelo convidado.</summary>
+    protected async Task<FamilyDto> JoinByInvitationAsync(string ownerSession, Guid familyId, string guestSession)
+    {
+        var invitation = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/invitations", ownerSession);
+        Assert.Equal(System.Net.HttpStatusCode.Created, invitation.StatusCode);
+        using var created = JsonDocument.Parse(await invitation.Content.ReadAsStringAsync());
+        var token = created.RootElement.GetProperty("token").GetString();
+
+        var accepted = await SendWithCsrfAsync(HttpMethod.Post, "/api/family-invitations/accept", guestSession, new { token });
+        Assert.Equal(System.Net.HttpStatusCode.OK, accepted.StatusCode);
+        using var body = JsonDocument.Parse(await accepted.Content.ReadAsStringAsync());
+        return body.RootElement.GetProperty("family").Deserialize<FamilyDto>(Json)!;
+    }
+
     protected static async Task<T> ReadAsync<T>(HttpResponseMessage response) =>
         (await response.Content.ReadFromJsonAsync<T>(Json))!;
 
     protected sealed record FamilyDto(Guid Id, string Name, DateTimeOffset CreatedAt, string MyRole, List<MemberDto> Members);
 
-    protected sealed record MemberDto(string DisplayName, string Role, DateTimeOffset JoinedAt, bool IsCurrentUser);
+    protected sealed record MemberDto(Guid MemberId, string DisplayName, string Role, DateTimeOffset JoinedAt, bool IsCurrentUser);
 
     protected sealed record FamilySummaryDto(Guid Id, string Name, DateTimeOffset CreatedAt, string MyRole, int MemberCount);
 }

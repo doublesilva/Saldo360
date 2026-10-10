@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using System.Text.Json.Serialization;
+using Saldo360.Api.Accounts;
 using Saldo360.Api.Authentication;
 using Saldo360.Api.Families;
 using Saldo360.Api.Health;
@@ -38,5 +39,6 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 app.MapAuthEndpoints();
 app.MapFamilyEndpoints();
 app.MapFamilyInvitationEndpoints();
+app.MapFinancialAccountEndpoints();
 
 app.Run();

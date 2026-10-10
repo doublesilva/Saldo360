@@ -131,6 +131,10 @@ Acesse **<http://localhost:5173>** (não a porta da API): a página mostra **Ent
 | POST | `/api/families/{id}/invitations` | Owner + CSRF | Gera convite de uso único, válido por 48 h. `201 { id, token, expiresAt }`: o token só aparece nesta resposta e o banco guarda apenas o SHA-256. `403` para Member; `404` para família inexistente ou de outros. |
 | DELETE | `/api/families/{id}/invitations/{invitationId}` | Owner + CSRF | Revoga convite pendente. `204` (idempotente); `409` se já foi usado ou expirou; `403` para Member; `404` se não existir nessa família. |
 | POST | `/api/family-invitations/accept` | sessão + CSRF | Corpo `{ "token" }`. Entra como `Member` e devolve `{ alreadyMember, family }`. Quem já é membro mantém o papel e não consome o convite. Token inválido, expirado, revogado ou usado: `404` com mensagem genérica. |
+| POST | `/api/families/{id}/accounts` | membro + CSRF | Corpo `{ name, institution?, type, financialScope, responsibleMemberId? }`. `type`: `Checking`, `Savings` ou `Cash`; `financialScope`: `PF` ou `PJ`. Responsável nulo significa conta conjunta. Moeda BRL. Criador e família vêm do servidor. `201`; `400` com `errors.<campo>` (inclusive "Responsável inválido." para vínculo de outra família) ou com campos extras. |
+| GET | `/api/families/{id}/accounts[?includeInactive=true]` | membro | Contas da família (só as ativas, por padrão): `[{ id, name, institution, type, financialScope, responsible: { memberId, displayName } \| null, isActive, currency, createdAt }]`. |
+| GET | `/api/families/{id}/accounts/{accountId}` | membro | Uma conta; `404` se não existir nessa família ou se o usuário não for membro. |
+| PUT | `/api/families/{id}/accounts/{accountId}` | membro + CSRF | Mesmos campos do POST mais `isActive` (obrigatório): edita e ativa/desativa. Não há exclusão física. |
 
 `/health` traz apenas nome, status e duração dos checks — mensagens de erro e detalhes de conexão não são expostos:
 
@@ -156,9 +160,10 @@ Os testes não dependem do provedor: usam um provedor OIDC simulado (`FakeOidcPr
 - logs de falha sem `code`, tokens, segredos ou texto do provedor;
 - validação TLS com CA própria (intermediária, nome do servidor, `serverAuth`);
 - núcleo familiar: criação com um único `Owner`, validação do nome, CSRF, campos de identidade recusados, isolamento entre famílias (404), mesmo `subject` em emissores diferentes, logins repetidos sem duplicar usuário, criação concorrente do usuário, unicidades e check de papel no banco e atomicidade da criação.
+- contas financeiras: dois membros veem e editam as mesmas contas, não participante recebe 404 (inclusive pela rota da própria família), responsável de outra família recusado pela API (400) e pela FK composta no PostgreSQL, checks de tipo, escopo, moeda e nome, desativação que preserva o registro, reativação, CSRF e campos do servidor recusados;
 - convites: só Owner cria ou revoga (403 para Member, 404 para não participante), CSRF, token só como hash, estados expirado, revogado e usado com a mesma resposta genérica, aceitações simultâneas gerando um único vínculo, corrida entre revogação e aceite, membro existente sem consumir o convite, falha no vínculo sem consumir o convite e família com mais de duas pessoas.
 
-O frontend tem testes com Vitest (`npm run test:client`, incluídos em `npm test`): captura do token do fragmento, continuidade após o login (o token sobrevive no `sessionStorage` e o retorno é para `/convite`), aceite só com clique explícito e token apenas no corpo, e limpeza após sucesso ou erro definitivo.
+O frontend tem testes com Vitest (`npm run test:client`, incluídos em `npm test`): contas (lista sem saldo, "Conjunta", inativas sob demanda, confirmação ao desativar e corpo enviado), captura do token do fragmento, continuidade após o login (o token sobrevive no `sessionStorage` e o retorno é para `/convite`), aceite só com clique explícito e token apenas no corpo, e limpeza após sucesso ou erro definitivo.
 
 **Login real via curl** (com API e frontend rodando). O script pede usuário e senha sem eco:
 

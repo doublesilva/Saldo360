@@ -62,6 +62,7 @@ internal sealed class FamilyRepository(Saldo360DbContext db) : IFamilyRepository
             .Where(member => member.FamilyId == familyId)
             .Join(db.Users, member => member.UserId, user => user.Id, (member, user) => new
             {
+                MemberId = member.Id,
                 member.UserId,
                 member.Role,
                 member.JoinedAt,
@@ -77,6 +78,7 @@ internal sealed class FamilyRepository(Saldo360DbContext db) : IFamilyRepository
             members.Single(member => member.UserId == userId).Role,
             members
                 .Select(member => new FamilyMemberInfo(
+                    member.MemberId,
                     member.DisplayName ?? UnnamedMember,
                     member.Role,
                     member.JoinedAt,

@@ -13,6 +13,8 @@ export interface FamilySummary {
 }
 
 export interface FamilyMember {
+  /** Id do vínculo familiar (não é identidade de autenticação). */
+  memberId: string
   displayName: string
   role: FamilyRole
   joinedAt: string

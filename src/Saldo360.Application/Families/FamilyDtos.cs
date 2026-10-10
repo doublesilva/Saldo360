@@ -14,9 +14,10 @@ public sealed record FamilyDetails(
     IReadOnlyList<FamilyMemberInfo> Members);
 
 /// <summary>
-/// Membro como exibido aos demais. Não inclui Id interno, emissor, subject nem e-mail.
+/// Membro como exibido aos demais. <paramref name="MemberId"/> é o Id do vínculo familiar (usado, por exemplo,
+/// para escolher o responsável de uma conta); não inclui Id interno do usuário, emissor, subject nem e-mail.
 /// </summary>
-public sealed record FamilyMemberInfo(string DisplayName, FamilyRole Role, DateTimeOffset JoinedAt, bool IsCurrentUser);
+public sealed record FamilyMemberInfo(Guid MemberId, string DisplayName, FamilyRole Role, DateTimeOffset JoinedAt, bool IsCurrentUser);
 
 /// <summary>Resultado da criação: a família criada ou os erros de validação por campo.</summary>
 public sealed record CreateFamilyResult(FamilyDetails? Family, IDictionary<string, string[]>? Errors)

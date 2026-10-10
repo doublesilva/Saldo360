@@ -19,8 +19,8 @@ const family: FamilyDetails = {
   createdAt: '2026-10-10T00:00:00Z',
   myRole: 'Member',
   members: [
-    { displayName: 'Ana', role: 'Owner', joinedAt: '2026-10-10T00:00:00Z', isCurrentUser: false },
-    { displayName: 'Bruno', role: 'Member', joinedAt: '2026-10-10T01:00:00Z', isCurrentUser: true },
+    { memberId: 'm1', displayName: 'Ana', role: 'Owner', joinedAt: '2026-10-10T00:00:00Z', isCurrentUser: false },
+    { memberId: 'm2', displayName: 'Bruno', role: 'Member', joinedAt: '2026-10-10T01:00:00Z', isCurrentUser: true },
   ],
 }
 

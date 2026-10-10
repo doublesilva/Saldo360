@@ -45,6 +45,86 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("data_protection_keys", (string)null);
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Accounts.FinancialAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<string>("Institution")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("institution");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid?>("ResponsibleMemberId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("responsible_member_id");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("scope");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_accounts");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_accounts_created_by_user_id");
+
+                    b.HasIndex("FamilyId", "IsActive")
+                        .HasDatabaseName("ix_financial_accounts_family_id_is_active");
+
+                    b.HasIndex("FamilyId", "ResponsibleMemberId")
+                        .HasDatabaseName("ix_financial_accounts_family_id_responsible_member_id");
+
+                    b.ToTable("financial_accounts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_accounts_currency", "currency = 'BRL'");
+
+                            t.HasCheckConstraint("ck_financial_accounts_name_not_blank", "btrim(name) <> ''");
+
+                            t.HasCheckConstraint("ck_financial_accounts_scope", "scope IN ('PF', 'PJ')");
+
+                            t.HasCheckConstraint("ck_financial_accounts_type", "type IN ('Checking', 'Savings', 'Cash')");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Families.Family", b =>
                 {
                     b.Property<Guid>("Id")
@@ -161,6 +241,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_family_members");
 
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_family_members_family_id_id");
+
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_family_members_user_id");
 
@@ -252,6 +335,30 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_user_sessions_issuer_subject");
 
                     b.ToTable("user_sessions", (string)null);
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Accounts.FinancialAccount", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_accounts_application_users_created_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_accounts_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Families.FamilyMember", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "ResponsibleMemberId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_accounts_family_members_responsible");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Families.FamilyInvitation", b =>

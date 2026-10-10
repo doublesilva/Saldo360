@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Saldo360.Application.Accounts;
 using Saldo360.Application.Families;
 using Saldo360.Application.Users;
+using Saldo360.Infrastructure.Accounts;
 using Saldo360.Infrastructure.Authentication;
 using Saldo360.Infrastructure.Families;
 using Saldo360.Infrastructure.Persistence;
@@ -43,6 +45,7 @@ public static class DependencyInjection
         services.AddScoped<IUserDirectory, UserDirectory>();
         services.AddScoped<IFamilyRepository, FamilyRepository>();
         services.AddScoped<IFamilyInvitationRepository, FamilyInvitationRepository>();
+        services.AddScoped<IFinancialAccountRepository, FinancialAccountRepository>();
 
         return services;
     }

@@ -12,7 +12,10 @@ namespace Saldo360.Tests.Support;
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine").Build();
+    // Cada teste cria um banco (e um pool) próprio: mais conexões que o padrão de 100.
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine")
+        .WithCommand("-c", "max_connections=300")
+        .Build();
 
     public Task InitializeAsync() => _container.StartAsync();
 
@@ -28,6 +31,9 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// <summary>Cria o banco da connection string e aplica todas as migrations.</summary>
     public async Task CreateDatabaseAsync(string connectionString)
     {
+        // Os testes da coleção rodam em série: fecha as conexões ociosas dos bancos anteriores.
+        NpgsqlConnection.ClearAllPools();
+
         var database = new NpgsqlConnectionStringBuilder(connectionString).Database!;
         await using (var admin = new NpgsqlConnection(_container.GetConnectionString()))
         {
