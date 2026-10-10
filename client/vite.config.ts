@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
 
@@ -13,6 +14,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    test: {
+      environment: 'jsdom',
+      restoreMocks: true,
+    },
     server: {
       // IPv4 explícito: com "localhost" o Node escuta só em ::1, e clientes que resolvem
       // localhost para 127.0.0.1 (ex.: curl do Git Bash) não conectam.

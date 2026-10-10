@@ -24,7 +24,7 @@ export function UserMenu({ session }: { session: Session }) {
   return (
     <div className="user-menu">
       {state.kind === 'error' && <span className="user-menu__error">{state.message}</span>}
-      <button type="button" className="button--primary" onClick={login}>
+      <button type="button" className="button--primary" onClick={() => login()}>
         Entrar
       </button>
     </div>

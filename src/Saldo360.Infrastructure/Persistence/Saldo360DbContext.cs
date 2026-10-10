@@ -20,6 +20,8 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
 
     public DbSet<FamilyMember> FamilyMembers => Set<FamilyMember>();
 
+    public DbSet<FamilyInvitation> FamilyInvitations => Set<FamilyInvitation>();
+
     /// <summary>Configuração do provedor usada pela API, pelas ferramentas de migration e pelos testes.</summary>
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder builder, string connectionString) =>
         builder.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();

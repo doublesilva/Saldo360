@@ -17,6 +17,10 @@ public sealed class FamilyMember : Entity
 
     public DateTimeOffset JoinedAt { get; private init; }
 
+    /// <summary>Vínculo de quem entra por convite: o papel é sempre <see cref="FamilyRole.Member"/>.</summary>
+    public static FamilyMember JoinAsMember(Guid familyId, Guid userId, DateTimeOffset now) =>
+        Create(familyId, userId, FamilyRole.Member, now);
+
     internal static FamilyMember Create(Guid familyId, Guid userId, FamilyRole role, DateTimeOffset now) => new()
     {
         FamilyId = familyId,

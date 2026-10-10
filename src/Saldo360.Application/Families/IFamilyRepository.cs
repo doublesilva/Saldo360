@@ -12,4 +12,7 @@ public interface IFamilyRepository
 
     /// <summary>A família com membros, ou null se ela não existir ou o usuário não for membro.</summary>
     Task<FamilyDetails?> FindForMemberAsync(Guid familyId, Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>Papel do usuário na família, ou null se ela não existir ou ele não for membro.</summary>
+    Task<FamilyRole?> GetMemberRoleAsync(Guid familyId, Guid userId, CancellationToken cancellationToken);
 }

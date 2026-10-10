@@ -37,5 +37,6 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 
 app.MapAuthEndpoints();
 app.MapFamilyEndpoints();
+app.MapFamilyInvitationEndpoints();
 
 app.Run();

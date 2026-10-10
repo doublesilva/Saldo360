@@ -111,7 +111,7 @@ O navegador também precisa confiar nessa CA para abrir `https://auth.home.doubl
 Para trabalhar sem o servidor, existe um Authelia local em `https://auth.saldo360.localhost:9091`, no profile `authelia-local` do Compose:
 
 ```bash
-npm run setup:authelia-local      # uma vez: CA, segredos e usuário "familia"
+npm run setup:authelia-local      # uma vez: CA, segredos e usuários "familia" e "convidado"
 npm run dev:authelia-local        # Postgres + Authelia local, migrations, API (profile http-authelia-local) e frontend
 npm run smoke:login:authelia-local
 ```

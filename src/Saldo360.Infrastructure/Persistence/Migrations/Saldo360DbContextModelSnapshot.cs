@@ -67,6 +67,73 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("families", (string)null);
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Families.FamilyInvitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<Guid?>("ConsumedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("consumed_by_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.HasKey("Id")
+                        .HasName("pk_family_invitations");
+
+                    b.HasIndex("ConsumedByUserId")
+                        .HasDatabaseName("ix_family_invitations_consumed_by_user_id");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_family_invitations_created_by_user_id");
+
+                    b.HasIndex("FamilyId")
+                        .HasDatabaseName("ix_family_invitations_family_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_family_invitations_token_hash");
+
+                    b.ToTable("family_invitations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_family_invitations_consumed_by", "(consumed_at IS NULL) = (consumed_by_user_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_family_invitations_expiration", "expires_at > created_at");
+
+                            t.HasCheckConstraint("ck_family_invitations_single_outcome", "consumed_at IS NULL OR revoked_at IS NULL");
+
+                            t.HasCheckConstraint("ck_family_invitations_token_hash_size", "octet_length(token_hash) = 32");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Families.FamilyMember", b =>
                 {
                     b.Property<Guid>("Id")
@@ -185,6 +252,29 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_user_sessions_issuer_subject");
 
                     b.ToTable("user_sessions", (string)null);
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Families.FamilyInvitation", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ConsumedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_family_invitations_application_users_consumed_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_family_invitations_application_users_created_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_family_invitations_families_family_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Families.FamilyMember", b =>

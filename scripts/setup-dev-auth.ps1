@@ -8,7 +8,7 @@
       - CA e certificado TLS para https://auth.saldo360.localhost:9091
       - segredos de sessão, armazenamento e HMAC do OIDC
       - chave RSA de assinatura (JWKS) e o digest do client secret
-      - um usuário de teste com senha aleatória (salva em secrets/dev_user_password.txt)
+      - dois usuários de teste com senha aleatória (secrets/dev_user_password.txt e dev_guest_password.txt)
     O client secret em texto puro vai para secrets/oidc_client_secret.txt, lido pelo launch profile
     "http-authelia-local" da API. O user-secrets (segredo do Authelia do servidor) não é alterado.
     Nada secreto é impresso no console.
@@ -21,6 +21,7 @@
 #>
 param(
     [string] $Username = 'familia',
+    [string] $GuestUsername = 'convidado',
     [switch] $Force
 )
 
@@ -83,9 +84,11 @@ Invoke-Authelia @('crypto', 'pair', 'rsa', 'generate', '--bits', '2048', '--dire
 $client = New-HashedRandomSecret 'pbkdf2' 72
 Write-Secret 'oidc_client_secret.digest' $client.Digest
 
-Write-Host "> Usuário de teste '$Username'"
+Write-Host "> Usuários de teste '$Username' e '$GuestUsername' (este para testar convites)"
 $user = New-HashedRandomSecret 'argon2' 24
+$guest = New-HashedRandomSecret 'argon2' 24
 Write-Secret 'dev_user_password.txt' $user.Plain
+Write-Secret 'dev_guest_password.txt' $guest.Plain
 @"
 users:
   ${Username}:
@@ -93,6 +96,12 @@ users:
     displayname: 'Família Teste'
     password: '$($user.Digest)'
     email: '${Username}@saldo360.localhost'
+    groups: []
+  ${GuestUsername}:
+    disabled: false
+    displayname: 'Pessoa Convidada'
+    password: '$($guest.Digest)'
+    email: '${GuestUsername}@saldo360.localhost'
     groups: []
 "@ | Set-Content -NoNewline (Join-Path $dataDir 'users_database.yml')
 
@@ -103,3 +112,4 @@ Write-Host ''
 Write-Host 'Pronto. Suba o provedor local com: npm run docker:up:authelia-local'
 Write-Host 'e rode a API com: npm run api:authelia-local'
 Write-Host "Senha do usuário '$Username': dev/authelia/secrets/dev_user_password.txt"
+Write-Host "Senha do usuário '$GuestUsername': dev/authelia/secrets/dev_guest_password.txt"

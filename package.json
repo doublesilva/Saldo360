@@ -22,7 +22,8 @@
     "dev:authelia-local": "npm run docker:up:authelia-local && npm run db:migrate && npm run start:authelia-local",
     "build": "dotnet build Saldo360.slnx && npm --prefix client run build",
     "lint": "npm --prefix client run lint",
-    "test": "dotnet test Saldo360.slnx",
+    "test": "dotnet test Saldo360.slnx && npm run test:client",
+    "test:client": "npm --prefix client test",
     "check": "npm run build && npm test && npm run lint",
     "smoke:login": "bash scripts/smoke-login.sh",
     "smoke:login:authelia-local": "bash scripts/smoke-login.sh --authelia-local"

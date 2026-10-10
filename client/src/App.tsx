@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { fetchHealth, type HealthResponse } from './api/health'
+import type { FamilyDetails } from './api/families'
 import { Families } from './components/Families'
+import { InvitePage } from './components/InvitePage'
 import { UserMenu } from './components/UserMenu'
+import { INVITE_PATH } from './invite'
 import { useSession } from './session'
 import './App.css'
 
@@ -23,6 +26,9 @@ function toErrorState(error: unknown): State {
 
 function App() {
   const session = useSession()
+  // Página do convite (/convite) ou página inicial; sem biblioteca de rotas.
+  const [onInvitePage, setOnInvitePage] = useState(() => window.location.pathname === INVITE_PATH)
+  const [openFamily, setOpenFamily] = useState<FamilyDetails | null>(null)
   const [state, setState] = useState<State>({ kind: 'loading' })
   // Incrementado pelo botão para disparar uma nova verificação.
   const [attempt, setAttempt] = useState(0)
@@ -36,6 +42,12 @@ function App() {
       })
     return () => controller.abort()
   }, [attempt])
+
+  const handleInvitationAccepted = (family: FamilyDetails) => {
+    window.history.replaceState(null, '', '/')
+    setOpenFamily(family)
+    setOnInvitePage(false)
+  }
 
   const handleRetry = () => {
     setState({ kind: 'loading' })
@@ -64,7 +76,13 @@ function App() {
         </p>
       )}
 
-      {session.state.kind === 'authenticated' && <Families key={`${session.state.user.issuer}|${session.state.user.subject}`} />}
+      {onInvitePage ? (
+        <InvitePage session={session} onAccepted={handleInvitationAccepted} />
+      ) : (
+        session.state.kind === 'authenticated' && (
+          <Families key={`${session.state.user.issuer}|${session.state.user.subject}`} initialFamily={openFamily} />
+        )
+      )}
 
       <section className="card" aria-live="polite">
         <h2>Conexão com a API</h2>

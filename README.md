@@ -128,6 +128,9 @@ Acesse **<http://localhost:5173>** (não a porta da API): a página mostra **Ent
 | POST | `/api/families` | sessão + CSRF | Corpo `{ "name" }` (obrigatório, até 100 caracteres). Cria o núcleo com o usuário da sessão como único `Owner`. `201`; `400` com `errors.name`, campos extras ou sem CSRF. |
 | GET | `/api/families` | sessão | Núcleos dos quais o usuário é membro: `[{ id, name, createdAt, myRole, memberCount }]`. |
 | GET | `/api/families/{id}` | sessão | `{ id, name, createdAt, myRole, members: [{ displayName, role, joinedAt, isCurrentUser }] }`; `404` se não existir ou se o usuário não for membro. |
+| POST | `/api/families/{id}/invitations` | Owner + CSRF | Gera convite de uso único, válido por 48 h. `201 { id, token, expiresAt }`: o token só aparece nesta resposta e o banco guarda apenas o SHA-256. `403` para Member; `404` para família inexistente ou de outros. |
+| DELETE | `/api/families/{id}/invitations/{invitationId}` | Owner + CSRF | Revoga convite pendente. `204` (idempotente); `409` se já foi usado ou expirou; `403` para Member; `404` se não existir nessa família. |
+| POST | `/api/family-invitations/accept` | sessão + CSRF | Corpo `{ "token" }`. Entra como `Member` e devolve `{ alreadyMember, family }`. Quem já é membro mantém o papel e não consome o convite. Token inválido, expirado, revogado ou usado: `404` com mensagem genérica. |
 
 `/health` traz apenas nome, status e duração dos checks — mensagens de erro e detalhes de conexão não são expostos:
 
@@ -153,6 +156,9 @@ Os testes não dependem do provedor: usam um provedor OIDC simulado (`FakeOidcPr
 - logs de falha sem `code`, tokens, segredos ou texto do provedor;
 - validação TLS com CA própria (intermediária, nome do servidor, `serverAuth`);
 - núcleo familiar: criação com um único `Owner`, validação do nome, CSRF, campos de identidade recusados, isolamento entre famílias (404), mesmo `subject` em emissores diferentes, logins repetidos sem duplicar usuário, criação concorrente do usuário, unicidades e check de papel no banco e atomicidade da criação.
+- convites: só Owner cria ou revoga (403 para Member, 404 para não participante), CSRF, token só como hash, estados expirado, revogado e usado com a mesma resposta genérica, aceitações simultâneas gerando um único vínculo, corrida entre revogação e aceite, membro existente sem consumir o convite, falha no vínculo sem consumir o convite e família com mais de duas pessoas.
+
+O frontend tem testes com Vitest (`npm run test:client`, incluídos em `npm test`): captura do token do fragmento, continuidade após o login (o token sobrevive no `sessionStorage` e o retorno é para `/convite`), aceite só com clique explícito e token apenas no corpo, e limpeza após sucesso ou erro definitivo.
 
 **Login real via curl** (com API e frontend rodando). O script pede usuário e senha sem eco:
 

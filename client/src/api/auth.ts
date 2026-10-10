@@ -26,9 +26,9 @@ export async function fetchCurrentUser(signal?: AbortSignal): Promise<CurrentUse
 }
 
 /** Navega para o login no provedor; ao final, a API devolve o usuário para a página atual. */
-export function login(): void {
+export function login(navigate: (url: string) => void = (url) => window.location.assign(url)): void {
   const returnUrl = window.location.pathname + window.location.search
-  window.location.assign(`/auth/login?returnUrl=${encodeURIComponent(returnUrl)}`)
+  navigate(`/auth/login?returnUrl=${encodeURIComponent(returnUrl)}`)
 }
 
 /** Encerra a sessão na API. O token CSRF é obtido na hora e enviado no header. */

@@ -37,6 +37,13 @@ internal sealed class FamilyRepository(Saldo360DbContext db) : IFamilyRepository
         return rows.Select(row => new FamilySummary(row.Id, row.Name, row.CreatedAt, row.Role, row.MemberCount)).ToList();
     }
 
+    public async Task<FamilyRole?> GetMemberRoleAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>
+        await db.FamilyMembers
+            .AsNoTracking()
+            .Where(member => member.FamilyId == familyId && member.UserId == userId)
+            .Select(member => (FamilyRole?)member.Role)
+            .SingleOrDefaultAsync(cancellationToken);
+
     public async Task<FamilyDetails?> FindForMemberAsync(Guid familyId, Guid userId, CancellationToken cancellationToken)
     {
         // Família inexistente e família de outros têm a mesma resposta (null → 404).

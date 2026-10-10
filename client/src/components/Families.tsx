@@ -8,6 +8,7 @@ import {
   type FamilyRole,
   type FamilySummary,
 } from '../api/families'
+import { InvitePanel } from './InvitePanel'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
 
@@ -20,10 +21,10 @@ type ListState =
   | { kind: 'loaded'; families: FamilySummary[] }
   | { kind: 'error'; message: string }
 
-/** Núcleos familiares do usuário autenticado: lista, criação e detalhe. */
-export function Families() {
+/** Núcleos familiares do usuário autenticado: lista, criação e detalhe (opcionalmente já aberto numa família). */
+export function Families({ initialFamily = null }: { initialFamily?: FamilyDetails | null }) {
   const [list, setList] = useState<ListState>({ kind: 'loading' })
-  const [selected, setSelected] = useState<FamilyDetails | string | null>(null)
+  const [selected, setSelected] = useState<FamilyDetails | string | null>(initialFamily)
   const [showForm, setShowForm] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -199,6 +200,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
               </li>
             ))}
           </ul>
+          {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
         </>
       )}
     </section>

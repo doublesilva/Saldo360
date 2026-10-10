@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Tests.Support;
@@ -9,28 +8,9 @@ namespace Saldo360.Tests.Api;
 
 /// <summary>Endpoints de família sobre PostgreSQL real, com sessões criadas pelo endpoint de teste.</summary>
 [Collection(PostgresCollection.Name)]
-public sealed class FamilyEndpointsTests : ApiTestBase
+public sealed class FamilyEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private const string OtherIssuer = "https://outro-provedor.test.invalid";
-
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-
-    private readonly PostgresFixture _postgres;
-    private readonly string _connectionString;
-
-    public FamilyEndpointsTests(PostgresFixture postgres)
-        : this(postgres, postgres.NewDatabaseConnectionString())
-    {
-    }
-
-    private FamilyEndpointsTests(PostgresFixture postgres, string connectionString)
-        : base(connectionString: connectionString)
-    {
-        _postgres = postgres;
-        _connectionString = connectionString;
-    }
-
-    protected override Task BeforeApiStartsAsync() => _postgres.CreateDatabaseAsync(_connectionString);
 
     [Fact]
     public async Task Create_ReturnsFamilyWithCreatorAsSingleOwner_AndPersistsIt()
@@ -47,7 +27,7 @@ public sealed class FamilyEndpointsTests : ApiTestBase
         var owner = Assert.Single(family.Members);
         Assert.Equal(("Maria Silva", "Owner", true), (owner.DisplayName, owner.Role, owner.IsCurrentUser));
 
-        await using var db = PostgresFixture.CreateDbContext(_connectionString);
+        await using var db = PostgresFixture.CreateDbContext(ConnectionString);
         var members = await db.FamilyMembers.Where(m => m.FamilyId == family.Id).ToListAsync();
         Assert.Equal("Owner", Assert.Single(members).Role.ToString());
         Assert.Equal(1, await db.Users.CountAsync());
@@ -198,7 +178,7 @@ public sealed class FamilyEndpointsTests : ApiTestBase
         Assert.Single(await ListAsync(fromDefault));
         Assert.Empty(await ListAsync(fromOther));
 
-        await using var db = PostgresFixture.CreateDbContext(_connectionString);
+        await using var db = PostgresFixture.CreateDbContext(ConnectionString);
         Assert.Equal(2, await db.Users.CountAsync(u => u.Subject == "mesmo-subject"));
     }
 
@@ -211,7 +191,7 @@ public sealed class FamilyEndpointsTests : ApiTestBase
             Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Get, "/api/families", session)).StatusCode);
         }
 
-        await using var db = PostgresFixture.CreateDbContext(_connectionString);
+        await using var db = PostgresFixture.CreateDbContext(ConnectionString);
         Assert.Equal(1, await db.Users.CountAsync());
     }
 
@@ -228,36 +208,12 @@ public sealed class FamilyEndpointsTests : ApiTestBase
         Assert.All(list, f => Assert.Equal(("Owner", 1), (f.MyRole, f.MemberCount)));
     }
 
-    private async Task<HttpResponseMessage> PostFamilyAsync(string session, object body)
-    {
-        var (csrfCookie, csrfToken) = await GetCsrfAsync(session);
-        return await SendJsonAsync(HttpMethod.Post, "/api/families", $"{session}; {csrfCookie}", csrfToken, body);
-    }
-
-    private Task<HttpResponseMessage> SendJsonAsync(HttpMethod method, string url, string cookies, string? csrf, object body)
-    {
-        var request = new HttpRequestMessage(method, url)
-        {
-            Content = new StringContent(JsonSerializer.Serialize(body, Json), Encoding.UTF8, "application/json"),
-        };
-        request.Headers.Add("Cookie", cookies);
-        if (csrf is not null)
-        {
-            request.Headers.Add("X-CSRF-TOKEN", csrf);
-        }
-
-        return Client.SendAsync(request);
-    }
-
     private async Task<List<FamilySummaryDto>> ListAsync(string session)
     {
         var response = await SendAsync(HttpMethod.Get, "/api/families", session);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await ReadAsync<List<FamilySummaryDto>>(response);
     }
-
-    private static async Task<T> ReadAsync<T>(HttpResponseMessage response) =>
-        (await response.Content.ReadFromJsonAsync<T>(Json))!;
 
     private async Task AssertNameValidationErrorAsync(HttpResponseMessage response)
     {
@@ -269,14 +225,8 @@ public sealed class FamilyEndpointsTests : ApiTestBase
 
     private async Task AssertNoFamiliesAsync()
     {
-        await using var db = PostgresFixture.CreateDbContext(_connectionString);
+        await using var db = PostgresFixture.CreateDbContext(ConnectionString);
         Assert.Equal(0, await db.Families.CountAsync());
         Assert.Equal(0, await db.FamilyMembers.CountAsync());
     }
-
-    private sealed record FamilyDto(Guid Id, string Name, DateTimeOffset CreatedAt, string MyRole, List<MemberDto> Members);
-
-    private sealed record MemberDto(string DisplayName, string Role, DateTimeOffset JoinedAt, bool IsCurrentUser);
-
-    private sealed record FamilySummaryDto(Guid Id, string Name, DateTimeOffset CreatedAt, string MyRole, int MemberCount);
 }
