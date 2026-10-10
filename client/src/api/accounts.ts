@@ -109,3 +109,27 @@ export function toInput(account: FinancialAccount): AccountInput {
     openingBalanceDate: account.openingBalanceDate,
   }
 }
+
+export type BalanceUnavailableReason = 'OpeningBalanceNotConfigured' | 'BeforeOpeningBalanceDate'
+
+/**
+ * Saldo realizado no fechamento de asOf. Valores como texto decimal exato ("1300.00"): exibir com
+ * formatBrlDecimal, nunca converter para number nem somar no navegador. Indisponível ⇔ totais e saldo null.
+ */
+export interface AccountBalance {
+  accountId: string
+  asOf: string
+  openingBalance: string | null
+  openingBalanceDate: string | null
+  totalIncome: string | null
+  totalExpense: string | null
+  balance: string | null
+  unavailableReason: BalanceUnavailableReason | null
+}
+
+/** Saldo realizado até hoje (America/Sao_Paulo, definido pela API). */
+export async function getAccountBalance(familyId: string, accountId: string, signal?: AbortSignal): Promise<AccountBalance> {
+  const response = await fetch(`${accountsUrl(familyId, accountId)}/balance`, { signal, headers: jsonHeaders })
+  if (!response.ok) throw new Error(`Falha ao calcular o saldo (HTTP ${response.status}).`)
+  return (await response.json()) as AccountBalance
+}

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Npgsql;
 using Saldo360.Infrastructure.Persistence;
 using Testcontainers.PostgreSql;
@@ -54,10 +55,11 @@ public sealed class PostgresFixture : IAsyncLifetime
         return connectionString;
     }
 
-    /// <summary>DbContext com a mesma configuração de provedor da API.</summary>
-    public static Saldo360DbContext CreateDbContext(string connectionString) =>
+    /// <summary>DbContext com a mesma configuração de provedor da API (e interceptadores opcionais, para inspecionar SQL).</summary>
+    public static Saldo360DbContext CreateDbContext(string connectionString, params IInterceptor[] interceptors) =>
         new((DbContextOptions<Saldo360DbContext>)Saldo360DbContext
             .Configure(new DbContextOptionsBuilder<Saldo360DbContext>(), connectionString)
+            .AddInterceptors(interceptors)
             .Options);
 }
 

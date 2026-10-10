@@ -322,3 +322,38 @@ describe('Transactions — formulário', () => {
     expect(await screen.findByText('Lançamento cancelado não pode ser editado.')).toBeTruthy()
   })
 })
+
+describe('Transactions — aviso de mudança para os saldos', () => {
+  it('chama onChanged após criar e após cancelar', async () => {
+    mockApi()
+    const onChanged = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Transactions familyId="f1" onChanged={onChanged} />)
+    await screen.findByText('Feira do mês')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
+    await screen.findByLabelText('Conta')
+    fill({ Conta: itau.id, Categoria: mercado.id, Descrição: 'Compra', 'Valor (R$)': '10' })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+
+    const item = (await screen.findByText('Feira do mês')).closest('li')!
+    fireEvent.click(within(item).getByRole('button', { name: 'Cancelar lançamento' }))
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2))
+  })
+
+  it('não chama onChanged quando a gravação é recusada', async () => {
+    mockApi({ saveStatus: 400, saveBody: { errors: { categoryId: ['Categoria inválida.'] } } })
+    const onChanged = vi.fn()
+    render(<Transactions familyId="f1" onChanged={onChanged} />)
+    await screen.findByText('Feira do mês')
+    fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
+    await screen.findByLabelText('Conta')
+
+    fill({ Conta: itau.id, Categoria: mercado.id, Descrição: 'Compra', 'Valor (R$)': '10' })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    expect(await screen.findByText('Categoria inválida.')).toBeTruthy()
+    expect(onChanged).not.toHaveBeenCalled()
+  })
+})

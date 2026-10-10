@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Application.Accounts;
 using Saldo360.Domain.Accounts;
+using Saldo360.Domain.Categories;
 using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.Accounts;
@@ -44,6 +45,28 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
 
     public Task<bool> IsMemberOfFamilyAsync(Guid familyId, Guid memberId, CancellationToken cancellationToken) =>
         db.FamilyMembers.AnyAsync(m => m.Id == memberId && m.FamilyId == familyId, cancellationToken);
+
+    public Task<AccountOpeningBalance?> GetOpeningBalanceAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken) =>
+        db.FinancialAccounts
+            .Where(a => a.FamilyId == familyId && a.Id == accountId)
+            .Select(a => new AccountOpeningBalance(a.OpeningBalance, a.OpeningBalanceDate))
+            .SingleOrDefaultAsync(cancellationToken);
+
+    // Uma consulta: SUM condicional por tipo, agrupado pela conta, no PostgreSQL (numeric, sem perda). Nenhum
+    // lançamento no período → nenhuma linha → totais zero.
+    public async Task<AccountTotals> SumTransactionsAsync(
+        Guid familyId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken)
+    {
+        var totals = await db.FinancialTransactions
+            .Where(t => t.FamilyId == familyId && t.AccountId == accountId && !t.IsCancelled
+                && t.TransactionDate >= from && t.TransactionDate <= to)
+            .GroupBy(t => t.AccountId)
+            .Select(g => new AccountTotals(
+                g.Sum(t => t.Type == CategoryType.Income ? t.Amount : 0m),
+                g.Sum(t => t.Type == CategoryType.Expense ? t.Amount : 0m)))
+            .SingleOrDefaultAsync(cancellationToken);
+        return totals ?? new AccountTotals(0m, 0m);
+    }
 
     // Responsável: junção com o vínculo da mesma família e o nome de exibição do usuário.
     private IQueryable<AccountRow> Project(IQueryable<FinancialAccount> accounts) =>

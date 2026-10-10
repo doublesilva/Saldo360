@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAmountInput, formatBrl, formatDate, parseAmount } from './money'
+import { formatAmountInput, formatBrl, formatBrlDecimal, formatDate, isNegativeDecimal, parseAmount } from './money'
 
 describe('parseAmount', () => {
   it.each([
@@ -51,6 +51,33 @@ describe('parseAmount', () => {
 
   it.each(['abc', '1,2,3', '--1', '1.23.4', '1e5', ','])('recusa "%s"', (text) => {
     expect(parseAmount(text).kind).toBe('invalid')
+  })
+})
+
+describe('formatBrlDecimal (texto exato da API, sem number)', () => {
+  it.each([
+    ['1300.00', 'R$ 1.300,00'],
+    ['0.30', 'R$ 0,30'],
+    ['0.00', 'R$ 0,00'],
+    ['-0.00', 'R$ 0,00'],
+    ['-400.00', '-R$ 400,00'],
+    ['-0.01', '-R$ 0,01'],
+    ['29999999999999.97', 'R$ 29.999.999.999.999,97'],
+    ['1234567890123456789.99', 'R$ 1.234.567.890.123.456.789,99'], // além da precisão de um number
+  ])('"%s" → "%s"', (text, expected) => {
+    expect(formatBrlDecimal(text)).toBe(expected)
+  })
+
+  it('segue o formato do Intl pt-BR', () => {
+    expect(formatBrlDecimal('-1234.56')).toBe(formatBrl(-1234.56))
+  })
+
+  it.each(['1300', '1300.5', '1,300.00', 'abc'])('recusa "%s" (não é texto decimal com 2 casas)', (text) => {
+    expect(() => formatBrlDecimal(text)).toThrow()
+  })
+
+  it('identifica negativos sem converter para number', () => {
+    expect([isNegativeDecimal('-0.01'), isNegativeDecimal('-0.00'), isNegativeDecimal('5.00')]).toEqual([true, false, false])
   })
 })
 

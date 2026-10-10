@@ -42,7 +42,7 @@ Em extratos bancários, o valor certo costuma ser o "saldo anterior" do dia de r
 
 Desde a T05.2, os lançamentos realizados (`financial_transactions`) **podem** ter `transaction_date` anterior a `OpeningBalanceDate`. Isso serve para preservar o histórico, por exemplo ao registrar movimentações antigas da planilha para consulta.
 
-Esses lançamentos **já estão dentro do saldo inicial**. Por isso, o futuro cálculo de saldo deve ignorá-los:
+Esses lançamentos **já estão dentro do saldo inicial**. Por isso, o cálculo do saldo realizado (T05.3, abaixo) os ignora:
 
 ```text
 saldo(fim de X) = OpeningBalance
@@ -52,8 +52,54 @@ saldo(fim de X) = OpeningBalance
 
 - `amount` é sempre positivo. O sentido vem de `type`: `Income` soma e `Expense` subtrai.
 - Lançamentos cancelados (`is_cancelled = true`) nunca entram na soma.
-- Conta sem saldo inicial: não presuma zero (ver abaixo).
+- Conta sem saldo inicial: o saldo é **indisponível**, nunca zero (ver [Saldo realizado](#saldo-realizado-t053)).
 - A tela de lançamentos aceita a data antiga e avisa que ela não entra de novo no saldo.
+
+## Saldo realizado (T05.3)
+
+O saldo realizado de uma conta é o saldo no **fechamento** da data consultada (`asOf`). Ele é calculado a cada consulta e não fica gravado no banco.
+
+```text
+saldo(asOf) = OpeningBalance
+            + Σ amount das receitas  (Income)  não canceladas
+            − Σ amount das despesas  (Expense) não canceladas
+
+considerando só lançamentos da própria conta e família com
+OpeningBalanceDate ≤ transaction_date ≤ asOf
+```
+
+- O saldo inicial vale para o **início** de `OpeningBalanceDate`, e o resultado vale para o **fim** de `asOf`. Por isso, as movimentações do próprio dia de referência entram na soma.
+- Lançamentos anteriores à referência continuam no histórico, mas não entram na soma, porque já fazem parte do saldo inicial. Lançamentos posteriores a `asOf` também ficam fora, de modo que uma consulta passada mostra o saldo daquele dia.
+- As somas são feitas no PostgreSQL, em uma única consulta (`SUM` condicional por tipo, agrupada pela conta) sobre `numeric`. A aplicação só faz `saldo inicial + receitas − despesas` em `decimal`. Nada passa por ponto flutuante, e somas acima do limite de um lançamento individual (10¹³) não são truncadas.
+- Saldo negativo significa valor devido, por exemplo cheque especial em uso. Não é crédito disponível; limite bancário está fora do escopo.
+
+### API
+
+`GET /api/families/{familyId}/accounts/{accountId}/balance?asOf=yyyy-MM-dd`
+
+- `asOf` é opcional. O padrão é hoje em America/Sao_Paulo. Uma data futura, ou fora do formato `yyyy-MM-dd`, retorna `400`. Por exemplo, `01/09/2026` é recusado em vez de ser lido como 9 de janeiro.
+- Conta inativa pode ser consultada. Conta inexistente, de outra família ou consulta de quem não participa da família retorna `404`.
+- Os valores monetários vêm como **texto decimal exato** com duas casas (`"1300.00"`, `"-0.75"`), nunca como número JSON. O frontend só formata esse texto e não soma nada.
+
+Resposta disponível:
+
+```json
+{
+  "accountId": "…", "asOf": "2026-10-10",
+  "openingBalance": "1000.00", "openingBalanceDate": "2026-10-01",
+  "totalIncome": "500.00", "totalExpense": "200.00", "balance": "1300.00",
+  "unavailableReason": null
+}
+```
+
+### Retornos indisponíveis
+
+Quando o saldo não pode ser calculado, a resposta é `200` com `unavailableReason` preenchido e `totalIncome`, `totalExpense` e `balance` iguais a **`null`**. Indisponível nunca é zero.
+
+| `unavailableReason` | Quando | `openingBalance` / `openingBalanceDate` | Interface |
+| --- | --- | --- | --- |
+| `OpeningBalanceNotConfigured` | A conta não tem saldo inicial | `null` / `null` | "Saldo realizado indisponível. Configure o saldo inicial para calcular o saldo." |
+| `BeforeOpeningBalanceDate` | `asOf` < `OpeningBalanceDate` | valores configurados | "Saldo realizado indisponível: a data de referência do saldo inicial (DD/MM/AAAA) é posterior a DD/MM/AAAA." |
 
 ## Orientações para a futura importação
 

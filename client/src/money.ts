@@ -58,6 +58,27 @@ export function formatBrl(value: number): string {
   return brl.format(value)
 }
 
+const DECIMAL_TEXT = /^(-?)(\d+)\.(\d{2})$/
+
+/**
+ * Formata em BRL um valor que a API envia como texto decimal exato ("-1300.00"), só com manipulação de texto:
+ * nunca converte para number, então somas grandes como "29999999999999.97" não perdem centavos.
+ * Mesmo formato do Intl pt-BR ("-R$ 1.300,00").
+ */
+export function formatBrlDecimal(text: string): string {
+  const match = DECIMAL_TEXT.exec(text)
+  if (!match) throw new Error(`Valor monetário inválido: ${text}`)
+  const [, sign, integer, cents] = match
+  const grouped = integer.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const negative = sign === '-' && /[1-9]/.test(integer + cents)
+  return `${negative ? '-' : ''}R$ ${grouped},${cents}`
+}
+
+/** Se o texto decimal da API é negativo (diferente de zero). */
+export function isNegativeDecimal(text: string): boolean {
+  return text.startsWith('-') && /[1-9]/.test(text)
+}
+
 /** "2026-10-01" → "01/10/2026", sem passar por Date (evita deslocamento de fuso). */
 export function formatDate(isoDate: string): string {
   const [year, month, day] = isoDate.split('-')

@@ -28,8 +28,9 @@ type References = { accounts: FinancialAccount[]; categories: FinancialCategory[
 /**
  * Lançamentos únicos já realizados da família: entradas e saídas efetivas. Contas e categorias são carregadas
  * com as inativas para que o histórico e os filtros continuem mostrando seus nomes.
+ * `onChanged` avisa quem exibe saldos que um lançamento foi criado, editado ou cancelado.
  */
-export function Transactions({ familyId }: { familyId: string }) {
+export function Transactions({ familyId, onChanged }: { familyId: string; onChanged?: () => void }) {
   const [refs, setRefs] = useState<Load<References>>({ kind: 'loading' })
   const [page, setPage] = useState<Load<TransactionPage>>({ kind: 'loading' })
   const [filters, setFilters] = useState<TransactionFilters>(emptyFilters)
@@ -82,6 +83,7 @@ export function Transactions({ familyId }: { familyId: string }) {
       const result = await cancelTransaction(familyId, transaction.id)
       if (!result.ok) setActionError(Object.values(result.errors).flat()[0] ?? 'Não foi possível cancelar.')
       reload()
+      onChanged?.()
     } catch (error: unknown) {
       setActionError(errorMessage(error))
     } finally {
@@ -101,6 +103,7 @@ export function Transactions({ familyId }: { familyId: string }) {
         onSaved={() => {
           setEditing(null)
           reload()
+          onChanged?.()
         }}
         onCancel={() => setEditing(null)}
       />

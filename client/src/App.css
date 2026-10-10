@@ -343,6 +343,26 @@ button {
   overflow-wrap: anywhere;
 }
 
+/* Saldo realizado: destacado e separado do saldo inicial. */
+.account__balance {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-radius: 0 0.5rem 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+
+.account__balance p {
+  margin: 0;
+}
+
+.account__balance--unavailable {
+  border-left-color: var(--muted);
+  background: none;
+  color: var(--muted);
+}
+
 .amount {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

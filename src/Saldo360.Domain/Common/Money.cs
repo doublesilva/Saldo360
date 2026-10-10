@@ -26,4 +26,18 @@ public static class Money
 
         return Math.Abs(amount) >= Limit ? $"{subject} deve ter no máximo 13 dígitos antes da vírgula." : null;
     }
+
+    /// <summary>
+    /// Texto decimal exato com duas casas e ponto ("1300.00", "-0.30"), para trafegar valores sem passar por
+    /// ponto flutuante. Não arredonda: um valor com centavos fracionados é erro de programação.
+    /// </summary>
+    public static string Format(decimal amount)
+    {
+        if (decimal.Round(amount, MaxScale) != amount)
+        {
+            throw new ArgumentException($"Valor com mais de {MaxScale} casas decimais: {amount}.", nameof(amount));
+        }
+
+        return amount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+    }
 }

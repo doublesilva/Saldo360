@@ -4,16 +4,18 @@ import {
   ACCOUNT_NAME_MAX_LENGTH,
   accountTypeLabels,
   createAccount,
+  getAccountBalance,
   listAccounts,
   toInput,
   updateAccount,
+  type AccountBalance,
   type AccountInput,
   type AccountType,
   type FinancialAccount,
   type FinancialScope,
 } from '../api/accounts'
 import type { FamilyMember } from '../api/families'
-import { formatAmountInput, formatBrl, formatDate, parseAmount } from '../money'
+import { formatAmountInput, formatBrl, formatBrlDecimal, formatDate, isNegativeDecimal, parseAmount } from '../money'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -24,8 +26,20 @@ type ListState =
   | { kind: 'loaded'; accounts: FinancialAccount[] }
   | { kind: 'error'; message: string }
 
-/** Contas da família selecionada. Todos os integrantes veem e editam as mesmas contas. */
-export function Accounts({ familyId, members }: { familyId: string; members: FamilyMember[] }) {
+/**
+ * Contas da família selecionada. Todos os integrantes veem e editam as mesmas contas.
+ * `balanceVersion` muda quando lançamentos são criados, editados ou cancelados em outra
+ * seção: os saldos realizados são consultados de novo.
+ */
+export function Accounts({
+  familyId,
+  members,
+  balanceVersion = 0,
+}: {
+  familyId: string
+  members: FamilyMember[]
+  balanceVersion?: number
+}) {
   const [list, setList] = useState<ListState>({ kind: 'loading' })
   const [includeInactive, setIncludeInactive] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -135,6 +149,7 @@ export function Accounts({ familyId, members }: { familyId: string; members: Fam
                 </div>
               </dl>
               <OpeningBalanceSummary account={account} />
+              <RealizedBalance familyId={familyId} accountId={account.id} refreshKey={`${reloadKey}:${balanceVersion}`} />
               <div className="form__actions">
                 <button type="button" onClick={() => setEditing(account)}>
                   Editar
@@ -171,6 +186,54 @@ function OpeningBalanceSummary({ account }: { account: FinancialAccount }) {
       </strong>
       <span className="meta"> — no início do dia, antes das movimentações dessa data. Não é o saldo atual.</span>
     </p>
+  )
+}
+
+type BalanceState = { kind: 'loading' } | { kind: 'loaded'; balance: AccountBalance } | { kind: 'error'; message: string }
+
+/**
+ * Saldo realizado até hoje, calculado pela API (saldo inicial + receitas − despesas não canceladas desde a
+ * data de referência). Os valores chegam como texto decimal e são só formatados: nada é somado aqui.
+ * Indisponível nunca aparece como zero.
+ */
+function RealizedBalance({ familyId, accountId, refreshKey }: { familyId: string; accountId: string; refreshKey: string }) {
+  const [state, setState] = useState<BalanceState>({ kind: 'loading' })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getAccountBalance(familyId, accountId, controller.signal)
+      .then((balance) => setState({ kind: 'loaded', balance }))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setState({ kind: 'error', message: errorMessage(error) })
+      })
+    return () => controller.abort()
+  }, [familyId, accountId, refreshKey])
+
+  if (state.kind === 'loading') return <p className="account__balance meta">Calculando saldo realizado…</p>
+  if (state.kind === 'error') return <p className="account__balance status status--down">{state.message}</p>
+
+  const { balance } = state
+  if (balance.balance === null || balance.totalIncome === null || balance.totalExpense === null) {
+    const message =
+      balance.unavailableReason === 'BeforeOpeningBalanceDate' && balance.openingBalanceDate
+        ? `Saldo realizado indisponível: a data de referência do saldo inicial (${formatDate(balance.openingBalanceDate)}) é posterior a ${formatDate(balance.asOf)}.`
+        : 'Saldo realizado indisponível. Configure o saldo inicial para calcular o saldo.'
+    return <p className="account__balance account__balance--unavailable">{message}</p>
+  }
+
+  const negative = isNegativeDecimal(balance.balance)
+  return (
+    <div className="account__balance">
+      <p>
+        Saldo realizado até {formatDate(balance.asOf)}:{' '}
+        <strong className={negative ? 'amount amount--negative' : 'amount'}>{formatBrlDecimal(balance.balance)}</strong>
+        {negative && <span className="meta"> — saldo negativo: valor devido, não é crédito disponível.</span>}
+      </p>
+      <p className="meta">
+        Entradas {formatBrlDecimal(balance.totalIncome)} · Saídas {formatBrlDecimal(balance.totalExpense)} desde{' '}
+        {balance.openingBalanceDate ? formatDate(balance.openingBalanceDate) : '—'}
+      </p>
+    </div>
   )
 }
 

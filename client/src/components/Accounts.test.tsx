@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FinancialAccount } from '../api/accounts'
+import type { AccountBalance, FinancialAccount } from '../api/accounts'
 import type { FamilyMember } from '../api/families'
 import { Accounts } from './Accounts'
 
@@ -36,8 +36,22 @@ const antiga: FinancialAccount = { ...itauPf, id: 'a3', name: 'Conta antiga', is
 
 type Call = { url: string; init?: RequestInit }
 
-/** API simulada: lista conforme includeInactive, CSRF e gravações. */
-function mockApi(active: FinancialAccount[] = [itauPf, dinheiro]) {
+const unavailable = (accountId: string): AccountBalance => ({
+  accountId,
+  asOf: '2026-10-10',
+  openingBalance: null,
+  openingBalanceDate: null,
+  totalIncome: null,
+  totalExpense: null,
+  balance: null,
+  unavailableReason: 'OpeningBalanceNotConfigured',
+})
+
+/**
+ * API simulada: lista conforme includeInactive, CSRF, gravações e saldo realizado por conta
+ * (`balances[accountId]`; sem entrada, indisponível por falta de saldo inicial).
+ */
+function mockApi(active: FinancialAccount[] = [itauPf, dinheiro], balances: Record<string, AccountBalance> = {}) {
   const calls: Call[] = []
   vi.stubGlobal(
     'fetch',
@@ -45,6 +59,8 @@ function mockApi(active: FinancialAccount[] = [itauPf, dinheiro]) {
       const url = String(input)
       calls.push({ url, init })
       if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
+      const balance = /\/accounts\/([^/]+)\/balance$/.exec(url)
+      if (balance) return Response.json(balances[balance[1]] ?? unavailable(balance[1]))
       if (init?.method === 'PUT') return Response.json({ ...itauPf, ...JSON.parse(String(init.body)) })
       if (init?.method === 'POST') return Response.json({ ...itauPf, id: 'novo' }, { status: 201 })
       return Response.json(url.includes('includeInactive=true') ? [...active, antiga] : active)
@@ -85,7 +101,7 @@ describe('Accounts', () => {
     fireEvent.click(screen.getByLabelText('Mostrar contas inativas'))
 
     expect(await screen.findByText('Conta antiga')).toBeTruthy()
-    expect(calls.at(-1)!.url).toBe('/api/families/f1/accounts?includeInactive=true')
+    expect(calls.filter((c) => !c.url.includes('/balance')).at(-1)!.url).toBe('/api/families/f1/accounts?includeInactive=true')
     expect(screen.getByRole('button', { name: 'Reativar' })).toBeTruthy()
   })
 
@@ -297,5 +313,79 @@ describe('Accounts — saldo inicial', () => {
 
     expect(await screen.findByText('Erro do servidor no saldo.')).toBeTruthy()
     expect(screen.getByLabelText('Valor (R$)').getAttribute('aria-invalid')).toBe('true')
+  })
+})
+
+describe('Accounts — saldo realizado', () => {
+  const comSaldo: FinancialAccount = { ...itauPf, openingBalance: 1000, openingBalanceDate: '2026-10-01' }
+  const realizado: AccountBalance = {
+    accountId: comSaldo.id,
+    asOf: '2026-10-10',
+    openingBalance: '1000.00',
+    openingBalanceDate: '2026-10-01',
+    totalIncome: '500.00',
+    totalExpense: '200.00',
+    balance: '1300.00',
+    unavailableReason: null,
+  }
+
+  it('mostra "Saldo realizado até" separado do saldo inicial, com entradas e saídas', async () => {
+    const calls = mockApi([comSaldo], { [comSaldo.id]: realizado })
+    render(<Accounts familyId="f1" members={members} />)
+
+    const item = (await screen.findByText(/Saldo realizado até 10\/10\/2026/)).closest('li')!
+    expect(item.textContent).toMatch(/Saldo realizado até 10\/10\/2026:\s*R\$\s1\.300,00/)
+    expect(item.textContent).toMatch(/Saldo inicial em 01\/10\/2026:\s*R\$\s1\.000,00/)
+    expect(item.textContent).toMatch(/Entradas R\$\s500,00 · Saídas R\$\s200,00 desde 01\/10\/2026/)
+    expect(calls.some((c) => c.url === `/api/families/f1/accounts/${comSaldo.id}/balance`)).toBe(true)
+  })
+
+  it('exibe o valor exato vindo da API, mesmo além da precisão de um number', async () => {
+    mockApi([comSaldo], { [comSaldo.id]: { ...realizado, totalIncome: '29999999999999.97', balance: '29999999999999.99' } })
+    render(<Accounts familyId="f1" members={members} />)
+
+    expect(await screen.findByText(/^R\$\s29\.999\.999\.999\.999,99$/)).toBeTruthy()
+  })
+
+  it('saldo negativo aparece destacado e não como crédito disponível', async () => {
+    mockApi([comSaldo], { [comSaldo.id]: { ...realizado, totalExpense: '1500.75', balance: '-0.75' } })
+    render(<Accounts familyId="f1" members={members} />)
+
+    const amount = await screen.findByText(/^-R\$\s0,75$/)
+    expect(amount.className).toContain('amount--negative')
+    expect(screen.getByText(/saldo negativo: valor devido, não é crédito disponível/)).toBeTruthy()
+  })
+
+  it('sem saldo inicial orienta a configurar e não mostra zero', async () => {
+    mockApi([itauPf])
+    render(<Accounts familyId="f1" members={members} />)
+
+    const message = await screen.findByText('Saldo realizado indisponível. Configure o saldo inicial para calcular o saldo.')
+    expect(message.closest('li')!.textContent).not.toMatch(/R\$/)
+  })
+
+  it('consulta anterior à referência explica a indisponibilidade', async () => {
+    mockApi([comSaldo], {
+      [comSaldo.id]: { ...realizado, asOf: '2026-10-10', openingBalanceDate: '2026-11-01', totalIncome: null, totalExpense: null, balance: null, unavailableReason: 'BeforeOpeningBalanceDate' },
+    })
+    render(<Accounts familyId="f1" members={members} />)
+
+    expect(await screen.findByText(/indisponível: a data de referência do saldo inicial \(01\/11\/2026\) é posterior a 10\/10\/2026/)).toBeTruthy()
+  })
+
+  it('consulta de novo quando os lançamentos mudam (balanceVersion) e após salvar o saldo inicial', async () => {
+    const calls = mockApi([comSaldo], { [comSaldo.id]: realizado })
+    const balanceCalls = () => calls.filter((c) => c.url.endsWith('/balance')).length
+    const { rerender } = render(<Accounts familyId="f1" members={members} balanceVersion={0} />)
+    await screen.findByText(/Saldo realizado até/)
+    const initial = balanceCalls()
+
+    rerender(<Accounts familyId="f1" members={members} balanceVersion={1} />)
+    await waitFor(() => expect(balanceCalls()).toBe(initial + 1))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '2.000,00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(balanceCalls()).toBe(initial + 2))
   })
 })

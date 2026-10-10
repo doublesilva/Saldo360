@@ -370,6 +370,9 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     [InlineData("page=0", "page")]
     [InlineData("from=2026-10-02&to=2026-10-01", "from")]
     [InlineData("type=expense", "type")]
+    [InlineData("from=01/09/2026", "from")] // não pode virar 9 de janeiro
+    [InlineData("to=2026-9-1", "to")]
+    [InlineData("to=2026-02-30", "to")]
     public async Task List_InvalidFilters_Return400(string query, string field)
     {
         await ArrangeAsync();

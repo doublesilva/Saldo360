@@ -166,6 +166,8 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
   const [state, setState] = useState<DetailState>(
     typeof family === 'string' ? { kind: 'loading' } : { kind: 'loaded', family },
   )
+  // Muda a cada lançamento criado, editado ou cancelado: as contas consultam de novo o saldo realizado.
+  const [balanceVersion, setBalanceVersion] = useState(0)
 
   useEffect(() => {
     if (typeof family !== 'string') return
@@ -204,9 +206,9 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
             ))}
           </ul>
           {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
-          <Accounts familyId={state.family.id} members={state.family.members} />
+          <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={balanceVersion} />
           <Categories familyId={state.family.id} />
-          <Transactions familyId={state.family.id} />
+          <Transactions familyId={state.family.id} onChanged={() => setBalanceVersion((n) => n + 1)} />
         </>
       )}
     </section>

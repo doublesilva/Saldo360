@@ -35,7 +35,7 @@ public static class FinancialTransactionEndpoints
     /// accountId, categoryId, type (Income/Expense). Cancelados só com includeCancelled=true. pageSize até 100.
     /// </summary>
     private static async Task<IResult> List(
-        Guid familyId, DateOnly? from, DateOnly? to, Guid? accountId, Guid? categoryId, string? type,
+        Guid familyId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
         bool? includeCancelled, int? page, int? pageSize, CurrentUser currentUser,
         FinancialTransactionService transactions, CancellationToken cancellationToken)
     {
@@ -44,7 +44,15 @@ public static class FinancialTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        var query = new TransactionQuery(from, to, accountId, categoryId, type, includeCancelled ?? false, page, pageSize);
+        var dateErrors = new Dictionary<string, string[]>();
+        var fromDate = IsoDateQuery.Parse(from, "from", dateErrors);
+        var toDate = IsoDateQuery.Parse(to, "to", dateErrors);
+        if (dateErrors.Count > 0)
+        {
+            return Results.ValidationProblem(dateErrors);
+        }
+
+        var query = new TransactionQuery(fromDate, toDate, accountId, categoryId, type, includeCancelled ?? false, page, pageSize);
         var result = await transactions.ListAsync(familyId, userId, query, cancellationToken);
         return result switch
         {

@@ -1,5 +1,6 @@
 using Saldo360.Application.Families;
 using Saldo360.Domain.Accounts;
+using Saldo360.Domain.Common;
 
 namespace Saldo360.Application.Accounts;
 
@@ -68,6 +69,49 @@ public sealed class FinancialAccountService(
         account.Update(details, isActive.Value);
         await accounts.SaveChangesAsync(cancellationToken);
         return AccountResult.Ok((await accounts.GetAsync(familyId, account.Id, cancellationToken))!);
+    }
+
+    /// <summary>
+    /// Saldo realizado no fechamento de <paramref name="asOf"/> (padrão: hoje em America/Sao_Paulo). Data futura é
+    /// recusada. Sem saldo inicial, ou antes da data de referência, devolve indisponível (nunca zero). Conta
+    /// inativa também é consultável. As somas vêm agregadas do banco; aqui só se combina em decimal.
+    /// </summary>
+    public async Task<BalanceResult> GetBalanceAsync(
+        Guid familyId, Guid accountId, Guid userId, DateOnly? asOf, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
+            || await accounts.GetOpeningBalanceAsync(familyId, accountId, cancellationToken) is not { } opening)
+        {
+            return new BalanceResult(BalanceAccess.NotFound, null, null);
+        }
+
+        var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
+        var date = asOf ?? today;
+        if (date > today)
+        {
+            return new BalanceResult(BalanceAccess.Invalid, null, new Dictionary<string, string[]>
+            {
+                ["asOf"] = ["A data não pode ser futura: o saldo realizado só considera movimentações já ocorridas."],
+            });
+        }
+
+        if (opening is not { Amount: { } amount, Date: { } referenceDate })
+        {
+            return Unavailable(BalanceUnavailableReason.OpeningBalanceNotConfigured);
+        }
+
+        if (date < referenceDate)
+        {
+            return Unavailable(BalanceUnavailableReason.BeforeOpeningBalanceDate);
+        }
+
+        var totals = await accounts.SumTransactionsAsync(familyId, accountId, referenceDate, date, cancellationToken);
+        return new BalanceResult(BalanceAccess.Allowed, new AccountBalanceDto(
+            accountId, date, amount, referenceDate, totals.Income, totals.Expense,
+            amount + totals.Income - totals.Expense, null), null);
+
+        BalanceResult Unavailable(BalanceUnavailableReason reason) => new(BalanceAccess.Allowed, new AccountBalanceDto(
+            accountId, date, opening.Amount, opening.Date, null, null, null, reason), null);
     }
 
     private async Task<bool> IsParticipantAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>

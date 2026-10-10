@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
 using Saldo360.Application.Accounts;
+using Saldo360.Domain.Common;
 
 namespace Saldo360.Api.Accounts;
 
@@ -13,7 +14,37 @@ public static class FinancialAccountEndpoints
         accounts.MapGet("/", List);
         accounts.MapGet("/{accountId:guid}", Get);
         accounts.MapPut("/{accountId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        accounts.MapGet("/{accountId:guid}/balance", GetBalance);
         return app;
+    }
+
+    /// <summary>
+    /// Saldo realizado no fechamento de <c>asOf</c> (yyyy-MM-dd; padrão: hoje em America/Sao_Paulo). Valores
+    /// como texto decimal exato. Indisponível (sem saldo inicial ou antes da referência): totais e saldo nulos.
+    /// </summary>
+    private static async Task<IResult> GetBalance(
+        Guid familyId, Guid accountId, string? asOf, CurrentUser currentUser, FinancialAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var errors = new Dictionary<string, string[]>();
+        var date = IsoDateQuery.Parse(asOf, "asOf", errors);
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var result = await accounts.GetBalanceAsync(familyId, accountId, userId, date, cancellationToken);
+        return result.Access switch
+        {
+            BalanceAccess.NotFound => Results.NotFound(),
+            BalanceAccess.Invalid => Results.ValidationProblem(result.Errors!),
+            _ => Results.Ok(AccountBalanceResponse.From(result.Balance!)),
+        };
     }
 
     private static async Task<IResult> Create(
@@ -120,3 +151,30 @@ public sealed record UpdateAccountRequest(
     decimal? OpeningBalance,
     DateOnly? OpeningBalanceDate,
     bool? IsActive);
+
+/// <summary>
+/// Saldo realizado. Valores monetários como texto decimal exato com duas casas ("1300.00"), nunca number JSON,
+/// para não passarem por ponto flutuante no cliente. unavailableReason preenchido ⇔ totais e saldo nulos.
+/// </summary>
+public sealed record AccountBalanceResponse(
+    Guid AccountId,
+    DateOnly AsOf,
+    string? OpeningBalance,
+    DateOnly? OpeningBalanceDate,
+    string? TotalIncome,
+    string? TotalExpense,
+    string? Balance,
+    BalanceUnavailableReason? UnavailableReason)
+{
+    public static AccountBalanceResponse From(AccountBalanceDto dto) => new(
+        dto.AccountId,
+        dto.AsOf,
+        Format(dto.OpeningBalance),
+        dto.OpeningBalanceDate,
+        Format(dto.TotalIncome),
+        Format(dto.TotalExpense),
+        Format(dto.Balance),
+        dto.UnavailableReason);
+
+    private static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
+}
