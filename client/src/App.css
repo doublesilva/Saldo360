@@ -463,6 +463,135 @@ button {
   gap: 0.5rem;
 }
 
+.transactions {
+  margin-top: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Filtros em grade: várias colunas no desktop, uma no celular. */
+.transaction-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem 0.75rem;
+  min-width: 0;
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.transaction-filters legend,
+.transaction-type legend {
+  font-weight: 600;
+  padding: 0 0.25rem;
+}
+
+.transaction-filters label:not(.checkbox) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.transaction-filters input[type='date'],
+.transaction-filters select {
+  font: inherit;
+  font-size: 1rem;
+  width: 100%;
+  min-height: 2.75rem;
+  box-sizing: border-box;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.transaction-filters .checkbox {
+  align-self: end;
+  margin: 0;
+}
+
+.transaction-type {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.25rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.transaction-type .checkbox {
+  font-weight: normal;
+  margin: 0.25rem 0;
+}
+
+.transaction-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.transaction {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.transaction--cancelled {
+  opacity: 0.7;
+  border-style: dashed;
+}
+
+.transaction--cancelled .transaction__description,
+.transaction--cancelled .amount {
+  text-decoration: line-through;
+}
+
+.transaction__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+.transaction__description {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.transaction__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.amount--income {
+  color: var(--ok);
+}
+
+.badge--cancelled {
+  color: var(--fail);
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
 .form select {
   font: inherit;
   width: 100%;

@@ -214,7 +214,7 @@ function AccountForm({
     if (input.name.trim().length === 0) clientErrors.name = ['Informe o nome da conta.']
 
     // Valor e data juntos ou ambos em branco; mais de duas casas é erro, não arredondamento.
-    const amount = parseAmount(balanceText)
+    const amount = parseAmount(balanceText, 'O saldo inicial')
     const date = input.openingBalanceDate || null
     if (amount.kind === 'invalid') clientErrors.openingBalance = [amount.message]
     else if (amount.kind === 'empty' && date)

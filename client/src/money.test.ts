@@ -15,7 +15,26 @@ describe('parseAmount', () => {
     ['1.500', 1500], // ponto como separador de milhar em pt-BR
     ['9.999.999.999.999,99', 9999999999999.99],
   ])('"%s" → %s', (text, value) => {
-    expect(parseAmount(text)).toEqual({ kind: 'ok', value })
+    expect(parseAmount(text)).toMatchObject({ kind: 'ok', value })
+  })
+
+  it.each([
+    ['1.234,56', '1234.56'],
+    ['-1.500,75', '-1500.75'],
+    ['0,10', '0.10'],
+    ['-0,00', '0.00'],
+    ['-05', '-05'],
+    ['9.999.999.999.999,99', '9999999999999.99'],
+  ])('"%s" → texto exato "%s" (sem ponto flutuante)', (input, text) => {
+    expect(parseAmount(input)).toMatchObject({ kind: 'ok', text })
+  })
+
+  it('usa o sujeito informado nas mensagens', () => {
+    expect(parseAmount('1,234', 'O saldo inicial')).toEqual({
+      kind: 'invalid',
+      message: 'O saldo inicial deve ter no máximo duas casas decimais.',
+    })
+    expect(parseAmount('1,234')).toMatchObject({ message: 'O valor deve ter no máximo duas casas decimais.' })
   })
 
   it('vazio não é zero', () => {

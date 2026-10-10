@@ -4,7 +4,12 @@ export const AMOUNT_MAX_DECIMALS = 2
 
 export type ParsedAmount =
   | { kind: 'empty' }
-  | { kind: 'ok'; value: number }
+  | {
+      kind: 'ok'
+      value: number
+      /** Decimal normalizado e exato ("-1500.75"), para enviar à API sem passar por ponto flutuante. */
+      text: string
+    }
   | { kind: 'invalid'; message: string }
 
 const THOUSANDS_WITH_COMMA = /^\d{1,3}(\.\d{3})+(,\d+)?$/ // 1.234 ou 1.234,56
@@ -15,8 +20,8 @@ const DOT_DECIMAL = /^\d+\.\d+$/ // 1234.56 (fora do padrão de milhar)
  * Converte o valor digitado (pt-BR: "1.234,56", "-250,00"; ou "1234.56") sem arredondar: mais de duas casas
  * decimais ou mais de 13 dígitos inteiros é erro, nunca um valor ajustado. Aceita sinal negativo.
  */
-export function parseAmount(text: string): ParsedAmount {
-  const compact = text.replace(/\s|R\$/g, '').replace(/−/g, '-')
+export function parseAmount(input: string, subject = 'O valor'): ParsedAmount {
+  const compact = input.replace(/\s|R\$/g, '').replace(/−/g, '-')
   if (compact === '') return { kind: 'empty' }
 
   const negative = compact.startsWith('-')
@@ -30,14 +35,16 @@ export function parseAmount(text: string): ParsedAmount {
 
   const [integer, decimals = ''] = normalized.split('.')
   if (decimals.length > AMOUNT_MAX_DECIMALS) {
-    return { kind: 'invalid', message: 'O saldo inicial deve ter no máximo duas casas decimais.' }
+    return { kind: 'invalid', message: `${subject} deve ter no máximo duas casas decimais.` }
   }
   if (integer.replace(/^0+/, '').length > AMOUNT_MAX_INTEGER_DIGITS) {
-    return { kind: 'invalid', message: 'O saldo inicial deve ter no máximo 13 dígitos antes da vírgula.' }
+    return { kind: 'invalid', message: `${subject} deve ter no máximo 13 dígitos antes da vírgula.` }
   }
 
   const value = Number(normalized)
-  return { kind: 'ok', value: negative && value !== 0 ? -value : value }
+  const isZero = /^0*(\.0*)?$/.test(normalized)
+  const text = negative && !isZero ? `-${normalized}` : normalized
+  return { kind: 'ok', value: negative && value !== 0 ? -value : value, text }
 }
 
 /** Valor para o campo de edição: "-1500,75", sem separador de milhar. */

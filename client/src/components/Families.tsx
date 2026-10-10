@@ -10,6 +10,7 @@ import {
 } from '../api/families'
 import { Accounts } from './Accounts'
 import { Categories } from './Categories'
+import { Transactions } from './Transactions'
 import { InvitePanel } from './InvitePanel'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
@@ -205,6 +206,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
           {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
           <Accounts familyId={state.family.id} members={state.family.members} />
           <Categories familyId={state.family.id} />
+          <Transactions familyId={state.family.id} />
         </>
       )}
     </section>

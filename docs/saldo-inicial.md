@@ -19,7 +19,7 @@ Consequências:
 - Movimentações com data **igual ou posterior** a `OpeningBalanceDate` **não estão incluídas**. Elas devem ser importadas e somadas.
 - O saldo ao fim de um dia `X ≥ OpeningBalanceDate` é:
 
-  ```
+  ```text
   saldo(fim de X) = OpeningBalance + Σ movimentações com OpeningBalanceDate ≤ data ≤ X
   ```
 
@@ -37,6 +37,23 @@ Erros comuns a evitar:
 - Usar 01/10 com o saldo **depois** das movimentações de 01/10. Nesse caso, as movimentações de 01/10 também seriam contadas duas vezes.
 
 Em extratos bancários, o valor certo costuma ser o "saldo anterior" do dia de referência, que é o mesmo que o saldo final do dia anterior.
+
+## Lançamentos anteriores ao saldo inicial
+
+Desde a T05.2, os lançamentos realizados (`financial_transactions`) **podem** ter `transaction_date` anterior a `OpeningBalanceDate`. Isso serve para preservar o histórico, por exemplo ao registrar movimentações antigas da planilha para consulta.
+
+Esses lançamentos **já estão dentro do saldo inicial**. Por isso, o futuro cálculo de saldo deve ignorá-los:
+
+```text
+saldo(fim de X) = OpeningBalance
+                + Σ receitas   não canceladas da conta com OpeningBalanceDate ≤ data ≤ X
+                − Σ despesas   não canceladas da conta com OpeningBalanceDate ≤ data ≤ X
+```
+
+- `amount` é sempre positivo. O sentido vem de `type`: `Income` soma e `Expense` subtrai.
+- Lançamentos cancelados (`is_cancelled = true`) nunca entram na soma.
+- Conta sem saldo inicial: não presuma zero (ver abaixo).
+- A tela de lançamentos aceita a data antiga e avisa que ela não entra de novo no saldo.
 
 ## Orientações para a futura importação
 

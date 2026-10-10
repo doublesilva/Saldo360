@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Accounts;
+using Saldo360.Domain.Common;
 using Saldo360.Domain.Families;
 using Saldo360.Domain.Users;
 
@@ -24,9 +25,9 @@ internal sealed class FinancialAccountConfiguration : IEntityTypeConfiguration<F
             table.HasCheckConstraint("ck_financial_accounts_opening_balance_pair",
                 "(opening_balance IS NULL) = (opening_balance_date IS NULL)");
             table.HasCheckConstraint("ck_financial_accounts_opening_balance_scale",
-                $"scale(opening_balance) <= {OpeningBalance.MaxScale}");
+                $"scale(opening_balance) <= {Money.MaxScale}");
             table.HasCheckConstraint("ck_financial_accounts_opening_balance_range",
-                $"abs(opening_balance) < {OpeningBalance.Limit}");
+                $"abs(opening_balance) < {Money.Limit}");
         });
 
         builder.HasKey(account => account.Id);

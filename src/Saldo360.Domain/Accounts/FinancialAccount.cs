@@ -171,15 +171,6 @@ public sealed record AccountDetails
 /// </summary>
 public sealed record OpeningBalance
 {
-    /// <summary>Casas decimais aceitas (centavos).</summary>
-    public const int MaxScale = 2;
-
-    /// <summary>
-    /// Limite absoluto (exclusivo): 13 dígitos inteiros + 2 decimais = 15 dígitos significativos, que o
-    /// frontend representa sem perda em um number do JavaScript.
-    /// </summary>
-    public const decimal Limit = 10_000_000_000_000m;
-
     private OpeningBalance(decimal amount, DateOnly date)
     {
         Amount = amount;
@@ -208,15 +199,9 @@ public sealed record OpeningBalance
                 return null;
         }
 
-        if (amount.Value.Scale > MaxScale)
+        if (Money.Validate(amount.Value, "O saldo inicial") is { } error)
         {
-            errors["openingBalance"] = ["O saldo inicial deve ter no máximo duas casas decimais."];
-            return null;
-        }
-
-        if (Math.Abs(amount.Value) >= Limit)
-        {
-            errors["openingBalance"] = ["O saldo inicial deve ter no máximo 13 dígitos antes da vírgula."];
+            errors["openingBalance"] = [error];
             return null;
         }
 
