@@ -4,6 +4,7 @@ using Saldo360.Application.Categories;
 using Saldo360.Application.Transactions;
 using Saldo360.Application.Transfers;
 using Saldo360.Application.Families;
+using Saldo360.Application.Planning;
 
 namespace Saldo360.Application;
 
@@ -18,6 +19,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialCategoryService>();
         services.AddScoped<FinancialTransactionService>();
         services.AddScoped<FinancialTransferService>();
+        services.AddScoped<FinancialPlannedTransactionService>();
         return services;
     }
 }

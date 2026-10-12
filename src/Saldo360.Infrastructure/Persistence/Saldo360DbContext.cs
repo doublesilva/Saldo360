@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Families;
+using Saldo360.Domain.Planning;
 using Saldo360.Domain.Transactions;
 using Saldo360.Domain.Transfers;
 using Saldo360.Domain.Users;
@@ -34,6 +35,8 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialTransaction> FinancialTransactions => Set<FinancialTransaction>();
 
     public DbSet<FinancialTransfer> FinancialTransfers => Set<FinancialTransfer>();
+
+    public DbSet<FinancialPlannedTransaction> FinancialPlannedTransactions => Set<FinancialPlannedTransaction>();
 
     /// <summary>Configuração do provedor usada pela API, pelas ferramentas de migration e pelos testes.</summary>
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder builder, string connectionString) =>

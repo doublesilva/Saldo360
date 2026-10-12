@@ -604,10 +604,25 @@ button {
   color: var(--accent);
 }
 
-.transfers {
+.transfers,
+.planned {
   margin-top: 1rem;
   padding-top: 0.5rem;
   border-top: 1px solid var(--border);
+}
+
+/* Previsão: borda pontilhada para não parecer movimentação realizada. */
+.planned-item {
+  border-style: dotted;
+}
+
+/* Vencida: derivado da data na tela (não gravado); a previsão continua pendente. */
+.planned-item--overdue {
+  border-left: 4px solid var(--fail);
+}
+
+.badge--overdue {
+  color: var(--fail);
 }
 
 .badge--cancelled {

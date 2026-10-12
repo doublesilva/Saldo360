@@ -333,6 +333,124 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlannedTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<Guid?>("CancelledByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cancelled_by_user_id");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("description");
+
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("due_date");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<bool>("IsCancelled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_cancelled");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("type");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_planned_transactions");
+
+                    b.HasIndex("CancelledByUserId")
+                        .HasDatabaseName("ix_financial_planned_transactions_cancelled_by_user_id");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_planned_transactions_created_by_user_id");
+
+                    b.HasIndex("UpdatedByUserId")
+                        .HasDatabaseName("ix_financial_planned_transactions_updated_by_user_id");
+
+                    b.HasIndex("FamilyId", "AccountId")
+                        .HasDatabaseName("ix_financial_planned_transactions_family_id_account_id");
+
+                    b.HasIndex("FamilyId", "CategoryId", "Type")
+                        .HasDatabaseName("ix_financial_planned_transactions_family_id_category_id_type");
+
+                    b.HasIndex("FamilyId", "DueDate", "Id")
+                        .HasDatabaseName("ix_financial_planned_transactions_family_id_due_date_id");
+
+                    b.ToTable("financial_planned_transactions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_planned_transactions_amount_positive", "amount > 0");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_amount_range", "amount < 10000000000000");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_amount_scale", "scale(amount) <= 2");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_cancelled_at", "is_cancelled = (cancelled_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_cancelled_pair", "(cancelled_at IS NULL) = (cancelled_by_user_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_currency", "currency = 'BRL'");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_description_not_blank", "btrim(description) <> ''");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_description_trimmed", "octet_length(description) = octet_length(btrim(description))");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_type", "type IN ('Income', 'Expense')");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_updated_pair", "(updated_at IS NULL) = (updated_by_user_id IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -711,6 +829,51 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_family_members_application_users_user_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlannedTransaction", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CancelledByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_planned_transactions_application_users_cancelled_");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_planned_transactions_application_users_created_by");
+
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_planned_transactions_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_planned_transactions_application_users_updated_by");
+
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "AccountId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_planned_transactions_accounts_same_family");
+
+                    b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "CategoryId", "Type")
+                        .HasPrincipalKey("FamilyId", "Id", "Type")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_planned_transactions_categories_same_family_type");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialTransaction", b =>

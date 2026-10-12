@@ -19,9 +19,6 @@ public sealed class FinancialTransactionService(
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 100;
 
-    private const string AccountField = "accountId";
-    private const string CategoryField = "categoryId";
-
     public async Task<TransactionResult> CreateAsync(
         Guid familyId, Guid userId, TransactionInput input, CancellationToken cancellationToken)
     {
@@ -151,37 +148,9 @@ public sealed class FinancialTransactionService(
             input.AccountId, input.CategoryId, input.Type, input.Description, input.Amount, input.TransactionDate,
             today, out var errors);
 
-        if (input.AccountId is { } accountId && !errors.ContainsKey(AccountField))
-        {
-            var account = await transactions.GetAccountStateAsync(familyId, accountId, cancellationToken);
-            if (account is null)
-            {
-                errors[AccountField] = ["Conta inválida."];
-            }
-            else if (!account.IsActive && accountId != current?.AccountId)
-            {
-                errors[AccountField] = ["A conta está inativa. Escolha uma conta ativa."];
-            }
-        }
-
-        if (input.CategoryId is { } categoryId && !errors.ContainsKey(CategoryField))
-        {
-            var category = await transactions.GetCategoryStateAsync(familyId, categoryId, cancellationToken);
-            if (category is null)
-            {
-                errors[CategoryField] = ["Categoria inválida."];
-            }
-            else if (CategoryTypes.TryParse(input.Type, out var type) && category.Type != type)
-            {
-                errors[CategoryField] = [type == CategoryType.Income
-                    ? "A categoria é de despesa; escolha uma categoria de receita."
-                    : "A categoria é de receita; escolha uma categoria de despesa."];
-            }
-            else if (!category.IsActive && categoryId != current?.CategoryId)
-            {
-                errors[CategoryField] = ["A categoria está inativa. Escolha uma categoria ativa."];
-            }
-        }
+        await ReferenceRules.ValidateAsync(
+            transactions, familyId, input.AccountId, input.CategoryId, input.Type, current?.AccountId, current?.CategoryId,
+            errors, cancellationToken);
 
         return (errors.Count == 0 ? details : null, errors);
     }

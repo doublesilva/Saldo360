@@ -2,7 +2,7 @@ using Saldo360.Domain.Transactions;
 
 namespace Saldo360.Application.Transactions;
 
-public interface IFinancialTransactionRepository
+public interface IFinancialTransactionRepository : IReferenceLookup
 {
     Task AddAsync(FinancialTransaction transaction, CancellationToken cancellationToken);
 
@@ -14,10 +14,4 @@ public interface IFinancialTransactionRepository
     Task<FinancialTransactionDto?> GetAsync(Guid familyId, Guid transactionId, CancellationToken cancellationToken);
 
     Task<TransactionPage> ListAsync(Guid familyId, TransactionFilter filter, CancellationToken cancellationToken);
-
-    /// <summary>A conta, se pertencer à família; null caso contrário (inexistente ou de outra família).</summary>
-    Task<AccountState?> GetAccountStateAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken);
-
-    /// <summary>A categoria, se pertencer à família; null caso contrário.</summary>
-    Task<CategoryState?> GetCategoryStateAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken);
 }

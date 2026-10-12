@@ -11,6 +11,7 @@ import {
 import { Accounts } from './Accounts'
 import { Categories } from './Categories'
 import { Transactions } from './Transactions'
+import { Planned } from './Planned'
 import { Transfers } from './Transfers'
 import { InvitePanel } from './InvitePanel'
 
@@ -211,6 +212,8 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
           <Categories familyId={state.family.id} />
           <Transactions familyId={state.family.id} onChanged={() => setBalanceVersion((n) => n + 1)} />
           <Transfers familyId={state.family.id} onChanged={() => setBalanceVersion((n) => n + 1)} />
+          {/* Previsões não afetam o saldo realizado: não avisam balanceVersion. */}
+          <Planned familyId={state.family.id} />
         </>
       )}
     </section>
