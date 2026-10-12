@@ -1,4 +1,9 @@
-/** Mesmo limite da API: até 13 dígitos inteiros e 2 decimais (15 dígitos, exatos em um number). */
+/**
+ * Valores monetários no navegador são sempre texto decimal exato ("-1234.56"): a API os envia e recebe assim,
+ * e aqui só se valida e formata texto. Nada converte dinheiro para number.
+ */
+
+/** Mesmo limite da API: até 13 dígitos inteiros e 2 decimais. */
 export const AMOUNT_MAX_INTEGER_DIGITS = 13
 export const AMOUNT_MAX_DECIMALS = 2
 
@@ -6,8 +11,7 @@ export type ParsedAmount =
   | { kind: 'empty' }
   | {
       kind: 'ok'
-      value: number
-      /** Decimal normalizado e exato ("-1500.75"), para enviar à API sem passar por ponto flutuante. */
+      /** Decimal normalizado e exato ("-1500.75"), para enviar à API. */
       text: string
     }
   | { kind: 'invalid'; message: string }
@@ -41,21 +45,13 @@ export function parseAmount(input: string, subject = 'O valor'): ParsedAmount {
     return { kind: 'invalid', message: `${subject} deve ter no máximo 13 dígitos antes da vírgula.` }
   }
 
-  const value = Number(normalized)
   const isZero = /^0*(\.0*)?$/.test(normalized)
-  const text = negative && !isZero ? `-${normalized}` : normalized
-  return { kind: 'ok', value: negative && value !== 0 ? -value : value, text }
+  return { kind: 'ok', text: negative && !isZero ? `-${normalized}` : normalized }
 }
 
-/** Valor para o campo de edição: "-1500,75", sem separador de milhar. */
-export function formatAmountInput(value: number): string {
-  return value.toFixed(AMOUNT_MAX_DECIMALS).replace('.', ',')
-}
-
-const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
-
-export function formatBrl(value: number): string {
-  return brl.format(value)
+/** Se o texto de parseAmount é zero (0, 0.0, 0.00, 000…), sem converter para number. */
+export function isZeroDecimal(text: string): boolean {
+  return /^-?0*(\.0*)?$/.test(text)
 }
 
 const DECIMAL_TEXT = /^(-?)(\d+)\.(\d{2})$/

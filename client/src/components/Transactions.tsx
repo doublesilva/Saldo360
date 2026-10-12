@@ -13,7 +13,7 @@ import {
   type TransactionPage,
 } from '../api/transactions'
 import { todayInSaoPaulo } from '../dates'
-import { decimalToInput, formatBrlDecimal, formatDate, parseAmount } from '../money'
+import { decimalToInput, formatBrlDecimal, formatDate, isZeroDecimal, parseAmount } from '../money'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -340,7 +340,7 @@ function TransactionForm({
     const amount = parseAmount(form.amount)
     if (amount.kind === 'empty') clientErrors.amount = ['Informe o valor.']
     else if (amount.kind === 'invalid') clientErrors.amount = [amount.message]
-    else if (amount.text.startsWith('-') || /^0*(\.0*)?$/.test(amount.text))
+    else if (amount.text.startsWith('-') || isZeroDecimal(amount.text))
       clientErrors.amount = ['O valor deve ser maior que zero. Para saídas, escolha o tipo despesa.']
 
     if (Object.keys(clientErrors).length > 0 || amount.kind !== 'ok') {

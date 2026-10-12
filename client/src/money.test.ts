@@ -1,40 +1,31 @@
 import { describe, expect, it } from 'vitest'
 import {
   decimalToInput,
-  formatAmountInput,
-  formatBrl,
   formatBrlDecimal,
   formatDate,
   isNegativeDecimal,
+  isZeroDecimal,
   parseAmount,
 } from './money'
 
 describe('parseAmount', () => {
   it.each([
-    ['1.234,56', 1234.56],
-    ['1234,56', 1234.56],
-    ['1234.56', 1234.56],
-    ['R$ 1.234,56', 1234.56],
-    ['-1.500,75', -1500.75],
-    ['−2,5', -2.5],
-    ['0', 0],
-    ['-0,00', 0],
-    ['0,1', 0.1],
-    ['1.500', 1500], // ponto como separador de milhar em pt-BR
-    ['9.999.999.999.999,99', 9999999999999.99],
-  ])('"%s" → %s', (text, value) => {
-    expect(parseAmount(text)).toMatchObject({ kind: 'ok', value })
-  })
-
-  it.each([
     ['1.234,56', '1234.56'],
+    ['1234,56', '1234.56'],
+    ['1234.56', '1234.56'],
+    ['R$ 1.234,56', '1234.56'],
     ['-1.500,75', '-1500.75'],
-    ['0,10', '0.10'],
+    ['−2,5', '-2.5'],
+    ['0', '0'],
     ['-0,00', '0.00'],
+    ['0,1', '0.1'],
+    ['0,10', '0.10'],
     ['-05', '-05'],
+    ['1.500', '1500'], // ponto como separador de milhar em pt-BR
     ['9.999.999.999.999,99', '9999999999999.99'],
-  ])('"%s" → texto exato "%s" (sem ponto flutuante)', (input, text) => {
-    expect(parseAmount(input)).toMatchObject({ kind: 'ok', text })
+    ['-9.999.999.999.999,99', '-9999999999999.99'],
+  ])('"%s" → texto exato "%s" (sem number)', (input, text) => {
+    expect(parseAmount(input)).toEqual({ kind: 'ok', text })
   })
 
   it('usa o sujeito informado nas mensagens', () => {
@@ -76,8 +67,10 @@ describe('formatBrlDecimal (texto exato da API, sem number)', () => {
     expect(formatBrlDecimal(text)).toBe(expected)
   })
 
-  it('segue o formato do Intl pt-BR', () => {
-    expect(formatBrlDecimal('-1234.56')).toBe(formatBrl(-1234.56))
+  it('segue o formato do Intl pt-BR (só como referência no teste)', () => {
+    const intl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
+    expect(formatBrlDecimal('-1234.56')).toBe(intl.format(-1234.56))
+    expect(formatBrlDecimal('1234.56')).toBe(intl.format(1234.56))
   })
 
   it.each(['1300', '1300.5', '1,300.00', 'abc'])('recusa "%s" (não é texto decimal com 2 casas)', (text) => {
@@ -90,20 +83,21 @@ describe('formatBrlDecimal (texto exato da API, sem number)', () => {
 })
 
 describe('formatação', () => {
-  it('formata para o campo de edição sem milhar', () => {
-    expect(formatAmountInput(-1500.75)).toBe('-1500,75')
-    expect(formatAmountInput(0)).toBe('0,00')
+  it('formata a data sem fuso', () => {
+    expect(formatDate('2026-10-01')).toBe('01/10/2026')
   })
 
-  it('formata em BRL e a data sem fuso', () => {
-    expect(formatBrl(1234.56)).toMatch(/^R\$\s1\.234,56$/)
-    expect(formatDate('2026-10-01')).toBe('01/10/2026')
+  it('identifica zero sem converter para number', () => {
+    expect(['0', '0.00', '-0.00', '000', '0.10', '-5'].map(isZeroDecimal)).toEqual([true, true, true, true, false, false])
   })
 })
 
 describe('decimalToInput', () => {
   it.each([
     ['1234.56', '1234,56'],
+    ['-1234.56', '-1234,56'],
+    ['-9999999999999.99', '-9999999999999,99'],
+    ['0.00', '0,00'],
     ['0.10', '0,10'],
     ['9999999999999.99', '9999999999999,99'],
   ])('"%s" → "%s", e parseAmount devolve o mesmo texto', (text, input) => {

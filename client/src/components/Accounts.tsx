@@ -15,7 +15,7 @@ import {
   type FinancialScope,
 } from '../api/accounts'
 import type { FamilyMember } from '../api/families'
-import { formatAmountInput, formatBrl, formatBrlDecimal, formatDate, isNegativeDecimal, parseAmount } from '../money'
+import { decimalToInput, formatBrlDecimal, formatDate, isNegativeDecimal, parseAmount } from '../money'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -181,8 +181,8 @@ function OpeningBalanceSummary({ account }: { account: FinancialAccount }) {
   return (
     <p className="account__opening">
       Saldo inicial em {formatDate(account.openingBalanceDate)}:{' '}
-      <strong className={account.openingBalance < 0 ? 'amount amount--negative' : 'amount'}>
-        {formatBrl(account.openingBalance)}
+      <strong className={isNegativeDecimal(account.openingBalance) ? 'amount amount--negative' : 'amount'}>
+        {formatBrlDecimal(account.openingBalance)}
       </strong>
       <span className="meta"> — no início do dia, antes das movimentações dessa data. Não é o saldo atual.</span>
     </p>
@@ -273,7 +273,7 @@ function AccountForm({
   const [input, setInput] = useState<AccountInput>(account ? toInput(account) : emptyInput)
   // Texto digitado no valor (pt-BR); convertido sem arredondar só no envio.
   const [balanceText, setBalanceText] = useState(
-    account?.openingBalance != null ? formatAmountInput(account.openingBalance) : '',
+    account?.openingBalance != null ? decimalToInput(account.openingBalance) : '',
   )
   const [errors, setErrors] = useState<Record<string, string[]>>({})
   const [busy, setBusy] = useState(false)
@@ -305,7 +305,7 @@ function AccountForm({
       const payload: AccountInput = {
         ...input,
         institution: input.institution?.trim() || null,
-        openingBalance: amount.kind === 'ok' ? amount.value : null,
+        openingBalance: amount.kind === 'ok' ? amount.text : null,
         openingBalanceDate: date,
       }
       const result = account

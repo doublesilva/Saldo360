@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
 using Saldo360.Application.Accounts;
+using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Common;
 
 namespace Saldo360.Api.Accounts;
@@ -61,7 +62,7 @@ public static class FinancialAccountEndpoints
         {
             AccountAccess.NotFound => Results.NotFound(),
             AccountAccess.Invalid => Results.ValidationProblem(result.Errors!),
-            _ => Results.Created($"/api/families/{familyId}/accounts/{result.Account!.Id}", result.Account),
+            _ => Results.Created($"/api/families/{familyId}/accounts/{result.Account!.Id}", AccountResponse.From(result.Account)),
         };
     }
 
@@ -76,7 +77,7 @@ public static class FinancialAccountEndpoints
         }
 
         return await accounts.ListAsync(familyId, userId, includeInactive ?? false, cancellationToken) is { } list
-            ? Results.Ok(list)
+            ? Results.Ok(list.Select(AccountResponse.From).ToList())
             : Results.NotFound();
     }
 
@@ -90,7 +91,7 @@ public static class FinancialAccountEndpoints
         }
 
         return await accounts.GetAsync(familyId, accountId, userId, cancellationToken) is { } account
-            ? Results.Ok(account)
+            ? Results.Ok(AccountResponse.From(account))
             : Results.NotFound();
     }
 
@@ -112,7 +113,7 @@ public static class FinancialAccountEndpoints
         {
             AccountAccess.NotFound => Results.NotFound(),
             AccountAccess.Invalid => Results.ValidationProblem(result.Errors!),
-            _ => Results.Ok(result.Account),
+            _ => Results.Ok(AccountResponse.From(result.Account!)),
         };
     }
 
@@ -181,4 +182,35 @@ public sealed record AccountBalanceResponse(
         dto.UnavailableReason);
 
     private static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
+}
+
+/// <summary>
+/// Conta como resposta da API: os mesmos campos do DTO, com <c>openingBalance</c> como texto decimal exato com duas
+/// casas ("-1234.56") ou null (não informado, nunca zero). Padrão Money do saldo, lançamentos e transferências.
+/// </summary>
+public sealed record AccountResponse(
+    Guid Id,
+    string Name,
+    string? Institution,
+    AccountType Type,
+    FinancialScope FinancialScope,
+    AccountResponsibleDto? Responsible,
+    string? OpeningBalance,
+    DateOnly? OpeningBalanceDate,
+    bool IsActive,
+    string Currency,
+    DateTimeOffset CreatedAt)
+{
+    public static AccountResponse From(FinancialAccountDto dto) => new(
+        dto.Id,
+        dto.Name,
+        dto.Institution,
+        dto.Type,
+        dto.FinancialScope,
+        dto.Responsible,
+        dto.OpeningBalance is { } amount ? Money.Format(amount) : null,
+        dto.OpeningBalanceDate,
+        dto.IsActive,
+        dto.Currency,
+        dto.CreatedAt);
 }

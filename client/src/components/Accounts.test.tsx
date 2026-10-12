@@ -179,15 +179,15 @@ describe('Accounts', () => {
 })
 
 describe('Accounts — saldo inicial', () => {
-  const comSaldo: FinancialAccount = { ...itauPf, openingBalance: 1234.56, openingBalanceDate: '2026-10-01' }
+  const comSaldo: FinancialAccount = { ...itauPf, openingBalance: '1234.56', openingBalanceDate: '2026-10-01' }
   const negativo: FinancialAccount = {
     ...itauPf,
     id: 'a4',
     name: 'Itaú Empresas',
-    openingBalance: -1500.75,
+    openingBalance: '-1500.75',
     openingBalanceDate: '2026-09-30',
   }
-  const zerado: FinancialAccount = { ...dinheiro, openingBalance: 0, openingBalanceDate: '2026-10-01' }
+  const zerado: FinancialAccount = { ...dinheiro, openingBalance: '0.00', openingBalanceDate: '2026-10-01' }
 
   const saveCall = (calls: Call[]) => calls.find((c) => c.init?.method === 'POST' || c.init?.method === 'PUT')
 
@@ -233,9 +233,9 @@ describe('Accounts — saldo inicial', () => {
 
     await waitFor(() => expect(saveCall(calls)).toBeTruthy())
     const body = JSON.parse(String(saveCall(calls)!.init!.body))
-    expect(body.openingBalance).toBe(-1500.75)
+    expect(body.openingBalance).toBe('-1500.75')
     expect(body.openingBalanceDate).toBe('2026-10-01')
-    expect(String(saveCall(calls)!.init!.body)).toContain('"openingBalance":-1500.75')
+    expect(String(saveCall(calls)!.init!.body)).toContain('"openingBalance":"-1500.75"')
   })
 
   it('aceita saldo zero (diferente de não informado)', async () => {
@@ -247,7 +247,7 @@ describe('Accounts — saldo inicial', () => {
 
     await waitFor(() => expect(saveCall(calls)).toBeTruthy())
     const body = JSON.parse(String(saveCall(calls)!.init!.body))
-    expect([body.openingBalance, body.openingBalanceDate]).toEqual([0, '2026-10-01'])
+    expect([body.openingBalance, body.openingBalanceDate]).toEqual(['0.00', '2026-10-01'])
   })
 
   it.each([
@@ -291,7 +291,7 @@ describe('Accounts — saldo inicial', () => {
 
     await waitFor(() => expect(saveCall(calls)).toBeTruthy())
     const body = JSON.parse(String(saveCall(calls)!.init!.body))
-    expect([body.openingBalance, body.openingBalanceDate, body.isActive]).toEqual([1234.56, '2026-10-01', false])
+    expect([body.openingBalance, body.openingBalanceDate, body.isActive]).toEqual(['1234.56', '2026-10-01', false])
   })
 
   it('exibe o erro devolvido pela API no campo do saldo', async () => {
@@ -319,7 +319,7 @@ describe('Accounts — saldo inicial', () => {
 })
 
 describe('Accounts — saldo realizado', () => {
-  const comSaldo: FinancialAccount = { ...itauPf, openingBalance: 1000, openingBalanceDate: '2026-10-01' }
+  const comSaldo: FinancialAccount = { ...itauPf, openingBalance: '1000.00', openingBalanceDate: '2026-10-01' }
   const realizado: AccountBalance = {
     accountId: comSaldo.id,
     asOf: '2026-10-10',
@@ -392,5 +392,49 @@ describe('Accounts — saldo realizado', () => {
     fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '2.000,00' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(balanceCalls()).toBe(initial + 2))
+  })
+})
+
+describe('Accounts — saldo inicial como texto decimal exato', () => {
+  it.each([
+    ['1234.56', /Saldo inicial em 01\/10\/2026:\s*R\$\s1\.234,56/, '1234,56', false],
+    ['-1234.56', /Saldo inicial em 01\/10\/2026:\s*-R\$\s1\.234,56/, '-1234,56', true],
+    ['9999999999999.99', /Saldo inicial em 01\/10\/2026:\s*R\$\s9\.999\.999\.999\.999,99/, '9999999999999,99', false],
+    ['-9999999999999.99', /Saldo inicial em 01\/10\/2026:\s*-R\$\s9\.999\.999\.999\.999,99/, '-9999999999999,99', true],
+    ['0.10', /Saldo inicial em 01\/10\/2026:\s*R\$\s0,10/, '0,10', false],
+  ])('"%s": exibe, preenche a edição e reenvia o mesmo texto ao mudar só o nome', async (opening, shown, input, negative) => {
+    const account: FinancialAccount = { ...itauPf, openingBalance: opening, openingBalanceDate: '2026-10-01' }
+    const calls = mockApi([account])
+    render(<Accounts familyId="f1" members={members} />)
+
+    const item = (await screen.findByText('Itaú PF')).closest('li')!
+    expect(item.textContent).toMatch(shown)
+    expect(item.querySelector('.account__opening strong')!.className.includes('amount--negative')).toBe(negative)
+
+    fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
+    expect((screen.getByLabelText('Valor (R$)') as HTMLInputElement).value).toBe(input)
+    expect((screen.getByLabelText('Data de referência') as HTMLInputElement).value).toBe('2026-10-01')
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Itaú PF renomeada' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'PUT')).toBe(true))
+    const body = JSON.parse(String(calls.find((c) => c.init?.method === 'PUT')!.init!.body))
+    expect([body.name, body.openingBalance, body.openingBalanceDate]).toEqual(['Itaú PF renomeada', opening, '2026-10-01'])
+  })
+
+  it('remover valor e data envia null nos dois (não zero)', async () => {
+    const account: FinancialAccount = { ...itauPf, openingBalance: '-1234.56', openingBalanceDate: '2026-10-01' }
+    const calls = mockApi([account])
+    render(<Accounts familyId="f1" members={members} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+
+    fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Data de referência'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'PUT')).toBe(true))
+    const raw = String(calls.find((c) => c.init?.method === 'PUT')!.init!.body)
+    expect(raw).toContain('"openingBalance":null')
+    expect(raw).toContain('"openingBalanceDate":null')
   })
 })

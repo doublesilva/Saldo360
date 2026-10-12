@@ -29,8 +29,11 @@ export interface FinancialAccount {
   financialScope: FinancialScope
   /** null = conta conjunta. */
   responsible: AccountResponsible | null
-  /** Pode ser negativo. null (junto com a data) = saldo inicial não informado, que não é zero. */
-  openingBalance: number | null
+  /**
+   * Texto decimal exato ("-1234.56"); pode ser negativo. null (junto com a data) = saldo inicial não
+   * informado, que não é zero. Só é formatado, nunca convertido para number.
+   */
+  openingBalance: string | null
   /** "yyyy-MM-dd", sem horário. */
   openingBalanceDate: string | null
   isActive: boolean
@@ -45,8 +48,8 @@ export interface AccountInput {
   type: AccountType
   financialScope: FinancialScope
   responsibleMemberId: string | null
-  /** Valor e data juntos ou ambos null. */
-  openingBalance: number | null
+  /** Texto decimal exato ("-1234.56"). Valor e data juntos ou ambos null. */
+  openingBalance: string | null
   openingBalanceDate: string | null
 }
 

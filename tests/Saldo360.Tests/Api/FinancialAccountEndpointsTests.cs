@@ -291,14 +291,17 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
     }
 
     [Theory]
-    [InlineData("1234.56", "1234.56")]
-    [InlineData("0", "0")]
-    [InlineData("0.00", "0.00")]
-    [InlineData("-1500.75", "-1500.75")]
-    [InlineData("-0.01", "-0.01")]
-    [InlineData("9999999999999.99", "9999999999999.99")]
-    [InlineData("-9999999999999.99", "-9999999999999.99")]
-    public async Task OpeningBalance_PositiveZeroOrNegative_IsStoredExactly_AndSurvivesReload(string json, string expected)
+    [InlineData("1234.56", "1234.56", "1234.56")]
+    [InlineData("0", "0", "0.00")]
+    [InlineData("0.00", "0.00", "0.00")]
+    [InlineData("\"0.10\"", "0.10", "0.10")]
+    [InlineData("\"-1234.56\"", "-1234.56", "-1234.56")]
+    [InlineData("-1500.75", "-1500.75", "-1500.75")]
+    [InlineData("-0.01", "-0.01", "-0.01")]
+    [InlineData("9999999999999.99", "9999999999999.99", "9999999999999.99")]
+    [InlineData("-9999999999999.99", "-9999999999999.99", "-9999999999999.99")]
+    public async Task OpeningBalance_PositiveZeroOrNegative_IsStoredExactly_AndReturnedAsExactString(
+        string json, string stored, string returned)
     {
         await ArrangeAsync();
 
@@ -306,18 +309,54 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
             $$"""{ "name": "Itaú PF", "type": "Checking", "financialScope": "PF", "openingBalance": {{json}}, "openingBalanceDate": "2026-10-01" }""");
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var created = await ReadAsync<AccountDto>(response);
-        var expectedAmount = decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture);
+        var id = await AssertOpeningBalanceJsonAsync(response, returned, "2026-10-01");
+        Assert.Equal($"Itaú PF {stored} 2026-10-01", await StoredTextAsync());
 
-        // Recarrega pela API e direto do banco: mesmo valor, mesma data, sem horário.
-        var reloaded = await ReadAsync<AccountDto>(await SendAsync(HttpMethod.Get, $"{AccountsUrl}/{created.Id}", _member));
-        Assert.Equal((expectedAmount, new DateOnly(2026, 10, 1)), (reloaded.OpeningBalance, reloaded.OpeningBalanceDate));
-        await using var db = Db();
-        var stored = await db.FinancialAccounts.SingleAsync();
-        Assert.Equal((expectedAmount, new DateOnly(2026, 10, 1)), (stored.OpeningBalance, stored.OpeningBalanceDate));
-        var text = await db.Database.SqlQueryRaw<string>(
-            "SELECT opening_balance::text || ' ' || opening_balance_date::text AS \"Value\" FROM financial_accounts").SingleAsync();
-        Assert.Equal($"{expected} 2026-10-01", text);
+        // Consulta, listagem e edição só do nome: mesmo texto, mesma data.
+        await AssertOpeningBalanceJsonAsync(await SendAsync(HttpMethod.Get, $"{AccountsUrl}/{id}", _member), returned, "2026-10-01");
+        using (var list = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, AccountsUrl, _member)).Content.ReadAsStringAsync()))
+        {
+            AssertOpeningBalance(list.RootElement[0], returned, "2026-10-01");
+        }
+
+        var renamed = await SendRawWithCsrfAsync(HttpMethod.Put, $"{AccountsUrl}/{id}", _member,
+            $$"""{ "name": "Itaú PF renomeada", "type": "Checking", "financialScope": "PF", "openingBalance": "{{returned}}", "openingBalanceDate": "2026-10-01", "isActive": true }""");
+        Assert.Equal(HttpStatusCode.OK, renamed.StatusCode);
+        await AssertOpeningBalanceJsonAsync(renamed, returned, "2026-10-01");
+        // O valor gravado não muda: EF compara decimal por valor (0 == 0.00) e nem reescreve a coluna.
+        Assert.Equal($"Itaú PF renomeada {stored} 2026-10-01", await StoredTextAsync());
+
+        async Task<string> StoredTextAsync()
+        {
+            await using var db = Db();
+            return await db.Database.SqlQueryRaw<string>(
+                "SELECT name || ' ' || opening_balance::text || ' ' || opening_balance_date::text AS \"Value\" FROM financial_accounts").SingleAsync();
+        }
+    }
+
+    [Fact]
+    public async Task OpeningBalanceNull_IsReturnedAsJsonNull_InEveryResponse_AndRemovalMakesBalanceUnavailable()
+    {
+        await ArrangeAsync();
+        var created = await SendWithCsrfAsync(HttpMethod.Post, AccountsUrl, _owner, new { name = "Dinheiro", type = "Cash", financialScope = "PF" });
+        var id = await AssertOpeningBalanceJsonAsync(created, null, null);
+        await AssertOpeningBalanceJsonAsync(await SendAsync(HttpMethod.Get, $"{AccountsUrl}/{id}", _owner), null, null);
+
+        var configured = await SendWithCsrfAsync(HttpMethod.Put, $"{AccountsUrl}/{id}", _owner,
+            new { name = "Dinheiro", type = "Cash", financialScope = "PF", openingBalance = "-1234.56", openingBalanceDate = "2026-10-01", isActive = true });
+        await AssertOpeningBalanceJsonAsync(configured, "-1234.56", "2026-10-01");
+
+        var removed = await SendWithCsrfAsync(HttpMethod.Put, $"{AccountsUrl}/{id}", _owner,
+            new { name = "Dinheiro", type = "Cash", financialScope = "PF", openingBalance = (string?)null, openingBalanceDate = (string?)null, isActive = true });
+        await AssertOpeningBalanceJsonAsync(removed, null, null);
+        using (var list = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, AccountsUrl, _owner)).Content.ReadAsStringAsync()))
+        {
+            AssertOpeningBalance(list.RootElement[0], null, null);
+        }
+
+        using var balance = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, $"{AccountsUrl}/{id}/balance", _owner)).Content.ReadAsStringAsync());
+        Assert.Equal("OpeningBalanceNotConfigured", balance.RootElement.GetProperty("unavailableReason").GetString());
+        Assert.Equal(JsonValueKind.Null, balance.RootElement.GetProperty("balance").ValueKind);
     }
 
     [Fact]
@@ -399,11 +438,11 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
         };
 
         var set = await ReadAsync<AccountDto>(await SendWithCsrfAsync(HttpMethod.Put, url, _member, Body(-250.40m, "2026-09-30")));
-        Assert.Equal((-250.40m, new DateOnly(2026, 9, 30)), (set.OpeningBalance, set.OpeningBalanceDate));
+        Assert.Equal(("-250.40", new DateOnly(2026, 9, 30)), (set.OpeningBalance, set.OpeningBalanceDate));
         Assert.Equal(("PJ", "Checking", GuestMemberId), (set.FinancialScope, set.Type, set.Responsible!.MemberId));
 
         var changed = await ReadAsync<AccountDto>(await SendWithCsrfAsync(HttpMethod.Put, url, _owner, Body(0m, "2026-10-01")));
-        Assert.Equal((0m, new DateOnly(2026, 10, 1)), (changed.OpeningBalance, changed.OpeningBalanceDate));
+        Assert.Equal(("0.00", new DateOnly(2026, 10, 1)), (changed.OpeningBalance, changed.OpeningBalanceDate));
 
         // Edição incompleta é recusada e não altera o que estava gravado.
         await AssertValidationErrorAsync(await SendWithCsrfAsync(HttpMethod.Put, url, _owner, Body(10m, null)), "openingBalanceDate");
@@ -461,6 +500,28 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
         return await ReadAsync<List<AccountDto>>(response);
     }
 
+    /// <summary>Confere openingBalance (string JSON exata ou null) e a data; devolve o Id da conta.</summary>
+    private static async Task<Guid> AssertOpeningBalanceJsonAsync(HttpResponseMessage response, string? amount, string? date)
+    {
+        Assert.True(response.IsSuccessStatusCode, $"HTTP {(int)response.StatusCode}");
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertOpeningBalance(json.RootElement, amount, date);
+        return json.RootElement.GetProperty("id").GetGuid();
+    }
+
+    private static void AssertOpeningBalance(JsonElement account, string? amount, string? date)
+    {
+        var value = account.GetProperty("openingBalance");
+        var referenceDate = account.GetProperty("openingBalanceDate");
+        if (amount is null)
+        {
+            Assert.Equal((JsonValueKind.Null, JsonValueKind.Null), (value.ValueKind, referenceDate.ValueKind));
+            return;
+        }
+
+        Assert.Equal((JsonValueKind.String, amount, date), (value.ValueKind, value.GetString(), referenceDate.GetString()));
+    }
+
     private static async Task AssertValidationErrorAsync(HttpResponseMessage response, string field)
     {
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -482,6 +543,6 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
 
     private sealed record AccountDto(
         Guid Id, string Name, string? Institution, string Type, string FinancialScope,
-        ResponsibleDto? Responsible, decimal? OpeningBalance, DateOnly? OpeningBalanceDate,
+        ResponsibleDto? Responsible, string? OpeningBalance, DateOnly? OpeningBalanceDate,
         bool IsActive, string Currency, DateTimeOffset CreatedAt);
 }

@@ -12,7 +12,7 @@ import {
   type TransferPage,
 } from '../api/transfers'
 import { todayInSaoPaulo } from '../dates'
-import { formatBrlDecimal, formatDate, parseAmount } from '../money'
+import { formatBrlDecimal, formatDate, isZeroDecimal, parseAmount } from '../money'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -251,7 +251,7 @@ function TransferForm({
     const amount = parseAmount(form.amount)
     if (amount.kind === 'empty') clientErrors.amount = ['Informe o valor.']
     else if (amount.kind === 'invalid') clientErrors.amount = [amount.message]
-    else if (amount.text.startsWith('-') || /^0*(\.0*)?$/.test(amount.text)) clientErrors.amount = ['O valor deve ser maior que zero.']
+    else if (amount.text.startsWith('-') || isZeroDecimal(amount.text)) clientErrors.amount = ['O valor deve ser maior que zero.']
 
     if (Object.keys(clientErrors).length > 0 || amount.kind !== 'ok') {
       setErrors(clientErrors)
