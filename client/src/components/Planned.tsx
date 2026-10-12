@@ -31,8 +31,9 @@ type References = { accounts: FinancialAccount[]; categories: FinancialCategory[
 /**
  * Receitas e despesas previstas únicas: o que se espera receber ou pagar. Pendentes ficam fora do saldo e,
  * vencidas, continuam pendentes ("Vencida" é calculado na tela com a data de hoje em America/Sao_Paulo e não é
- * gravado). "Realizar" cria o lançamento efetivo vinculado; `onChanged` avisa saldos e lançamentos. `refreshKey`
- * muda quando outra seção mexe nas previsões (ex.: cancelar o lançamento efetivo reabre a previsão).
+ * gravado). "Realizar" cria o lançamento efetivo vinculado. `onChanged` avisa saldos, projeções e lançamentos a
+ * cada mudança (criar, editar, cancelar ou realizar). `refreshKey` muda quando outra seção mexe nas previsões
+ * (ex.: cancelar o lançamento efetivo reabre a previsão).
  */
 export function Planned({
   familyId,
@@ -94,6 +95,7 @@ export function Planned({
       const result = await cancelPlanned(familyId, planned.id)
       if (!result.ok) setActionError(Object.values(result.errors).flat()[0] ?? 'Não foi possível cancelar.')
       reload()
+      onChanged?.() // muda a projeção
     } catch (error: unknown) {
       setActionError(errorMessage(error))
     } finally {
@@ -126,6 +128,7 @@ export function Planned({
         onSaved={() => {
           setEditing(null)
           reload()
+          onChanged?.() // muda a projeção
         }}
         onCancel={() => setEditing(null)}
       />

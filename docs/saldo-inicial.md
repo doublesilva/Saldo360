@@ -117,6 +117,63 @@ Quando o saldo não pode ser calculado, a resposta é `200` com `unavailableReas
 | `OpeningBalanceNotConfigured` | A conta não tem saldo inicial | `null` / `null` | "Saldo realizado indisponível. Configure o saldo inicial para calcular o saldo." |
 | `BeforeOpeningBalanceDate` | `asOf` < `OpeningBalanceDate` | valores configurados | "Saldo realizado indisponível: a data de referência do saldo inicial (DD/MM/AAAA) é posterior a DD/MM/AAAA." |
 
+## Saldo projetado
+
+O saldo projetado responde à pergunta "quanto terei até a data X se as previsões pendentes se confirmarem?". Ele parte do saldo realizado de hoje e soma **somente previsões pendentes**. Também é calculado a cada consulta e nunca fica gravado.
+
+```text
+data-base  = hoje em America/Sao_Paulo (capturada uma vez por consulta), no fechamento do dia
+data-alvo  = through (obrigatória; hoje ou futura)
+
+projectedBalance = realizedBalance                 (saldo realizado no fechamento da data-base)
+                 + overdueIncome  − overdueExpense (pendentes com dueDate <  data-base)
+                 + plannedIncome  − plannedExpense (pendentes com data-base ≤ dueDate ≤ data-alvo)
+```
+
+### Quais previsões entram
+
+- **Pendentes**, isto é, não canceladas e sem lançamento efetivo ativo ([previsões e realização](previsoes.md)), da própria conta e família, com `dueDate ≤ data-alvo`.
+- **Vencidas entram, separadas.** Uma previsão pendente com `dueDate` anterior a hoje é um compromisso que ainda não aconteceu. Ela entra em `overdueIncome`/`overdueExpense`, e não em `plannedIncome`/`plannedExpense`. A previsão que vence **hoje** fica nas do período.
+- **A data do saldo inicial não filtra previsões.** Uma pendente com data anterior à referência da conta continua contando: previsão não é movimentação realizada, então não está "dentro" do saldo inicial.
+- **Conta ou categoria inativa não esconde o compromisso.** A conta inativa também pode ser consultada.
+- **Ficam de fora:**
+  - previsões canceladas;
+  - previsões **realizadas**: o valor efetivo já está no saldo realizado, pelo lançamento vinculado, e o previsto não é somado de novo;
+  - previsões com `dueDate` depois da data-alvo.
+- **Cancelar o lançamento efetivo** reabre a previsão, que volta a entrar na projeção.
+- Nada é presumido: não há gastos estimados nem previsões geradas automaticamente.
+
+Exemplo, com a data-alvo no fim do mês:
+
+| Situação | Realizado | Vencidas (desp.) | Previstas (rec. / desp.) | Projetado |
+| --- | --- | --- | --- | --- |
+| Saldo 1.000,00, receita prevista 500,00, despesa prevista 200,00 | 1.000,00 | 0,00 | 500,00 / 200,00 | **1.300,00** |
+| + despesa vencida pendente de 100,00 | 1.000,00 | 100,00 | 500,00 / 200,00 | **1.200,00** |
+| Despesa de 200,00 realizada por 210,00 | 790,00 | 100,00 | 500,00 / 0,00 | **1.190,00** |
+| Lançamento efetivo de 210,00 cancelado | 1.000,00 | 100,00 | 500,00 / 200,00 | **1.200,00** |
+
+### Leitura consistente
+
+O saldo realizado (saldo inicial, lançamentos e transferências) e as previsões pendentes são lidos numa **única transação somente leitura `REPEATABLE READ`**. No PostgreSQL, isso significa que todas as consultas usam o **mesmo snapshot**.
+
+Como "realizada" é derivado do próprio lançamento vinculado, uma realização ou um cancelamento concorrente aparece inteiro ou não aparece:
+
+- se aparece, o lançamento efetivo é somado e a previsão sai;
+- se não aparece, a previsão é somada e o lançamento ainda não existe.
+
+A projeção nunca conta os dois, nem deixa de contar ambos. O endpoint de saldo realizado usa a mesma leitura consistente.
+
+As somas são agregadas no banco (`SUM` condicional por tipo e vencimento, com `NOT EXISTS` para excluir as realizadas), sobre `numeric`, sem carregar movimentações nem previsões em memória e sem arredondar.
+
+### API da projeção
+
+`GET /api/families/{familyId}/accounts/{accountId}/projection?through=yyyy-MM-dd`
+
+- `through` é obrigatório, só no formato `yyyy-MM-dd`, e deve ser hoje ou futuro. Ausente, inválido ou passado retorna `400`.
+- Conta inexistente, de outra família ou consulta de quem não participa da família retorna `404`. Conta inativa pode ser consultada.
+- Resposta: `{ accountId, baseDate, through, realizedBalance, overdueIncome, overdueExpense, plannedIncome, plannedExpense, projectedBalance, unavailableReason }`, com valores em **texto decimal exato**.
+- **Indisponível.** Se o saldo realizado de hoje estiver indisponível (`OpeningBalanceNotConfigured`, ou `BeforeOpeningBalanceDate` quando a referência é futura), `unavailableReason` traz o mesmo motivo e **todos** os valores monetários vêm `null`. Indisponível nunca é zero.
+
 ## Orientações para a futura importação
 
 1. **Compare por data de calendário, não por instante.** A data de uma movimentação é a data local do lançamento (fuso do usuário, `America/Sao_Paulo`), não um `timestamp` UTC. Uma compra às 22h de 30/09 em Brasília é de 30/09, mesmo que em UTC já seja 01/10.

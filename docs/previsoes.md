@@ -2,6 +2,8 @@
 
 Uma **previsão** (`financial_planned_transactions`) é uma receita ou despesa que se espera receber ou pagar em `due_date`. Uma previsão pendente não entra no saldo realizado. Ela só passa a contar quando é **realizada**: nesse momento é criado um lançamento efetivo (`financial_transactions`) vinculado a ela.
 
+Previsões pendentes, vencidas ou não, entram no [saldo projetado](saldo-inicial.md#saldo-projetado), que nunca as conta junto com o lançamento efetivo.
+
 ## Situação: como Pending, Realized e Cancelled são determinados
 
 A situação **não é gravada**. Ela é derivada a cada leitura, de fontes que não podem divergir:

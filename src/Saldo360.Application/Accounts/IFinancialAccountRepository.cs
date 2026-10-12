@@ -28,4 +28,19 @@ public interface IFinancialAccountRepository
     /// </summary>
     Task<AccountTotals> SumMovementsAsync(
         Guid familyId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Somas das previsões PENDENTES da conta com DueDate ≤ <paramref name="through"/>, separando vencidas
+    /// (DueDate &lt; <paramref name="baseDate"/>) das demais, agregadas no PostgreSQL. Pendente = não cancelada e sem
+    /// lançamento efetivo ativo. Não filtra pela data do saldo inicial nem pela situação de conta/categoria.
+    /// </summary>
+    Task<PlannedTotals> SumPendingPlannedAsync(
+        Guid familyId, Guid accountId, DateOnly baseDate, DateOnly through, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Executa <paramref name="read"/> numa transação somente leitura REPEATABLE READ: todas as consultas enxergam o
+    /// MESMO snapshot do banco. Uma realização (ou cancelamento) concorrente aparece inteira ou não aparece, então o
+    /// lançamento efetivo e a previsão nunca são contados juntos nem ambos esquecidos.
+    /// </summary>
+    Task<T> ReadConsistentAsync<T>(Func<Task<T>> read, CancellationToken cancellationToken);
 }

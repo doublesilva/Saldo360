@@ -215,7 +215,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
           <Categories familyId={state.family.id} />
           <Transactions familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
           <Transfers familyId={state.family.id} onChanged={financeChanged} />
-          {/* Criar, editar ou cancelar previsão não muda saldo; só realizar avisa (onChanged). */}
+          {/* Toda mudança em previsões muda a projeção (e realizar muda o saldo realizado): avisa. */}
           <Planned familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
         </>
       )}

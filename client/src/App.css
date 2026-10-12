@@ -357,6 +357,47 @@ button {
   margin: 0;
 }
 
+/* Saldo projetado: separado do realizado, borda tracejada para não parecer saldo efetivo. */
+.account__projection {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px dashed var(--accent);
+  border-radius: 0 0.5rem 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+
+.account__projection p {
+  margin: 0;
+}
+
+.projection-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.projection-target label {
+  font-weight: 600;
+}
+
+.projection-target input {
+  font: inherit;
+  min-height: 2.75rem;
+  box-sizing: border-box;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.projection-target .meta {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .account__balance--unavailable {
   border-left-color: var(--muted);
   background: none;

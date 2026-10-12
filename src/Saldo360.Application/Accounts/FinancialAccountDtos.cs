@@ -38,6 +38,32 @@ public sealed record AccountOpeningBalance(decimal? Amount, DateOnly? Date);
 /// <summary>Totais de uma conta no período: lançamentos (receita/despesa) e transferências (recebidas/enviadas).</summary>
 public sealed record AccountTotals(decimal Income, decimal Expense, decimal TransferIn, decimal TransferOut);
 
+/// <summary>
+/// Previsões PENDENTES da conta até a data-alvo, por tipo: vencidas (DueDate &lt; data-base) e do período
+/// (data-base ≤ DueDate ≤ data-alvo). Canceladas e realizadas (com lançamento ativo) ficam de fora.
+/// </summary>
+public sealed record PlannedTotals(decimal OverdueIncome, decimal OverdueExpense, decimal PlannedIncome, decimal PlannedExpense);
+
+/// <summary>
+/// Saldo projetado: parte do saldo realizado no fechamento de <see cref="BaseDate"/> (hoje em America/Sao_Paulo) e
+/// soma só previsões pendentes até <see cref="Through"/>:
+/// ProjectedBalance = RealizedBalance + OverdueIncome − OverdueExpense + PlannedIncome − PlannedExpense.
+/// Se o saldo realizado estiver indisponível, todos os valores são nulos e <see cref="UnavailableReason"/> diz por quê.
+/// </summary>
+public sealed record AccountProjectionDto(
+    Guid AccountId,
+    DateOnly BaseDate,
+    DateOnly Through,
+    decimal? RealizedBalance,
+    decimal? OverdueIncome,
+    decimal? OverdueExpense,
+    decimal? PlannedIncome,
+    decimal? PlannedExpense,
+    decimal? ProjectedBalance,
+    BalanceUnavailableReason? UnavailableReason);
+
+public sealed record ProjectionResult(BalanceAccess Access, AccountProjectionDto? Projection, IDictionary<string, string[]>? Errors);
+
 /// <summary>Por que o saldo realizado não pode ser calculado. Nunca é tratado como zero.</summary>
 public enum BalanceUnavailableReason
 {

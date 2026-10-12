@@ -16,7 +16,42 @@ public static class FinancialAccountEndpoints
         accounts.MapGet("/{accountId:guid}", Get);
         accounts.MapPut("/{accountId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
         accounts.MapGet("/{accountId:guid}/balance", GetBalance);
+        accounts.MapGet("/{accountId:guid}/projection", GetProjection);
         return app;
+    }
+
+    /// <summary>
+    /// Saldo projetado até <c>through</c> (obrigatório, yyyy-MM-dd, hoje ou futuro): saldo realizado de hoje + previsões
+    /// pendentes vencidas e até a data-alvo. Valores como texto decimal exato; indisponível → todos nulos com o motivo.
+    /// </summary>
+    private static async Task<IResult> GetProjection(
+        Guid familyId, Guid accountId, string? through, CurrentUser currentUser, FinancialAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var errors = new Dictionary<string, string[]>();
+        var date = IsoDateQuery.Parse(through, "through", errors);
+        if (date is null && errors.Count == 0)
+        {
+            errors["through"] = ["Informe a data-alvo da projeção (yyyy-MM-dd)."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var result = await accounts.GetProjectionAsync(familyId, accountId, userId, date!.Value, cancellationToken);
+        return result.Access switch
+        {
+            BalanceAccess.NotFound => Results.NotFound(),
+            BalanceAccess.Invalid => Results.ValidationProblem(result.Errors!),
+            _ => Results.Ok(AccountProjectionResponse.From(result.Projection!)),
+        };
     }
 
     /// <summary>
@@ -213,4 +248,35 @@ public sealed record AccountResponse(
         dto.IsActive,
         dto.Currency,
         dto.CreatedAt);
+}
+
+/// <summary>
+/// Saldo projetado. Valores como texto decimal exato com duas casas. projectedBalance = realizedBalance
+/// + overdueIncome − overdueExpense + plannedIncome − plannedExpense. unavailableReason preenchido ⇔ todos nulos.
+/// </summary>
+public sealed record AccountProjectionResponse(
+    Guid AccountId,
+    DateOnly BaseDate,
+    DateOnly Through,
+    string? RealizedBalance,
+    string? OverdueIncome,
+    string? OverdueExpense,
+    string? PlannedIncome,
+    string? PlannedExpense,
+    string? ProjectedBalance,
+    BalanceUnavailableReason? UnavailableReason)
+{
+    public static AccountProjectionResponse From(AccountProjectionDto dto) => new(
+        dto.AccountId,
+        dto.BaseDate,
+        dto.Through,
+        Format(dto.RealizedBalance),
+        Format(dto.OverdueIncome),
+        Format(dto.OverdueExpense),
+        Format(dto.PlannedIncome),
+        Format(dto.PlannedExpense),
+        Format(dto.ProjectedBalance),
+        dto.UnavailableReason);
+
+    private static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
 }

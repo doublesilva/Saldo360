@@ -5,16 +5,19 @@ import {
   accountTypeLabels,
   createAccount,
   getAccountBalance,
+  getAccountProjection,
   listAccounts,
   toInput,
   updateAccount,
   type AccountBalance,
+  type AccountProjection,
   type AccountInput,
   type AccountType,
   type FinancialAccount,
   type FinancialScope,
 } from '../api/accounts'
 import type { FamilyMember } from '../api/families'
+import { endOfMonth, todayInSaoPaulo } from '../dates'
 import { decimalToInput, formatBrlDecimal, formatDate, isNegativeDecimal, parseAmount } from '../money'
 
 function errorMessage(error: unknown): string {
@@ -42,6 +45,9 @@ export function Accounts({
 }) {
   const [list, setList] = useState<ListState>({ kind: 'loading' })
   const [includeInactive, setIncludeInactive] = useState(false)
+  // Data-alvo da projeção: começa no último dia do mês atual (America/Sao_Paulo).
+  const today = todayInSaoPaulo()
+  const [through, setThrough] = useState(() => endOfMonth(today))
   const [reloadKey, setReloadKey] = useState(0)
   const [editing, setEditing] = useState<FinancialAccount | 'new' | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
@@ -109,6 +115,18 @@ export function Accounts({
         Mostrar contas inativas
       </label>
 
+      <div className="projection-target">
+        <label htmlFor="projection-through">Projetar até</label>
+        <input
+          id="projection-through"
+          type="date"
+          value={through}
+          min={today}
+          onChange={(event) => setThrough(event.target.value || endOfMonth(today))}
+        />
+        <p className="meta">Inclui previsões pendentes vencidas e até a data escolhida.</p>
+      </div>
+
       {toggleError && (
         <p className="field-error" role="alert">
           {toggleError}
@@ -150,6 +168,12 @@ export function Accounts({
               </dl>
               <OpeningBalanceSummary account={account} />
               <RealizedBalance familyId={familyId} accountId={account.id} refreshKey={`${reloadKey}:${balanceVersion}`} />
+              <ProjectedBalance
+                familyId={familyId}
+                accountId={account.id}
+                through={through}
+                refreshKey={`${reloadKey}:${balanceVersion}`}
+              />
               <div className="form__actions">
                 <button type="button" onClick={() => setEditing(account)}>
                   Editar
@@ -186,6 +210,74 @@ function OpeningBalanceSummary({ account }: { account: FinancialAccount }) {
       </strong>
       <span className="meta"> — no início do dia, antes das movimentações dessa data. Não é o saldo atual.</span>
     </p>
+  )
+}
+
+type ProjectionState = { kind: 'loading' } | { kind: 'loaded'; projection: AccountProjection } | { kind: 'error'; message: string }
+
+/**
+ * Saldo projetado até a data-alvo, calculado pela API (saldo realizado de hoje + previsões pendentes vencidas e até
+ * a data). Separado do saldo realizado. Os valores chegam como texto decimal e só são formatados: nada é somado
+ * aqui. Indisponível nunca aparece como zero.
+ */
+function ProjectedBalance({
+  familyId,
+  accountId,
+  through,
+  refreshKey,
+}: {
+  familyId: string
+  accountId: string
+  through: string
+  refreshKey: string
+}) {
+  const [state, setState] = useState<ProjectionState>({ kind: 'loading' })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getAccountProjection(familyId, accountId, through, controller.signal)
+      .then((projection) => setState({ kind: 'loaded', projection }))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setState({ kind: 'error', message: errorMessage(error) })
+      })
+    return () => controller.abort()
+  }, [familyId, accountId, through, refreshKey])
+
+  if (state.kind === 'loading') return <p className="account__projection meta">Calculando saldo projetado…</p>
+  if (state.kind === 'error') return <p className="account__projection status status--down">{state.message}</p>
+
+  const { projection } = state
+  const { projectedBalance, overdueIncome, overdueExpense, plannedIncome, plannedExpense } = projection
+  if (
+    projectedBalance === null ||
+    overdueIncome === null ||
+    overdueExpense === null ||
+    plannedIncome === null ||
+    plannedExpense === null
+  ) {
+    return (
+      <p className="account__projection account__balance--unavailable">
+        Saldo projetado indisponível: depende do saldo realizado de hoje.
+      </p>
+    )
+  }
+
+  const negative = isNegativeDecimal(projectedBalance)
+  return (
+    <div className="account__projection">
+      <p>
+        Saldo projetado até {formatDate(projection.through)}:{' '}
+        <strong className={negative ? 'amount amount--negative' : 'amount'}>{formatBrlDecimal(projectedBalance)}</strong>
+        {negative && <span className="meta"> — projeção negativa: faltará dinheiro se as previsões se confirmarem.</span>}
+      </p>
+      <p className="meta">
+        Previstas de {formatDate(projection.baseDate)} a {formatDate(projection.through)}: receitas{' '}
+        {formatBrlDecimal(plannedIncome)} · despesas {formatBrlDecimal(plannedExpense)}
+      </p>
+      <p className="meta">
+        Vencidas pendentes: receitas {formatBrlDecimal(overdueIncome)} · despesas {formatBrlDecimal(overdueExpense)}
+      </p>
+    </div>
   )
 }
 

@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AccountBalance, FinancialAccount } from '../api/accounts'
+import type { AccountBalance, AccountProjection, FinancialAccount } from '../api/accounts'
 import type { FamilyMember } from '../api/families'
+import { endOfMonth, todayInSaoPaulo } from '../dates'
 import { Accounts } from './Accounts'
 
 const members: FamilyMember[] = [
@@ -49,11 +50,28 @@ const unavailable = (accountId: string): AccountBalance => ({
   unavailableReason: 'OpeningBalanceNotConfigured',
 })
 
+const unavailableProjection = (accountId: string, through: string): AccountProjection => ({
+  accountId,
+  baseDate: '2026-10-10',
+  through,
+  realizedBalance: null,
+  overdueIncome: null,
+  overdueExpense: null,
+  plannedIncome: null,
+  plannedExpense: null,
+  projectedBalance: null,
+  unavailableReason: 'OpeningBalanceNotConfigured',
+})
+
 /**
- * API simulada: lista conforme includeInactive, CSRF, gravações e saldo realizado por conta
- * (`balances[accountId]`; sem entrada, indisponível por falta de saldo inicial).
+ * API simulada: lista conforme includeInactive, CSRF, gravações, saldo realizado por conta (`balances[accountId]`)
+ * e saldo projetado (`projections[accountId]`); sem entrada, ambos indisponíveis por falta de saldo inicial.
  */
-function mockApi(active: FinancialAccount[] = [itauPf, dinheiro], balances: Record<string, AccountBalance> = {}) {
+function mockApi(
+  active: FinancialAccount[] = [itauPf, dinheiro],
+  balances: Record<string, AccountBalance> = {},
+  projections: Record<string, AccountProjection> = {},
+) {
   const calls: Call[] = []
   vi.stubGlobal(
     'fetch',
@@ -63,6 +81,11 @@ function mockApi(active: FinancialAccount[] = [itauPf, dinheiro], balances: Reco
       if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
       const balance = /\/accounts\/([^/]+)\/balance$/.exec(url)
       if (balance) return Response.json(balances[balance[1]] ?? unavailable(balance[1]))
+      const projection = /\/accounts\/([^/]+)\/projection\?through=([\d-]+)$/.exec(url)
+      if (projection) {
+        const known = projections[projection[1]]
+        return Response.json(known ? { ...known, through: projection[2] } : unavailableProjection(projection[1], projection[2]))
+      }
       if (init?.method === 'PUT') return Response.json({ ...itauPf, ...JSON.parse(String(init.body)) })
       if (init?.method === 'POST') return Response.json({ ...itauPf, id: 'novo' }, { status: 201 })
       return Response.json(url.includes('includeInactive=true') ? [...active, antiga] : active)
@@ -103,7 +126,9 @@ describe('Accounts', () => {
     fireEvent.click(screen.getByLabelText('Mostrar contas inativas'))
 
     expect(await screen.findByText('Conta antiga')).toBeTruthy()
-    expect(calls.filter((c) => !c.url.includes('/balance')).at(-1)!.url).toBe('/api/families/f1/accounts?includeInactive=true')
+    expect(calls.filter((c) => !c.url.includes('/balance') && !c.url.includes('/projection')).at(-1)!.url).toBe(
+      '/api/families/f1/accounts?includeInactive=true',
+    )
     expect(screen.getByRole('button', { name: 'Reativar' })).toBeTruthy()
   })
 
@@ -436,5 +461,78 @@ describe('Accounts — saldo inicial como texto decimal exato', () => {
     const raw = String(calls.find((c) => c.init?.method === 'PUT')!.init!.body)
     expect(raw).toContain('"openingBalance":null')
     expect(raw).toContain('"openingBalanceDate":null')
+  })
+})
+
+describe('Accounts — saldo projetado', () => {
+  const conta: FinancialAccount = { ...itauPf, openingBalance: '1000.00', openingBalanceDate: '2026-10-01' }
+  const projetado: AccountProjection = {
+    accountId: conta.id,
+    baseDate: '2026-10-12',
+    through: '2026-10-31',
+    realizedBalance: '1000.00',
+    overdueIncome: '0.00',
+    overdueExpense: '100.00',
+    plannedIncome: '500.00',
+    plannedExpense: '200.00',
+    projectedBalance: '1200.00',
+    unavailableReason: null,
+  }
+  const projectionCalls = (calls: Call[]) => calls.filter((c) => c.url.includes('/projection'))
+
+  it('começa no último dia do mês atual e mostra projetado, previstas e vencidas em linhas próprias', async () => {
+    const calls = mockApi([conta], {}, { [conta.id]: projetado })
+    render(<Accounts familyId="f1" members={members} />)
+
+    const item = (await screen.findByText(/Saldo projetado até/)).closest('li')!
+    const expected = endOfMonth(todayInSaoPaulo())
+    expect((screen.getByLabelText('Projetar até') as HTMLInputElement).value).toBe(expected)
+    expect(projectionCalls(calls)[0].url).toBe(`/api/families/f1/accounts/${conta.id}/projection?through=${expected}`)
+    expect(item.textContent).toMatch(/Saldo projetado até \d{2}\/\d{2}\/\d{4}:\s*R\$\s1\.200,00/)
+    expect(item.textContent).toMatch(/Previstas de 12\/10\/2026 a \d{2}\/\d{2}\/\d{4}: receitas R\$\s500,00 · despesas R\$\s200,00/)
+    expect(item.textContent).toMatch(/Vencidas pendentes: receitas R\$\s0,00 · despesas R\$\s100,00/)
+    expect(screen.getByText('Inclui previsões pendentes vencidas e até a data escolhida.')).toBeTruthy()
+  })
+
+  it('trocar a data-alvo consulta de novo com a data escolhida', async () => {
+    const calls = mockApi([conta], {}, { [conta.id]: projetado })
+    render(<Accounts familyId="f1" members={members} />)
+    await screen.findByText(/Saldo projetado até/)
+
+    fireEvent.change(screen.getByLabelText('Projetar até'), { target: { value: '2027-01-15' } })
+
+    await waitFor(() => expect(projectionCalls(calls).at(-1)!.url).toContain('through=2027-01-15'))
+    expect(await screen.findByText(/Saldo projetado até 15\/01\/2027/)).toBeTruthy()
+  })
+
+  it('exibe valores exatos e destaca projeção negativa sem fazer contas', async () => {
+    mockApi([conta], {}, {
+      [conta.id]: { ...projetado, projectedBalance: '-29999999999999.97', plannedExpense: '30000000000999.97' },
+    })
+    render(<Accounts familyId="f1" members={members} />)
+
+    const amount = await screen.findByText(/^-R\$\s29\.999\.999\.999\.999,97$/)
+    expect(amount.className).toContain('amount--negative')
+    expect(screen.getByText(/projeção negativa/)).toBeTruthy()
+    expect(screen.getByText(/despesas R\$\s30\.000\.000\.000\.999,97/)).toBeTruthy()
+  })
+
+  it('indisponível não aparece como zero', async () => {
+    mockApi([itauPf])
+    render(<Accounts familyId="f1" members={members} />)
+
+    const message = await screen.findByText('Saldo projetado indisponível: depende do saldo realizado de hoje.')
+    expect(message.closest('li')!.textContent).not.toMatch(/R\$/)
+  })
+
+  it('consulta de novo quando as finanças mudam (balanceVersion)', async () => {
+    const calls = mockApi([conta], {}, { [conta.id]: projetado })
+    const { rerender } = render(<Accounts familyId="f1" members={members} balanceVersion={0} />)
+    await screen.findByText(/Saldo projetado até/)
+    const before = projectionCalls(calls).length
+
+    rerender(<Accounts familyId="f1" members={members} balanceVersion={1} />)
+
+    await waitFor(() => expect(projectionCalls(calls).length).toBe(before + 1))
   })
 })

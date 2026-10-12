@@ -139,3 +139,38 @@ export async function getAccountBalance(familyId: string, accountId: string, sig
   if (!response.ok) throw new Error(`Falha ao calcular o saldo (HTTP ${response.status}).`)
   return (await response.json()) as AccountBalance
 }
+
+/**
+ * Saldo projetado até `through`: saldo realizado de hoje (baseDate, America/Sao_Paulo) + previsões pendentes vencidas
+ * e até a data-alvo. Valores em texto decimal exato: só formatar, nunca converter para number nem somar.
+ * projectedBalance = realizedBalance + overdueIncome − overdueExpense + plannedIncome − plannedExpense (feito na API).
+ * Indisponível ⇔ unavailableReason preenchido e todos os valores null.
+ */
+export interface AccountProjection {
+  accountId: string
+  baseDate: string
+  through: string
+  realizedBalance: string | null
+  overdueIncome: string | null
+  overdueExpense: string | null
+  plannedIncome: string | null
+  plannedExpense: string | null
+  projectedBalance: string | null
+  unavailableReason: BalanceUnavailableReason | null
+}
+
+export async function getAccountProjection(
+  familyId: string,
+  accountId: string,
+  through: string,
+  signal?: AbortSignal,
+): Promise<AccountProjection> {
+  const query = new URLSearchParams({ through })
+  const response = await fetch(`${accountsUrl(familyId, accountId)}/projection?${query}`, { signal, headers: jsonHeaders })
+  if (response.status === 400) {
+    const problem = (await response.json().catch(() => ({}))) as { errors?: Record<string, string[]> }
+    throw new Error(Object.values(problem.errors ?? {}).flat()[0] ?? 'Data-alvo inválida.')
+  }
+  if (!response.ok) throw new Error(`Falha ao calcular a projeção (HTTP ${response.status}).`)
+  return (await response.json()) as AccountProjection
+}

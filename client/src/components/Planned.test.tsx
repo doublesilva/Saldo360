@@ -489,3 +489,23 @@ describe('Planned — realização', () => {
     await waitFor(() => expect(calls.filter((c) => c.url.includes('/planned-transactions?')).length).toBe(before + 1))
   })
 })
+
+describe('Planned — avisa a projeção', () => {
+  it('criar e cancelar previsão chamam onChanged (a projeção das contas muda)', async () => {
+    mockApi()
+    const onChanged = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Planned familyId="f1" onChanged={onChanged} />)
+    await screen.findByText('Aluguel de outubro')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nova previsão' }))
+    await screen.findByLabelText('Conta')
+    fill({ Conta: itau.id, Categoria: aluguel.id, Descrição: 'X', 'Valor (R$)': '10', 'Data prevista': shift(3) })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+
+    const item = (await screen.findByText('Aluguel de outubro')).closest('li')!
+    fireEvent.click(within(item).getByRole('button', { name: 'Cancelar previsão' }))
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2))
+  })
+})

@@ -79,8 +79,7 @@ public sealed class FinancialAccountService(
     public async Task<BalanceResult> GetBalanceAsync(
         Guid familyId, Guid accountId, Guid userId, DateOnly? asOf, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
-            || await accounts.GetOpeningBalanceAsync(familyId, accountId, cancellationToken) is not { } opening)
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
         {
             return new BalanceResult(BalanceAccess.NotFound, null, null);
         }
@@ -95,6 +94,76 @@ public sealed class FinancialAccountService(
             });
         }
 
+        var balance = await accounts.ReadConsistentAsync(
+            () => ReadBalanceAsync(familyId, accountId, date, cancellationToken), cancellationToken);
+        return balance is null
+            ? new BalanceResult(BalanceAccess.NotFound, null, null)
+            : new BalanceResult(BalanceAccess.Allowed, balance, null);
+    }
+
+    /// <summary>
+    /// Saldo projetado até <paramref name="through"/> (hoje ou futuro). Data-base = hoje em America/Sao_Paulo, capturada
+    /// uma vez. Parte do saldo realizado no fechamento da data-base e soma as previsões PENDENTES até a data-alvo:
+    /// vencidas (antes de hoje) e do período (hoje..through), inclusive anteriores ao saldo inicial e com conta ou
+    /// categoria inativas. Previsão realizada não entra (seu lançamento efetivo já está no realizado); cancelada também
+    /// não. Tudo num único snapshot do banco. Saldo realizado indisponível → todos os valores nulos, com o motivo.
+    /// </summary>
+    public async Task<ProjectionResult> GetProjectionAsync(
+        Guid familyId, Guid accountId, Guid userId, DateOnly through, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
+        {
+            return new ProjectionResult(BalanceAccess.NotFound, null, null);
+        }
+
+        var baseDate = BusinessCalendar.Today(timeProvider.GetUtcNow());
+        if (through < baseDate)
+        {
+            return new ProjectionResult(BalanceAccess.Invalid, null, new Dictionary<string, string[]>
+            {
+                ["through"] = ["A data-alvo deve ser hoje ou futura: a projeção parte do saldo realizado de hoje."],
+            });
+        }
+
+        var projection = await accounts.ReadConsistentAsync<AccountProjectionDto?>(async () =>
+        {
+            if (await ReadBalanceAsync(familyId, accountId, baseDate, cancellationToken) is not { } balance)
+            {
+                return null;
+            }
+
+            if (balance.Balance is not { } realized)
+            {
+                return new AccountProjectionDto(
+                    accountId, baseDate, through, null, null, null, null, null, null, balance.UnavailableReason);
+            }
+
+            var planned = await accounts.SumPendingPlannedAsync(familyId, accountId, baseDate, through, cancellationToken);
+            var projected = realized
+                + planned.OverdueIncome - planned.OverdueExpense
+                + planned.PlannedIncome - planned.PlannedExpense;
+            return new AccountProjectionDto(
+                accountId, baseDate, through, realized, planned.OverdueIncome, planned.OverdueExpense,
+                planned.PlannedIncome, planned.PlannedExpense, projected, null);
+        }, cancellationToken);
+
+        return projection is null
+            ? new ProjectionResult(BalanceAccess.NotFound, null, null)
+            : new ProjectionResult(BalanceAccess.Allowed, projection, null);
+    }
+
+    /// <summary>
+    /// Saldo realizado no fechamento de <paramref name="date"/> (chamar dentro de ReadConsistentAsync). null = conta
+    /// inexistente na família. Sem saldo inicial ou antes da referência: indisponível (nunca zero).
+    /// </summary>
+    private async Task<AccountBalanceDto?> ReadBalanceAsync(
+        Guid familyId, Guid accountId, DateOnly date, CancellationToken cancellationToken)
+    {
+        if (await accounts.GetOpeningBalanceAsync(familyId, accountId, cancellationToken) is not { } opening)
+        {
+            return null;
+        }
+
         if (opening is not { Amount: { } amount, Date: { } referenceDate })
         {
             return Unavailable(BalanceUnavailableReason.OpeningBalanceNotConfigured);
@@ -107,12 +176,12 @@ public sealed class FinancialAccountService(
 
         var totals = await accounts.SumMovementsAsync(familyId, accountId, referenceDate, date, cancellationToken);
         var balance = amount + totals.Income - totals.Expense + totals.TransferIn - totals.TransferOut;
-        return new BalanceResult(BalanceAccess.Allowed, new AccountBalanceDto(
+        return new AccountBalanceDto(
             accountId, date, amount, referenceDate, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut,
-            balance, null), null);
+            balance, null);
 
-        BalanceResult Unavailable(BalanceUnavailableReason reason) => new(BalanceAccess.Allowed, new AccountBalanceDto(
-            accountId, date, opening.Amount, opening.Date, null, null, null, null, null, reason), null);
+        AccountBalanceDto Unavailable(BalanceUnavailableReason reason) =>
+            new(accountId, date, opening.Amount, opening.Date, null, null, null, null, null, reason);
     }
 
     private async Task<bool> IsParticipantAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>

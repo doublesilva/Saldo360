@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Application.Accounts;
 using Saldo360.Domain.Accounts;
@@ -82,6 +83,41 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
 
         return new AccountTotals(
             transactions?.Income ?? 0m, transactions?.Expense ?? 0m, transfers?.In ?? 0m, transfers?.Out ?? 0m);
+    }
+
+    // Uma consulta: SUM condicional por tipo e por vencimento (antes da data-base = vencida) sobre as previsões
+    // pendentes. Pendente = não cancelada e sem lançamento ativo vinculado (NOT EXISTS, a mesma regra que deriva
+    // "Realized"). Sem filtro por data do saldo inicial nem por situação de conta/categoria.
+    public async Task<PlannedTotals> SumPendingPlannedAsync(
+        Guid familyId, Guid accountId, DateOnly baseDate, DateOnly through, CancellationToken cancellationToken)
+    {
+        var totals = await db.FinancialPlannedTransactions
+            .Where(p => p.FamilyId == familyId && p.AccountId == accountId && !p.IsCancelled && p.DueDate <= through
+                && !db.FinancialTransactions.Any(t => t.FamilyId == p.FamilyId && t.PlannedTransactionId == p.Id && !t.IsCancelled))
+            .GroupBy(p => p.AccountId)
+            .Select(g => new PlannedTotals(
+                g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Income ? p.Amount : 0m),
+                g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Expense ? p.Amount : 0m),
+                g.Sum(p => p.DueDate >= baseDate && p.Type == CategoryType.Income ? p.Amount : 0m),
+                g.Sum(p => p.DueDate >= baseDate && p.Type == CategoryType.Expense ? p.Amount : 0m)))
+            .SingleOrDefaultAsync(cancellationToken);
+        return totals ?? new PlannedTotals(0m, 0m, 0m, 0m);
+    }
+
+    // REPEATABLE READ no PostgreSQL = um snapshot para a transação inteira (tirado na primeira consulta). Somente
+    // leitura: nada é gravado, e não há conflito de serialização possível.
+    public async Task<T> ReadConsistentAsync<T>(Func<Task<T>> read, CancellationToken cancellationToken)
+    {
+        if (db.Database.CurrentTransaction is not null)
+        {
+            return await read();
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+        await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
+        var result = await read();
+        await transaction.CommitAsync(cancellationToken);
+        return result;
     }
 
     // Responsável: junção com o vínculo da mesma família e o nome de exibição do usuário.
