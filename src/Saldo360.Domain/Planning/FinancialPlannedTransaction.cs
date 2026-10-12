@@ -1,5 +1,6 @@
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
+using Saldo360.Domain.Transactions;
 
 namespace Saldo360.Domain.Planning;
 
@@ -79,6 +80,15 @@ public sealed class FinancialPlannedTransaction : Entity
         UpdatedAt = now;
         UpdatedByUserId = userId;
     }
+
+    /// <summary>
+    /// Dados do lançamento efetivo que realiza esta previsão: conta, categoria, tipo e descrição da previsão, com o
+    /// valor e a data efetivos informados (valor pode diferir do previsto; data não pode ser futura em relação a
+    /// <paramref name="today"/>). Os valores previstos (<see cref="Amount"/>, <see cref="DueDate"/>) não mudam.
+    /// </summary>
+    public TransactionDetails? ToRealizationDetails(
+        decimal? amount, DateOnly? transactionDate, DateOnly today, out Dictionary<string, string[]> errors) =>
+        TransactionDetails.TryCreate(AccountId, CategoryId, Type.ToString(), Description, amount, transactionDate, today, out errors);
 
     /// <summary>Cancela preservando o registro. Idempotente: false se já estava cancelada (nada muda).</summary>
     public bool Cancel(Guid userId, DateTimeOffset now)

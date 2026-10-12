@@ -111,7 +111,7 @@ public static class FinancialTransactionEndpoints
     {
         TransactionAccess.NotFound => Results.NotFound(),
         TransactionAccess.Invalid => Results.ValidationProblem(result.Errors!),
-        TransactionAccess.Cancelled => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: TransactionResult.CancelledMessage),
+        TransactionAccess.Conflict => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: result.Message),
         _ => ok(result.Transaction!),
     };
 
@@ -149,7 +149,8 @@ public sealed record TransactionResponse(
     string Currency,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
-    DateTimeOffset? CancelledAt)
+    DateTimeOffset? CancelledAt,
+    Guid? PlannedTransactionId)
 {
     public static TransactionResponse From(FinancialTransactionDto dto) => new(
         dto.Id,
@@ -163,7 +164,8 @@ public sealed record TransactionResponse(
         dto.Currency,
         dto.CreatedAt,
         dto.UpdatedAt,
-        dto.CancelledAt);
+        dto.CancelledAt,
+        dto.PlannedTransactionId);
 }
 
 public sealed record TransactionPageResponse(IReadOnlyList<TransactionResponse> Items, int Page, int PageSize, int TotalCount)

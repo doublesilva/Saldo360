@@ -168,8 +168,11 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
   const [state, setState] = useState<DetailState>(
     typeof family === 'string' ? { kind: 'loading' } : { kind: 'loaded', family },
   )
-  // Muda a cada lançamento ou transferência criados, editados ou cancelados: as contas consultam de novo o saldo.
-  const [balanceVersion, setBalanceVersion] = useState(0)
+  // Muda a cada mudança financeira (lançamento, transferência ou realização criados, editados ou cancelados):
+  // saldos, lançamentos e previsões consultam de novo. Ex.: realizar cria lançamento; cancelar o lançamento
+  // efetivo reabre a previsão.
+  const [financeVersion, setFinanceVersion] = useState(0)
+  const financeChanged = () => setFinanceVersion((n) => n + 1)
 
   useEffect(() => {
     if (typeof family !== 'string') return
@@ -208,12 +211,12 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
             ))}
           </ul>
           {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
-          <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={balanceVersion} />
+          <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
           <Categories familyId={state.family.id} />
-          <Transactions familyId={state.family.id} onChanged={() => setBalanceVersion((n) => n + 1)} />
-          <Transfers familyId={state.family.id} onChanged={() => setBalanceVersion((n) => n + 1)} />
-          {/* Previsões não afetam o saldo realizado: não avisam balanceVersion. */}
-          <Planned familyId={state.family.id} />
+          <Transactions familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
+          <Transfers familyId={state.family.id} onChanged={financeChanged} />
+          {/* Criar, editar ou cancelar previsão não muda saldo; só realizar avisa (onChanged). */}
+          <Planned familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
         </>
       )}
     </section>

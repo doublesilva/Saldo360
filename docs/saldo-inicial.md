@@ -77,7 +77,7 @@ OpeningBalanceDate ≤ data da movimentação ≤ asOf
 
   Exemplo: PJ com referência em 01/09 e PF com referência em 10/09. Uma transferência PJ → PF de 500,00 em 05/09 é subtraída do PJ, mas não é somada ao PF, porque o saldo inicial do PF em 10/09 já a inclui.
 - A origem pode ficar negativa: a transferência não é bloqueada por saldo insuficiente.
-- **Previsões não entram no saldo realizado.** Receitas e despesas previstas (`financial_planned_transactions`) ficam separadas: não geram lançamento, não alteram nenhum total desta resposta e, vencidas, continuam pendentes. Uma previsão só passa a contar quando o valor efetivo é registrado como lançamento realizado.
+- **Previsões pendentes não entram no saldo realizado.** Receitas e despesas previstas (`financial_planned_transactions`) não alteram nenhum total desta resposta e, vencidas, continuam pendentes. Uma previsão só passa a contar quando é **realizada**: aí entra o lançamento efetivo vinculado (com o valor e a data efetivos), como qualquer lançamento. Cancelar esse lançamento tira o valor do saldo e reabre a previsão ([previsões e realização](previsoes.md)).
 - As somas são feitas no PostgreSQL, sobre `numeric`, em duas consultas agregadas:
   - lançamentos: `SUM` condicional por tipo;
   - transferências: `SUM` condicional pelo papel da conta, destino ou origem.

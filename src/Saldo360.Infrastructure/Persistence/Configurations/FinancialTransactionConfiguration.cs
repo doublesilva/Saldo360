@@ -4,6 +4,7 @@ using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
 using Saldo360.Domain.Families;
+using Saldo360.Domain.Planning;
 using Saldo360.Domain.Transactions;
 using Saldo360.Domain.Users;
 
@@ -11,6 +12,8 @@ namespace Saldo360.Infrastructure.Persistence.Configurations;
 
 internal sealed class FinancialTransactionConfiguration : IEntityTypeConfiguration<FinancialTransaction>
 {
+    public const string ActiveRealizationIndex = "ux_financial_transactions_active_realization";
+
     public void Configure(EntityTypeBuilder<FinancialTransaction> builder)
     {
         builder.ToTable("financial_transactions", table =>
@@ -70,6 +73,22 @@ internal sealed class FinancialTransactionConfiguration : IEntityTypeConfigurati
             .HasPrincipalKey(category => new { category.FamilyId, category.Id, category.Type })
             .HasConstraintName("fk_financial_transactions_categories_same_family_type")
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Realização de previsão: (family_id, planned_transaction_id) → financial_planned_transactions (family_id, id),
+        // previsão da MESMA família. Nulo = lançamento avulso (FK não verificada, MATCH SIMPLE).
+        builder.HasOne<FinancialPlannedTransaction>()
+            .WithMany()
+            .HasForeignKey(transaction => new { transaction.FamilyId, transaction.PlannedTransactionId })
+            .HasPrincipalKey(planned => new { planned.FamilyId, planned.Id })
+            .HasConstraintName("fk_financial_transactions_planned_same_family")
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // No máximo UM lançamento ativo por previsão. Cancelados ficam fora do índice: o vínculo histórico é
+        // preservado e a previsão pode ser realizada de novo.
+        builder.HasIndex(transaction => transaction.PlannedTransactionId)
+            .IsUnique()
+            .HasFilter("planned_transaction_id IS NOT NULL AND NOT is_cancelled")
+            .HasDatabaseName(ActiveRealizationIndex);
 
         builder.HasOne<ApplicationUser>()
             .WithMany()

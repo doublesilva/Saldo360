@@ -625,6 +625,26 @@ button {
   color: var(--fail);
 }
 
+/* Realizada: virou lançamento efetivo; borda sólida como as movimentações. */
+.planned-item--realized {
+  border-style: solid;
+  border-left: 4px solid var(--ok);
+}
+
+.badge--realized,
+.badge--realization {
+  color: var(--ok);
+}
+
+.planned-realization {
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.planned-realization p {
+  margin: 0 0 0.25rem;
+}
+
 .badge--cancelled {
   color: var(--fail);
 }

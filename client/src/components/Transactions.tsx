@@ -30,7 +30,16 @@ type References = { accounts: FinancialAccount[]; categories: FinancialCategory[
  * com as inativas para que o histórico e os filtros continuem mostrando seus nomes.
  * `onChanged` avisa quem exibe saldos que um lançamento foi criado, editado ou cancelado.
  */
-export function Transactions({ familyId, onChanged }: { familyId: string; onChanged?: () => void }) {
+export function Transactions({
+  familyId,
+  onChanged,
+  refreshKey = 0,
+}: {
+  familyId: string
+  onChanged?: () => void
+  /** Muda quando outra seção altera lançamentos (ex.: realizar previsão): a lista é recarregada. */
+  refreshKey?: number
+}) {
   const [refs, setRefs] = useState<Load<References>>({ kind: 'loading' })
   const [page, setPage] = useState<Load<TransactionPage>>({ kind: 'loading' })
   const [filters, setFilters] = useState<TransactionFilters>(emptyFilters)
@@ -62,7 +71,7 @@ export function Transactions({ familyId, onChanged }: { familyId: string; onChan
         if (!controller.signal.aborted) setPage({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, filters, pageNumber, reloadKey])
+  }, [familyId, filters, pageNumber, reloadKey, refreshKey])
 
   const reload = () => setReloadKey((n) => n + 1)
 
@@ -74,7 +83,10 @@ export function Transactions({ familyId, onChanged }: { familyId: string; onChan
   const handleCancel = async (transaction: FinancialTransaction) => {
     const question =
       `Cancelar o lançamento "${transaction.description}" de ${formatDate(transaction.transactionDate)}? ` +
-      'O registro é preservado (aparece em "Mostrar cancelados"), mas não poderá mais ser editado.'
+      'O registro é preservado (aparece em "Mostrar cancelados"), mas não poderá mais ser editado.' +
+      (transaction.plannedTransactionId
+        ? ' Ele realiza uma previsão: a previsão voltará a ficar pendente e poderá ser realizada de novo.'
+        : '')
     if (!window.confirm(question)) return
 
     setCancellingId(transaction.id)
@@ -218,13 +230,17 @@ export function Transactions({ familyId, onChanged }: { familyId: string; onChan
                     {transaction.account.name}
                     {transaction.account.isActive ? '' : ' (inativa)'}
                   </span>
+                  {transaction.plannedTransactionId && <span className="badge badge--realization">Realiza previsão</span>}
                   {transaction.isCancelled && <span className="badge badge--cancelled">Cancelado</span>}
                 </div>
                 {!transaction.isCancelled && (
                   <div className="form__actions">
-                    <button type="button" onClick={() => setEditing(transaction)}>
-                      Editar
-                    </button>
+                    {/* Vinculado a previsão não se edita: cancela-se (a previsão reabre) e realiza-se de novo. */}
+                    {!transaction.plannedTransactionId && (
+                      <button type="button" onClick={() => setEditing(transaction)}>
+                        Editar
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => void handleCancel(transaction)}

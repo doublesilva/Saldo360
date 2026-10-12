@@ -8,11 +8,13 @@ import {
   emptyPlannedFilters,
   isOverdue,
   listPlanned,
+  realizePlanned,
   updatePlanned,
   type PlannedFilters,
   type PlannedPage,
   type PlannedTransaction,
 } from '../api/planned'
+import { getTransaction, type FinancialTransaction } from '../api/transactions'
 import { todayInSaoPaulo } from '../dates'
 import { decimalToInput, formatBrlDecimal, formatDate, isZeroDecimal, parseAmount } from '../money'
 
@@ -27,17 +29,27 @@ type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'erro
 type References = { accounts: FinancialAccount[]; categories: FinancialCategory[] }
 
 /**
- * Receitas e despesas previstas únicas: o que se espera receber ou pagar. Ficam fora do saldo realizado (nada
- * aqui avisa os saldos) e, vencidas, continuam pendentes. "Vencida" é calculado na tela com a data de hoje em
- * America/Sao_Paulo e não é gravado.
+ * Receitas e despesas previstas únicas: o que se espera receber ou pagar. Pendentes ficam fora do saldo e,
+ * vencidas, continuam pendentes ("Vencida" é calculado na tela com a data de hoje em America/Sao_Paulo e não é
+ * gravado). "Realizar" cria o lançamento efetivo vinculado; `onChanged` avisa saldos e lançamentos. `refreshKey`
+ * muda quando outra seção mexe nas previsões (ex.: cancelar o lançamento efetivo reabre a previsão).
  */
-export function Planned({ familyId }: { familyId: string }) {
+export function Planned({
+  familyId,
+  onChanged,
+  refreshKey = 0,
+}: {
+  familyId: string
+  onChanged?: () => void
+  refreshKey?: number
+}) {
   const [refs, setRefs] = useState<Load<References>>({ kind: 'loading' })
   const [page, setPage] = useState<Load<PlannedPage>>({ kind: 'loading' })
   const [filters, setFilters] = useState<PlannedFilters>(emptyPlannedFilters)
   const [pageNumber, setPageNumber] = useState(1)
   const [reloadKey, setReloadKey] = useState(0)
   const [editing, setEditing] = useState<PlannedTransaction | 'new' | null>(null)
+  const [realizing, setRealizing] = useState<PlannedTransaction | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const today = todayInSaoPaulo()
@@ -61,7 +73,7 @@ export function Planned({ familyId }: { familyId: string }) {
         if (!controller.signal.aborted) setPage({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, filters, pageNumber, reloadKey])
+  }, [familyId, filters, pageNumber, reloadKey, refreshKey])
 
   const reload = () => setReloadKey((n) => n + 1)
 
@@ -87,6 +99,21 @@ export function Planned({ familyId }: { familyId: string }) {
     } finally {
       setCancellingId(null)
     }
+  }
+
+  if (realizing !== null) {
+    return (
+      <RealizeForm
+        familyId={familyId}
+        planned={realizing}
+        onRealized={() => {
+          setRealizing(null)
+          reload()
+          onChanged?.()
+        }}
+        onCancel={() => setRealizing(null)}
+      />
+    )
   }
 
   if (editing !== null) {
@@ -118,8 +145,9 @@ export function Planned({ familyId }: { familyId: string }) {
         </button>
       </div>
       <p className="meta">
-        Valores que você <strong>espera</strong> receber ou pagar. Previsões não afetam o saldo realizado: uma previsão
-        vencida continua pendente até que você registre o lançamento realizado em Lançamentos.
+        Valores que você <strong>espera</strong> receber ou pagar. Previsões pendentes não afetam o saldo realizado: uma
+        previsão vencida continua pendente até você clicar em <strong>Realizar</strong>, que registra o lançamento
+        efetivo (com o valor e a data reais) e atualiza o saldo.
       </p>
 
       <fieldset className="transaction-filters">
@@ -169,6 +197,14 @@ export function Planned({ familyId }: { familyId: string }) {
         <label className="checkbox">
           <input
             type="checkbox"
+            checked={filters.includeRealized}
+            onChange={(event) => changeFilter('includeRealized', event.target.checked)}
+          />
+          Mostrar realizadas
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
             checked={filters.includeCancelled}
             onChange={(event) => changeFilter('includeCancelled', event.target.checked)}
           />
@@ -191,7 +227,8 @@ export function Planned({ familyId }: { familyId: string }) {
             {page.data.items.map((planned) => {
               const overdue = isOverdue(planned, today)
               const classes = ['transaction', 'planned-item']
-              if (planned.isCancelled) classes.push('transaction--cancelled')
+              if (planned.status === 'Cancelled') classes.push('transaction--cancelled')
+              if (planned.status === 'Realized') classes.push('planned-item--realized')
               if (overdue) classes.push('planned-item--overdue')
               return (
                 <li key={planned.id} className={classes.join(' ')}>
@@ -214,10 +251,15 @@ export function Planned({ familyId }: { familyId: string }) {
                       {planned.account.isActive ? '' : ' (inativa)'}
                     </span>
                     {overdue && <span className="badge badge--overdue">Vencida</span>}
-                    {planned.isCancelled && <span className="badge badge--cancelled">Cancelada</span>}
+                    {planned.status === 'Realized' && <span className="badge badge--realized">Realizada</span>}
+                    {planned.status === 'Cancelled' && <span className="badge badge--cancelled">Cancelada</span>}
                   </div>
-                  {!planned.isCancelled && (
+                  {planned.realization && <RealizationSummary familyId={familyId} planned={planned} />}
+                  {planned.status === 'Pending' && (
                     <div className="form__actions">
+                      <button type="button" className="button--primary" onClick={() => setRealizing(planned)}>
+                        Realizar
+                      </button>
                       <button type="button" onClick={() => setEditing(planned)}>
                         Editar
                       </button>
@@ -250,6 +292,170 @@ export function Planned({ familyId }: { familyId: string }) {
       )}
     </div>
   )
+}
+
+/**
+ * Previsão realizada: valor previsto e valor efetivo lado a lado (nunca somados ou subtraídos aqui), data efetiva
+ * e acesso ao lançamento efetivo, carregado sob demanda.
+ */
+function RealizationSummary({ familyId, planned }: { familyId: string; planned: PlannedTransaction }) {
+  const [details, setDetails] = useState<Load<FinancialTransaction> | null>(null)
+  const realization = planned.realization!
+
+  const toggle = () => {
+    if (details) {
+      setDetails(null)
+      return
+    }
+
+    setDetails({ kind: 'loading' })
+    getTransaction(familyId, realization.transactionId)
+      .then((data) => setDetails({ kind: 'loaded', data }))
+      .catch((error: unknown) => setDetails({ kind: 'error', message: errorMessage(error) }))
+  }
+
+  return (
+    <div className="planned-realization">
+      <p>
+        Previsto <strong className="amount">{formatBrlDecimal(planned.amount)}</strong> · Efetivo{' '}
+        <strong className="amount">{formatBrlDecimal(realization.amount)}</strong> em{' '}
+        {formatDate(realization.transactionDate)}
+      </p>
+      <button type="button" className="button--link" onClick={toggle} aria-expanded={details !== null}>
+        {details ? 'Ocultar lançamento' : 'Ver lançamento'}
+      </button>
+      {details?.kind === 'loading' && <p className="meta">Carregando lançamento…</p>}
+      {details?.kind === 'error' && <p className="status status--down">{details.message}</p>}
+      {details?.kind === 'loaded' && (
+        <p className="meta">
+          Lançamento efetivo: {details.data.description} · {formatBrlDecimal(details.data.amount)} ·{' '}
+          {formatDate(details.data.transactionDate)} · {details.data.account.name} · {details.data.category.name}. Para
+          corrigir, cancele-o em Lançamentos: a previsão volta a ficar pendente.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Realização: valor e data efetivos começam com o valor previsto e hoje (America/Sao_Paulo); ambos podem mudar.
+ * Conta, categoria, tipo e descrição vêm da previsão. Pede confirmação antes de criar o lançamento efetivo.
+ */
+function RealizeForm({
+  familyId,
+  planned,
+  onRealized,
+  onCancel,
+}: {
+  familyId: string
+  planned: PlannedTransaction
+  onRealized: () => void
+  onCancel: () => void
+}) {
+  const today = todayInSaoPaulo()
+  const [amountText, setAmountText] = useState(decimalToInput(planned.amount))
+  const [date, setDate] = useState(today)
+  const [errors, setErrors] = useState<Record<string, string[]>>({})
+  const [busy, setBusy] = useState(false)
+  const singular = planned.type === 'Income' ? 'recebimento' : 'pagamento'
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const clientErrors: Record<string, string[]> = {}
+    const amount = parseAmount(amountText)
+    if (amount.kind === 'empty') clientErrors.amount = ['Informe o valor efetivo.']
+    else if (amount.kind === 'invalid') clientErrors.amount = [amount.message]
+    else if (amount.text.startsWith('-') || isZeroDecimal(amount.text)) clientErrors.amount = ['O valor deve ser maior que zero.']
+    if (!date) clientErrors.transactionDate = ['Informe a data efetiva.']
+    else if (date > today) clientErrors.transactionDate = ['A data efetiva não pode ser futura.']
+
+    if (Object.keys(clientErrors).length > 0 || amount.kind !== 'ok') {
+      setErrors(clientErrors)
+      return
+    }
+
+    const question =
+      `Realizar "${planned.description}" por ${formatBrlDecimal(toDecimalText(amount.text))} em ${formatDate(date)}? ` +
+      `Será criado um lançamento efetivo na conta ${planned.account.name}, que passa a contar no saldo. ` +
+      `O valor previsto (${formatBrlDecimal(planned.amount)}) é mantido na previsão.`
+    if (!window.confirm(question)) return
+
+    setBusy(true)
+    setErrors({})
+    try {
+      const result = await realizePlanned(familyId, planned.id, { amount: amount.text, transactionDate: date })
+      if (result.ok) onRealized()
+      else setErrors(result.errors)
+    } catch (error: unknown) {
+      setErrors({ form: [errorMessage(error)] })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const fieldError = (field: string) =>
+    errors[field]?.[0] && (
+      <p id={`realize-${field}-error`} className="field-error" role="alert">
+        {errors[field][0]}
+      </p>
+    )
+
+  return (
+    <form className="form planned" onSubmit={handleSubmit} noValidate>
+      <h3>Realizar previsão</h3>
+      <p>
+        <strong>{planned.description}</strong> — {typeLabels[planned.type]} de {formatBrlDecimal(planned.amount)} prevista
+        para {formatDate(planned.dueDate)}, em {planned.account.name} ({planned.category.name}).
+      </p>
+      <p className="meta">
+        Informe o valor e a data em que o {singular} realmente aconteceu. Eles podem diferir do previsto; a previsão
+        guarda o valor original.
+      </p>
+      {fieldError('accountId')}
+      {fieldError('categoryId')}
+
+      <label htmlFor="realize-amount">Valor efetivo (R$)</label>
+      <input
+        id="realize-amount"
+        value={amountText}
+        onChange={(event) => setAmountText(event.target.value)}
+        inputMode="decimal"
+        autoComplete="off"
+        aria-invalid={Boolean(errors.amount)}
+        aria-describedby={errors.amount ? 'realize-amount-error' : undefined}
+      />
+      {fieldError('amount')}
+
+      <label htmlFor="realize-date">Data efetiva</label>
+      <input
+        id="realize-date"
+        type="date"
+        value={date}
+        max={today}
+        onChange={(event) => setDate(event.target.value)}
+        aria-invalid={Boolean(errors.transactionDate)}
+        aria-describedby={errors.transactionDate ? 'realize-transactionDate-error' : undefined}
+      />
+      {fieldError('transactionDate')}
+
+      {fieldError('form')}
+      <div className="form__actions">
+        <button type="submit" className="button--primary" disabled={busy}>
+          {busy ? 'Realizando…' : 'Realizar'}
+        </button>
+        <button type="button" onClick={onCancel} disabled={busy}>
+          Voltar
+        </button>
+      </div>
+    </form>
+  )
+}
+
+/** Texto de parseAmount ("210", "0.5") → decimal com duas casas ("210.00", "0.50") só para exibir na confirmação. */
+function toDecimalText(text: string): string {
+  const negative = text.startsWith('-')
+  const [integer, decimals = ''] = (negative ? text.slice(1) : text).split('.')
+  return `${negative ? '-' : ''}${integer.replace(/^0+(?=\d)/, '') || '0'}.${decimals.padEnd(2, '0')}`
 }
 
 type FormState = {

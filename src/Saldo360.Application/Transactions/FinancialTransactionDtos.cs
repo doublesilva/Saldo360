@@ -4,7 +4,8 @@ namespace Saldo360.Application.Transactions;
 
 /// <summary>
 /// Lançamento como exibido aos integrantes da família. Conta e categoria vêm com nome e situação para que o
-/// histórico continue legível depois de desativá-las. Não expõe família nem usuários.
+/// histórico continue legível depois de desativá-las. Não expõe família nem usuários. PlannedTransactionId indica
+/// que o lançamento realiza uma previsão (não editável; cancelar reabre a previsão).
 /// </summary>
 public sealed record FinancialTransactionDto(
     Guid Id,
@@ -18,7 +19,8 @@ public sealed record FinancialTransactionDto(
     string Currency,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
-    DateTimeOffset? CancelledAt);
+    DateTimeOffset? CancelledAt,
+    Guid? PlannedTransactionId);
 
 public sealed record TransactionReferenceDto(Guid Id, string Name, bool IsActive);
 
@@ -71,18 +73,23 @@ public enum TransactionAccess
     /// <summary>Dados inválidos (400).</summary>
     Invalid,
 
-    /// <summary>Lançamento cancelado não pode ser editado (409).</summary>
-    Cancelled,
+    /// <summary>Estado não permite editar, com mensagem (409): cancelado ou vinculado a previsão.</summary>
+    Conflict,
 }
 
 public sealed record TransactionResult(
-    TransactionAccess Access, FinancialTransactionDto? Transaction, IDictionary<string, string[]>? Errors)
+    TransactionAccess Access, FinancialTransactionDto? Transaction, IDictionary<string, string[]>? Errors, string? Message = null)
 {
     public const string CancelledMessage = "Lançamento cancelado não pode ser editado.";
 
+    public const string LinkedMessage =
+        "Lançamento que realiza uma previsão não pode ser editado. Para corrigir, cancele-o (a previsão volta a ficar pendente) e realize de novo.";
+
     public static TransactionResult NotFound { get; } = new(TransactionAccess.NotFound, null, null);
 
-    public static TransactionResult Cancelled { get; } = new(TransactionAccess.Cancelled, null, null);
+    public static TransactionResult Cancelled { get; } = new(TransactionAccess.Conflict, null, null, CancelledMessage);
+
+    public static TransactionResult Linked { get; } = new(TransactionAccess.Conflict, null, null, LinkedMessage);
 
     public static TransactionResult Ok(FinancialTransactionDto transaction) => new(TransactionAccess.Allowed, transaction, null);
 
@@ -93,3 +100,6 @@ public sealed record TransactionListResult(TransactionPage? Page, IDictionary<st
 {
     public static TransactionListResult NotFoundResult { get; } = new(null, null, true);
 }
+
+/// <summary>Existência do lançamento na família e seu vínculo com previsão (null = avulso).</summary>
+public sealed record TransactionLink(Guid? PlannedTransactionId);

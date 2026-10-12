@@ -9,6 +9,10 @@ namespace Saldo360.Domain.Transactions;
 /// pagamento, sem horário, e não pode ser futura em America/Sao_Paulo. Pode ser anterior ao saldo inicial
 /// da conta (histórico), caso em que não entra no cálculo de saldo (ver docs/saldo-inicial.md).
 /// Não é excluído fisicamente: é cancelado, e cancelado não pode ser editado.
+/// <para>
+/// Pode ser a realização de uma previsão (<see cref="PlannedTransactionId"/>). Nesse caso não é editável: para
+/// corrigir, cancela-se (a previsão volta a pendente) e realiza-se de novo. O vínculo nunca muda.
+/// </para>
 /// </summary>
 public sealed class FinancialTransaction : Entity
 {
@@ -55,11 +59,24 @@ public sealed class FinancialTransaction : Entity
 
     public Guid? CancelledByUserId { get; private set; }
 
-    public static FinancialTransaction Create(Guid familyId, TransactionDetails details, Guid createdByUserId, DateTimeOffset now)
+    /// <summary>Previsão realizada por este lançamento (mesma família); null = lançamento avulso. Imutável.</summary>
+    public Guid? PlannedTransactionId { get; private init; }
+
+    public static FinancialTransaction Create(Guid familyId, TransactionDetails details, Guid createdByUserId, DateTimeOffset now) =>
+        Create(familyId, details, plannedTransactionId: null, createdByUserId, now);
+
+    /// <summary>Lançamento efetivo que realiza a previsão <paramref name="plannedTransactionId"/>.</summary>
+    public static FinancialTransaction CreateRealization(
+        Guid familyId, TransactionDetails details, Guid plannedTransactionId, Guid createdByUserId, DateTimeOffset now) =>
+        Create(familyId, details, (Guid?)plannedTransactionId, createdByUserId, now);
+
+    private static FinancialTransaction Create(
+        Guid familyId, TransactionDetails details, Guid? plannedTransactionId, Guid createdByUserId, DateTimeOffset now)
     {
         var transaction = new FinancialTransaction
         {
             FamilyId = familyId,
+            PlannedTransactionId = plannedTransactionId,
             CreatedAt = now,
             CreatedByUserId = createdByUserId,
         };
@@ -73,6 +90,11 @@ public sealed class FinancialTransaction : Entity
         if (IsCancelled)
         {
             throw new InvalidOperationException("Lançamento cancelado não pode ser editado.");
+        }
+
+        if (PlannedTransactionId is not null)
+        {
+            throw new InvalidOperationException("Lançamento vinculado a uma previsão não pode ser editado.");
         }
 
         Apply(details);

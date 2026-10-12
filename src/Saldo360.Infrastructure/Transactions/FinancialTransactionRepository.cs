@@ -63,6 +63,13 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
         return new TransactionPage(items, filter.Page, filter.PageSize, total);
     }
 
+    public Task<TransactionLink?> GetLinkAsync(Guid familyId, Guid transactionId, CancellationToken cancellationToken) =>
+        db.FinancialTransactions
+            .AsNoTracking()
+            .Where(t => t.FamilyId == familyId && t.Id == transactionId)
+            .Select(t => new TransactionLink(t.PlannedTransactionId))
+            .SingleOrDefaultAsync(cancellationToken);
+
     public Task<AccountState?> GetAccountStateAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken) =>
         db.FinancialAccounts
             .Where(a => a.FamilyId == familyId && a.Id == accountId)
@@ -94,5 +101,6 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
             t.Currency,
             t.CreatedAt,
             t.UpdatedAt,
-            t.CancelledAt);
+            t.CancelledAt,
+            t.PlannedTransactionId);
 }

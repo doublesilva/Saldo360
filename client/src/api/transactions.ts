@@ -28,6 +28,8 @@ export interface FinancialTransaction {
   createdAt: string
   updatedAt: string | null
   cancelledAt: string | null
+  /** Previsão que este lançamento realiza (não editável; cancelar reabre a previsão). null = avulso. */
+  plannedTransactionId: string | null
 }
 
 export interface TransactionPage {
@@ -130,4 +132,11 @@ export function updateTransaction(familyId: string, id: string, input: Transacti
 /** Cancela sem excluir; repetir é seguro (idempotente). */
 export function cancelTransaction(familyId: string, id: string): Promise<SaveTransactionResult> {
   return write('POST', `${transactionsUrl(familyId, id)}/cancel`, undefined, 200)
+}
+
+/** Um lançamento (inclusive cancelado), por exemplo o efetivo de uma previsão realizada. */
+export async function getTransaction(familyId: string, id: string, signal?: AbortSignal): Promise<FinancialTransaction> {
+  const response = await fetch(transactionsUrl(familyId, id), { signal, headers: jsonHeaders })
+  if (!response.ok) throw new Error(`Falha ao carregar o lançamento (HTTP ${response.status}).`)
+  return (await response.json()) as FinancialTransaction
 }

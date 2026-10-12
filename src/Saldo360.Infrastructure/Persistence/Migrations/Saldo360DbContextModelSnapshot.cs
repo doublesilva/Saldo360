@@ -409,6 +409,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_financial_planned_transactions");
 
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_planned_transactions_family_id_id");
+
                     b.HasIndex("CancelledByUserId")
                         .HasDatabaseName("ix_financial_planned_transactions_cancelled_by_user_id");
 
@@ -506,6 +509,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_cancelled");
 
+                    b.Property<Guid?>("PlannedTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("planned_transaction_id");
+
                     b.Property<DateOnly>("TransactionDate")
                         .HasColumnType("date")
                         .HasColumnName("transaction_date");
@@ -533,11 +540,19 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("CreatedByUserId")
                         .HasDatabaseName("ix_financial_transactions_created_by_user_id");
 
+                    b.HasIndex("PlannedTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_financial_transactions_active_realization")
+                        .HasFilter("planned_transaction_id IS NOT NULL AND NOT is_cancelled");
+
                     b.HasIndex("UpdatedByUserId")
                         .HasDatabaseName("ix_financial_transactions_updated_by_user_id");
 
                     b.HasIndex("FamilyId", "AccountId")
                         .HasDatabaseName("ix_financial_transactions_family_id_account_id");
+
+                    b.HasIndex("FamilyId", "PlannedTransactionId")
+                        .HasDatabaseName("ix_financial_transactions_family_id_planned_transaction_id");
 
                     b.HasIndex("FamilyId", "CategoryId", "Type")
                         .HasDatabaseName("ix_financial_transactions_family_id_category_id_type");
@@ -911,6 +926,13 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_transactions_accounts_same_family");
+
+                    b.HasOne("Saldo360.Domain.Planning.FinancialPlannedTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "PlannedTransactionId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_transactions_planned_same_family");
 
                     b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
                         .WithMany()

@@ -48,6 +48,8 @@ const vencida: PlannedTransaction = {
   description: 'Aluguel de outubro',
   account: { id: antiga.id, name: antiga.name, isActive: false },
   category: { id: lazer.id, name: lazer.name, isActive: false },
+  status: 'Pending',
+  realization: null,
   isCancelled: false,
   currency: 'BRL',
   createdAt: '2026-10-01T00:00:00Z',
@@ -67,7 +69,14 @@ const futura: PlannedTransaction = {
 }
 
 const hoje: PlannedTransaction = { ...futura, id: 'p3', description: 'Vence hoje', amount: '0.10', dueDate: shift(0) }
-const cancelada: PlannedTransaction = { ...vencida, id: 'p4', description: 'Cancelada antiga', isCancelled: true, cancelledAt: '2026-10-02T00:00:00Z' }
+const cancelada: PlannedTransaction = {
+  ...vencida,
+  id: 'p4',
+  description: 'Cancelada antiga',
+  status: 'Cancelled',
+  isCancelled: true,
+  cancelledAt: '2026-10-02T00:00:00Z',
+}
 
 type Call = { url: string; init?: RequestInit }
 
@@ -123,7 +132,8 @@ describe('isOverdue', () => {
   it('só previsões pendentes com data anterior a hoje', () => {
     expect(isOverdue({ ...vencida, dueDate: '2026-10-11' }, '2026-10-12')).toBe(true)
     expect(isOverdue({ ...vencida, dueDate: '2026-10-12' }, '2026-10-12')).toBe(false) // hoje não é vencida
-    expect(isOverdue({ ...vencida, dueDate: '2026-10-11', isCancelled: true }, '2026-10-12')).toBe(false)
+    expect(isOverdue({ ...vencida, dueDate: '2026-10-11', status: 'Cancelled', isCancelled: true }, '2026-10-12')).toBe(false)
+    expect(isOverdue({ ...vencida, dueDate: '2026-10-11', status: 'Realized' }, '2026-10-12')).toBe(false) // só pendente vence
   })
 })
 
@@ -336,5 +346,146 @@ describe('Planned — formulário', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
 
     expect(await screen.findByText('Previsão cancelada não pode ser editada.')).toBeTruthy()
+  })
+})
+
+describe('Planned — realização', () => {
+  const realizada: PlannedTransaction = {
+    ...vencida,
+    id: 'p5',
+    description: 'Aluguel de setembro',
+    amount: '200.00',
+    status: 'Realized',
+    realization: { transactionId: 't-efetivo', amount: '210.00', transactionDate: '2026-09-10' },
+  }
+
+  const efetivo = {
+    id: 't-efetivo',
+    type: 'Expense',
+    amount: '210.00',
+    transactionDate: '2026-09-10',
+    description: 'Aluguel de setembro',
+    account: { id: itau.id, name: itau.name, isActive: true },
+    category: { id: aluguel.id, name: aluguel.name, isActive: true },
+    isCancelled: false,
+    currency: 'BRL',
+    createdAt: '2026-09-10T00:00:00Z',
+    updatedAt: null,
+    cancelledAt: null,
+    plannedTransactionId: 'p5',
+  }
+
+  function mockRealization(options: { realizeStatus?: number; realizeBody?: unknown } = {}) {
+    const calls: Call[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        calls.push({ url, init })
+        if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
+        if (url.includes('/accounts')) return Response.json([itau])
+        if (url.includes('/categories')) return Response.json([salario, aluguel])
+        if (url.endsWith('/realize')) return Response.json(options.realizeBody ?? efetivo, { status: options.realizeStatus ?? 201 })
+        if (url.includes('/transactions/t-efetivo')) return Response.json(efetivo)
+        const items = url.includes('includeRealized=true') ? [vencida, realizada] : [vencida]
+        return Response.json({ items, page: 1, pageSize: 20, totalCount: items.length })
+      }),
+    )
+    return calls
+  }
+
+  const realizeCalls = (calls: Call[]) => calls.filter((c) => c.url.endsWith('/realize'))
+
+  it('pendente tem "Realizar"; o formulário começa com o valor previsto e hoje, confirma e avisa saldos e lançamentos', async () => {
+    const calls = mockRealization()
+    const onChanged = vi.fn()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Planned familyId="f1" onChanged={onChanged} />)
+    const item = (await screen.findByText('Aluguel de outubro')).closest('li')!
+
+    fireEvent.click(within(item).getByRole('button', { name: 'Realizar' }))
+
+    expect((screen.getByLabelText('Valor efetivo (R$)') as HTMLInputElement).value).toBe('1800,00')
+    expect((screen.getByLabelText('Data efetiva') as HTMLInputElement).value).toBe(todayInSaoPaulo())
+    fireEvent.change(screen.getByLabelText('Valor efetivo (R$)'), { target: { value: '1.850,5' } })
+    fireEvent.change(screen.getByLabelText('Data efetiva'), { target: { value: shift(-1) } })
+    fireEvent.click(screen.getByRole('button', { name: 'Realizar' }))
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/por R\$\s1\.850,50 em .*valor previsto \(R\$\s1\.800,00\) é mantido/))
+    const post = realizeCalls(calls)[0]
+    expect(post.url).toBe('/api/families/f1/planned-transactions/p1/realize')
+    expect((post.init!.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
+    expect(JSON.parse(String(post.init!.body))).toEqual({ amount: '1850.5', transactionDate: shift(-1) })
+    expect(await screen.findByText('Aluguel de outubro')).toBeTruthy() // volta à lista
+  })
+
+  it('não envia sem confirmação nem com valor/data inválidos', async () => {
+    const calls = mockRealization()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<Planned familyId="f1" />)
+    fireEvent.click(within((await screen.findByText('Aluguel de outubro')).closest('li')!).getByRole('button', { name: 'Realizar' }))
+
+    fireEvent.change(screen.getByLabelText('Data efetiva'), { target: { value: shift(1) } })
+    fireEvent.click(screen.getByRole('button', { name: 'Realizar' }))
+    expect(await screen.findByText('A data efetiva não pode ser futura.')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Data efetiva'), { target: { value: shift(0) } })
+    fireEvent.change(screen.getByLabelText('Valor efetivo (R$)'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Realizar' }))
+    expect(await screen.findByText('O valor deve ser maior que zero.')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Valor efetivo (R$)'), { target: { value: '1.800,00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Realizar' }))
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(realizeCalls(calls)).toHaveLength(0)
+  })
+
+  it('exibe a orientação da API (conta inativa) sem avisar os saldos', async () => {
+    mockRealization({
+      realizeStatus: 400,
+      realizeBody: { errors: { accountId: ['A conta da previsão está inativa. Edite a previsão e escolha uma conta ativa antes de realizar.'] } },
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const onChanged = vi.fn()
+    render(<Planned familyId="f1" onChanged={onChanged} />)
+    fireEvent.click(within((await screen.findByText('Aluguel de outubro')).closest('li')!).getByRole('button', { name: 'Realizar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Realizar' }))
+
+    expect(await screen.findByText(/Edite a previsão e escolha uma conta ativa/)).toBeTruthy()
+    expect(onChanged).not.toHaveBeenCalled()
+  })
+
+  it('realizadas aparecem só sob pedido, com previsto e efetivo separados, sem "Vencida" nem ações, e acesso ao lançamento', async () => {
+    const calls = mockRealization()
+    render(<Planned familyId="f1" />)
+    await screen.findByText('Aluguel de outubro')
+    expect(screen.queryByText('Aluguel de setembro')).toBeNull()
+
+    fireEvent.click(screen.getByLabelText('Mostrar realizadas'))
+
+    const item = (await screen.findByText('Aluguel de setembro')).closest('li')!
+    expect(item.textContent).toMatch(/Previsto R\$\s200,00 · Efetivo R\$\s210,00 em 10\/09\/2026/)
+    expect(within(item).getByText('Realizada')).toBeTruthy()
+    expect(within(item).queryByText('Vencida')).toBeNull()
+    expect(within(item).queryByRole('button', { name: 'Realizar' })).toBeNull()
+    expect(within(item).queryByRole('button', { name: 'Editar' })).toBeNull()
+    expect(within(item).queryByRole('button', { name: 'Cancelar previsão' })).toBeNull()
+    expect(calls.filter((c) => c.url.includes('/planned-transactions?')).at(-1)!.url).toContain('includeRealized=true')
+
+    fireEvent.click(within(item).getByRole('button', { name: 'Ver lançamento' }))
+    expect(await within(item).findByText(/Lançamento efetivo: Aluguel de setembro · R\$\s210,00 · 10\/09\/2026 · Itaú PF · Aluguel/)).toBeTruthy()
+    expect(calls.some((c) => c.url === '/api/families/f1/transactions/t-efetivo')).toBe(true)
+  })
+
+  it('recarrega quando outra seção muda as finanças (refreshKey)', async () => {
+    const calls = mockRealization()
+    const { rerender } = render(<Planned familyId="f1" refreshKey={0} />)
+    await screen.findByText('Aluguel de outubro')
+    const before = calls.filter((c) => c.url.includes('/planned-transactions?')).length
+
+    rerender(<Planned familyId="f1" refreshKey={1} />)
+
+    await waitFor(() => expect(calls.filter((c) => c.url.includes('/planned-transactions?')).length).toBe(before + 1))
   })
 })

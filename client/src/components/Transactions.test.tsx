@@ -47,6 +47,7 @@ const feira: FinancialTransaction = {
   createdAt: '2026-10-05T12:00:00Z',
   updatedAt: null,
   cancelledAt: null,
+  plannedTransactionId: null,
 }
 
 const pagamento: FinancialTransaction = {
@@ -417,5 +418,48 @@ describe('Transactions — valor como texto decimal exato', () => {
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1))
     expect(String(writes(calls)[0].init!.body)).toContain('"amount":"0.10"')
+  })
+})
+
+describe('Transactions — lançamento que realiza previsão', () => {
+  const vinculado: FinancialTransaction = { ...feira, id: 't7', description: 'Aluguel de setembro', plannedTransactionId: 'p5' }
+
+  it('mostra o vínculo, não oferece edição e avisa que a previsão volta a pendente ao cancelar', async () => {
+    const calls: Call[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        calls.push({ url, init })
+        if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
+        if (url.includes('/accounts')) return Response.json([itau])
+        if (url.includes('/categories')) return Response.json([mercado])
+        if (url.endsWith('/cancel')) return Response.json({ ...vinculado, isCancelled: true })
+        return Response.json({ items: [vinculado], page: 1, pageSize: 20, totalCount: 1 })
+      }),
+    )
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const onChanged = vi.fn()
+    render(<Transactions familyId="f1" onChanged={onChanged} />)
+    const item = (await screen.findByText('Aluguel de setembro')).closest('li')!
+
+    expect(within(item).getByText('Realiza previsão')).toBeTruthy()
+    expect(within(item).queryByRole('button', { name: 'Editar' })).toBeNull()
+    fireEvent.click(within(item).getByRole('button', { name: 'Cancelar lançamento' }))
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('a previsão voltará a ficar pendente'))
+    expect(calls.some((c) => c.url === '/api/families/f1/transactions/t7/cancel')).toBe(true)
+  })
+
+  it('recarrega quando outra seção muda as finanças (refreshKey)', async () => {
+    const calls = mockApi()
+    const { rerender } = render(<Transactions familyId="f1" refreshKey={0} />)
+    await screen.findByText('Feira do mês')
+    const before = listCalls(calls).length
+
+    rerender(<Transactions familyId="f1" refreshKey={1} />)
+
+    await waitFor(() => expect(listCalls(calls).length).toBe(before + 1))
   })
 })

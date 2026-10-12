@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
+using Saldo360.Api.Transactions;
 using Saldo360.Application.Planning;
 using Saldo360.Application.Transactions;
 using Saldo360.Domain.Categories;
@@ -17,6 +18,7 @@ public static class FinancialPlannedTransactionEndpoints
         planned.MapGet("/{plannedId:guid}", Get);
         planned.MapPut("/{plannedId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
         planned.MapPost("/{plannedId:guid}/cancel", Cancel).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        planned.MapPost("/{plannedId:guid}/realize", Realize).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
@@ -36,11 +38,12 @@ public static class FinancialPlannedTransactionEndpoints
 
     /// <summary>
     /// Página de previsões (data prevista crescente, Id crescente). Filtros: from/to sobre a data prevista (yyyy-MM-dd,
-    /// inclusivos), accountId, categoryId, type. Canceladas só com includeCancelled=true. pageSize de 1 a 100.
+    /// inclusivos), accountId, categoryId, type. Por padrão só pendentes; includeRealized=true e includeCancelled=true
+    /// acrescentam realizadas e canceladas. pageSize de 1 a 100.
     /// </summary>
     private static async Task<IResult> List(
         Guid familyId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
-        bool? includeCancelled, int? page, int? pageSize, CurrentUser currentUser,
+        bool? includeRealized, bool? includeCancelled, int? page, int? pageSize, CurrentUser currentUser,
         FinancialPlannedTransactionService planned, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -56,7 +59,8 @@ public static class FinancialPlannedTransactionEndpoints
             return Results.ValidationProblem(dateErrors);
         }
 
-        var query = new PlannedTransactionQuery(fromDate, toDate, accountId, categoryId, type, includeCancelled ?? false, page, pageSize);
+        var query = new PlannedTransactionQuery(
+            fromDate, toDate, accountId, categoryId, type, includeRealized ?? false, includeCancelled ?? false, page, pageSize);
         var result = await planned.ListAsync(familyId, userId, query, cancellationToken);
         return result switch
         {
@@ -108,13 +112,38 @@ public static class FinancialPlannedTransactionEndpoints
         return ToResponse(result, p => Results.Ok(PlannedTransactionResponse.From(p)));
     }
 
+    /// <summary>
+    /// Realiza a previsão: cria o lançamento efetivo vinculado (201) com conta, categoria, tipo e descrição da previsão
+    /// e o valor/data efetivos do corpo. Repetição com os mesmos dados devolve o existente (200); com outros, 409.
+    /// Cancelada, 409. Conta/categoria inativas ou valor/data inválidos, 400.
+    /// </summary>
+    private static async Task<IResult> Realize(
+        Guid familyId, Guid plannedId, RealizeRequest? request, CurrentUser currentUser,
+        FinancialPlannedTransactionService planned, CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await planned.RealizeAsync(familyId, plannedId, userId, request?.Amount, request?.TransactionDate, cancellationToken);
+        return result.Access switch
+        {
+            RealizeAccess.NotFound => Results.NotFound(),
+            RealizeAccess.Invalid => Results.ValidationProblem(result.Errors!),
+            RealizeAccess.Conflict => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: result.Message),
+            RealizeAccess.Existing => Results.Ok(TransactionResponse.From(result.Transaction!)),
+            _ => Results.Created(
+                $"/api/families/{familyId}/transactions/{result.Transaction!.Id}", TransactionResponse.From(result.Transaction)),
+        };
+    }
+
     private static IResult ToResponse(PlannedTransactionResult result, Func<FinancialPlannedTransactionDto, IResult> ok) =>
         result.Access switch
         {
             PlannedTransactionAccess.NotFound => Results.NotFound(),
             PlannedTransactionAccess.Invalid => Results.ValidationProblem(result.Errors!),
-            PlannedTransactionAccess.Cancelled => Results.Problem(
-                statusCode: StatusCodes.Status409Conflict, title: PlannedTransactionResult.CancelledMessage),
+            PlannedTransactionAccess.Conflict => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: result.Message),
             _ => ok(result.Planned!),
         };
 
@@ -136,7 +165,15 @@ public sealed record PlannedTransactionRequest(
     decimal? Amount,
     DateOnly? DueDate);
 
-/// <summary>Previsão com <c>amount</c> como texto decimal exato ("1234.56"), padrão Money. Sem "vencida": é derivado.</summary>
+/// <summary>Realização: só valor e data efetivos. Conta, categoria, tipo e descrição vêm da previsão.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record RealizeRequest(decimal? Amount, DateOnly? TransactionDate);
+
+/// <summary>
+/// Previsão com valores como texto decimal exato, padrão Money. <c>amount</c>/<c>dueDate</c> são sempre os PREVISTOS;
+/// <c>realization</c> traz o lançamento efetivo ativo (Id, valor e data efetivos) quando <c>status</c> é Realized.
+/// Sem "vencida": é derivado na exibição.
+/// </summary>
 public sealed record PlannedTransactionResponse(
     Guid Id,
     CategoryType Type,
@@ -145,6 +182,8 @@ public sealed record PlannedTransactionResponse(
     string Description,
     TransactionReferenceDto Account,
     TransactionReferenceDto Category,
+    PlannedTransactionStatus Status,
+    PlannedRealizationResponse? Realization,
     bool IsCancelled,
     string Currency,
     DateTimeOffset CreatedAt,
@@ -159,6 +198,8 @@ public sealed record PlannedTransactionResponse(
         dto.Description,
         dto.Account,
         dto.Category,
+        dto.Status,
+        dto.Realization is { } r ? new PlannedRealizationResponse(r.TransactionId, Money.Format(r.Amount), r.TransactionDate) : null,
         dto.IsCancelled,
         dto.Currency,
         dto.CreatedAt,
@@ -171,3 +212,6 @@ public sealed record PlannedTransactionPageResponse(IReadOnlyList<PlannedTransac
     public static PlannedTransactionPageResponse From(PlannedTransactionPage page) =>
         new(page.Items.Select(PlannedTransactionResponse.From).ToList(), page.Page, page.PageSize, page.TotalCount);
 }
+
+/// <summary>Lançamento efetivo ativo de uma previsão realizada: valor efetivo como texto exato.</summary>
+public sealed record PlannedRealizationResponse(Guid TransactionId, string Amount, DateOnly TransactionDate);
