@@ -22,9 +22,10 @@ public interface IFinancialAccountRepository
     Task<AccountOpeningBalance?> GetOpeningBalanceAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Somas de receitas e despesas não canceladas da conta com <paramref name="from"/> ≤ data ≤ <paramref name="to"/>,
-    /// agregadas no PostgreSQL (sem carregar os lançamentos). Sem lançamentos no período, ambas são zero.
+    /// Somas não canceladas da conta com <paramref name="from"/> ≤ data ≤ <paramref name="to"/>: receitas e despesas
+    /// (lançamentos) e transferências recebidas (destino) e enviadas (origem), agregadas no PostgreSQL sem carregar
+    /// movimentações. Sem movimentações no período, todas são zero.
     /// </summary>
-    Task<AccountTotals> SumTransactionsAsync(
+    Task<AccountTotals> SumMovementsAsync(
         Guid familyId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken);
 }

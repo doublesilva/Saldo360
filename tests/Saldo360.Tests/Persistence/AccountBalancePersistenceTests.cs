@@ -6,6 +6,7 @@ using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
 using Saldo360.Domain.Families;
 using Saldo360.Domain.Transactions;
+using Saldo360.Domain.Transfers;
 using Saldo360.Infrastructure.Accounts;
 using Saldo360.Infrastructure.Families;
 using Saldo360.Infrastructure.Persistence;
@@ -46,13 +47,14 @@ public sealed class AccountBalancePersistenceTests(PostgresFixture postgres) : I
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
-    public async Task Sum_RunsAsSingleAggregateQuery_WithoutLoadingTransactions()
+    public async Task Sum_RunsAsOneAggregateQueryPerTable_WithoutLoadingMovements()
     {
         await using (var db = Db())
         {
             for (var i = 0; i < 20; i++)
             {
                 db.FinancialTransactions.Add(Transaction(_account, i % 2 == 0 ? _income : _expense, 1.25m, Reference));
+                db.FinancialTransfers.Add(Transfer(i % 2 == 0 ? _otherAccount : _account, i % 2 == 0 ? _account : _otherAccount, 2.50m, Reference));
             }
 
             await db.SaveChangesAsync();
@@ -62,14 +64,44 @@ public sealed class AccountBalancePersistenceTests(PostgresFixture postgres) : I
         await using var context = PostgresFixture.CreateDbContext(_connectionString, capture);
 
         var totals = await new FinancialAccountRepository(context)
-            .SumTransactionsAsync(_family.Id, _account.Id, Reference, Reference, CancellationToken.None);
+            .SumMovementsAsync(_family.Id, _account.Id, Reference, Reference, CancellationToken.None);
 
-        Assert.Equal((12.50m, 12.50m), (totals.Income, totals.Expense));
-        var sql = Assert.Single(capture.Commands);
-        Assert.Contains("sum(", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("GROUP BY", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("description", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.Empty(context.ChangeTracker.Entries<FinancialTransaction>());
+        Assert.Equal((12.50m, 12.50m, 25.00m, 25.00m), (totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut));
+        Assert.Equal(2, capture.Commands.Count);
+        Assert.Contains(capture.Commands, sql => sql.Contains("financial_transactions", StringComparison.Ordinal));
+        Assert.Contains(capture.Commands, sql => sql.Contains("financial_transfers", StringComparison.Ordinal));
+        Assert.All(capture.Commands, sql =>
+        {
+            Assert.Contains("sum(", sql, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("GROUP BY", sql, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("description", sql, StringComparison.OrdinalIgnoreCase);
+        });
+        Assert.Empty(context.ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public async Task TransferSums_UseThisAccountsPeriod_IgnoreCancelled_AndAreExact()
+    {
+        await using (var db = Db())
+        {
+            var cancelled = Transfer(_otherAccount, _account, 1000m, Reference);
+            cancelled.Cancel(_user, DateTimeOffset.UtcNow);
+            db.FinancialTransfers.AddRange(
+                Transfer(_otherAccount, _account, 0.10m, Reference),
+                Transfer(_otherAccount, _account, 0.20m, Reference.AddDays(1)),
+                Transfer(_account, _otherAccount, 0.05m, Reference.AddDays(1)),
+                Transfer(_otherAccount, _account, 7m, Reference.AddDays(-1)), // antes do período desta conta
+                Transfer(_account, _otherAccount, 9m, Reference.AddDays(2)), // depois do período
+                cancelled);
+            await db.SaveChangesAsync();
+        }
+
+        await using var context = Db();
+        var totals = await new FinancialAccountRepository(context)
+            .SumMovementsAsync(_family.Id, _account.Id, Reference, Reference.AddDays(1), CancellationToken.None);
+
+        Assert.Equal(("0.30", "0.05", "0.00", "0.00"),
+            (Money.Format(totals.TransferIn), Money.Format(totals.TransferOut), Money.Format(totals.Income), Money.Format(totals.Expense)));
     }
 
     [Fact]
@@ -93,9 +125,9 @@ public sealed class AccountBalancePersistenceTests(PostgresFixture postgres) : I
         await using var context = Db();
         var repository = new FinancialAccountRepository(context);
 
-        var totals = await repository.SumTransactionsAsync(_family.Id, _account.Id, Reference, Reference.AddDays(1), CancellationToken.None);
-        var empty = await repository.SumTransactionsAsync(_family.Id, _account.Id, Reference.AddDays(10), Reference.AddDays(20), CancellationToken.None);
-        var otherFamily = await repository.SumTransactionsAsync(Guid.CreateVersion7(), _account.Id, Reference, Reference.AddDays(1), CancellationToken.None);
+        var totals = await repository.SumMovementsAsync(_family.Id, _account.Id, Reference, Reference.AddDays(1), CancellationToken.None);
+        var empty = await repository.SumMovementsAsync(_family.Id, _account.Id, Reference.AddDays(10), Reference.AddDays(20), CancellationToken.None);
+        var otherFamily = await repository.SumMovementsAsync(Guid.CreateVersion7(), _account.Id, Reference, Reference.AddDays(1), CancellationToken.None);
 
         Assert.Equal(("0.30", "0.05"), (Money.Format(totals.Income), Money.Format(totals.Expense)));
         Assert.Equal((0m, 0m), (empty.Income, empty.Expense));
@@ -129,6 +161,13 @@ public sealed class AccountBalancePersistenceTests(PostgresFixture postgres) : I
         FinancialTransaction.Create(
             _family.Id,
             TransactionDetails.TryCreate(account.Id, category.Id, category.Type.ToString(), "Lançamento", amount, date, new DateOnly(2030, 1, 1), out _)!,
+            _user,
+            DateTimeOffset.UtcNow);
+
+    private FinancialTransfer Transfer(FinancialAccount source, FinancialAccount destination, decimal amount, DateOnly date) =>
+        FinancialTransfer.Create(
+            _family.Id,
+            TransferDetails.TryCreate(source.Id, destination.Id, amount, date, "Transferência", new DateOnly(2030, 1, 1), out _)!,
             _user,
             DateTimeOffset.UtcNow);
 

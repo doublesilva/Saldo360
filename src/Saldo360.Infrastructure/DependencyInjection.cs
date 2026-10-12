@@ -5,11 +5,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Saldo360.Application.Accounts;
 using Saldo360.Application.Categories;
 using Saldo360.Application.Transactions;
+using Saldo360.Application.Transfers;
 using Saldo360.Application.Families;
 using Saldo360.Application.Users;
 using Saldo360.Infrastructure.Accounts;
 using Saldo360.Infrastructure.Categories;
 using Saldo360.Infrastructure.Transactions;
+using Saldo360.Infrastructure.Transfers;
 using Saldo360.Infrastructure.Authentication;
 using Saldo360.Infrastructure.Families;
 using Saldo360.Infrastructure.Persistence;
@@ -52,6 +54,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialAccountRepository, FinancialAccountRepository>();
         services.AddScoped<IFinancialCategoryRepository, FinancialCategoryRepository>();
         services.AddScoped<IFinancialTransactionRepository, FinancialTransactionRepository>();
+        services.AddScoped<IFinancialTransferRepository, FinancialTransferRepository>();
 
         return services;
     }

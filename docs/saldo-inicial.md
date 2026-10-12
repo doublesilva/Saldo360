@@ -42,7 +42,7 @@ Em extratos bancários, o valor certo costuma ser o "saldo anterior" do dia de r
 
 Desde a T05.2, os lançamentos realizados (`financial_transactions`) **podem** ter `transaction_date` anterior a `OpeningBalanceDate`. Isso serve para preservar o histórico, por exemplo ao registrar movimentações antigas da planilha para consulta.
 
-Esses lançamentos **já estão dentro do saldo inicial**. Por isso, o cálculo do saldo realizado (T05.3, abaixo) os ignora:
+Esses lançamentos **já estão dentro do saldo inicial**. Por isso, o cálculo do saldo realizado (abaixo) os ignora:
 
 ```text
 saldo(fim de X) = OpeningBalance
@@ -52,25 +52,36 @@ saldo(fim de X) = OpeningBalance
 
 - `amount` é sempre positivo. O sentido vem de `type`: `Income` soma e `Expense` subtrai.
 - Lançamentos cancelados (`is_cancelled = true`) nunca entram na soma.
-- Conta sem saldo inicial: o saldo é **indisponível**, nunca zero (ver [Saldo realizado](#saldo-realizado-t053)).
+- Conta sem saldo inicial: o saldo é **indisponível**, nunca zero (ver [Saldo realizado](#saldo-realizado)).
 - A tela de lançamentos aceita a data antiga e avisa que ela não entra de novo no saldo.
 
-## Saldo realizado (T05.3)
+## Saldo realizado
 
 O saldo realizado de uma conta é o saldo no **fechamento** da data consultada (`asOf`). Ele é calculado a cada consulta e não fica gravado no banco.
 
 ```text
 saldo(asOf) = OpeningBalance
-            + Σ amount das receitas  (Income)  não canceladas
-            − Σ amount das despesas  (Expense) não canceladas
+            + Σ receitas                (lançamentos Income)
+            − Σ despesas                (lançamentos Expense)
+            + Σ transferências recebidas (a conta é o destino)
+            − Σ transferências enviadas  (a conta é a origem)
 
-considerando só lançamentos da própria conta e família com
-OpeningBalanceDate ≤ transaction_date ≤ asOf
+considerando só movimentações não canceladas da própria conta e família com
+OpeningBalanceDate ≤ data da movimentação ≤ asOf
 ```
 
 - O saldo inicial vale para o **início** de `OpeningBalanceDate`, e o resultado vale para o **fim** de `asOf`. Por isso, as movimentações do próprio dia de referência entram na soma.
-- Lançamentos anteriores à referência continuam no histórico, mas não entram na soma, porque já fazem parte do saldo inicial. Lançamentos posteriores a `asOf` também ficam fora, de modo que uma consulta passada mostra o saldo daquele dia.
-- As somas são feitas no PostgreSQL, em uma única consulta (`SUM` condicional por tipo, agrupada pela conta) sobre `numeric`. A aplicação só faz `saldo inicial + receitas − despesas` em `decimal`. Nada passa por ponto flutuante, e somas acima do limite de um lançamento individual (10¹³) não são truncadas.
+- Movimentações anteriores à referência continuam no histórico, mas não entram na soma, porque já fazem parte do saldo inicial. Movimentações posteriores a `asOf` também ficam fora, de modo que uma consulta passada mostra o saldo daquele dia.
+- Uma transferência é **um único registro** com origem e destino. Ela não gera receita nem despesa e não tem categoria. Para corrigir, ela é cancelada e cadastrada de novo; não há edição.
+- **Cada conta usa o próprio período.** Uma transferência pode estar antes da referência de uma das contas e depois da referência da outra. Nesse caso, ela já está no saldo inicial da primeira e não é somada de novo, mas ainda entra no cálculo da segunda.
+
+  Exemplo: PJ com referência em 01/09 e PF com referência em 10/09. Uma transferência PJ → PF de 500,00 em 05/09 é subtraída do PJ, mas não é somada ao PF, porque o saldo inicial do PF em 10/09 já a inclui.
+- A origem pode ficar negativa: a transferência não é bloqueada por saldo insuficiente.
+- As somas são feitas no PostgreSQL, sobre `numeric`, em duas consultas agregadas:
+  - lançamentos: `SUM` condicional por tipo;
+  - transferências: `SUM` condicional pelo papel da conta, destino ou origem.
+
+  Nenhuma movimentação é carregada em memória. A aplicação só combina os totais em `decimal`. Nada passa por ponto flutuante, e somas acima do limite de uma movimentação individual (10¹³) não são truncadas.
 - Saldo negativo significa valor devido, por exemplo cheque especial em uso. Não é crédito disponível; limite bancário está fora do escopo.
 
 ### API
@@ -87,14 +98,18 @@ Resposta disponível:
 {
   "accountId": "…", "asOf": "2026-10-10",
   "openingBalance": "1000.00", "openingBalanceDate": "2026-10-01",
-  "totalIncome": "500.00", "totalExpense": "200.00", "balance": "1300.00",
+  "totalIncome": "500.00", "totalExpense": "200.00",
+  "totalTransferIn": "500.00", "totalTransferOut": "0.00",
+  "balance": "1800.00",
   "unavailableReason": null
 }
 ```
 
+`totalTransferIn` e `totalTransferOut` vêm separados de `totalIncome` e `totalExpense`: transferência não é receita nem despesa.
+
 ### Retornos indisponíveis
 
-Quando o saldo não pode ser calculado, a resposta é `200` com `unavailableReason` preenchido e `totalIncome`, `totalExpense` e `balance` iguais a **`null`**. Indisponível nunca é zero.
+Quando o saldo não pode ser calculado, a resposta é `200` com `unavailableReason` preenchido e `totalIncome`, `totalExpense`, `totalTransferIn`, `totalTransferOut` e `balance` iguais a **`null`**. Indisponível nunca é zero.
 
 | `unavailableReason` | Quando | `openingBalance` / `openingBalanceDate` | Interface |
 | --- | --- | --- | --- |

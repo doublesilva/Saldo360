@@ -105,13 +105,14 @@ public sealed class FinancialAccountService(
             return Unavailable(BalanceUnavailableReason.BeforeOpeningBalanceDate);
         }
 
-        var totals = await accounts.SumTransactionsAsync(familyId, accountId, referenceDate, date, cancellationToken);
+        var totals = await accounts.SumMovementsAsync(familyId, accountId, referenceDate, date, cancellationToken);
+        var balance = amount + totals.Income - totals.Expense + totals.TransferIn - totals.TransferOut;
         return new BalanceResult(BalanceAccess.Allowed, new AccountBalanceDto(
-            accountId, date, amount, referenceDate, totals.Income, totals.Expense,
-            amount + totals.Income - totals.Expense, null), null);
+            accountId, date, amount, referenceDate, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut,
+            balance, null), null);
 
         BalanceResult Unavailable(BalanceUnavailableReason reason) => new(BalanceAccess.Allowed, new AccountBalanceDto(
-            accountId, date, opening.Amount, opening.Date, null, null, null, reason), null);
+            accountId, date, opening.Amount, opening.Date, null, null, null, null, null, reason), null);
     }
 
     private async Task<bool> IsParticipantAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>

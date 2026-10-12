@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Saldo360.Api.Accounts;
 using Saldo360.Api.Categories;
 using Saldo360.Api.Transactions;
+using Saldo360.Api.Transfers;
 using Saldo360.Api.Authentication;
 using Saldo360.Api.Families;
 using Saldo360.Api.Health;
@@ -44,5 +45,6 @@ app.MapFamilyInvitationEndpoints();
 app.MapFinancialAccountEndpoints();
 app.MapFinancialCategoryEndpoints();
 app.MapFinancialTransactionEndpoints();
+app.MapFinancialTransferEndpoints();
 
 app.Run();

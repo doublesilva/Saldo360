@@ -43,6 +43,8 @@ const unavailable = (accountId: string): AccountBalance => ({
   openingBalanceDate: null,
   totalIncome: null,
   totalExpense: null,
+  totalTransferIn: null,
+  totalTransferOut: null,
   balance: null,
   unavailableReason: 'OpeningBalanceNotConfigured',
 })
@@ -325,6 +327,8 @@ describe('Accounts — saldo realizado', () => {
     openingBalanceDate: '2026-10-01',
     totalIncome: '500.00',
     totalExpense: '200.00',
+    totalTransferIn: '300.00',
+    totalTransferOut: '300.00',
     balance: '1300.00',
     unavailableReason: null,
   }
@@ -336,7 +340,8 @@ describe('Accounts — saldo realizado', () => {
     const item = (await screen.findByText(/Saldo realizado até 10\/10\/2026/)).closest('li')!
     expect(item.textContent).toMatch(/Saldo realizado até 10\/10\/2026:\s*R\$\s1\.300,00/)
     expect(item.textContent).toMatch(/Saldo inicial em 01\/10\/2026:\s*R\$\s1\.000,00/)
-    expect(item.textContent).toMatch(/Entradas R\$\s500,00 · Saídas R\$\s200,00 desde 01\/10\/2026/)
+    expect(item.textContent).toMatch(/Desde 01\/10\/2026: receitas R\$\s500,00 · despesas R\$\s200,00/)
+    expect(item.textContent).toMatch(/Transferências: recebidas R\$\s300,00 · enviadas R\$\s300,00/)
     expect(calls.some((c) => c.url === `/api/families/f1/accounts/${comSaldo.id}/balance`)).toBe(true)
   })
 
@@ -366,7 +371,7 @@ describe('Accounts — saldo realizado', () => {
 
   it('consulta anterior à referência explica a indisponibilidade', async () => {
     mockApi([comSaldo], {
-      [comSaldo.id]: { ...realizado, asOf: '2026-10-10', openingBalanceDate: '2026-11-01', totalIncome: null, totalExpense: null, balance: null, unavailableReason: 'BeforeOpeningBalanceDate' },
+      [comSaldo.id]: { ...realizado, asOf: '2026-10-10', openingBalanceDate: '2026-11-01', totalIncome: null, totalExpense: null, totalTransferIn: null, totalTransferOut: null, balance: null, unavailableReason: 'BeforeOpeningBalanceDate' },
     })
     render(<Accounts familyId="f1" members={members} />)
 

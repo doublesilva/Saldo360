@@ -213,7 +213,13 @@ function RealizedBalance({ familyId, accountId, refreshKey }: { familyId: string
   if (state.kind === 'error') return <p className="account__balance status status--down">{state.message}</p>
 
   const { balance } = state
-  if (balance.balance === null || balance.totalIncome === null || balance.totalExpense === null) {
+  if (
+    balance.balance === null ||
+    balance.totalIncome === null ||
+    balance.totalExpense === null ||
+    balance.totalTransferIn === null ||
+    balance.totalTransferOut === null
+  ) {
     const message =
       balance.unavailableReason === 'BeforeOpeningBalanceDate' && balance.openingBalanceDate
         ? `Saldo realizado indisponível: a data de referência do saldo inicial (${formatDate(balance.openingBalanceDate)}) é posterior a ${formatDate(balance.asOf)}.`
@@ -230,8 +236,12 @@ function RealizedBalance({ familyId, accountId, refreshKey }: { familyId: string
         {negative && <span className="meta"> — saldo negativo: valor devido, não é crédito disponível.</span>}
       </p>
       <p className="meta">
-        Entradas {formatBrlDecimal(balance.totalIncome)} · Saídas {formatBrlDecimal(balance.totalExpense)} desde{' '}
-        {balance.openingBalanceDate ? formatDate(balance.openingBalanceDate) : '—'}
+        Desde {balance.openingBalanceDate ? formatDate(balance.openingBalanceDate) : '—'}: receitas{' '}
+        {formatBrlDecimal(balance.totalIncome)} · despesas {formatBrlDecimal(balance.totalExpense)}
+      </p>
+      <p className="meta">
+        Transferências: recebidas {formatBrlDecimal(balance.totalTransferIn)} · enviadas{' '}
+        {formatBrlDecimal(balance.totalTransferOut)}
       </p>
     </div>
   )

@@ -35,7 +35,8 @@ public sealed record AccountInput(
 /// <summary>Saldo inicial da conta; ambos nulos = não configurado.</summary>
 public sealed record AccountOpeningBalance(decimal? Amount, DateOnly? Date);
 
-public sealed record AccountTotals(decimal Income, decimal Expense);
+/// <summary>Totais de uma conta no período: lançamentos (receita/despesa) e transferências (recebidas/enviadas).</summary>
+public sealed record AccountTotals(decimal Income, decimal Expense, decimal TransferIn, decimal TransferOut);
 
 /// <summary>Por que o saldo realizado não pode ser calculado. Nunca é tratado como zero.</summary>
 public enum BalanceUnavailableReason
@@ -49,7 +50,8 @@ public enum BalanceUnavailableReason
 
 /// <summary>
 /// Saldo realizado no FECHAMENTO de <see cref="AsOf"/>: saldo inicial (início de OpeningBalanceDate) + receitas
-/// − despesas não canceladas com OpeningBalanceDate ≤ data ≤ AsOf. Indisponível: totais e saldo nulos.
+/// − despesas + transferências recebidas − transferências enviadas, todas não canceladas e com
+/// OpeningBalanceDate ≤ data ≤ AsOf (período desta conta). Indisponível: totais e saldo nulos.
 /// </summary>
 public sealed record AccountBalanceDto(
     Guid AccountId,
@@ -58,6 +60,8 @@ public sealed record AccountBalanceDto(
     DateOnly? OpeningBalanceDate,
     decimal? TotalIncome,
     decimal? TotalExpense,
+    decimal? TotalTransferIn,
+    decimal? TotalTransferOut,
     decimal? Balance,
     BalanceUnavailableReason? UnavailableReason);
 

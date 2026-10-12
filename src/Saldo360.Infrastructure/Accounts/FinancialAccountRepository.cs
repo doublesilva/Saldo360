@@ -52,20 +52,36 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             .Select(a => new AccountOpeningBalance(a.OpeningBalance, a.OpeningBalanceDate))
             .SingleOrDefaultAsync(cancellationToken);
 
-    // Uma consulta: SUM condicional por tipo, agrupado pela conta, no PostgreSQL (numeric, sem perda). Nenhum
-    // lançamento no período → nenhuma linha → totais zero.
-    public async Task<AccountTotals> SumTransactionsAsync(
+    // Duas consultas agregadas no PostgreSQL (numeric, sem perda), uma por tabela: SUM condicional por tipo
+    // nos lançamentos e por papel da conta (destino/origem) nas transferências. O período é o desta conta, então
+    // uma transferência pode entrar aqui e já estar no saldo inicial da outra ponta. Nada no período → zero.
+    public async Task<AccountTotals> SumMovementsAsync(
         Guid familyId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken)
     {
-        var totals = await db.FinancialTransactions
+        var transactions = await db.FinancialTransactions
             .Where(t => t.FamilyId == familyId && t.AccountId == accountId && !t.IsCancelled
                 && t.TransactionDate >= from && t.TransactionDate <= to)
             .GroupBy(t => t.AccountId)
-            .Select(g => new AccountTotals(
-                g.Sum(t => t.Type == CategoryType.Income ? t.Amount : 0m),
-                g.Sum(t => t.Type == CategoryType.Expense ? t.Amount : 0m)))
+            .Select(g => new
+            {
+                Income = g.Sum(t => t.Type == CategoryType.Income ? t.Amount : 0m),
+                Expense = g.Sum(t => t.Type == CategoryType.Expense ? t.Amount : 0m),
+            })
             .SingleOrDefaultAsync(cancellationToken);
-        return totals ?? new AccountTotals(0m, 0m);
+
+        var transfers = await db.FinancialTransfers
+            .Where(t => t.FamilyId == familyId && (t.SourceAccountId == accountId || t.DestinationAccountId == accountId)
+                && !t.IsCancelled && t.TransferDate >= from && t.TransferDate <= to)
+            .GroupBy(t => t.FamilyId)
+            .Select(g => new
+            {
+                In = g.Sum(t => t.DestinationAccountId == accountId ? t.Amount : 0m),
+                Out = g.Sum(t => t.SourceAccountId == accountId ? t.Amount : 0m),
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return new AccountTotals(
+            transactions?.Income ?? 0m, transactions?.Expense ?? 0m, transfers?.In ?? 0m, transfers?.Out ?? 0m);
     }
 
     // Responsável: junção com o vínculo da mesma família e o nome de exibição do usuário.

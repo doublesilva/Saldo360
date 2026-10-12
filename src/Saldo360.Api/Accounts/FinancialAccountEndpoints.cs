@@ -163,6 +163,8 @@ public sealed record AccountBalanceResponse(
     DateOnly? OpeningBalanceDate,
     string? TotalIncome,
     string? TotalExpense,
+    string? TotalTransferIn,
+    string? TotalTransferOut,
     string? Balance,
     BalanceUnavailableReason? UnavailableReason)
 {
@@ -173,6 +175,8 @@ public sealed record AccountBalanceResponse(
         dto.OpeningBalanceDate,
         Format(dto.TotalIncome),
         Format(dto.TotalExpense),
+        Format(dto.TotalTransferIn),
+        Format(dto.TotalTransferOut),
         Format(dto.Balance),
         dto.UnavailableReason);
 

@@ -599,6 +599,17 @@ button {
   color: var(--ok);
 }
 
+/* Transferência não é receita nem despesa: cor neutra, sem sinal. */
+.amount--transfer {
+  color: var(--accent);
+}
+
+.transfers {
+  margin-top: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
 .badge--cancelled {
   color: var(--fail);
 }

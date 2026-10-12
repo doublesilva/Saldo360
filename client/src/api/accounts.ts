@@ -123,6 +123,9 @@ export interface AccountBalance {
   openingBalanceDate: string | null
   totalIncome: string | null
   totalExpense: string | null
+  /** Transferências recebidas (destino) e enviadas (origem), separadas de receitas e despesas. */
+  totalTransferIn: string | null
+  totalTransferOut: string | null
   balance: string | null
   unavailableReason: BalanceUnavailableReason | null
 }

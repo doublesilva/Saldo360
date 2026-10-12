@@ -11,6 +11,7 @@ import {
 import { Accounts } from './Accounts'
 import { Categories } from './Categories'
 import { Transactions } from './Transactions'
+import { Transfers } from './Transfers'
 import { InvitePanel } from './InvitePanel'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
@@ -166,7 +167,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
   const [state, setState] = useState<DetailState>(
     typeof family === 'string' ? { kind: 'loading' } : { kind: 'loaded', family },
   )
-  // Muda a cada lançamento criado, editado ou cancelado: as contas consultam de novo o saldo realizado.
+  // Muda a cada lançamento ou transferência criados, editados ou cancelados: as contas consultam de novo o saldo.
   const [balanceVersion, setBalanceVersion] = useState(0)
 
   useEffect(() => {
@@ -209,6 +210,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
           <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={balanceVersion} />
           <Categories familyId={state.family.id} />
           <Transactions familyId={state.family.id} onChanged={() => setBalanceVersion((n) => n + 1)} />
+          <Transfers familyId={state.family.id} onChanged={() => setBalanceVersion((n) => n + 1)} />
         </>
       )}
     </section>
