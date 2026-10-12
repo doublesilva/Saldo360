@@ -74,6 +74,15 @@ export function formatBrlDecimal(text: string): string {
   return `${negative ? '-' : ''}R$ ${grouped},${cents}`
 }
 
+/**
+ * Texto decimal exato da API ("1234.56") → valor para o campo de edição em pt-BR ("1234,56"), sem separador
+ * de milhar e sem passar por number. O inverso é parseAmount, que devolve o mesmo texto exato.
+ */
+export function decimalToInput(text: string): string {
+  if (!DECIMAL_TEXT.test(text)) throw new Error(`Valor monetário inválido: ${text}`)
+  return text.replace('.', ',')
+}
+
 /** Se o texto decimal da API é negativo (diferente de zero). */
 export function isNegativeDecimal(text: string): boolean {
   return text.startsWith('-') && /[1-9]/.test(text)

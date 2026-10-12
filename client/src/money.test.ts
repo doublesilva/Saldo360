@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { formatAmountInput, formatBrl, formatBrlDecimal, formatDate, isNegativeDecimal, parseAmount } from './money'
+import {
+  decimalToInput,
+  formatAmountInput,
+  formatBrl,
+  formatBrlDecimal,
+  formatDate,
+  isNegativeDecimal,
+  parseAmount,
+} from './money'
 
 describe('parseAmount', () => {
   it.each([
@@ -90,5 +98,20 @@ describe('formatação', () => {
   it('formata em BRL e a data sem fuso', () => {
     expect(formatBrl(1234.56)).toMatch(/^R\$\s1\.234,56$/)
     expect(formatDate('2026-10-01')).toBe('01/10/2026')
+  })
+})
+
+describe('decimalToInput', () => {
+  it.each([
+    ['1234.56', '1234,56'],
+    ['0.10', '0,10'],
+    ['9999999999999.99', '9999999999999,99'],
+  ])('"%s" → "%s", e parseAmount devolve o mesmo texto', (text, input) => {
+    expect(decimalToInput(text)).toBe(input)
+    expect(parseAmount(decimalToInput(text))).toMatchObject({ kind: 'ok', text })
+  })
+
+  it.each(['1234.5', '1234', 'abc'])('recusa "%s"', (text) => {
+    expect(() => decimalToInput(text)).toThrow()
   })
 })

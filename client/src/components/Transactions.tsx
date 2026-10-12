@@ -13,7 +13,7 @@ import {
   type TransactionPage,
 } from '../api/transactions'
 import { todayInSaoPaulo } from '../dates'
-import { formatAmountInput, formatBrl, formatDate, parseAmount } from '../money'
+import { decimalToInput, formatBrlDecimal, formatDate, parseAmount } from '../money'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -261,7 +261,7 @@ function Amount({ transaction }: { transaction: FinancialTransaction }) {
   return (
     <strong className={income ? 'amount amount--income' : 'amount amount--negative'}>
       {income ? '+' : '−'}
-      {formatBrl(transaction.amount)}
+      {formatBrlDecimal(transaction.amount)}
     </strong>
   )
 }
@@ -296,7 +296,7 @@ function TransactionForm({
           accountId: transaction.account.id,
           categoryId: transaction.category.id,
           description: transaction.description,
-          amount: formatAmountInput(transaction.amount),
+          amount: decimalToInput(transaction.amount),
           transactionDate: transaction.transactionDate,
         }
       : { type: 'Expense', accountId: '', categoryId: '', description: '', amount: '', transactionDate: today },

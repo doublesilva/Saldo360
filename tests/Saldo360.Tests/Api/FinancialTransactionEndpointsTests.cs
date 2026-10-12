@@ -60,12 +60,12 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
         Assert.Equal(HttpStatusCode.Created, expense.StatusCode);
         var created = await ReadAsync<TransactionDto>(income);
         Assert.Equal($"{TransactionsUrl}/{created.Id}", income.Headers.Location!.ToString());
-        Assert.Equal(("Income", 5432.10m, new DateOnly(2026, 10, 5), "Salário outubro", "BRL", false),
+        Assert.Equal(("Income", "5432.10", new DateOnly(2026, 10, 5), "Salário outubro", "BRL", false),
             (created.Type, created.Amount, created.TransactionDate, created.Description, created.Currency, created.IsCancelled));
         Assert.Equal((_itau, "Itaú PF", _salario, "Salário"), (created.Account.Id, created.Account.Name, created.Category.Id, created.Category.Name));
 
         var reloaded = await ReadAsync<TransactionDto>(await SendAsync(HttpMethod.Get, $"{TransactionsUrl}/{created.Id}", _member));
-        Assert.Equal((5432.10m, new DateOnly(2026, 10, 5)), (reloaded.Amount, reloaded.TransactionDate));
+        Assert.Equal(("5432.10", new DateOnly(2026, 10, 5)), (reloaded.Amount, reloaded.TransactionDate));
 
         await using var db = Db();
         var texts = await db.Database.SqlQueryRaw<string>(
@@ -202,7 +202,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
         var kept = await SendWithCsrfAsync(HttpMethod.Put, url, _member, Body(_itau, _mercado, "Expense", description: "Feira do sábado", amount: 87.35m));
         Assert.Equal(HttpStatusCode.OK, kept.StatusCode);
         var keptDto = await ReadAsync<TransactionDto>(kept);
-        Assert.Equal(("Feira do sábado", 87.35m, false, false),
+        Assert.Equal(("Feira do sábado", "87.35", false, false),
             (keptDto.Description, keptDto.Amount, keptDto.Account.IsActive, keptDto.Category.IsActive));
 
         await AssertValidationErrorAsync(await SendWithCsrfAsync(HttpMethod.Put, url, _member, Body(_nubank, _mercado, "Expense")), "accountId");
@@ -394,6 +394,40 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
         }
     }
 
+    [Theory]
+    [InlineData("0.10")]
+    [InlineData("1234.56")]
+    [InlineData("9999999999999.99")]
+    public async Task Amount_IsAnExactDecimalString_InEveryResponse_AndEditPreservesIt(string amount)
+    {
+        await ArrangeAsync();
+        var body = new { accountId = _itau, categoryId = _mercado, type = "Expense", description = "Compra", amount, transactionDate = "2026-10-01" };
+
+        var created = await SendWithCsrfAsync(HttpMethod.Post, TransactionsUrl, _owner, body);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = await AssertAmountStringAsync(created, amount);
+        var url = $"{TransactionsUrl}/{id}";
+
+        await AssertAmountStringAsync(await SendAsync(HttpMethod.Get, url, _member), amount);
+
+        using (var list = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, TransactionsUrl, _member)).Content.ReadAsStringAsync()))
+        {
+            var item = list.RootElement.GetProperty("items")[0].GetProperty("amount");
+            Assert.Equal((JsonValueKind.String, amount), (item.ValueKind, item.GetString()));
+        }
+
+        // Edita só a descrição, reenviando o valor exatamente como veio da resposta.
+        var edited = await SendWithCsrfAsync(HttpMethod.Put, url, _member, body with { description = "Compra corrigida" });
+        Assert.Equal(HttpStatusCode.OK, edited.StatusCode);
+        await AssertAmountStringAsync(edited, amount);
+
+        await AssertAmountStringAsync(await SendWithCsrfAsync(HttpMethod.Post, $"{url}/cancel", _owner), amount);
+
+        await using var db = Db();
+        var text = await db.Database.SqlQueryRaw<string>("SELECT amount::text AS \"Value\" FROM financial_transactions").SingleAsync();
+        Assert.Equal(amount, text);
+    }
+
     [Fact]
     public async Task Endpoints_RequireAuthentication()
     {
@@ -466,6 +500,16 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
         return await Client.SendAsync(request);
     }
 
+    /// <summary>Confere que "amount" é string JSON com o texto exato; devolve o Id do lançamento.</summary>
+    private static async Task<Guid> AssertAmountStringAsync(HttpResponseMessage response, string expected)
+    {
+        Assert.True(response.IsSuccessStatusCode, $"HTTP {(int)response.StatusCode}");
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var amount = json.RootElement.GetProperty("amount");
+        Assert.Equal((JsonValueKind.String, expected), (amount.ValueKind, amount.GetString()));
+        return json.RootElement.GetProperty("id").GetGuid();
+    }
+
     private static async Task AssertValidationErrorAsync(HttpResponseMessage response, string field)
     {
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -478,7 +522,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     private sealed record ReferenceDto(Guid Id, string Name, bool IsActive);
 
     private sealed record TransactionDto(
-        Guid Id, string Type, decimal Amount, DateOnly TransactionDate, string Description,
+        Guid Id, string Type, string Amount, DateOnly TransactionDate, string Description,
         ReferenceDto Account, ReferenceDto Category, bool IsCancelled, string Currency,
         DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt, DateTimeOffset? CancelledAt);
 

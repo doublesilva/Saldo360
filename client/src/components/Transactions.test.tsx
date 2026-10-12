@@ -37,7 +37,7 @@ const lazer = category('cat-lazer', 'Lazer', 'Expense', false)
 const feira: FinancialTransaction = {
   id: 't1',
   type: 'Expense',
-  amount: 1234.56,
+  amount: '1234.56',
   transactionDate: '2026-10-05',
   description: 'Feira do mês',
   account: { id: antiga.id, name: antiga.name, isActive: false },
@@ -53,7 +53,7 @@ const pagamento: FinancialTransaction = {
   ...feira,
   id: 't2',
   type: 'Income',
-  amount: 5000,
+  amount: '5000.00',
   transactionDate: '2026-10-01',
   description: 'Salário setembro',
   account: { id: itau.id, name: itau.name, isActive: true },
@@ -355,5 +355,67 @@ describe('Transactions — aviso de mudança para os saldos', () => {
 
     expect(await screen.findByText('Categoria inválida.')).toBeTruthy()
     expect(onChanged).not.toHaveBeenCalled()
+  })
+})
+
+describe('Transactions — valor como texto decimal exato', () => {
+  const maximo: FinancialTransaction = { ...pagamento, id: 't9', description: 'Valor máximo', amount: '9999999999999.99' }
+  const centavos: FinancialTransaction = { ...feira, id: 't8', description: 'Bala', amount: '0.10' }
+
+  function mockPage(items: FinancialTransaction[]) {
+    const calls: Call[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        calls.push({ url, init })
+        if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
+        if (url.includes('/accounts')) return Response.json([itau, antiga])
+        if (url.includes('/categories')) return Response.json([salario, mercado, lazer])
+        if (init?.method === 'PUT') return Response.json({ ...maximo, ...JSON.parse(String(init.body)) })
+        return Response.json({ items, page: 1, pageSize: 20, totalCount: items.length })
+      }),
+    )
+    return calls
+  }
+
+  it('exibe centavos e o valor máximo exatamente, a partir do texto', async () => {
+    mockPage([maximo, centavos])
+    render(<Transactions familyId="f1" />)
+
+    expect((await screen.findByText('Valor máximo')).closest('li')!.textContent).toMatch(/\+R\$\s9\.999\.999\.999\.999,99/)
+    expect(screen.getByText('Bala').closest('li')!.textContent).toMatch(/−R\$\s0,10/)
+  })
+
+  it('edição do valor máximo preenche o campo e reenvia o mesmo texto exato', async () => {
+    const calls = mockPage([maximo])
+    render(<Transactions familyId="f1" />)
+    const item = (await screen.findByText('Valor máximo')).closest('li')!
+    fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
+    await screen.findByLabelText('Conta')
+
+    expect((screen.getByLabelText('Valor (R$)') as HTMLInputElement).value).toBe('9999999999999,99')
+    fill({ Descrição: 'Valor máximo (corrigido)' })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(writes(calls)).toHaveLength(1))
+    expect(JSON.parse(String(writes(calls)[0].init!.body))).toMatchObject({
+      amount: '9999999999999.99',
+      description: 'Valor máximo (corrigido)',
+    })
+  })
+
+  it('edição de centavos reenvia "0.10", não 0.1', async () => {
+    const calls = mockPage([centavos])
+    render(<Transactions familyId="f1" />)
+    const item = (await screen.findByText('Bala')).closest('li')!
+    fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
+    await screen.findByLabelText('Conta')
+
+    expect((screen.getByLabelText('Valor (R$)') as HTMLInputElement).value).toBe('0,10')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(writes(calls)).toHaveLength(1))
+    expect(String(writes(calls)[0].init!.body)).toContain('"amount":"0.10"')
   })
 })

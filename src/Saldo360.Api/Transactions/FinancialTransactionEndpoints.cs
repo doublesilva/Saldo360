@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
 using Saldo360.Application.Transactions;
+using Saldo360.Domain.Categories;
+using Saldo360.Domain.Common;
 
 namespace Saldo360.Api.Transactions;
 
@@ -27,7 +29,7 @@ public static class FinancialTransactionEndpoints
         }
 
         var result = await transactions.CreateAsync(familyId, userId, ToInput(request), cancellationToken);
-        return ToResponse(result, t => Results.Created($"/api/families/{familyId}/transactions/{t.Id}", t));
+        return ToResponse(result, t => Results.Created($"/api/families/{familyId}/transactions/{t.Id}", TransactionResponse.From(t)));
     }
 
     /// <summary>
@@ -58,7 +60,7 @@ public static class FinancialTransactionEndpoints
         {
             { NotFound: true } => Results.NotFound(),
             { Errors: { } errors } => Results.ValidationProblem(errors),
-            _ => Results.Ok(result.Page),
+            _ => Results.Ok(TransactionPageResponse.From(result.Page!)),
         };
     }
 
@@ -72,7 +74,7 @@ public static class FinancialTransactionEndpoints
         }
 
         return await transactions.GetAsync(familyId, transactionId, userId, cancellationToken) is { } transaction
-            ? Results.Ok(transaction)
+            ? Results.Ok(TransactionResponse.From(transaction))
             : Results.NotFound();
     }
 
@@ -87,7 +89,7 @@ public static class FinancialTransactionEndpoints
         }
 
         var result = await transactions.UpdateAsync(familyId, transactionId, userId, ToInput(request), cancellationToken);
-        return ToResponse(result, Results.Ok);
+        return ToResponse(result, t => Results.Ok(TransactionResponse.From(t)));
     }
 
     /// <summary>Cancela sem excluir. Idempotente: cancelar de novo devolve 200 com o mesmo estado.</summary>
@@ -100,7 +102,9 @@ public static class FinancialTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        return ToResponse(await transactions.CancelAsync(familyId, transactionId, userId, cancellationToken), Results.Ok);
+        return ToResponse(
+            await transactions.CancelAsync(familyId, transactionId, userId, cancellationToken),
+            t => Results.Ok(TransactionResponse.From(t)));
     }
 
     private static IResult ToResponse(TransactionResult result, Func<FinancialTransactionDto, IResult> ok) => result.Access switch
@@ -128,3 +132,42 @@ public sealed record TransactionRequest(
     string? Description,
     decimal? Amount,
     DateOnly? TransactionDate);
+
+/// <summary>
+/// Lançamento como resposta da API: os mesmos campos do DTO, com <c>amount</c> como texto decimal exato com duas
+/// casas ("1234.56"), padrão Money já usado em transferências e saldo. Nunca número JSON.
+/// </summary>
+public sealed record TransactionResponse(
+    Guid Id,
+    CategoryType Type,
+    string Amount,
+    DateOnly TransactionDate,
+    string Description,
+    TransactionReferenceDto Account,
+    TransactionReferenceDto Category,
+    bool IsCancelled,
+    string Currency,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt,
+    DateTimeOffset? CancelledAt)
+{
+    public static TransactionResponse From(FinancialTransactionDto dto) => new(
+        dto.Id,
+        dto.Type,
+        Money.Format(dto.Amount),
+        dto.TransactionDate,
+        dto.Description,
+        dto.Account,
+        dto.Category,
+        dto.IsCancelled,
+        dto.Currency,
+        dto.CreatedAt,
+        dto.UpdatedAt,
+        dto.CancelledAt);
+}
+
+public sealed record TransactionPageResponse(IReadOnlyList<TransactionResponse> Items, int Page, int PageSize, int TotalCount)
+{
+    public static TransactionPageResponse From(TransactionPage page) =>
+        new(page.Items.Select(TransactionResponse.From).ToList(), page.Page, page.PageSize, page.TotalCount);
+}

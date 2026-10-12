@@ -12,12 +12,12 @@ export interface TransactionReference {
 
 /**
  * Lançamento único já realizado. amount é sempre positivo: o tipo diz o sentido (receita soma, despesa
- * subtrai). O frontend só exibe o valor; não faz contas com ele.
+ * subtrai). amount vem como texto decimal exato ("1234.56"): só é formatado, nunca convertido para number.
  */
 export interface FinancialTransaction {
   id: string
   type: CategoryType
-  amount: number
+  amount: string
   /** "yyyy-MM-dd", sem horário. */
   transactionDate: string
   description: string
