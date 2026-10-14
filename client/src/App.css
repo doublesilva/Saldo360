@@ -1001,6 +1001,146 @@ button.calendar-day--selected {
 .badge--calendar-pending { color: var(--accent); border-style: dotted; }
 .badge--calendar-overdue { color: var(--fail); }
 
+.balance-evolution {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.balance-evolution__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.balance-evolution__heading h3,
+.balance-evolution__heading p {
+  margin: 0;
+}
+
+.balance-evolution__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.balance-evolution__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.balance-line-sample {
+  width: 1.5rem;
+  border-top: 3px solid var(--ok);
+}
+
+.balance-line-sample--projected {
+  border-top-color: var(--accent);
+  border-top-style: dashed;
+}
+
+.balance-point-sample {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 0.55rem;
+  text-align: center;
+}
+
+.balance-point-sample--negative { border-color: var(--fail); background: var(--fail); }
+.balance-point-sample--overdue { border-color: var(--fail); color: var(--fail); }
+
+.balance-risk {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+
+.balance-chart-wrap {
+  min-height: 13rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--surface);
+}
+
+.balance-chart {
+  display: block;
+  width: 100%;
+  height: 13rem;
+  overflow: visible;
+}
+
+.balance-chart__line {
+  fill: none;
+  stroke: var(--ok);
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.balance-chart__line--projected {
+  stroke: var(--accent);
+  stroke-dasharray: 10 7;
+}
+
+.balance-chart__point {
+  fill: var(--surface);
+  stroke: var(--ok);
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.balance-chart__point--projected { stroke: var(--accent); }
+.balance-chart__point--negative { fill: var(--fail); stroke: var(--fail); }
+.balance-chart__point--overdue { stroke-dasharray: 3 2; }
+.balance-chart__point--selected { stroke-width: 7; }
+
+.balance-table-wrap {
+  margin-top: 0.8rem;
+  overflow-x: auto;
+}
+
+.balance-table {
+  width: 100%;
+  min-width: 48rem;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.balance-table th,
+.balance-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.balance-table__selected { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.balance-table__negative { box-shadow: inset 4px 0 var(--fail); }
+.balance-evolution__unavailable { margin-top: 1rem; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (min-width: 48rem) {
   .page:has(.financial-calendar) {
     max-width: 74rem;
@@ -1010,6 +1150,10 @@ button.calendar-day--selected {
 @media (max-width: 48rem) {
   .calendar-layout {
     grid-template-columns: 1fr;
+  }
+
+  .balance-evolution__heading {
+    flex-direction: column;
   }
 }
 

@@ -73,3 +73,43 @@ conversão para `number`.
 A Agenda representa carregamento, falha de consulta, mês vazio, dia sem acontecimentos e falha ao carregar as contas.
 Ao trocar de núcleo familiar, a instância anterior é desmontada, seus pedidos são cancelados e filtros/mês voltam ao
 estado inicial da nova família.
+
+## Evolução diária do saldo
+
+A seção **Evolução do saldo** consulta o mesmo mês da Agenda:
+
+```text
+GET /api/families/{familyId}/financial-calendar/balances
+    ?from=primeiro-dia-do-mês
+    &through=último-dia-do-mês
+    [&accountId=...]
+```
+
+Sem `accountId`, a resposta consolida todas as contas da família. Transferências internas não alteram esse total. Com
+uma conta selecionada, entradas e saídas de transferências aparecem separadas e participam do fechamento da conta;
+elas nunca são classificadas como receita ou despesa operacional.
+
+`openingBalance` é o saldo no início de `from`, antes dos acontecimentos desse dia. Cada item de `days` contém `date`,
+`kind` (`Realized` ou `Projected`), `income`, `expense`, `transferIn`, `transferOut`, `closingBalance`,
+`hasOverduePending`, `isNegative`, `chartPosition` e `unavailableReason`. Valores monetários são strings decimais
+exatas; `chartPosition` é somente uma coordenada visual de `0` a `1000`, calculada no backend.
+
+A virada de regra ocorre no dia civil atual de `America/Sao_Paulo`:
+
+- antes de hoje, o fechamento é exclusivamente realizado: saldo inicial + lançamentos efetivos + transferências;
+- hoje, parte-se do fechamento efetivo de hoje e aplicam-se previsões pendentes de hoje e todas as pendências vencidas;
+- depois de hoje, o saldo anterior é acumulado com previsões pendentes da respectiva data;
+- as vencidas anteriores a hoje entram uma única vez na base projetada. Elas ativam `hasOverduePending`, mas não são
+  atribuídas artificialmente a `income` ou `expense` de hoje;
+- previsão realizada aparece somente pelo lançamento efetivo; cancelar esse lançamento reabre a previsão.
+
+O bloco `risk` é calculado pela API e traz `minimumProjectedBalance`, `firstNegativeProjectedDate` e
+`endingProjectedBalance`. O React apenas formata esses valores. O gráfico usa traço contínuo no histórico e tracejado
+na projeção, destaca pontos negativos e o dia selecionado, e é acompanhado por uma tabela com todos os valores.
+
+Se uma conta necessária não tiver saldo inicial, ou se a base realizada estiver antes da referência, os campos
+monetários afetados vêm `null` com `OpeningBalanceNotConfigured` ou `BeforeOpeningBalanceDate`. No consolidado, nenhum
+total parcial é apresentado como completo.
+
+Contas, movimentos e previsões são lidos em uma transação `REPEATABLE READ` somente leitura. Os movimentos são
+agregados por data no PostgreSQL; não há uma chamada de projeção por dia nem persistência de saldos calculados.

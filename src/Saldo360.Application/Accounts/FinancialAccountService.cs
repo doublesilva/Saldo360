@@ -139,9 +139,7 @@ public sealed class FinancialAccountService(
             }
 
             var planned = await accounts.SumPendingPlannedAsync(familyId, accountId, baseDate, through, cancellationToken);
-            var projected = realized
-                + planned.OverdueIncome - planned.OverdueExpense
-                + planned.PlannedIncome - planned.PlannedExpense;
+            var projected = FinancialBalanceCalculator.Project(realized, planned);
             return new AccountProjectionDto(
                 accountId, baseDate, through, realized, planned.OverdueIncome, planned.OverdueExpense,
                 planned.PlannedIncome, planned.PlannedExpense, projected, null);
@@ -175,7 +173,8 @@ public sealed class FinancialAccountService(
         }
 
         var totals = await accounts.SumMovementsAsync(familyId, accountId, referenceDate, date, cancellationToken);
-        var balance = amount + totals.Income - totals.Expense + totals.TransferIn - totals.TransferOut;
+        var balance = FinancialBalanceCalculator.ApplyMovements(
+            amount, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut);
         return new AccountBalanceDto(
             accountId, date, amount, referenceDate, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut,
             balance, null);

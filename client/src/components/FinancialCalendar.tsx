@@ -3,6 +3,9 @@ import { listAccounts, type FinancialAccount } from '../api/accounts'
 import type { CategoryType } from '../api/categories'
 import {
   getFinancialCalendar,
+  getFinancialCalendarBalances,
+  type FinancialCalendarBalanceDay,
+  type FinancialCalendarBalanceResponse,
   type FinancialCalendarItem,
   type FinancialCalendarResponse,
   type FinancialCalendarStatus,
@@ -123,8 +126,186 @@ export function FinancialCalendarPage({ familyId }: { familyId: string }) {
           </div>
         </>
       )}
+      <FinancialCalendarBalanceEvolution
+        familyId={familyId}
+        from={from}
+        through={through}
+        accountId={accountId}
+        selectedDate={selectedDate}
+      />
     </section>
   )
+}
+
+export function FinancialCalendarBalanceEvolution({
+  familyId,
+  from,
+  through,
+  accountId,
+  selectedDate,
+}: {
+  familyId: string
+  from: string
+  through: string
+  accountId: string
+  selectedDate: string
+}) {
+  const requestVersion = useRef(0)
+  const requestKey = `${familyId}|${from}|${through}|${accountId}`
+  const [balanceState, setBalanceState] = useState<RequestLoad<FinancialCalendarBalanceResponse>>({
+    kind: 'loading',
+    requestKey,
+  })
+  const balance: RequestLoad<FinancialCalendarBalanceResponse> =
+    balanceState.requestKey === requestKey ? balanceState : { kind: 'loading', requestKey }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const version = ++requestVersion.current
+    getFinancialCalendarBalances(familyId, from, through, accountId || undefined, controller.signal)
+      .then((data) => {
+        if (version === requestVersion.current) setBalanceState({ kind: 'loaded', requestKey, data })
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && version === requestVersion.current) {
+          setBalanceState({ kind: 'error', requestKey, message: errorMessage(error) })
+        }
+      })
+    return () => controller.abort()
+  }, [familyId, from, through, accountId, requestKey])
+
+  return (
+    <section className="balance-evolution" aria-labelledby="balance-evolution-title">
+      <div className="balance-evolution__heading">
+        <div>
+          <h3 id="balance-evolution-title">Evolução do saldo</h3>
+          <p className="meta">{accountId ? 'Conta selecionada' : 'Consolidado familiar'}</p>
+        </div>
+        <div className="balance-evolution__legend" aria-label="Legenda da evolução">
+          <span><i className="balance-line-sample" /> Histórico realizado</span>
+          <span><i className="balance-line-sample balance-line-sample--projected" /> Projeção</span>
+          <span><i className="balance-point-sample balance-point-sample--negative" /> Saldo negativo</span>
+          <span><i className="balance-point-sample balance-point-sample--overdue">!</i> Inclui vencidas</span>
+        </div>
+      </div>
+
+      {balance.kind === 'loading' && <p className="status status--pending">Calculando evolução do saldo…</p>}
+      {balance.kind === 'error' && <p className="status status--down" role="alert">{balance.message}</p>}
+      {balance.kind === 'loaded' && <FinancialCalendarBalanceContent balance={balance.data} selectedDate={selectedDate} />}
+    </section>
+  )
+}
+
+function FinancialCalendarBalanceContent({
+  balance,
+  selectedDate,
+}: {
+  balance: FinancialCalendarBalanceResponse
+  selectedDate: string
+}) {
+  if (balance.unavailableReason) {
+    return (
+      <p className="notice balance-evolution__unavailable" role="status">
+        {balanceUnavailableMessage(balance.unavailableReason)} Nenhum total parcial é apresentado.
+      </p>
+    )
+  }
+
+  const points = balance.days.flatMap((day, index) => {
+    if (day.closingBalance === null || day.chartPosition === null) return []
+    const x = balance.days.length === 1 ? 500 : 20 + (index * 960) / (balance.days.length - 1)
+    const y = 20 + day.chartPosition * 0.2
+    return [{ day, x, y }]
+  })
+  const realized = points.filter((point) => point.day.kind === 'Realized')
+  const projectedOnly = points.filter((point) => point.day.kind === 'Projected')
+  const projected = projectedOnly.length > 0 && realized.length > 0
+    ? [realized[realized.length - 1], ...projectedOnly]
+    : projectedOnly
+  const pointText = (values: typeof points) => values.map((point) => `${point.x},${point.y}`).join(' ')
+
+  return (
+    <>
+      <div className="balance-risk" aria-label="Indicadores de risco">
+        <BalanceIndicator label="Saldo no início do período" value={balance.openingBalance} />
+        <BalanceIndicator label="Menor saldo projetado" value={balance.risk.minimumProjectedBalance} />
+        <div className="summary-value">
+          <span>Primeiro saldo projetado negativo</span>
+          <strong>{balance.risk.firstNegativeProjectedDate ? formatDate(balance.risk.firstNegativeProjectedDate) : 'Não identificado'}</strong>
+        </div>
+        <BalanceIndicator label="Saldo projetado no encerramento" value={balance.risk.endingProjectedBalance} />
+      </div>
+
+      <div className="balance-chart-wrap">
+        <svg
+          className="balance-chart"
+          viewBox="0 0 1000 240"
+          preserveAspectRatio="none"
+          role="img"
+          aria-label="Gráfico da evolução diária do saldo; os valores completos estão na tabela seguinte"
+        >
+          {realized.length > 1 && <polyline className="balance-chart__line" points={pointText(realized)} />}
+          {projected.length > 1 && <polyline className="balance-chart__line balance-chart__line--projected" points={pointText(projected)} />}
+          {points.map(({ day, x, y }) => (
+            <circle
+              key={day.date}
+              cx={x}
+              cy={y}
+              r={day.date === selectedDate ? 10 : 6}
+              className={`balance-chart__point balance-chart__point--${day.kind.toLowerCase()}${day.isNegative ? ' balance-chart__point--negative' : ''}${day.hasOverduePending ? ' balance-chart__point--overdue' : ''}${day.date === selectedDate ? ' balance-chart__point--selected' : ''}`}
+            >
+              <title>{`${formatDate(day.date)}: ${formatBrlDecimal(day.closingBalance!)}`}</title>
+            </circle>
+          ))}
+        </svg>
+      </div>
+
+      <div className="balance-table-wrap">
+        <table className="balance-table">
+          <caption className="sr-only">Valores diários da evolução do saldo</caption>
+          <thead>
+            <tr><th>Data</th><th>Base</th><th>Receitas</th><th>Despesas</th><th>Transferências</th><th>Fechamento</th></tr>
+          </thead>
+          <tbody>
+            {balance.days.map((day) => <BalanceDayRow key={day.date} day={day} selected={day.date === selectedDate} />)}
+          </tbody>
+        </table>
+      </div>
+    </>
+  )
+}
+
+function BalanceIndicator({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className={`summary-value${value?.startsWith('-') ? ' summary-value--overdue' : ''}`}>
+      <span>{label}</span>
+      <strong>{value === null ? 'Não disponível' : formatBrlDecimal(value)}</strong>
+    </div>
+  )
+}
+
+function BalanceDayRow({ day, selected }: { day: FinancialCalendarBalanceDay; selected: boolean }) {
+  const transferText = day.transferIn === null || day.transferOut === null
+    ? '—'
+    : `Entrada ${formatBrlDecimal(day.transferIn)} · saída ${formatBrlDecimal(day.transferOut)}`
+  return (
+    <tr className={`${selected ? 'balance-table__selected ' : ''}${day.isNegative ? 'balance-table__negative' : ''}`}>
+      <th scope="row">{formatDate(day.date)}{selected ? ' (selecionado)' : ''}</th>
+      <td>{day.kind === 'Realized' ? 'Realizado' : 'Projetado'}{day.hasOverduePending ? ' · inclui pendências vencidas' : ''}</td>
+      <td>{day.income === null ? '—' : formatBrlDecimal(day.income)}</td>
+      <td>{day.expense === null ? '—' : formatBrlDecimal(day.expense)}</td>
+      <td>{transferText}</td>
+      <td className={day.isNegative ? 'amount amount--negative' : 'amount'}>
+        {day.closingBalance === null ? '—' : formatBrlDecimal(day.closingBalance)}
+      </td>
+    </tr>
+  )
+}
+
+function balanceUnavailableMessage(reason: FinancialCalendarBalanceResponse['unavailableReason']): string {
+  return reason === 'BeforeOpeningBalanceDate'
+    ? 'Evolução indisponível: o período começa antes da referência do saldo inicial.'
+    : 'Evolução indisponível: existe conta sem saldo inicial configurado.'
 }
 
 export function FinancialCalendarHeader({

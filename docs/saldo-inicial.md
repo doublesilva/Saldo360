@@ -174,6 +174,22 @@ As somas são agregadas no banco (`SUM` condicional por tipo e vencimento, com `
 - Resposta: `{ accountId, baseDate, through, realizedBalance, overdueIncome, overdueExpense, plannedIncome, plannedExpense, projectedBalance, unavailableReason }`, com valores em **texto decimal exato**.
 - **Indisponível.** Se o saldo realizado de hoje estiver indisponível (`OpeningBalanceNotConfigured`, ou `BeforeOpeningBalanceDate` quando a referência é futura), `unavailableReason` traz o mesmo motivo e **todos** os valores monetários vêm `null`. Indisponível nunca é zero.
 
+### Evolução diária na Agenda
+
+O endpoint `GET /api/families/{familyId}/financial-calendar/balances?from=...&through=...[&accountId=...]`
+aplica a mesma fórmula da projeção sem consultar a T06.3 repetidamente. O histórico anterior a hoje contém somente
+saldo realizado. No ponto de hoje, o fechamento realizado recebe uma única vez as pendências vencidas e as previsões
+de hoje; cada dia futuro acumula apenas as previsões pendentes da própria data.
+
+Por isso, para uma conta e uma data futura `D`, o `closingBalance` de `D` coincide com o `projectedBalance` da T06.3
+para `through=D`, quando as consultas enxergam o mesmo estado dos dados. A fórmula compartilhada fica no backend e
+opera somente com `decimal`.
+
+No consolidado familiar, todas as contas precisam ter saldo calculável. Os saldos iniciais e lançamentos válidos são
+somados, enquanto transferências entre essas contas são eliminadas: elas movem dinheiro dentro do conjunto, sem criar
+receita, despesa ou variação líquida. Se qualquer conta necessária estiver indisponível, o consolidado não retorna um
+total parcial.
+
 ## Orientações para a futura importação
 
 1. **Compare por data de calendário, não por instante.** A data de uma movimentação é a data local do lançamento (fuso do usuário, `America/Sao_Paulo`), não um `timestamp` UTC. Uma compra às 22h de 30/09 em Brasília é de 30/09, mesmo que em UTC já seja 01/10.

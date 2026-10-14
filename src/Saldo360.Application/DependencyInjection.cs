@@ -22,6 +22,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialTransferService>();
         services.AddScoped<FinancialPlannedTransactionService>();
         services.AddScoped<FinancialCalendarService>();
+        services.AddScoped<FinancialCalendarBalanceService>();
         return services;
     }
 }

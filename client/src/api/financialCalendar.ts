@@ -1,4 +1,4 @@
-import type { FinancialAccount } from './accounts'
+import type { BalanceUnavailableReason, FinancialAccount } from './accounts'
 import type { CategoryType } from './categories'
 import type { TransactionReference } from './transactions'
 
@@ -43,6 +43,39 @@ export interface FinancialCalendarFilters {
   type?: CategoryType
 }
 
+export type FinancialCalendarBalanceKind = 'Realized' | 'Projected'
+
+export interface FinancialCalendarBalanceDay {
+  date: string
+  kind: FinancialCalendarBalanceKind
+  income: string | null
+  expense: string | null
+  transferIn: string | null
+  transferOut: string | null
+  closingBalance: string | null
+  hasOverduePending: boolean
+  isNegative: boolean
+  /** Coordenada vertical de 0 a 1000 calculada pela API; não é valor monetário. */
+  chartPosition: number | null
+  unavailableReason: BalanceUnavailableReason | null
+}
+
+export interface FinancialCalendarBalanceRisk {
+  minimumProjectedBalance: string | null
+  firstNegativeProjectedDate: string | null
+  endingProjectedBalance: string | null
+}
+
+export interface FinancialCalendarBalanceResponse {
+  from: string
+  through: string
+  accountId: string | null
+  openingBalance: string | null
+  unavailableReason: BalanceUnavailableReason | null
+  days: FinancialCalendarBalanceDay[]
+  risk: FinancialCalendarBalanceRisk
+}
+
 const jsonHeaders = { Accept: 'application/json' }
 
 export async function getFinancialCalendar(
@@ -63,6 +96,23 @@ export async function getFinancialCalendar(
   if (!response.ok) throw new Error(`Falha ao carregar a agenda financeira (HTTP ${response.status}).`)
 
   return (await response.json()) as FinancialCalendarResponse
+}
+
+export async function getFinancialCalendarBalances(
+  familyId: string,
+  from: string,
+  through: string,
+  accountId?: string,
+  signal?: AbortSignal,
+): Promise<FinancialCalendarBalanceResponse> {
+  const query = new URLSearchParams({ from, through })
+  if (accountId) query.set('accountId', accountId)
+  const response = await fetch(
+    `/api/families/${encodeURIComponent(familyId)}/financial-calendar/balances?${query}`,
+    { signal, headers: jsonHeaders },
+  )
+  if (!response.ok) throw new Error(`Falha ao carregar a evolução do saldo (HTTP ${response.status}).`)
+  return (await response.json()) as FinancialCalendarBalanceResponse
 }
 
 /** Contas ativas e históricas podem aparecer na agenda e, portanto, no filtro. */

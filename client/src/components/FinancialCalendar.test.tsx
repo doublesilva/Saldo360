@@ -1,7 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FinancialAccount } from '../api/accounts'
-import type { FinancialCalendarItem, FinancialCalendarResponse } from '../api/financialCalendar'
+import type {
+  FinancialCalendarBalanceResponse,
+  FinancialCalendarItem,
+  FinancialCalendarResponse,
+} from '../api/financialCalendar'
 import type { FamilyDetails } from '../api/families'
 import { Families } from './Families'
 import { FinancialCalendarPage } from './FinancialCalendar'
@@ -84,7 +88,67 @@ function response(overrides: Partial<FinancialCalendarResponse> = {}): Financial
   }
 }
 
-function mockApi(calendar: (url: string) => Response | Promise<Response> = () => Response.json(response())) {
+function balanceResponse(overrides: Partial<FinancialCalendarBalanceResponse> = {}): FinancialCalendarBalanceResponse {
+  return {
+    from: '2026-12-01',
+    through: '2026-12-31',
+    accountId: null,
+    openingBalance: '900.00',
+    unavailableReason: null,
+    days: [
+      {
+        date: '2026-12-14',
+        kind: 'Realized',
+        income: '100.00',
+        expense: '0.00',
+        transferIn: '0.00',
+        transferOut: '0.00',
+        closingBalance: '1000.00',
+        hasOverduePending: false,
+        isNegative: false,
+        chartPosition: 0,
+        unavailableReason: null,
+      },
+      {
+        date: '2026-12-15',
+        kind: 'Projected',
+        income: '0.00',
+        expense: '1050.00',
+        transferIn: '0.00',
+        transferOut: '0.00',
+        closingBalance: '-50.00',
+        hasOverduePending: true,
+        isNegative: true,
+        chartPosition: 1000,
+        unavailableReason: null,
+      },
+      {
+        date: '2026-12-20',
+        kind: 'Projected',
+        income: '550.00',
+        expense: '0.00',
+        transferIn: '0.00',
+        transferOut: '0.00',
+        closingBalance: '500.00',
+        hasOverduePending: true,
+        isNegative: false,
+        chartPosition: 476,
+        unavailableReason: null,
+      },
+    ],
+    risk: {
+      minimumProjectedBalance: '-50.00',
+      firstNegativeProjectedDate: '2026-12-15',
+      endingProjectedBalance: '500.00',
+    },
+    ...overrides,
+  }
+}
+
+function mockApi(
+  calendar: (url: string) => Response | Promise<Response> = () => Response.json(response()),
+  balances: (url: string) => Response | Promise<Response> = () => Response.json(balanceResponse()),
+) {
   const calls: Call[] = []
   vi.stubGlobal(
     'fetch',
@@ -92,6 +156,7 @@ function mockApi(calendar: (url: string) => Response | Promise<Response> = () =>
       const url = String(input)
       calls.push({ url, init })
       if (/\/accounts(?:\?|$)/.test(url)) return Response.json([itau, nubank])
+      if (url.includes('/financial-calendar/balances?')) return balances(url)
       if (url.includes('/financial-calendar?')) return calendar(url)
       throw new Error(`URL inesperada: ${url}`)
     }),
@@ -101,6 +166,10 @@ function mockApi(calendar: (url: string) => Response | Promise<Response> = () =>
 
 function calendarCalls(calls: Call[]): Call[] {
   return calls.filter((call) => call.url.includes('/financial-calendar?'))
+}
+
+function balanceCalls(calls: Call[]): Call[] {
+  return calls.filter((call) => call.url.includes('/financial-calendar/balances?'))
 }
 
 beforeEach(() => {
@@ -209,6 +278,7 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }))
     expect(await screen.findByText('Janeiro de 2027')).toBeTruthy()
     await waitFor(() => expect(calendarCalls(calls).at(-1)!.url).toContain('from=2027-01-01&through=2027-01-31'))
+    await waitFor(() => expect(balanceCalls(calls).at(-1)!.url).toContain('from=2027-01-01&through=2027-01-31'))
     await waitFor(() => expect(within(screen.getByText('Receitas realizadas').parentElement!).getByText(/↑ R\$\s101,01/)).toBeTruthy())
 
     fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }))
@@ -228,6 +298,7 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
 
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
     await waitFor(() => expect(calendarCalls(calls).at(-1)!.url).toContain(`accountId=${itau.id}`))
+    await waitFor(() => expect(balanceCalls(calls).at(-1)!.url).toContain(`accountId=${itau.id}`))
 
     fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'Income' } })
     await waitFor(() => expect(calendarCalls(calls).at(-1)!.url).toContain('type=Income'))
@@ -322,6 +393,7 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
         calls.push({ url, init })
         if (url === '/api/families') return Response.json([])
         if (url.includes('/accounts')) return Response.json([itau])
+        if (url.includes('/financial-calendar/balances')) return Response.json(balanceResponse())
         if (url.includes('/financial-calendar')) return Response.json(response())
         throw new Error(`URL inesperada: ${url}`)
       }),
@@ -336,5 +408,92 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
 
     expect(await screen.findByText('Agenda Financeira')).toBeTruthy()
     expect(calendarCalls(calls)).toHaveLength(1)
+  })
+})
+
+describe('FinancialCalendarPage — evolução diária do saldo', () => {
+  it('exibe gráfico, indicadores e tabela acessível distinguindo realizado, projetado, negativo e vencidas', async () => {
+    mockApi()
+    const rendered = render(<FinancialCalendarPage familyId="family-1" />)
+
+    expect(await screen.findByRole('img', { name: /Gráfico da evolução diária/ })).toBeTruthy()
+    expect(screen.getByText('Histórico realizado')).toBeTruthy()
+    expect(screen.getAllByText(/Projetado/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/inclui pendências vencidas/).length).toBeGreaterThan(0)
+    expect(within(screen.getByText('Menor saldo projetado').parentElement!).getByText(/-R\$\s50,00/)).toBeTruthy()
+    expect(screen.getByText('15/12/2026 (selecionado)')).toBeTruthy()
+    expect(rendered.container.querySelector('.balance-chart__line--projected')).toBeTruthy()
+    expect(rendered.container.querySelector('.balance-chart__point--negative')).toBeTruthy()
+  })
+
+  it('destaca na evolução o dia selecionado no calendário', async () => {
+    mockApi()
+    const rendered = render(<FinancialCalendarPage familyId="family-1" />)
+    await screen.findByRole('img', { name: /Gráfico da evolução diária/ })
+
+    fireEvent.click(screen.getByRole('gridcell', { name: /20\/12\/2026/ }))
+
+    expect(screen.getByText('20/12/2026 (selecionado)')).toBeTruthy()
+    const selected = rendered.container.querySelector('.balance-chart__point--selected')
+    expect(selected?.querySelector('title')?.textContent).toMatch(/^20\/12\/2026:/)
+  })
+
+  it('preserva carregamento, apresenta erro próprio e não remove a agenda', async () => {
+    let resolveBalances!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => { resolveBalances = resolve })
+    mockApi(undefined, () => pending)
+    render(<FinancialCalendarPage familyId="family-1" />)
+
+    expect(await screen.findByText('Calculando evolução do saldo…')).toBeTruthy()
+    expect(await screen.findByText('Salário recebido')).toBeTruthy()
+    resolveBalances(new Response(null, { status: 503 }))
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'Falha ao carregar a evolução do saldo (HTTP 503).',
+    )
+    expect(screen.getByRole('grid')).toBeTruthy()
+  })
+
+  it('explica saldo indisponível sem apresentar total consolidado parcial', async () => {
+    mockApi(undefined, () => Response.json(balanceResponse({
+      openingBalance: null,
+      unavailableReason: 'OpeningBalanceNotConfigured',
+      days: balanceResponse().days.map((day) => ({
+        ...day,
+        income: null,
+        expense: null,
+        transferIn: null,
+        transferOut: null,
+        closingBalance: null,
+        chartPosition: null,
+        unavailableReason: 'OpeningBalanceNotConfigured',
+      })),
+      risk: { minimumProjectedBalance: null, firstNegativeProjectedDate: null, endingProjectedBalance: null },
+    })))
+    render(<FinancialCalendarPage familyId="family-1" />)
+
+    expect(await screen.findByText(/existe conta sem saldo inicial configurado/)).toBeTruthy()
+    expect(screen.getByText(/Nenhum total parcial/)).toBeTruthy()
+    expect(screen.queryByRole('img', { name: /Gráfico da evolução diária/ })).toBeNull()
+  })
+
+  it('descarta resposta obsoleta ao trocar rapidamente a conta', async () => {
+    let resolveOld!: (response: Response) => void
+    const oldResponse = new Promise<Response>((resolve) => { resolveOld = resolve })
+    mockApi(undefined, (url) => url.includes(`accountId=${itau.id}`)
+      ? oldResponse
+      : Response.json(url.includes(`accountId=${nubank.id}`)
+        ? balanceResponse({ openingBalance: '222.00' })
+        : balanceResponse()))
+    render(<FinancialCalendarPage familyId="family-1" />)
+    await screen.findByRole('img', { name: /Gráfico da evolução diária/ })
+
+    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
+    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: nubank.id } })
+    await waitFor(() => expect(within(screen.getByText('Saldo no início do período').parentElement!).getByText(/R\$\s222,00/)).toBeTruthy())
+    resolveOld(Response.json(balanceResponse({ openingBalance: '111.00' })))
+
+    await Promise.resolve()
+    expect(screen.queryByText(/R\$\s111,00/)).toBeNull()
   })
 })
