@@ -4,9 +4,11 @@ import type { FinancialAccount } from '../api/accounts'
 import type {
   FinancialCalendarBalanceResponse,
   FinancialCalendarItem,
+  FinancialCalendarMonthlyProjectionResponse,
   FinancialCalendarResponse,
 } from '../api/financialCalendar'
 import type { FamilyDetails } from '../api/families'
+import { addCalendarMonths } from '../dates'
 import { Families } from './Families'
 import { FinancialCalendarPage } from './FinancialCalendar'
 
@@ -148,6 +150,7 @@ function balanceResponse(overrides: Partial<FinancialCalendarBalanceResponse> = 
 function mockApi(
   calendar: (url: string) => Response | Promise<Response> = () => Response.json(response()),
   balances: (url: string) => Response | Promise<Response> = () => Response.json(balanceResponse()),
+  monthly: (url: string) => Response | Promise<Response> = () => Response.json(monthlyResponse()),
 ) {
   const calls: Call[] = []
   vi.stubGlobal(
@@ -156,6 +159,7 @@ function mockApi(
       const url = String(input)
       calls.push({ url, init })
       if (/\/accounts(?:\?|$)/.test(url)) return Response.json([itau, nubank])
+      if (url.includes('/financial-calendar/monthly-projection?')) return monthly(url)
       if (url.includes('/financial-calendar/balances?')) return balances(url)
       if (url.includes('/financial-calendar?')) return calendar(url)
       throw new Error(`URL inesperada: ${url}`)
@@ -164,12 +168,31 @@ function mockApi(
   return calls
 }
 
+function monthlyResponse(): FinancialCalendarMonthlyProjectionResponse {
+  return {
+    from: '2026-12',
+    months: Array.from({ length: 6 }, (_, index) => {
+      const month = addCalendarMonths('2026-12-01', index).slice(0, 7)
+      return {
+        month,
+        realizedIncome: '0.00', realizedExpense: '0.00', pendingIncome: '0.00', pendingExpense: '0.00',
+        overdueIncome: '0.00', overdueExpense: '0.00', openingBalance: '100.00', closingBalance: '100.00',
+        minimumProjectedBalance: '100.00', firstNegativeProjectedDate: null, unavailableReason: null,
+      }
+    }),
+  }
+}
+
 function calendarCalls(calls: Call[]): Call[] {
   return calls.filter((call) => call.url.includes('/financial-calendar?'))
 }
 
 function balanceCalls(calls: Call[]): Call[] {
   return calls.filter((call) => call.url.includes('/financial-calendar/balances?'))
+}
+
+function monthlyCalls(calls: Call[]): Call[] {
+  return calls.filter((call) => call.url.includes('/financial-calendar/monthly-projection?'))
 }
 
 beforeEach(() => {
@@ -327,6 +350,21 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
 
     await waitFor(() => expect(within(screen.getByText('Despesas realizadas').parentElement!).getByText(/↓ R\$\s765,43/)).toBeTruthy())
     expect(within(screen.getByText('Receitas realizadas').parentElement!).getByText(/↑ R\$\s0,00/)).toBeTruthy()
+  })
+
+  it('abre próximos meses, respeita a conta e retorna ao calendário da competência escolhida', async () => {
+    const calls = mockApi()
+    render(<FinancialCalendarPage familyId="family-1" />)
+    await screen.findByText('Salário recebido')
+
+    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
+    fireEvent.click(screen.getByRole('button', { name: 'Próximos meses' }))
+    expect(await screen.findAllByRole('article')).toHaveLength(6)
+    await waitFor(() => expect(monthlyCalls(calls).at(-1)!.url).toContain(`from=2026-12&months=6&accountId=${itau.id}`))
+
+    fireEvent.click(screen.getByRole('button', { name: /Janeiro de 2027/ }))
+    expect(await screen.findByText('Janeiro de 2027')).toBeTruthy()
+    await waitFor(() => expect(calendarCalls(calls).at(-1)!.url).toContain('from=2027-01-01&through=2027-01-31'))
   })
 })
 

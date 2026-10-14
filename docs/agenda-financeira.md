@@ -139,3 +139,37 @@ total parcial é apresentado como completo.
 
 Contas, movimentos e previsões são lidos em uma transação `REPEATABLE READ` somente leitura. Os movimentos são
 agregados por data no PostgreSQL; não há uma chamada de projeção por dia nem persistência de saldos calculados.
+
+## Planejamento dos próximos seis meses
+
+A opção **Próximos meses** mantém a Agenda mensal disponível e apresenta, inicialmente, seis competências consecutivas
+a partir do mês atual em `America/Sao_Paulo`. O filtro de conta é compartilhado. Selecionar uma competência retorna à
+visão mensal e abre seu calendário.
+
+```text
+GET /api/families/{familyId}/financial-calendar/monthly-projection
+    ?from=yyyy-MM
+    &months=6
+    [&accountId=...]
+```
+
+`from` é obrigatório e estritamente `yyyy-MM`. `months` assume `6` quando omitido e aceita de 1 a 12. Sem `accountId`,
+o resultado consolida todas as contas da família. Cada item de `months` contém `month`, receitas e despesas realizadas,
+pendentes e vencidas, `openingBalance`, `closingBalance`, `minimumProjectedBalance`,
+`firstNegativeProjectedDate` e `unavailableReason`. Dinheiro continua sendo texto decimal exato ou `null` quando o
+saldo não pode ser calculado.
+
+Os totais de acontecimentos pertencem exclusivamente à competência. Vencidas são subconjuntos das pendentes. Uma
+pendência anterior a `from` não aparece artificialmente no primeiro mês, mas influencia uma projeção atual/futura uma
+única vez. Previsões realizadas aparecem pelo lançamento efetivo; cancelá-lo reabre a previsão. Transferências não são
+receita/despesa: afetam a conta individual e são neutras no consolidado familiar.
+
+Competências inteiramente passadas mostram fechamento realizado e não recebem indicador de projeção futura. No mês
+atual e nos futuros, fechamento, menor saldo e primeira data negativa vêm do mesmo cálculo diário da seção anterior.
+Consequentemente, o fechamento mensal coincide com o último dia retornado por `/balances` para o mesmo filtro e estado
+dos dados. Se qualquer conta necessária estiver indisponível, os saldos da competência são `null`; nenhum consolidado
+parcial é apresentado como completo.
+
+Contas, fluxos para saldo e totais do intervalo são consultados de uma vez em um único snapshot `REPEATABLE READ`
+somente leitura. Há agregação diária no PostgreSQL e divisão por competência em memória, sem consultas N+1, sem uma
+consulta por mês/dia e sem persistência de projeções. O React somente formata e destaca os valores recebidos.

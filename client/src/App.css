@@ -754,6 +754,110 @@ button {
   margin: 0;
 }
 
+.calendar-view-switch {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.calendar-view-switch button {
+  min-height: 2.5rem;
+}
+
+.monthly-planning {
+  min-width: 0;
+}
+
+.monthly-planning__heading h3,
+.monthly-planning__heading p {
+  margin: 0;
+}
+
+.monthly-planning__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.monthly-planning-card {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 0.7rem;
+  background: var(--surface);
+}
+
+.monthly-planning-card--risk {
+  border-left-color: var(--fail);
+}
+
+.monthly-planning-card__month {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 750;
+  text-align: left;
+}
+
+.monthly-planning-card__month span {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.monthly-planning-card__values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 0.75rem 0;
+}
+
+.monthly-planning-card__values div {
+  min-width: 0;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.monthly-planning-card__values div:nth-child(even) {
+  padding-left: 0.75rem;
+}
+
+.monthly-planning-card__values dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.monthly-planning-card__values dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.monthly-planning-card__status,
+.monthly-planning-card__overdue {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.monthly-planning-card__status--risk,
+.monthly-planning-card__overdue {
+  color: var(--fail);
+}
+
+.monthly-planning-card__status--unavailable {
+  color: var(--muted);
+}
+
 .calendar-header__month {
   color: var(--muted);
   font-weight: 600;
@@ -1252,6 +1356,16 @@ button.calendar-day--selected {
 
   .calendar-filters {
     grid-template-columns: 1fr;
+  }
+
+  .calendar-view-switch,
+  .monthly-planning__grid {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .calendar-view-switch button {
+    width: 100%;
   }
 
   .calendar-grid-section {

@@ -4,9 +4,11 @@ import type { CategoryType } from '../api/categories'
 import {
   getFinancialCalendar,
   getFinancialCalendarBalances,
+  getFinancialCalendarMonthlyProjection,
   type FinancialCalendarBalanceDay,
   type FinancialCalendarBalanceResponse,
   type FinancialCalendarItem,
+  type FinancialCalendarMonthlyProjectionResponse,
   type FinancialCalendarResponse,
   type FinancialCalendarStatus,
 } from '../api/financialCalendar'
@@ -39,6 +41,7 @@ export function FinancialCalendarPage({ familyId, onChanged }: { familyId: strin
   const [selectedDate, setSelectedDate] = useState(today)
   const [accountId, setAccountId] = useState('')
   const [type, setType] = useState<CategoryType | ''>('')
+  const [view, setView] = useState<'month' | 'planning'>('month')
   const [refreshKey, setRefreshKey] = useState(0)
   const [opened, setOpened] = useState<{ item: FinancialCalendarItem; trigger: HTMLElement } | null>(null)
   const [accounts, setAccounts] = useState<Load<FinancialAccount[]>>({ kind: 'loading' })
@@ -111,15 +114,25 @@ export function FinancialCalendarPage({ familyId, onChanged }: { familyId: strin
         onToday={() => selectMonth(startOfMonth(today), today)}
         onAccountChange={setAccountId}
         onTypeChange={setType}
+        showTypeFilter={view === 'month'}
       />
 
-      {calendar.kind === 'loading' && <p className="status status--pending">Carregando agenda…</p>}
-      {calendar.kind === 'error' && (
+      <div className="calendar-view-switch" role="group" aria-label="Visualização da agenda">
+        <button type="button" className={view === 'month' ? 'family-navigation__item--active' : ''} onClick={() => setView('month')}>
+          Mês
+        </button>
+        <button type="button" className={view === 'planning' ? 'family-navigation__item--active' : ''} onClick={() => setView('planning')}>
+          Próximos meses
+        </button>
+      </div>
+
+      {view === 'month' && calendar.kind === 'loading' && <p className="status status--pending">Carregando agenda…</p>}
+      {view === 'month' && calendar.kind === 'error' && (
         <p className="status status--down" role="alert">
           {calendar.message}
         </p>
       )}
-      {calendar.kind === 'loaded' && (
+      {view === 'month' && calendar.kind === 'loaded' && (
         <>
           <FinancialCalendarSummary summary={calendar.data.summary} />
           <div className="calendar-layout">
@@ -138,15 +151,28 @@ export function FinancialCalendarPage({ familyId, onChanged }: { familyId: strin
           </div>
         </>
       )}
-      <FinancialCalendarBalanceEvolution
-        familyId={familyId}
-        from={from}
-        through={through}
-        accountId={accountId}
-        selectedDate={selectedDate}
-        refreshKey={refreshKey}
-      />
-      {opened && (
+      {view === 'month' ? (
+        <FinancialCalendarBalanceEvolution
+          familyId={familyId}
+          from={from}
+          through={through}
+          accountId={accountId}
+          selectedDate={selectedDate}
+          refreshKey={refreshKey}
+        />
+      ) : (
+        <FinancialCalendarMonthlyPlanning
+          familyId={familyId}
+          from={startOfMonth(today).slice(0, 7)}
+          accountId={accountId}
+          refreshKey={refreshKey}
+          onSelectMonth={(selectedMonth) => {
+            selectMonth(`${selectedMonth}-01`)
+            setView('month')
+          }}
+        />
+      )}
+      {view === 'month' && opened && (
         <FinancialCalendarDetails
           familyId={familyId}
           item={opened.item}
@@ -156,6 +182,111 @@ export function FinancialCalendarPage({ familyId, onChanged }: { familyId: strin
         />
       )}
     </section>
+  )
+}
+
+export function FinancialCalendarMonthlyPlanning({
+  familyId,
+  from,
+  accountId,
+  refreshKey = 0,
+  onSelectMonth,
+}: {
+  familyId: string
+  from: string
+  accountId: string
+  refreshKey?: number
+  onSelectMonth: (month: string) => void
+}) {
+  const requestVersion = useRef(0)
+  const requestKey = `${familyId}|${from}|${accountId}|${refreshKey}`
+  const [projectionState, setProjectionState] = useState<RequestLoad<FinancialCalendarMonthlyProjectionResponse>>({
+    kind: 'loading',
+    requestKey,
+  })
+  const projection = projectionState.requestKey === requestKey
+    ? projectionState
+    : { kind: 'loading' as const, requestKey }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const version = ++requestVersion.current
+    getFinancialCalendarMonthlyProjection(familyId, from, 6, accountId || undefined, controller.signal)
+      .then((data) => {
+        if (version === requestVersion.current) setProjectionState({ kind: 'loaded', requestKey, data })
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && version === requestVersion.current) {
+          setProjectionState({ kind: 'error', requestKey, message: errorMessage(error) })
+        }
+      })
+    return () => controller.abort()
+  }, [familyId, from, accountId, refreshKey, requestKey])
+
+  return (
+    <section className="monthly-planning" aria-labelledby="monthly-planning-title">
+      <div className="monthly-planning__heading">
+        <div>
+          <h3 id="monthly-planning-title">Planejamento dos próximos seis meses</h3>
+          <p className="meta">{accountId ? 'Conta selecionada' : 'Consolidado familiar'}</p>
+        </div>
+      </div>
+      {projection.kind === 'loading' && <p className="status status--pending">Calculando planejamento financeiro…</p>}
+      {projection.kind === 'error' && <p className="status status--down" role="alert">{projection.message}</p>}
+      {projection.kind === 'loaded' && (
+        <div className="monthly-planning__grid">
+          {projection.data.months.map((item) => {
+            const negative = item.closingBalance?.startsWith('-') ?? false
+            const atRisk = item.firstNegativeProjectedDate !== null
+            return (
+              <article key={item.month} className={`monthly-planning-card${negative || atRisk ? ' monthly-planning-card--risk' : ''}`}>
+                <button type="button" className="monthly-planning-card__month" onClick={() => onSelectMonth(item.month)}>
+                  {formatMonthYear(`${item.month}-01`)}
+                  <span>Abrir calendário</span>
+                </button>
+                <dl className="monthly-planning-card__values">
+                  <MonthlyValue label="Receitas realizadas" value={item.realizedIncome} />
+                  <MonthlyValue label="Despesas realizadas" value={item.realizedExpense} />
+                  <MonthlyValue label="Receitas pendentes" value={item.pendingIncome} />
+                  <MonthlyValue label="Despesas pendentes" value={item.pendingExpense} />
+                  <MonthlyValue label="Saldo de fechamento" value={item.closingBalance} negative={negative} />
+                  <MonthlyValue label="Menor saldo projetado" value={item.minimumProjectedBalance} negative={item.minimumProjectedBalance?.startsWith('-')} />
+                </dl>
+                {item.unavailableReason ? (
+                  <p className="monthly-planning-card__status monthly-planning-card__status--unavailable">
+                    Saldo indisponível: {balanceUnavailableMessage(item.unavailableReason).toLowerCase()}
+                  </p>
+                ) : item.minimumProjectedBalance === null ? (
+                  <p className="monthly-planning-card__status">Competência histórica · saldo realizado</p>
+                ) : atRisk ? (
+                  <p className="monthly-planning-card__status monthly-planning-card__status--risk">
+                    Risco: primeiro saldo negativo em {formatDate(item.firstNegativeProjectedDate!)}
+                  </p>
+                ) : (
+                  <p className="monthly-planning-card__status">Sem saldo negativo projetado</p>
+                )}
+                {(item.overdueIncome !== '0.00' || item.overdueExpense !== '0.00') && (
+                  <p className="monthly-planning-card__overdue">
+                    Pendências vencidas: receitas {formatBrlDecimal(item.overdueIncome)} · despesas {formatBrlDecimal(item.overdueExpense)}
+                  </p>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function MonthlyValue({ label, value, negative = false }: { label: string; value: string | null; negative?: boolean }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd className={negative ? 'amount amount--negative' : 'amount'}>
+        {value === null ? 'Não disponível' : formatBrlDecimal(value)}
+      </dd>
+    </div>
   )
 }
 
@@ -343,6 +474,7 @@ export function FinancialCalendarHeader({
   onToday,
   onAccountChange,
   onTypeChange,
+  showTypeFilter = true,
 }: {
   month: string
   today: string
@@ -354,6 +486,7 @@ export function FinancialCalendarHeader({
   onToday: () => void
   onAccountChange: (value: string) => void
   onTypeChange: (value: CategoryType | '') => void
+  showTypeFilter?: boolean
 }) {
   return (
     <header className="calendar-header">
@@ -387,14 +520,16 @@ export function FinancialCalendarHeader({
               ))}
           </select>
         </label>
-        <label>
-          Tipo
-          <select value={type} onChange={(event) => onTypeChange(event.target.value as CategoryType | '')}>
-            <option value="">Todas</option>
-            <option value="Income">Receitas</option>
-            <option value="Expense">Despesas</option>
-          </select>
-        </label>
+        {showTypeFilter && (
+          <label>
+            Tipo
+            <select value={type} onChange={(event) => onTypeChange(event.target.value as CategoryType | '')}>
+              <option value="">Todas</option>
+              <option value="Income">Receitas</option>
+              <option value="Expense">Despesas</option>
+            </select>
+          </label>
+        )}
       </div>
       {accounts.kind === 'error' && <p className="field-error">{accounts.message}</p>}
     </header>

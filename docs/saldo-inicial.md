@@ -169,6 +169,9 @@ As somas são agregadas no banco (`SUM` condicional por tipo e vencimento, com `
 
 `GET /api/families/{familyId}/accounts/{accountId}/projection?through=yyyy-MM-dd`
 
+O planejamento semestral da Agenda reutiliza esta mesma fórmula por dia e toma o último dia de cada competência como
+fechamento. Ele não mantém uma fórmula paralela; veja [Planejamento dos próximos seis meses](agenda-financeira.md#planejamento-dos-próximos-seis-meses).
+
 - `through` é obrigatório, só no formato `yyyy-MM-dd`, e deve ser hoje ou futuro. Ausente, inválido ou passado retorna `400`.
 - Conta inexistente, de outra família ou consulta de quem não participa da família retorna `404`. Conta inativa pode ser consultada.
 - Resposta: `{ accountId, baseDate, through, realizedBalance, overdueIncome, overdueExpense, plannedIncome, plannedExpense, projectedBalance, unavailableReason }`, com valores em **texto decimal exato**.

@@ -9,9 +9,27 @@ namespace Saldo360.Infrastructure.Calendar;
 internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
     : IFinancialCalendarBalanceRepository
 {
-    public async Task<FinancialCalendarBalanceSnapshot?> ReadAsync(
+    public Task<FinancialCalendarBalanceSnapshot?> ReadAsync(
         Guid familyId,
         Guid? accountId,
+        DateOnly through,
+        DateOnly today,
+        CancellationToken cancellationToken) =>
+        ReadCoreAsync(familyId, accountId, null, through, today, cancellationToken);
+
+    public Task<FinancialCalendarBalanceSnapshot?> ReadMonthlyAsync(
+        Guid familyId,
+        Guid? accountId,
+        DateOnly from,
+        DateOnly through,
+        DateOnly today,
+        CancellationToken cancellationToken) =>
+        ReadCoreAsync(familyId, accountId, from, through, today, cancellationToken);
+
+    private async Task<FinancialCalendarBalanceSnapshot?> ReadCoreAsync(
+        Guid familyId,
+        Guid? accountId,
+        DateOnly? periodFrom,
         DateOnly through,
         DateOnly today,
         CancellationToken cancellationToken)
@@ -121,7 +139,32 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             .Select(row => new FinancialCalendarDailyTotals(row.Date, row.Income, row.Expense, 0m, 0m))
             .ToList();
 
+        IReadOnlyList<FinancialCalendarDailyTotals> periodRealized = [];
+        if (periodFrom is { } firstPeriodDate)
+        {
+            var periodRows = await (
+                    from movement in db.FinancialTransactions.AsNoTracking()
+                    join account in selectedAccounts
+                        on new { movement.FamilyId, Id = movement.AccountId }
+                        equals new { account.FamilyId, account.Id }
+                    where !movement.IsCancelled
+                        && movement.TransactionDate >= firstPeriodDate
+                        && movement.TransactionDate <= through
+                    group movement by movement.TransactionDate into daily
+                    select new
+                    {
+                        Date = daily.Key,
+                        Income = daily.Sum(item => item.Type == CategoryType.Income ? item.Amount : 0m),
+                        Expense = daily.Sum(item => item.Type == CategoryType.Expense ? item.Amount : 0m),
+                    })
+                .OrderBy(row => row.Date)
+                .ToListAsync(cancellationToken);
+            periodRealized = periodRows
+                .Select(row => new FinancialCalendarDailyTotals(row.Date, row.Income, row.Expense, 0m, 0m))
+                .ToList();
+        }
+
         await transaction.CommitAsync(cancellationToken);
-        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending);
+        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized);
     }
 }

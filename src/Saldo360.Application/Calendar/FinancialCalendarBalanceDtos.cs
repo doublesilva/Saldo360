@@ -23,7 +23,8 @@ public sealed record FinancialCalendarDailyTotals(
 public sealed record FinancialCalendarBalanceSnapshot(
     IReadOnlyList<FinancialCalendarBalanceAccount> Accounts,
     IReadOnlyList<FinancialCalendarDailyTotals> Realized,
-    IReadOnlyList<FinancialCalendarDailyTotals> Pending);
+    IReadOnlyList<FinancialCalendarDailyTotals> Pending,
+    IReadOnlyList<FinancialCalendarDailyTotals>? PeriodRealized = null);
 
 public sealed record FinancialCalendarBalanceDay(
     DateOnly Date,

@@ -37,10 +37,10 @@ public sealed class FinancialCalendarBalanceService(
             return FinancialCalendarBalanceResult.NotFoundResult;
         }
 
-        return new FinancialCalendarBalanceResult(Calculate(query, today, snapshot), null, false);
+        return new FinancialCalendarBalanceResult(CalculateBalances(query, today, snapshot), null, false);
     }
 
-    private static FinancialCalendarBalances Calculate(
+    internal static FinancialCalendarBalances CalculateBalances(
         FinancialCalendarBalanceQuery query,
         DateOnly today,
         FinancialCalendarBalanceSnapshot snapshot)

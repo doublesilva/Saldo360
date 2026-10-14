@@ -76,6 +76,26 @@ export interface FinancialCalendarBalanceResponse {
   risk: FinancialCalendarBalanceRisk
 }
 
+export interface FinancialCalendarMonthlyProjectionMonth {
+  month: string
+  realizedIncome: string
+  realizedExpense: string
+  pendingIncome: string
+  pendingExpense: string
+  overdueIncome: string
+  overdueExpense: string
+  openingBalance: string | null
+  closingBalance: string | null
+  minimumProjectedBalance: string | null
+  firstNegativeProjectedDate: string | null
+  unavailableReason: BalanceUnavailableReason | null
+}
+
+export interface FinancialCalendarMonthlyProjectionResponse {
+  from: string
+  months: FinancialCalendarMonthlyProjectionMonth[]
+}
+
 const jsonHeaders = { Accept: 'application/json' }
 
 export async function getFinancialCalendar(
@@ -113,6 +133,23 @@ export async function getFinancialCalendarBalances(
   )
   if (!response.ok) throw new Error(`Falha ao carregar a evolução do saldo (HTTP ${response.status}).`)
   return (await response.json()) as FinancialCalendarBalanceResponse
+}
+
+export async function getFinancialCalendarMonthlyProjection(
+  familyId: string,
+  from: string,
+  months = 6,
+  accountId?: string,
+  signal?: AbortSignal,
+): Promise<FinancialCalendarMonthlyProjectionResponse> {
+  const query = new URLSearchParams({ from, months: String(months) })
+  if (accountId) query.set('accountId', accountId)
+  const response = await fetch(
+    `/api/families/${encodeURIComponent(familyId)}/financial-calendar/monthly-projection?${query}`,
+    { signal, headers: jsonHeaders },
+  )
+  if (!response.ok) throw new Error(`Falha ao carregar o planejamento financeiro (HTTP ${response.status}).`)
+  return (await response.json()) as FinancialCalendarMonthlyProjectionResponse
 }
 
 /** Contas ativas e históricas podem aparecer na agenda e, portanto, no filtro. */
