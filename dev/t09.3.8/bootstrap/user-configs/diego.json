@@ -1,0 +1,7 @@
+{
+  "id": "diego",
+  "email": "diego@lab.invalid",
+  "displayName": "Diego Lab",
+  "password_file": "/secrets/diego_initial_password",
+  "groups": ["home-admin"]
+}

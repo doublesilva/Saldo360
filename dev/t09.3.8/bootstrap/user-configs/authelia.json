@@ -1,0 +1,7 @@
+{
+  "id": "authelia",
+  "email": "authelia@lab.invalid",
+  "displayName": "Authelia bind",
+  "password_file": "/secrets/lldap_bind_password",
+  "groups": ["lldap_strict_readonly"]
+}

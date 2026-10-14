@@ -1,0 +1,9 @@
+# Dados exclusivamente de laboratório. A senha literal correspondente é "authelia" e não deve ser reutilizada.
+users:
+  diego:
+    disabled: false
+    displayname: Diego Lab
+    password: $argon2id$v=19$m=65536,t=3,p=4$qOKNq+u5lZHOTnsJY1Sp3g$s6zT9EKncfkmIJmykzZProUigRRJ26hlTl1WC+mG2do
+    email: diego@lab.invalid
+    groups:
+      - home-admin

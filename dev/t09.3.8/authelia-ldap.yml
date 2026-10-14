@@ -1,0 +1,32 @@
+server:
+  address: tcp://0.0.0.0:9091/
+
+log:
+  level: info
+
+authentication_backend:
+  password_reset:
+    disable: true
+  password_change:
+    disable: true
+  ldap:
+    implementation: lldap
+    address: ldap://lldap:3890
+    base_dn: dc=lab,dc=saldo360
+    user: uid=authelia,ou=people,dc=lab,dc=saldo360
+
+access_control:
+  default_policy: one_factor
+
+session:
+  cookies:
+    - domain: lab.saldo360.invalid
+      authelia_url: https://auth.lab.saldo360.invalid
+
+storage:
+  local:
+    path: /data/db.sqlite3
+
+notifier:
+  filesystem:
+    filename: /data/notification.txt

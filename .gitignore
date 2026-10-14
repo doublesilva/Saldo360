@@ -438,3 +438,6 @@ dev/authelia/data/
 
 # CA do Caddy do servidor (específica do ambiente; veja docs/autenticacao.md)
 dev/certs/
+
+# Laboratório T09.3.8 — bancos, backups e segredos efêmeros
+dev/t09.3.8/runtime/

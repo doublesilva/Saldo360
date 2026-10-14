@@ -1,0 +1,55 @@
+name: saldo360-t0938
+
+services:
+  lldap:
+    image: ghcr.io/lldap/lldap:2026-07-19-alpine@sha256:51c856bbd975bbdba7f030319442d4c4dd6bfcf9c5e48425a4099635e05b43b8
+    container_name: saldo360-t0938-lldap
+    environment:
+      TZ: America/Sao_Paulo
+      LLDAP_JWT_SECRET_FILE: /secrets/lldap_jwt_secret
+      LLDAP_KEY_SEED_FILE: /secrets/lldap_key_seed
+      LLDAP_LDAP_USER_PASS_FILE: /secrets/lldap_admin_password
+      LLDAP_LDAP_BASE_DN: dc=lab,dc=saldo360
+      LLDAP_HTTP_URL: http://127.0.0.1:17171
+    volumes:
+      - ./runtime/lldap-data:/data
+      - ./runtime/secrets:/secrets:ro
+      - ./bootstrap:/bootstrap:ro
+    ports:
+      - 127.0.0.1:17171:17170
+      - 127.0.0.1:3891:3890
+    restart: unless-stopped
+
+  authelia-file:
+    image: authelia/authelia:4.39.26
+    container_name: saldo360-t0938-authelia-file
+    profiles: [file]
+    environment: &authelia-environment
+      TZ: America/Sao_Paulo
+      AUTHELIA_SESSION_SECRET_FILE: /secrets/authelia_session_secret
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /secrets/authelia_storage_encryption_key
+    volumes:
+      - ./authelia-file.yml:/config/configuration.yml:ro
+      - ./users_database.yml:/config/users_database.yml:ro
+      - ./runtime/authelia-data:/data
+      - ./runtime/secrets:/secrets:ro
+    ports:
+      - 127.0.0.1:19091:9091
+
+  authelia-ldap:
+    image: authelia/authelia:4.39.26
+    container_name: saldo360-t0938-authelia-ldap
+    profiles: [ldap]
+    environment:
+      <<: *authelia-environment
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD_FILE: /secrets/lldap_bind_password
+    volumes:
+      - ./authelia-ldap.yml:/config/configuration.yml:ro
+      - ./runtime/authelia-data:/data
+      - ./runtime/secrets:/secrets:ro
+    ports:
+      - 127.0.0.1:19091:9091
+    depends_on:
+      lldap:
+        condition: service_healthy
+        required: true
