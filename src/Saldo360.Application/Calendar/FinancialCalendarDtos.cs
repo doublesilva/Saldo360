@@ -44,10 +44,23 @@ public sealed record FinancialCalendarFilter(
     CategoryType? Type,
     DateOnly Today);
 
+public sealed record FinancialCalendarSummaryDto(
+    decimal RealizedIncome,
+    decimal RealizedExpense,
+    decimal PendingIncome,
+    decimal PendingExpense,
+    decimal OverdueIncome,
+    decimal OverdueExpense);
+
+public sealed record FinancialCalendarSnapshot(
+    IReadOnlyList<FinancialCalendarItemDto> Items,
+    FinancialCalendarSummaryDto Summary);
+
 public sealed record FinancialCalendar(
     DateOnly From,
     DateOnly Through,
-    IReadOnlyList<FinancialCalendarItemDto> Items);
+    IReadOnlyList<FinancialCalendarItemDto> Items,
+    FinancialCalendarSummaryDto Summary);
 
 public sealed record FinancialCalendarQuery(
     DateOnly From,

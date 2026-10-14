@@ -197,29 +197,14 @@ export function FinancialCalendarHeader({
 }
 
 export function FinancialCalendarSummary({ summary }: { summary: FinancialCalendarResponse['summary'] }) {
-  if (!summary) {
-    return (
-      <p className="notice calendar-summary--unavailable" role="status">
-        Resumo mensal indisponível: a API não forneceu os totais deste período.
-      </p>
-    )
-  }
-
-  const overdue = summary.overdueIncome !== '0.00' || summary.overdueExpense !== '0.00'
   return (
     <section className="calendar-summary" aria-label="Resumo financeiro do mês">
       <SummaryValue label="Receitas realizadas" value={summary.realizedIncome} kind="income" />
       <SummaryValue label="Despesas realizadas" value={summary.realizedExpense} kind="expense" />
-      <SummaryValue label="Receitas previstas" value={summary.pendingIncome} kind="income" planned />
-      <SummaryValue label="Despesas previstas" value={summary.pendingExpense} kind="expense" planned />
-      {overdue && (
-        <div className="summary-value summary-value--overdue">
-          <span>Pendências vencidas</span>
-          <strong>
-            ↑ {formatBrlDecimal(summary.overdueIncome)} · ↓ {formatBrlDecimal(summary.overdueExpense)}
-          </strong>
-        </div>
-      )}
+      <SummaryValue label="Receitas pendentes" value={summary.pendingIncome} kind="income" planned />
+      <SummaryValue label="Despesas pendentes" value={summary.pendingExpense} kind="expense" planned />
+      <SummaryValue label="Receitas vencidas" value={summary.overdueIncome} kind="income" overdue />
+      <SummaryValue label="Despesas vencidas" value={summary.overdueExpense} kind="expense" overdue />
     </section>
   )
 }
@@ -229,14 +214,16 @@ function SummaryValue({
   value,
   kind,
   planned = false,
+  overdue = false,
 }: {
   label: string
   value: string
   kind: 'income' | 'expense'
   planned?: boolean
+  overdue?: boolean
 }) {
   return (
-    <div className={`summary-value summary-value--${kind}${planned ? ' summary-value--planned' : ''}`}>
+    <div className={`summary-value summary-value--${kind}${planned ? ' summary-value--planned' : ''}${overdue ? ' summary-value--overdue' : ''}`}>
       <span>{label}</span>
       <strong>{kind === 'income' ? '↑' : '↓'} {formatBrlDecimal(value)}</strong>
     </div>

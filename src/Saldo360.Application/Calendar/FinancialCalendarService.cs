@@ -51,7 +51,10 @@ public sealed class FinancialCalendarService(
             query.AccountId,
             type,
             BusinessCalendar.Today(timeProvider.GetUtcNow()));
-        var items = await calendar.ListAsync(familyId, filter, cancellationToken);
-        return new FinancialCalendarResult(new FinancialCalendar(query.From, query.Through, items), null, false);
+        var snapshot = await calendar.ListAsync(familyId, filter, cancellationToken);
+        return new FinancialCalendarResult(
+            new FinancialCalendar(query.From, query.Through, snapshot.Items, snapshot.Summary),
+            null,
+            false);
     }
 }

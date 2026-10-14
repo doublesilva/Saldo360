@@ -833,10 +833,6 @@ button {
 .summary-value--planned { border-left-style: dotted; }
 .summary-value--overdue { border-left-color: var(--fail); border-left-style: double; }
 
-.calendar-summary--unavailable {
-  color: var(--muted);
-}
-
 .calendar-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(17rem, 1fr);

@@ -135,7 +135,8 @@ describe('FinancialCalendarPage — mês, calendário e compromissos', () => {
 
     const monthlySummary = await screen.findByLabelText('Resumo financeiro do mês')
     expect(within(monthlySummary).getByText(/↑ R\$\s9\.999\.999\.999\.999,99/)).toBeTruthy()
-    expect(within(monthlySummary).getByText(/↑ R\$\s0,00 · ↓ R\$\s10,05/)).toBeTruthy()
+    expect(within(screen.getByText('Receitas vencidas').parentElement!).getByText(/↑ R\$\s0,00/)).toBeTruthy()
+    expect(within(screen.getByText('Despesas vencidas').parentElement!).getByText(/↓ R\$\s10,05/)).toBeTruthy()
 
     let events = screen.getByLabelText(/Compromissos de 15\/12\/2026/)
     expect(within(events).getByText('Salário recebido')).toBeTruthy()
@@ -164,11 +165,28 @@ describe('FinancialCalendarPage — mês, calendário e compromissos', () => {
     expect(screen.getByText('Nenhum acontecimento nesta data.')).toBeTruthy()
   })
 
-  it('exibe mês sem acontecimentos e informa quando a API não fornece resumo', async () => {
-    mockApi(() => Response.json(response({ summary: null, items: [] })))
+  it('exibe mês sem acontecimentos com os seis totais zerados fornecidos pela API', async () => {
+    const zeroSummary = {
+      realizedIncome: '0.00',
+      realizedExpense: '0.00',
+      pendingIncome: '0.00',
+      pendingExpense: '0.00',
+      overdueIncome: '0.00',
+      overdueExpense: '0.00',
+    }
+    mockApi(() => Response.json(response({ summary: zeroSummary, items: [] })))
     render(<FinancialCalendarPage familyId="family-1" />)
 
-    expect(await screen.findByText(/Resumo mensal indisponível/)).toBeTruthy()
+    const monthlySummary = await screen.findByLabelText('Resumo financeiro do mês')
+    expect(within(monthlySummary).getAllByText(/R\$\s0,00/)).toHaveLength(6)
+    for (const label of [
+      'Receitas realizadas',
+      'Despesas realizadas',
+      'Receitas pendentes',
+      'Despesas pendentes',
+      'Receitas vencidas',
+      'Despesas vencidas',
+    ]) expect(within(monthlySummary).getByText(label)).toBeTruthy()
     expect(screen.getByText('Nenhum acontecimento nesta data.')).toBeTruthy()
   })
 })
@@ -177,7 +195,13 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
   it('navega entre meses atravessando o ano e retorna ao mês atual', async () => {
     const calls = mockApi((url) => {
       const query = new URL(url, 'http://x').searchParams
-      return Response.json(response({ from: query.get('from')!, through: query.get('through')!, items: [] }))
+      const from = query.get('from')!
+      return Response.json(response({
+        from,
+        through: query.get('through')!,
+        items: [],
+        summary: from === '2027-01-01' ? { ...summary, realizedIncome: '101.01' } : summary,
+      }))
     })
     render(<FinancialCalendarPage familyId="family-1" />)
     await screen.findByText('Dezembro de 2026')
@@ -185,6 +209,7 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }))
     expect(await screen.findByText('Janeiro de 2027')).toBeTruthy()
     await waitFor(() => expect(calendarCalls(calls).at(-1)!.url).toContain('from=2027-01-01&through=2027-01-31'))
+    await waitFor(() => expect(within(screen.getByText('Receitas realizadas').parentElement!).getByText(/↑ R\$\s101,01/)).toBeTruthy())
 
     fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }))
     expect(await screen.findByText('Dezembro de 2026')).toBeTruthy()

@@ -40,15 +40,33 @@ A Agenda não oferece edição, realização ou cancelamento.
 
 ## Resumo mensal e precisão monetária
 
-O resumo apresenta receitas e despesas realizadas, receitas e despesas previstas pendentes e, quando existirem,
-pendências vencidas. Esses totais vêm no bloco `summary` da resposta da API; o React não soma itens nem calcula saldo
-ou projeção.
+O resumo apresenta separadamente receitas e despesas realizadas, pendentes e vencidas. Esses seis totais vêm no
+bloco obrigatório `summary` da resposta da API; o React não soma itens nem calcula saldo ou projeção:
+
+```json
+{
+  "from": "2026-10-01",
+  "through": "2026-10-31",
+  "items": [],
+  "summary": {
+    "realizedIncome": "0.00",
+    "realizedExpense": "0.00",
+    "pendingIncome": "0.00",
+    "pendingExpense": "0.00",
+    "overdueIncome": "0.00",
+    "overdueExpense": "0.00"
+  }
+}
+```
+
+O resumo respeita exatamente o período inclusivo e os filtros de conta e tipo da consulta. Pendências anteriores a
+`from` não são incluídas. `overdueIncome` e `overdueExpense` são subconjuntos de `pendingIncome` e `pendingExpense`,
+respectivamente, e não valores adicionais. Uma previsão é vencida somente quando sua data é anterior ao dia civil
+atual em `America/Sao_Paulo`; vencimento hoje permanece apenas pendente.
 
 Todos os valores chegam como strings decimais, por exemplo `"9999999999999.99"`, e continuam como texto até a
-formatação em BRL. Isso evita perda de centavos pela conversão para `number`.
-
-Enquanto a API não fornecer `summary`, o calendário e os compromissos continuam disponíveis e a tela informa que o
-resumo mensal está indisponível. Nenhum total é inventado no navegador.
+formatação em BRL. Períodos sem acontecimentos retornam `"0.00"` nos seis campos. Isso evita perda de centavos pela
+conversão para `number`.
 
 ## Estados da tela
 

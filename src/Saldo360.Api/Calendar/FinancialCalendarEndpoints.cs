@@ -73,10 +73,32 @@ public static class FinancialCalendarEndpoints
 public sealed record FinancialCalendarResponse(
     DateOnly From,
     DateOnly Through,
-    IReadOnlyList<FinancialCalendarItemResponse> Items)
+    IReadOnlyList<FinancialCalendarItemResponse> Items,
+    FinancialCalendarSummaryResponse Summary)
 {
     public static FinancialCalendarResponse Create(FinancialCalendar calendar) =>
-        new(calendar.From, calendar.Through, calendar.Items.Select(FinancialCalendarItemResponse.From).ToList());
+        new(
+            calendar.From,
+            calendar.Through,
+            calendar.Items.Select(FinancialCalendarItemResponse.From).ToList(),
+            FinancialCalendarSummaryResponse.From(calendar.Summary));
+}
+
+public sealed record FinancialCalendarSummaryResponse(
+    string RealizedIncome,
+    string RealizedExpense,
+    string PendingIncome,
+    string PendingExpense,
+    string OverdueIncome,
+    string OverdueExpense)
+{
+    public static FinancialCalendarSummaryResponse From(FinancialCalendarSummaryDto summary) => new(
+        Money.Format(summary.RealizedIncome),
+        Money.Format(summary.RealizedExpense),
+        Money.Format(summary.PendingIncome),
+        Money.Format(summary.PendingExpense),
+        Money.Format(summary.OverdueIncome),
+        Money.Format(summary.OverdueExpense));
 }
 
 public sealed record FinancialCalendarItemResponse(

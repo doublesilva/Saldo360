@@ -36,6 +36,18 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
     }
 
     [Fact]
+    public async Task EmptyPeriod_ReturnsAllSummaryValuesAsExactZeroStrings()
+    {
+        await ArrangeAsync();
+
+        var calendar = await ReadAsync<CalendarDto>(
+            await SendAsync(HttpMethod.Get, CalendarUrl(Today.AddDays(-2), Today.AddDays(2)), _owner));
+
+        Assert.Empty(calendar.Items);
+        Assert.Equal(new SummaryDto("0.00", "0.00", "0.00", "0.00", "0.00", "0.00"), calendar.Summary);
+    }
+
+    [Fact]
     public async Task CombinesEffectivePendingAndOverdue_WithoutCancelledOrRealizedDuplicate_InChronologicalOrder()
     {
         await ArrangeAsync();
@@ -44,6 +56,7 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
         await CancelTransactionAsync(cancelledEffective);
 
         var overdue = await CreatePlannedAsync(_account, _income, "Income", "20.00", Today.AddDays(-2), "Reembolso");
+        var overdueExpense = await CreatePlannedAsync(_account, _expense, "Expense", "21.25", Today.AddDays(-1), "Conta vencida");
         // A data prevista fica fora do período: a realização deve entrar pela data efetiva, sem depender dela.
         var realizedPlanned = await CreatePlannedAsync(_account, _expense, "Expense", "30.00", Today.AddDays(40), "Conta prevista");
         var realization = await RealizeAsync(realizedPlanned, "31.50", Today, _member);
@@ -55,15 +68,18 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var calendar = await ReadAsync<CalendarDto>(response);
         Assert.Equal((Today.AddDays(-10), Today.AddDays(10)), (calendar.From, calendar.Through));
-        Assert.Equal([effective, overdue, realization], calendar.Items.Select(item => item.Id));
+        Assert.Equal([effective, overdue, overdueExpense, realization], calendar.Items.Select(item => item.Id));
 
         Assert.Equal(("Transaction", "Realized", "10.25", Today.AddDays(-4), (Guid?)null),
             Item(calendar, effective));
         Assert.Equal(("PlannedTransaction", "Overdue", "20.00", Today.AddDays(-2), (Guid?)null),
             Item(calendar, overdue));
+        Assert.Equal(("PlannedTransaction", "Overdue", "21.25", Today.AddDays(-1), (Guid?)null),
+            Item(calendar, overdueExpense));
         Assert.Equal(("Transaction", "Realized", "31.50", Today, (Guid?)realizedPlanned),
             Item(calendar, realization));
         Assert.DoesNotContain(calendar.Items, item => item.Id == realizedPlanned || item.Id == cancelledEffective || item.Id == cancelledPlanned);
+        Assert.Equal(new SummaryDto("0.00", "41.75", "20.00", "21.25", "20.00", "21.25"), calendar.Summary);
     }
 
     [Fact]
@@ -81,6 +97,7 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
         var item = Assert.Single(calendar.Items);
         Assert.Equal((planned, "PlannedTransaction", "Pending", "200.00", dueDate),
             (item.Id, item.Source, item.Status, item.Amount, item.Date));
+        Assert.Equal(new SummaryDto("0.00", "0.00", "0.00", "200.00", "0.00", "0.00"), calendar.Summary);
     }
 
     [Fact]
@@ -120,6 +137,25 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
             Assert.Equal(_account, item.Account.Id);
             Assert.Equal("Income", item.Type);
         });
+        Assert.Equal(new SummaryDto("10.00", "0.00", "20.00", "0.00", "0.00", "0.00"), calendar.Summary);
+    }
+
+    [Fact]
+    public async Task Summary_UsesExactDecimals_AndTodayIsPendingButNotOverdue()
+    {
+        await ArrangeAsync();
+        await CreateTransactionAsync(_account, _income, "Income", "0.10", Today, "Centavos 1");
+        await CreateTransactionAsync(_account, _income, "Income", "0.20", Today, "Centavos 2");
+        await CreatePlannedAsync(_account, _income, "Income", "9.99", Today.AddDays(-1), "Fora do período");
+        await CreatePlannedAsync(_account, _income, "Income", "0.10", Today, "Vence hoje");
+        await CreatePlannedAsync(_account, _income, "Income", "0.20", Today.AddDays(1), "Vence amanhã");
+
+        var calendar = await ReadAsync<CalendarDto>(
+            await SendAsync(HttpMethod.Get, CalendarUrl(Today, Today.AddDays(1)), _owner));
+
+        Assert.Equal(new SummaryDto("0.30", "0.00", "0.30", "0.00", "0.00", "0.00"), calendar.Summary);
+        Assert.DoesNotContain(calendar.Items, item => item.Description == "Fora do período");
+        Assert.Equal("Pending", calendar.Items.Single(item => item.Description == "Vence hoje").Status);
     }
 
     private static (string Source, string Status, string Amount, DateOnly Date, Guid? PlannedTransactionId) Item(
@@ -210,5 +246,16 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
         ReferenceDto Category,
         string Currency,
         Guid? PlannedTransactionId);
-    private sealed record CalendarDto(DateOnly From, DateOnly Through, List<CalendarItemDto> Items);
+    private sealed record SummaryDto(
+        string RealizedIncome,
+        string RealizedExpense,
+        string PendingIncome,
+        string PendingExpense,
+        string OverdueIncome,
+        string OverdueExpense);
+    private sealed record CalendarDto(
+        DateOnly From,
+        DateOnly Through,
+        List<CalendarItemDto> Items,
+        SummaryDto Summary);
 }

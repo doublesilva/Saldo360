@@ -34,9 +34,8 @@ export interface FinancialCalendarSummary {
 export interface FinancialCalendarResponse {
   from: string
   through: string
-  /** null mantém a agenda utilizável quando uma versão antiga da API ainda não fornece os totais. */
-  summary: FinancialCalendarSummary | null
   items: FinancialCalendarItem[]
+  summary: FinancialCalendarSummary
 }
 
 export interface FinancialCalendarFilters {
@@ -63,10 +62,7 @@ export async function getFinancialCalendar(
   })
   if (!response.ok) throw new Error(`Falha ao carregar a agenda financeira (HTTP ${response.status}).`)
 
-  const body = (await response.json()) as Omit<FinancialCalendarResponse, 'summary'> & {
-    summary?: FinancialCalendarSummary | null
-  }
-  return { ...body, summary: body.summary ?? null }
+  return (await response.json()) as FinancialCalendarResponse
 }
 
 /** Contas ativas e históricas podem aparecer na agenda e, portanto, no filtro. */
