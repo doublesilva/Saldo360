@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { endOfMonth, todayInSaoPaulo } from './dates'
+import { addCalendarMonths, endOfMonth, formatMonthYear, startOfMonth, todayInSaoPaulo } from './dates'
 
 describe('todayInSaoPaulo', () => {
   it.each([
@@ -19,5 +19,14 @@ describe('endOfMonth', () => {
     ['2026-12-31', '2026-12-31'],
   ])('%s → %s', (date, expected) => {
     expect(endOfMonth(date)).toBe(expected)
+  })
+})
+
+describe('utilitários mensais civis', () => {
+  it('obtém início, navega entre anos e formata sem depender do fuso do navegador', () => {
+    expect(startOfMonth('2026-12-31')).toBe('2026-12-01')
+    expect(addCalendarMonths('2026-12-15', 1)).toBe('2027-01-01')
+    expect(addCalendarMonths('2026-01-15', -1)).toBe('2025-12-01')
+    expect(formatMonthYear('2027-01-01')).toBe('Janeiro de 2027')
   })
 })

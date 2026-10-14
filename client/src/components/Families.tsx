@@ -14,6 +14,7 @@ import { Transactions } from './Transactions'
 import { Planned } from './Planned'
 import { Transfers } from './Transfers'
 import { InvitePanel } from './InvitePanel'
+import { FinancialCalendarPage } from './FinancialCalendar'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
 
@@ -163,6 +164,18 @@ type DetailState =
   | { kind: 'not-found' }
   | { kind: 'error'; message: string }
 
+type FamilySection = 'overview' | 'calendar' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
+
+const familySections: Array<{ id: FamilySection; label: string }> = [
+  { id: 'overview', label: 'Família' },
+  { id: 'calendar', label: 'Agenda' },
+  { id: 'accounts', label: 'Contas' },
+  { id: 'categories', label: 'Categorias' },
+  { id: 'transactions', label: 'Lançamentos' },
+  { id: 'transfers', label: 'Transferências' },
+  { id: 'planned', label: 'Previsões' },
+]
+
 /** Detalhe de uma família: recebe os dados prontos (após criar) ou o Id para buscar. */
 function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack: () => void }) {
   const [state, setState] = useState<DetailState>(
@@ -172,6 +185,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
   // saldos, lançamentos e previsões consultam de novo. Ex.: realizar cria lançamento; cancelar o lançamento
   // efetivo reabre a previsão.
   const [financeVersion, setFinanceVersion] = useState(0)
+  const [section, setSection] = useState<FamilySection>('overview')
   const financeChanged = () => setFinanceVersion((n) => n + 1)
 
   useEffect(() => {
@@ -198,25 +212,50 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
       {state.kind === 'loaded' && (
         <>
           <h2>{state.family.name}</h2>
-          <h3>Membros</h3>
-          <ul className="checks">
-            {state.family.members.map((member, index) => (
-              <li key={`${member.joinedAt}-${index}`}>
-                <span>
-                  {member.displayName}
-                  {member.isCurrentUser && <span className="meta"> (você)</span>}
-                </span>
-                <span>{roleLabels[member.role]}</span>
-              </li>
+          <nav className="family-navigation" aria-label="Navegação principal da família">
+            {familySections.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={section === item.id ? 'family-navigation__item family-navigation__item--active' : 'family-navigation__item'}
+                aria-current={section === item.id ? 'page' : undefined}
+                onClick={() => setSection(item.id)}
+              >
+                {item.label}
+              </button>
             ))}
-          </ul>
-          {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
-          <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
-          <Categories familyId={state.family.id} />
-          <Transactions familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
-          <Transfers familyId={state.family.id} onChanged={financeChanged} />
+          </nav>
+
+          {section === 'overview' && (
+            <div className="family-section">
+              <h3>Membros</h3>
+              <ul className="checks">
+                {state.family.members.map((member, index) => (
+                  <li key={`${member.joinedAt}-${index}`}>
+                    <span>
+                      {member.displayName}
+                      {member.isCurrentUser && <span className="meta"> (você)</span>}
+                    </span>
+                    <span>{roleLabels[member.role]}</span>
+                  </li>
+                ))}
+              </ul>
+              {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
+            </div>
+          )}
+          {section === 'calendar' && <FinancialCalendarPage key={state.family.id} familyId={state.family.id} />}
+          {section === 'accounts' && (
+            <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
+          )}
+          {section === 'categories' && <Categories familyId={state.family.id} />}
+          {section === 'transactions' && (
+            <Transactions familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
+          )}
+          {section === 'transfers' && <Transfers familyId={state.family.id} onChanged={financeChanged} />}
           {/* Toda mudança em previsões muda a projeção (e realizar muda o saldo realizado): avisa. */}
-          <Planned familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
+          {section === 'planned' && (
+            <Planned familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
+          )}
         </>
       )}
     </section>

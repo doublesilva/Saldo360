@@ -20,3 +20,24 @@ export function endOfMonth(date: string): string {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 }
+
+/** Primeiro dia do mês de uma data civil, sem conversão pelo fuso do navegador. */
+export function startOfMonth(date: string): string {
+  return `${date.slice(0, 7)}-01`
+}
+
+/** Soma meses a uma data civil e devolve o primeiro dia do mês resultante. */
+export function addCalendarMonths(date: string, amount: number): string {
+  const [year, month] = date.split('-').map(Number)
+  const shifted = new Date(Date.UTC(year, month - 1 + amount, 1))
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-01`
+}
+
+/** Nome completo do mês e ano em português, calculado em UTC para preservar o mês civil. */
+export function formatMonthYear(date: string): string {
+  const [year, month] = date.split('-').map(Number)
+  const text = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(year, month - 1, 1)),
+  )
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
