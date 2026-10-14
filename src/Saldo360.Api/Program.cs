@@ -8,6 +8,7 @@ using Saldo360.Api.Authentication;
 using Saldo360.Api.Families;
 using Saldo360.Api.Planning;
 using Saldo360.Api.Health;
+using Saldo360.Api.Calendar;
 using Saldo360.Application;
 using Saldo360.Infrastructure;
 
@@ -48,5 +49,6 @@ app.MapFinancialCategoryEndpoints();
 app.MapFinancialTransactionEndpoints();
 app.MapFinancialTransferEndpoints();
 app.MapFinancialPlannedTransactionEndpoints();
+app.MapFinancialCalendarEndpoints();
 
 app.Run();

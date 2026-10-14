@@ -5,6 +5,7 @@ using Saldo360.Application.Transactions;
 using Saldo360.Application.Transfers;
 using Saldo360.Application.Families;
 using Saldo360.Application.Planning;
+using Saldo360.Application.Calendar;
 
 namespace Saldo360.Application;
 
@@ -20,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialTransactionService>();
         services.AddScoped<FinancialTransferService>();
         services.AddScoped<FinancialPlannedTransactionService>();
+        services.AddScoped<FinancialCalendarService>();
         return services;
     }
 }
