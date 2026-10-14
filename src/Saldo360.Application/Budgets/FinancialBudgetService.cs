@@ -1,0 +1,158 @@
+using System.Globalization;
+using Saldo360.Application.Families;
+using Saldo360.Domain.Budgets;
+using Saldo360.Domain.Common;
+
+namespace Saldo360.Application.Budgets;
+
+public sealed class FinancialBudgetService(
+    IFamilyRepository families,
+    IFinancialBudgetRepository budgets,
+    TimeProvider timeProvider)
+{
+    public async Task<BudgetResult> CreateAsync(
+        Guid familyId, Guid userId, string? competence, string? description, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken)) return BudgetResult.NotFound;
+        var errors = ValidateBudget(competence, description, out var month, out var normalizedDescription);
+        if (errors.Count > 0) return BudgetResult.Invalid(errors);
+        if (await budgets.BudgetExistsAsync(familyId, month, cancellationToken))
+            return BudgetResult.Conflict(BudgetResult.DuplicateBudgetMessage);
+        var budget = FinancialBudget.Create(familyId, month, normalizedDescription, userId, timeProvider.GetUtcNow());
+        return await budgets.TryAddBudgetAsync(budget, cancellationToken)
+            ? BudgetResult.Ok((await budgets.GetAsync(familyId, budget.Id, cancellationToken))!)
+            : BudgetResult.Conflict(BudgetResult.DuplicateBudgetMessage);
+    }
+
+    public async Task<IReadOnlyList<FinancialBudgetDto>?> ListAsync(
+        Guid familyId, Guid userId, string? competence, bool includeArchived, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken)) return null;
+        DateOnly? month = null;
+        if (competence is not null)
+        {
+            if (!TryParseCompetence(competence, out var parsed)) return [];
+            month = parsed;
+        }
+        return await budgets.ListAsync(familyId, month, includeArchived, cancellationToken);
+    }
+
+    public async Task<FinancialBudgetDto?> GetAsync(
+        Guid familyId, Guid budgetId, Guid userId, CancellationToken cancellationToken) =>
+        await IsParticipantAsync(familyId, userId, cancellationToken)
+            ? await budgets.GetAsync(familyId, budgetId, cancellationToken)
+            : null;
+
+    public async Task<BudgetResult> UpdateAsync(
+        Guid familyId, Guid budgetId, Guid userId, string? description, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
+            || await budgets.FindBudgetAsync(familyId, budgetId, cancellationToken) is not { } budget)
+            return BudgetResult.NotFound;
+        if (budget.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
+        if (!FinancialBudget.TryNormalizeDescription(description, out var normalized, out var error))
+            return BudgetResult.Invalid(new Dictionary<string, string[]> { ["description"] = [error!] });
+        budget.Update(normalized, userId, timeProvider.GetUtcNow());
+        await budgets.TrySaveChangesAsync(cancellationToken);
+        return BudgetResult.Ok((await budgets.GetAsync(familyId, budgetId, cancellationToken))!);
+    }
+
+    public async Task<BudgetResult> ArchiveAsync(
+        Guid familyId, Guid budgetId, Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
+            || await budgets.FindBudgetAsync(familyId, budgetId, cancellationToken) is not { } budget)
+            return BudgetResult.NotFound;
+        budget.Archive(userId, timeProvider.GetUtcNow());
+        await budgets.TrySaveChangesAsync(cancellationToken);
+        return BudgetResult.Ok((await budgets.GetAsync(familyId, budgetId, cancellationToken))!);
+    }
+
+    public async Task<BudgetResult> AddTargetAsync(
+        Guid familyId, Guid budgetId, Guid userId, string? name, decimal? amount,
+        string? groupingType, Guid? categoryId, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
+            || await budgets.FindBudgetAsync(familyId, budgetId, cancellationToken) is not { } budget)
+            return BudgetResult.NotFound;
+        if (budget.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
+        var errors = ValidateTarget(name, amount, groupingType, categoryId, out var normalized);
+        if (errors.Count > 0) return BudgetResult.Invalid(errors);
+        var category = await budgets.GetCategoryAsync(familyId, categoryId!.Value, cancellationToken);
+        if (category is null) return BudgetResult.NotFound;
+        if (!category.IsExpense)
+            return BudgetResult.Invalid(new Dictionary<string, string[]> { ["categoryId"] = ["A meta deve referenciar uma categoria de despesa."] });
+        if (await budgets.TargetExistsAsync(budgetId, categoryId.Value, cancellationToken))
+            return BudgetResult.Conflict(BudgetResult.DuplicateTargetMessage);
+        var target = FinancialBudgetTarget.Create(
+            familyId, budgetId, normalized, amount!.Value, categoryId.Value, userId, timeProvider.GetUtcNow());
+        return await budgets.TryAddTargetAsync(target, cancellationToken)
+            ? BudgetResult.Ok((await budgets.GetAsync(familyId, budgetId, cancellationToken))!)
+            : BudgetResult.Conflict(BudgetResult.DuplicateTargetMessage);
+    }
+
+    public async Task<BudgetResult> UpdateTargetAsync(
+        Guid familyId, Guid budgetId, Guid targetId, Guid userId, string? name, decimal? amount,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
+            || await budgets.FindBudgetAsync(familyId, budgetId, cancellationToken) is not { } budget
+            || await budgets.FindTargetAsync(budgetId, targetId, cancellationToken) is not { } target)
+            return BudgetResult.NotFound;
+        if (budget.IsArchived || target.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
+        var errors = ValidateTarget(name, amount, nameof(BudgetTargetGroupingType.Category), target.CategoryId, out var normalized);
+        if (errors.Count > 0) return BudgetResult.Invalid(errors);
+        target.Update(normalized, amount!.Value, userId, timeProvider.GetUtcNow());
+        await budgets.TrySaveChangesAsync(cancellationToken);
+        return BudgetResult.Ok((await budgets.GetAsync(familyId, budgetId, cancellationToken))!);
+    }
+
+    public async Task<BudgetResult> ArchiveTargetAsync(
+        Guid familyId, Guid budgetId, Guid targetId, Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
+            || await budgets.FindBudgetAsync(familyId, budgetId, cancellationToken) is not { } budget
+            || await budgets.FindTargetAsync(budgetId, targetId, cancellationToken) is not { } target)
+            return BudgetResult.NotFound;
+        if (budget.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
+        target.Archive(userId, timeProvider.GetUtcNow());
+        await budgets.TrySaveChangesAsync(cancellationToken);
+        return BudgetResult.Ok((await budgets.GetAsync(familyId, budgetId, cancellationToken))!);
+    }
+
+    public static bool TryParseCompetence(string value, out DateOnly competence)
+    {
+        competence = default;
+        return value.Length == 7 && DateOnly.TryParseExact(
+            $"{value}-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out competence);
+    }
+
+    private static Dictionary<string, string[]> ValidateBudget(
+        string? competence, string? description, out DateOnly month, out string? normalizedDescription)
+    {
+        var errors = new Dictionary<string, string[]>();
+        month = default;
+        if (competence is null || !TryParseCompetence(competence, out month))
+            errors["competence"] = ["Informe uma competência válida no formato yyyy-MM."];
+        if (!FinancialBudget.TryNormalizeDescription(description, out normalizedDescription, out var descriptionError))
+            errors["description"] = [descriptionError!];
+        return errors;
+    }
+
+    private static Dictionary<string, string[]> ValidateTarget(
+        string? name, decimal? amount, string? groupingType, Guid? categoryId, out string normalized)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (!FinancialBudgetTarget.TryNormalizeName(name, out normalized, out var nameError)) errors["name"] = [nameError!];
+        if (amount is null) errors["plannedAmount"] = ["Informe o valor planejado."];
+        else if (amount < 0m) errors["plannedAmount"] = ["O valor planejado não pode ser negativo."];
+        else if (Money.Validate(amount.Value, "O valor planejado") is { } amountError) errors["plannedAmount"] = [amountError];
+        if (groupingType != nameof(BudgetTargetGroupingType.Category))
+            errors["groupingType"] = ["Agrupamento inválido. Use Category."];
+        if (categoryId is null || categoryId == Guid.Empty) errors["categoryId"] = ["Informe a categoria de despesa."];
+        return errors;
+    }
+
+    private async Task<bool> IsParticipantAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>
+        await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is not null;
+}

@@ -143,6 +143,192 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<Guid?>("ArchivedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("archived_by_user_id");
+
+                    b.Property<DateOnly>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_archived");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_budgets");
+
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_budgets_family_id_id");
+
+                    b.HasIndex("ArchivedByUserId")
+                        .HasDatabaseName("ix_financial_budgets_archived_by_user_id");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_budgets_created_by_user_id");
+
+                    b.HasIndex("UpdatedByUserId")
+                        .HasDatabaseName("ix_financial_budgets_updated_by_user_id");
+
+                    b.HasIndex("FamilyId", "Competence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_financial_budgets_family_id_competence");
+
+                    b.ToTable("financial_budgets", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_budgets_archived", "is_archived = (archived_at IS NOT NULL) AND (archived_at IS NULL) = (archived_by_user_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_financial_budgets_competence_first_day", "extract(day from competence) = 1");
+
+                            t.HasCheckConstraint("ck_financial_budgets_description_trimmed", "description IS NULL OR octet_length(description) = octet_length(btrim(description))");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudgetTarget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<Guid?>("ArchivedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("archived_by_user_id");
+
+                    b.Property<Guid>("BudgetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("budget_id");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.Property<string>("CategoryType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("category_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<string>("GroupingType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("grouping_type");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_archived");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("PlannedAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("planned_amount");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_budget_targets");
+
+                    b.HasIndex("ArchivedByUserId")
+                        .HasDatabaseName("ix_financial_budget_targets_archived_by_user_id");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_budget_targets_created_by_user_id");
+
+                    b.HasIndex("UpdatedByUserId")
+                        .HasDatabaseName("ix_financial_budget_targets_updated_by_user_id");
+
+                    b.HasIndex("FamilyId", "BudgetId")
+                        .HasDatabaseName("ix_financial_budget_targets_family_id_budget_id");
+
+                    b.HasIndex("BudgetId", "GroupingType", "CategoryId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_financial_budget_targets_budget_grouping_category");
+
+                    b.HasIndex("FamilyId", "CategoryId", "CategoryType")
+                        .HasDatabaseName("ix_financial_budget_targets_family_id_category_id_category_type");
+
+                    b.ToTable("financial_budget_targets", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_budget_targets_amount_nonnegative", "planned_amount >= 0");
+
+                            t.HasCheckConstraint("ck_financial_budget_targets_amount_range", "planned_amount < 10000000000000");
+
+                            t.HasCheckConstraint("ck_financial_budget_targets_amount_scale", "scale(planned_amount) <= 2");
+
+                            t.HasCheckConstraint("ck_financial_budget_targets_archived", "is_archived = (archived_at IS NOT NULL) AND (archived_at IS NULL) = (archived_by_user_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_financial_budget_targets_category_type", "category_type = 'Expense'");
+
+                            t.HasCheckConstraint("ck_financial_budget_targets_grouping_type", "grouping_type = 'Category'");
+
+                            t.HasCheckConstraint("ck_financial_budget_targets_name_not_blank", "btrim(name) <> ''");
+
+                            t.HasCheckConstraint("ck_financial_budget_targets_name_trimmed", "octet_length(name) = octet_length(btrim(name))");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Categories.FinancialCategory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -787,6 +973,75 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("FamilyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_financial_accounts_family_members_responsible");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudget", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ArchivedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_budgets_application_users_archived_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_budgets_application_users_created_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_budgets_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_budgets_application_users_updated_by_user_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudgetTarget", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ArchivedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_budget_targets_application_users_archived_by_user");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_budget_targets_application_users_created_by_user_");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_budget_targets_application_users_updated_by_user_");
+
+                    b.HasOne("Saldo360.Domain.Budgets.FinancialBudget", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "BudgetId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_budget_targets_budgets_same_family");
+
+                    b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "CategoryId", "CategoryType")
+                        .HasPrincipalKey("FamilyId", "Id", "Type")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_budget_targets_categories_same_family_expense");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Categories.FinancialCategory", b =>
