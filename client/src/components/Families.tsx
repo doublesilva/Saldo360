@@ -243,7 +243,9 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
               {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
             </div>
           )}
-          {section === 'calendar' && <FinancialCalendarPage key={state.family.id} familyId={state.family.id} />}
+          {section === 'calendar' && (
+            <FinancialCalendarPage key={state.family.id} familyId={state.family.id} onChanged={financeChanged} />
+          )}
           {section === 'accounts' && (
             <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
           )}

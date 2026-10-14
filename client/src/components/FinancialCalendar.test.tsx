@@ -217,7 +217,7 @@ describe('FinancialCalendarPage — mês, calendário e compromissos', () => {
     expect(within(events).getByText('Pendente')).toBeTruthy()
     expect(events.textContent).toMatch(/−R\$\s1\.234,56/)
     expect(events.textContent).toContain('Nubank (inativa)')
-    expect(within(events).queryByRole('button')).toBeNull()
+    expect(within(events).getByRole('button', { name: 'Ver detalhes de Aluguel previsto' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('gridcell', { name: /10\/12\/2026/ }))
     expect(within(screen.getByLabelText(/Compromissos de 10\/12\/2026/)).getByText('Vencido')).toBeTruthy()

@@ -23,7 +23,7 @@ const typeLabels: Record<CategoryType, string> = { Income: 'Receita', Expense: '
 
 type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'error'; message: string }
 
-type References = { accounts: FinancialAccount[]; categories: FinancialCategory[] }
+export type TransactionReferences = { accounts: FinancialAccount[]; categories: FinancialCategory[] }
 
 /**
  * Lançamentos únicos já realizados da família: entradas e saídas efetivas. Contas e categorias são carregadas
@@ -40,7 +40,7 @@ export function Transactions({
   /** Muda quando outra seção altera lançamentos (ex.: realizar previsão): a lista é recarregada. */
   refreshKey?: number
 }) {
-  const [refs, setRefs] = useState<Load<References>>({ kind: 'loading' })
+  const [refs, setRefs] = useState<Load<TransactionReferences>>({ kind: 'loading' })
   const [page, setPage] = useState<Load<TransactionPage>>({ kind: 'loading' })
   const [filters, setFilters] = useState<TransactionFilters>(emptyFilters)
   const [pageNumber, setPageNumber] = useState(1)
@@ -291,7 +291,7 @@ type FormState = {
   transactionDate: string
 }
 
-function TransactionForm({
+export function TransactionForm({
   familyId,
   references,
   transaction,
@@ -299,7 +299,7 @@ function TransactionForm({
   onCancel,
 }: {
   familyId: string
-  references: References
+  references: TransactionReferences
   transaction: FinancialTransaction | null
   onSaved: () => void
   onCancel: () => void

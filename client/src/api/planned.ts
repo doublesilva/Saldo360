@@ -127,6 +127,13 @@ export async function listPlanned(
   return (await response.json()) as PlannedPage
 }
 
+/** Uma previsão (inclusive realizada ou cancelada), carregada para exibição/edição. */
+export async function getPlanned(familyId: string, id: string, signal?: AbortSignal): Promise<PlannedTransaction> {
+  const response = await fetch(plannedUrl(familyId, id), { signal, headers: jsonHeaders })
+  if (!response.ok) throw new Error(`Falha ao carregar a previsão (HTTP ${response.status}).`)
+  return (await response.json()) as PlannedTransaction
+}
+
 async function write(method: 'POST' | 'PUT', url: string, body: unknown, expected: number): Promise<SavePlannedResult> {
   const response = await fetch(url, {
     method,

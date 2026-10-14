@@ -1,6 +1,6 @@
 # Agenda Financeira
 
-A Agenda Financeira reúne, em uma visão mensal somente leitura, os lançamentos realizados e as previsões que ainda
+A Agenda Financeira reúne, em uma visão mensal, os lançamentos realizados e as previsões que ainda
 estão pendentes. Ela fica disponível na opção **Agenda** da navegação de cada núcleo familiar.
 
 ## Navegação e filtros
@@ -36,7 +36,33 @@ Os indicadores combinam texto/símbolo, contorno e cor, de modo que a informaç�
 - `!↑` / `!↓`: receita ou despesa prevista, pendente e vencida.
 
 Ao selecionar um dia, a lista mostra descrição, conta, categoria quando disponível, valor em BRL, tipo e situação.
-A Agenda não oferece edição, realização ou cancelamento.
+
+## Detalhes e ações dos compromissos
+
+**Ver detalhes** abre um painel lateral com descrição, valor, tipo, data, conta, categoria quando disponível, origem e
+situação. O foco vai para o painel e retorna ao botão que o abriu ao fechar; `Esc` também fecha. Contas e categorias
+inativas permanecem identificadas. Identificador de parcela/recorrência e observações só serão mostrados quando esses
+campos existirem no contrato — a Agenda não cria propriedades ausentes.
+
+As ações reutilizam os mesmos endpoints e formulários das seções de Lançamentos e Previsões:
+
+- previsão pendente ou vencida: **Realizar**, **Editar** e **Cancelar previsão**;
+- lançamento realizado avulso: **Editar** e **Cancelar lançamento**;
+- lançamento que realiza uma previsão: somente **Cancelar lançamento**, pois esse lançamento não é editável no fluxo
+  existente; o cancelamento reabre a previsão, que pode então ser realizada novamente.
+
+Na realização, o valor efetivo e a data efetiva podem diferir do previsto. A previsão conserva seus dados originais e
+é substituída na Agenda pelo lançamento efetivo, sem duplicidade. Cancelamentos exigem confirmação com descrição,
+valor e consequência: o registro é preservado como cancelado e deixa de participar do saldo/projeção; no lançamento
+vinculado, a confirmação informa explicitamente que a previsão voltará a ficar pendente.
+
+Depois de uma operação confirmada pelo backend, a Agenda consulta novamente os acontecimentos, os seis totais do
+resumo, a evolução diária e os indicadores de risco, preservando mês, conta, tipo e dia selecionado. Não há atualização
+financeira otimista. Respostas de consultas anteriores são descartadas; se uma ação falhar, o painel e os dados já
+exibidos permanecem disponíveis com uma mensagem de erro.
+
+Transferências não aparecem como acontecimentos individuais no contrato atual da Agenda e, por isso, não recebem
+ações nesse painel.
 
 ## Resumo mensal e precisão monetária
 

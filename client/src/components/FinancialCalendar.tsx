@@ -12,6 +12,7 @@ import {
 } from '../api/financialCalendar'
 import { addCalendarMonths, endOfMonth, formatMonthYear, startOfMonth, todayInSaoPaulo } from '../dates'
 import { formatBrlDecimal, formatDate } from '../money'
+import { FinancialCalendarDetails } from './FinancialCalendarDetails'
 
 type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'error'; message: string }
 type RequestLoad<T> =
@@ -31,18 +32,20 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
 }
 
-/** Primeira versão mensal, somente leitura, da Agenda Financeira. */
-export function FinancialCalendarPage({ familyId }: { familyId: string }) {
+/** Visão mensal da Agenda Financeira, com detalhes e operações financeiras existentes. */
+export function FinancialCalendarPage({ familyId, onChanged }: { familyId: string; onChanged?: () => void }) {
   const today = todayInSaoPaulo()
   const [month, setMonth] = useState(() => startOfMonth(today))
   const [selectedDate, setSelectedDate] = useState(today)
   const [accountId, setAccountId] = useState('')
   const [type, setType] = useState<CategoryType | ''>('')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [opened, setOpened] = useState<{ item: FinancialCalendarItem; trigger: HTMLElement } | null>(null)
   const [accounts, setAccounts] = useState<Load<FinancialAccount[]>>({ kind: 'loading' })
   const requestVersion = useRef(0)
   const from = month
   const through = endOfMonth(month)
-  const requestKey = `${familyId}|${from}|${through}|${accountId}|${type}`
+  const requestKey = `${familyId}|${from}|${through}|${accountId}|${type}|${refreshKey}`
   const [calendarState, setCalendar] = useState<RequestLoad<FinancialCalendarResponse>>({
     kind: 'loading',
     requestKey,
@@ -80,7 +83,12 @@ export function FinancialCalendarPage({ familyId }: { familyId: string }) {
         }
       })
     return () => controller.abort()
-  }, [familyId, from, through, accountId, type, requestKey])
+  }, [familyId, from, through, accountId, type, requestKey, refreshKey])
+
+  const handleFinancialChange = () => {
+    setRefreshKey((current) => current + 1)
+    onChanged?.()
+  }
 
   const selectMonth = (nextMonth: string, preferredDate?: string) => {
     setMonth(nextMonth)
@@ -122,7 +130,11 @@ export function FinancialCalendarPage({ familyId }: { familyId: string }) {
               items={calendar.data.items}
               onSelect={setSelectedDate}
             />
-            <FinancialCalendarEvents date={selectedDate} items={selectedItems} />
+            <FinancialCalendarEvents
+              date={selectedDate}
+              items={selectedItems}
+              onOpen={(item, trigger) => setOpened({ item, trigger })}
+            />
           </div>
         </>
       )}
@@ -132,7 +144,17 @@ export function FinancialCalendarPage({ familyId }: { familyId: string }) {
         through={through}
         accountId={accountId}
         selectedDate={selectedDate}
+        refreshKey={refreshKey}
       />
+      {opened && (
+        <FinancialCalendarDetails
+          familyId={familyId}
+          item={opened.item}
+          returnFocus={opened.trigger}
+          onClose={() => setOpened(null)}
+          onChanged={handleFinancialChange}
+        />
+      )}
     </section>
   )
 }
@@ -143,15 +165,17 @@ export function FinancialCalendarBalanceEvolution({
   through,
   accountId,
   selectedDate,
+  refreshKey = 0,
 }: {
   familyId: string
   from: string
   through: string
   accountId: string
   selectedDate: string
+  refreshKey?: number
 }) {
   const requestVersion = useRef(0)
-  const requestKey = `${familyId}|${from}|${through}|${accountId}`
+  const requestKey = `${familyId}|${from}|${through}|${accountId}|${refreshKey}`
   const [balanceState, setBalanceState] = useState<RequestLoad<FinancialCalendarBalanceResponse>>({
     kind: 'loading',
     requestKey,
@@ -172,7 +196,7 @@ export function FinancialCalendarBalanceEvolution({
         }
       })
     return () => controller.abort()
-  }, [familyId, from, through, accountId, requestKey])
+  }, [familyId, from, through, accountId, requestKey, refreshKey])
 
   return (
     <section className="balance-evolution" aria-labelledby="balance-evolution-title">
@@ -501,7 +525,15 @@ export function FinancialCalendarDay({
   )
 }
 
-export function FinancialCalendarEvents({ date, items }: { date: string; items: FinancialCalendarItem[] }) {
+export function FinancialCalendarEvents({
+  date,
+  items,
+  onOpen,
+}: {
+  date: string
+  items: FinancialCalendarItem[]
+  onOpen: (item: FinancialCalendarItem, trigger: HTMLButtonElement) => void
+}) {
   return (
     <section className="calendar-events" aria-live="polite" aria-labelledby="calendar-events-title">
       <h3 id="calendar-events-title">Compromissos de {formatDate(date)}</h3>
@@ -523,6 +555,14 @@ export function FinancialCalendarEvents({ date, items }: { date: string; items: 
                 {item.category && <span>{item.category.name}{item.category.isActive ? '' : ' (inativa)'}</span>}
               </div>
               <span className={`badge badge--calendar-${item.status.toLowerCase()}`}>{statusLabels[item.status]}</span>
+              <button
+                type="button"
+                className="button--link calendar-event__details"
+                onClick={(event) => onOpen(item, event.currentTarget)}
+                aria-label={`Ver detalhes de ${item.description}`}
+              >
+                Ver detalhes
+              </button>
             </li>
           ))}
         </ul>

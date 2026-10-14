@@ -26,7 +26,7 @@ const typeLabels: Record<CategoryType, string> = { Income: 'Receita prevista', E
 
 type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'error'; message: string }
 
-type References = { accounts: FinancialAccount[]; categories: FinancialCategory[] }
+export type PlannedReferences = { accounts: FinancialAccount[]; categories: FinancialCategory[] }
 
 /**
  * Receitas e despesas previstas únicas: o que se espera receber ou pagar. Pendentes ficam fora do saldo e,
@@ -44,7 +44,7 @@ export function Planned({
   onChanged?: () => void
   refreshKey?: number
 }) {
-  const [refs, setRefs] = useState<Load<References>>({ kind: 'loading' })
+  const [refs, setRefs] = useState<Load<PlannedReferences>>({ kind: 'loading' })
   const [page, setPage] = useState<Load<PlannedPage>>({ kind: 'loading' })
   const [filters, setFilters] = useState<PlannedFilters>(emptyPlannedFilters)
   const [pageNumber, setPageNumber] = useState(1)
@@ -344,7 +344,7 @@ function RealizationSummary({ familyId, planned }: { familyId: string; planned: 
  * Realização: valor e data efetivos começam com o valor previsto e hoje (America/Sao_Paulo); ambos podem mudar.
  * Conta, categoria, tipo e descrição vêm da previsão. Pede confirmação antes de criar o lançamento efetivo.
  */
-function RealizeForm({
+export function RealizeForm({
   familyId,
   planned,
   onRealized,
@@ -470,7 +470,7 @@ type FormState = {
   dueDate: string
 }
 
-function PlannedForm({
+export function PlannedForm({
   familyId,
   references,
   planned,
@@ -478,7 +478,7 @@ function PlannedForm({
   onCancel,
 }: {
   familyId: string
-  references: References
+  references: PlannedReferences
   planned: PlannedTransaction | null
   onSaved: () => void
   onCancel: () => void
