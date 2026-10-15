@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialCreditCardPurchaseService>();
         services.AddScoped<FinancialCreditCardInvoicePaymentService>();
         services.AddScoped<FinancialPlannedInvoiceReconciliationService>();
+        services.AddScoped<ICreditCardCsvPreviewService, CreditCardCsvPreviewService>();
         return services;
     }
 }
