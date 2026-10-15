@@ -1,6 +1,8 @@
 # Orçamentos e metas mensais
 
-O módulo mantém orçamentos mensais e acompanha sua execução financeira por categoria. Alertas e interface visual continuam fora deste módulo.
+O módulo mantém orçamentos mensais e acompanha sua execução financeira por categoria. Alertas continuam fora deste módulo.
+
+A interface React está disponível na seção **Orçamentos** dentro de cada família. Ela seleciona inicialmente o mês de `America/Sao_Paulo`, permite navegar por competências e utiliza exclusivamente os contratos de orçamento e execução descritos abaixo. A tela não calcula valores financeiros: apenas formata strings decimais e usa o percentual retornado pela API para dimensionamento visual.
 
 ## Modelo
 
@@ -128,6 +130,8 @@ A leitura carrega as metas e executa duas agregações por categoria no PostgreS
 ### Limitações
 
 Transferências não são despesas orçamentárias. O módulo também não cria parcelas nem expande recorrências. Cartões e faturas exigirão modelagem própria; não se infere pagamento de fatura a partir de transferências ou lançamentos existentes.
+
+Na interface, metas arquivadas deixam de aparecer entre as metas ativas; o histórico permanece no backend. Arquivar uma meta ou orçamento não cancela movimentações e não cria restauração automática. Categorias de receita não são oferecidas no formulário de metas, e categorias inativas são identificadas explicitamente quando ainda podem ser usadas para preservar planejamento.
 
 ## Migration e validação
 

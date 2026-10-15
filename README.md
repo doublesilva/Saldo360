@@ -205,6 +205,8 @@ O frontend tem testes com Vitest (`npm run test:client`, incluídos em `npm test
 A cobertura da Agenda também inclui o painel acessível de detalhes, ações por origem e situação, realização com valor
 efetivo diferente, edição e cancelamento, reabertura de previsão vinculada e atualização coordenada de resumo e saldo.
 
+**Orçamentos**: a seção React dentro de cada família permite navegar por competências, criar o orçamento, cadastrar/editar/arquivar metas e acompanhar a execução retornada pela API; os valores permanecem strings decimais e a tela não recalcula indicadores. Consulte [docs/orcamentos.md](docs/orcamentos.md).
+
 **Login real via curl** (com API e frontend rodando). O script pede usuário e senha sem eco:
 
 ```bash
