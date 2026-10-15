@@ -51,12 +51,14 @@ public sealed class FinancialCreditCardInstallment : Entity
     private FinancialCreditCardInstallment() { }
     public Guid FamilyId { get; private init; }
     public Guid PurchaseId { get; private init; }
+    public Guid? InvoiceId { get; private set; }
     public int InstallmentNumber { get; private init; }
     public decimal Amount { get; private init; }
     public CreditCardInstallmentStatus Status { get; private set; }
     public DateTimeOffset CreatedAt { get; private init; }
     internal static FinancialCreditCardInstallment Create(Guid familyId, Guid purchaseId, int number, long cents, DateTimeOffset now) => new() { FamilyId = familyId, PurchaseId = purchaseId, InstallmentNumber = number, Amount = cents / 100m, Status = CreditCardInstallmentStatus.Active, CreatedAt = now };
     internal void Cancel() => Status = CreditCardInstallmentStatus.Cancelled;
+    public void AssignInvoice(Guid invoiceId) => InvoiceId = invoiceId;
 }
 
 public static class CreditCardPurchaseDetails

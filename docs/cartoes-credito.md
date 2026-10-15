@@ -45,4 +45,19 @@ POST   /api/families/{familyId}/credit-cards/{cardId}/purchases/{purchaseId}/can
 
 Os centavos são distribuídos deterministicamente: o valor é convertido em centavos decimais exatos, a divisão inteira define a base e o restante é acrescentado às primeiras parcelas. Assim, R$ 100,00 em três vezes resulta em R$ 33,34, R$ 33,33 e R$ 33,33; a soma permanece exatamente igual ao total.
 
-O cancelamento é transacional, preserva a compra e marca todas as parcelas como `Cancelled`. Não é permitido editar silenciosamente valor ou parcelamento. Parcelas ainda não recebem competência de fatura ou vencimento artificial; isso será definido na T09.3. Nenhuma compra altera saldo bancário, orçamento ou projeção.
+O cancelamento é transacional, preserva a compra e marca todas as parcelas como `Cancelled`. Não é permitido editar silenciosamente valor ou parcelamento. Nenhuma compra altera saldo bancário, orçamento ou projeção.
+
+## Ciclos e faturas (T09.3)
+
+Ao criar a compra, cada parcela é vinculada atomicamente a uma fatura persistida. O ciclo é definido pelo dia de compra e pelo fechamento configurado no cartão: começa no dia seguinte ao fechamento anterior e termina no fechamento atual, inclusive; uma compra no próprio dia de fechamento pertence a esse ciclo. Dias de fechamento e vencimento inexistentes no mês são ajustados para o último dia do mês.
+
+O vencimento é a primeira ocorrência estritamente posterior ao fechamento. Portanto, se o dia nominal de vencimento coincidir com o fechamento, ele será levado ao mês seguinte. A competência da fatura é o mês do vencimento. Alterações futuras na configuração do cartão não reclassificam parcelas já vinculadas.
+
+As faturas persistidas são consultadas por competência, sem criação de faturas vazias. O status é derivado na leitura usando `America/Sao_Paulo`: `Open` enquanto hoje for menor ou igual ao fechamento e `Closed` depois dele. Não há pagamentos ou estados adicionais nesta etapa. Cancelar uma compra cancela suas parcelas e a composição da fatura passa a considerar somente parcelas ativas.
+
+```text
+GET /api/families/{familyId}/credit-cards/{cardId}/invoices?from=yyyy-MM&through=yyyy-MM
+GET /api/families/{familyId}/credit-cards/{cardId}/invoices/{invoiceId}
+```
+
+Os valores de fatura são serializados como strings decimais exatas. As rotas exigem participação na família e retornam apenas faturas do cartão informado.

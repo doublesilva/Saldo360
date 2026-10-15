@@ -47,5 +47,6 @@ internal sealed class FinancialCreditCardPurchaseConfiguration : IEntityTypeConf
         builder.Property(i => i.Amount).HasColumnType("numeric"); builder.Property(i => i.Status).HasConversion<string>().HasMaxLength(20);
         builder.HasIndex(i => new { i.FamilyId, i.PurchaseId, i.InstallmentNumber }).IsUnique();
         builder.HasOne<FinancialCreditCardPurchase>().WithMany(p => p.Installments).HasForeignKey(i => new { i.FamilyId, i.PurchaseId }).HasPrincipalKey(p => new { p.FamilyId, p.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_installments_purchases_same_family");
+        builder.HasOne<FinancialCreditCardInvoice>().WithMany().HasForeignKey(i => new { i.FamilyId, i.InvoiceId }).HasPrincipalKey(invoice => new { invoice.FamilyId, invoice.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_installments_invoices_same_family");
     }
 }
