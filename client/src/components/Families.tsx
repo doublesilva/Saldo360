@@ -16,6 +16,7 @@ import { Transfers } from './Transfers'
 import { InvitePanel } from './InvitePanel'
 import { FinancialCalendarPage } from './FinancialCalendar'
 import { FinancialBudgetsPage } from './FinancialBudgets'
+import { FinancialCreditCardsPage } from './FinancialCreditCards'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
 
@@ -165,12 +166,13 @@ type DetailState =
   | { kind: 'not-found' }
   | { kind: 'error'; message: string }
 
-type FamilySection = 'overview' | 'calendar' | 'budgets' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
+type FamilySection = 'overview' | 'calendar' | 'budgets' | 'cards' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
 
 const familySections: Array<{ id: FamilySection; label: string }> = [
   { id: 'overview', label: 'Família' },
   { id: 'calendar', label: 'Agenda' },
   { id: 'budgets', label: 'Orçamentos' },
+  { id: 'cards', label: 'Cartões' },
   { id: 'accounts', label: 'Contas' },
   { id: 'categories', label: 'Categorias' },
   { id: 'transactions', label: 'Lançamentos' },
@@ -265,6 +267,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
               onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }}
             />
           )}
+          {section === 'cards' && <FinancialCreditCardsPage familyId={state.family.id} refreshKey={financeVersion} />}
           {section === 'accounts' && (
             <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
           )}

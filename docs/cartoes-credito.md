@@ -1,5 +1,11 @@
 # Cartões de crédito
 
+## Interface da família (T09.6)
+
+A seção **Cartões** está disponível na navegação de cada família. Ela lista cartões ativos e arquivados, permite cadastrar/editar/arquivar, consultar limite (inclusive disponível negativo), compras, faturas por competência, parcelas, pagamentos e a projeção dos próximos seis meses. A tela usa exclusivamente os endpoints existentes; valores monetários permanecem como strings decimais e nenhuma soma é feita no navegador. Pagamentos só são oferecidos para faturas fechadas e o formulário usa a conta padrão do cartão quando ela estiver configurada.
+
+Após qualquer alteração, a tela recarrega cartões, limite, compras, faturas, pagamentos e projeção para evitar dados obsoletos. Cartões arquivados continuam visíveis para consulta histórica e não podem receber novas compras ou alterações.
+
 ## Conceito
 
 `FinancialCreditCard` representa uma obrigação de crédito pertencente a uma família. Ele não é uma conta financeira: uma compra futura não movimenta imediatamente o saldo bancário; o pagamento de uma fatura será tratado em etapa posterior.

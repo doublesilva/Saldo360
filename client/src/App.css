@@ -1689,3 +1689,21 @@ button.calendar-day--selected {
   .calendar-budget__heading, .calendar-budget__empty { align-items: flex-start; flex-direction: column; }
   .calendar-budget__totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.credit-cards__heading,.credit-card-details__heading,.section-heading,.credit-card-details__heading,.form-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+.credit-cards__layout { display:grid; grid-template-columns:minmax(12rem,18rem) 1fr; gap:1rem; margin-top:1rem; }
+.credit-card-list { display:flex; flex-direction:column; gap:.4rem; }
+.credit-card-list__item { display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:.2rem; width:100%; }
+.credit-card-list__item--active { border-color:var(--accent); box-shadow:inset .2rem 0 var(--accent); }
+.credit-card-list__item small,.invoice-card small,.purchase-row small { color:var(--muted); display:block; }
+.credit-card-form,.inline-form { margin:1rem 0; padding:1rem; border:1px solid var(--border); border-radius:.6rem; }
+.credit-card-limit,.invoice-totals { display:grid; grid-template-columns:repeat(auto-fit,minmax(8rem,1fr)); gap:.6rem; margin:1rem 0; }
+.credit-card-limit>div,.invoice-totals>span { padding:.7rem; background:var(--surface-muted,#f7f8fa); border-radius:.5rem; }
+.credit-card-limit dt { color:var(--muted); font-size:.8rem; }.credit-card-limit dd { margin:.2rem 0 0; font-weight:700; }
+.danger { color:var(--fail); }.badge { font-size:.75rem; border:1px solid var(--border); padding:.15rem .4rem; border-radius:.3rem; }
+.invoice-card,.purchase-row,.payment-row,.projection-row { display:flex; justify-content:space-between; align-items:center; gap:1rem; width:100%; margin:.35rem 0; padding:.7rem; text-align:left; }
+.purchase-row,.payment-row,.projection-row { border:1px solid var(--border); border-radius:.5rem; }
+.invoice-details { margin:1rem 0; padding:1rem; border:1px solid var(--border); border-radius:.6rem; }
+.invoice-details ul { padding-left:1.2rem; }.payment-row button,.purchase-row button { min-height:2rem; padding:.25rem .6rem; }
+.section-heading { margin-top:1.2rem; }.section-heading h5 { margin:0; }.inline-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); align-items:end; }.inline-form h5,.inline-form .field-error,.inline-form .form__actions { grid-column:1/-1; }
+@media (max-width: 48rem) { .credit-cards__layout { grid-template-columns:1fr; }.credit-card-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(10rem,1fr)); }.credit-card-details__heading,.credit-cards__heading { align-items:flex-start; flex-direction:column; }.invoice-card,.purchase-row,.payment-row { flex-wrap:wrap; } }

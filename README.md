@@ -216,7 +216,7 @@ bash scripts/smoke-login.sh --authelia-local   # Authelia local
 
 O smoke test não substitui a validação no navegador: abra <http://localhost:5173>, clique em **Entrar**, autentique no Authelia, confira o nome exibido, recarregue a página e clique em **Sair**.
 
-O cadastro de cartões de crédito está disponível na API sob `/api/families/{familyId}/credit-cards`; nesta etapa ele mantém apenas dados cadastrais e não cria compras ou faturas.
+Cartões de crédito estão disponíveis na navegação de cada família. A interface consome os endpoints existentes para cadastro/arquivamento, compras, faturas, pagamentos, limite e projeção de seis meses; valores monetários são exibidos a partir de strings decimais retornadas pela API, sem cálculos financeiros no React. Consulte [docs/cartoes-credito.md](docs/cartoes-credito.md).
 
 Compras no cartão e parcelas são cadastradas separadamente pela API `/api/families/{familyId}/credit-cards/{cardId}/purchases`; elas representam obrigações de crédito e não movimentam o saldo bancário.
 Os alertas de orçamento da execução são calculados no backend a partir do consumo projetado bruto; o resumo informa o pior estado das metas e as contagens de aproximação, limite atingido e excedência.
