@@ -1643,3 +1643,49 @@ button.calendar-day--selected {
   margin: 0.35rem 0 0;
   font-size: 0.85rem;
 }
+
+.calendar-budget {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #d9dee8);
+  border-radius: 0.75rem;
+  background: var(--surface-muted, #f8fafc);
+}
+
+.calendar-budget__heading,
+.calendar-budget__status,
+.calendar-budget-alert > div {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.calendar-budget__heading { justify-content: space-between; gap: 1rem; }
+.calendar-budget__heading h3,
+.calendar-budget__alerts h4 { margin: 0; }
+.calendar-budget__heading .meta { margin: 0.25rem 0 0; }
+.calendar-budget__status { margin: 1rem 0; padding: 0.65rem 0.8rem; border-radius: 0.5rem; background: #fff; }
+.calendar-budget__status--Exceeded { border: 1px solid #d58a8a; }
+.calendar-budget__status--LimitReached { border: 1px solid #d6b35a; }
+.calendar-budget__status--ApproachingLimit { border: 1px solid #d6b35a; }
+.calendar-budget__status--WithinBudget { border: 1px solid #9ac7a1; }
+.calendar-budget__totals { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.65rem; margin: 0; }
+.calendar-budget__totals > div { padding: 0.65rem; border-radius: 0.45rem; background: #fff; }
+.calendar-budget__totals dt, .calendar-budget-alert dt { font-size: 0.78rem; color: var(--text-muted, #5f6b7a); }
+.calendar-budget__totals dd, .calendar-budget-alert dd { margin: 0.25rem 0 0; font-weight: 700; }
+.calendar-budget__counts { display: flex; flex-wrap: wrap; gap: 0.8rem 1.25rem; margin-top: 0.8rem; font-size: 0.9rem; }
+.calendar-budget__empty { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.calendar-budget__empty p { margin: 0; }
+.calendar-budget__alerts { margin-top: 1rem; }
+.calendar-budget__alerts ul { display: grid; gap: 0.55rem; margin: 0.65rem 0 0; padding: 0; list-style: none; }
+.calendar-budget-alert { padding: 0.7rem; border: 1px solid var(--border-color, #d9dee8); border-radius: 0.5rem; background: #fff; }
+.calendar-budget-alert--Exceeded { border-color: #d58a8a; }
+.calendar-budget-alert--LimitReached, .calendar-budget-alert--ApproachingLimit { border-color: #d6b35a; }
+.calendar-budget-alert > div { justify-content: space-between; }
+.calendar-budget-alert dl { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin: 0.5rem 0 0; }
+.calendar-budget-alert dl > div { min-width: 7rem; }
+
+@media (max-width: 760px) {
+  .calendar-budget__heading, .calendar-budget__empty { align-items: flex-start; flex-direction: column; }
+  .calendar-budget__totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

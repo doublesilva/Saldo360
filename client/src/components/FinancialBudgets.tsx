@@ -29,8 +29,8 @@ type LoadState =
   | { kind: 'loaded'; budget: FinancialBudget | null; execution: FinancialBudgetExecution | null }
   | { kind: 'error'; message: string }
 
-export function FinancialBudgetsPage({ familyId }: { familyId: string }) {
-  const [competence, setCompetence] = useState(() => startOfMonth(todayInSaoPaulo()).slice(0, 7))
+export function FinancialBudgetsPage({ familyId, initialCompetence, refreshKey: externalRefreshKey = 0, onNavigateToAgenda }: { familyId: string; initialCompetence?: string; refreshKey?: number; onNavigateToAgenda?: (competence: string) => void }) {
+  const [competence, setCompetence] = useState(() => initialCompetence ?? startOfMonth(todayInSaoPaulo()).slice(0, 7))
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [reloadKey, setReloadKey] = useState(0)
   const [showBudgetForm, setShowBudgetForm] = useState(false)
@@ -55,7 +55,7 @@ export function FinancialBudgetsPage({ familyId }: { familyId: string }) {
         if (!controller.signal.aborted) setState({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, competence, reloadKey])
+  }, [familyId, competence, reloadKey, externalRefreshKey])
 
   const moveMonth = (offset: number) => {
     setState({ kind: 'loading' })
@@ -84,6 +84,7 @@ export function FinancialBudgetsPage({ familyId }: { familyId: string }) {
           <button type="button" aria-label="Próxima competência" onClick={() => moveMonth(1)}>→</button>
           <button type="button" onClick={selectCurrentMonth}>Mês atual</button>
         </div>
+        {onNavigateToAgenda && <button type="button" className="button--link" onClick={() => onNavigateToAgenda(competence)}>Ver na Agenda</button>}
       </div>
 
       {notice && <p className="notice" role="status">{notice}</p>}

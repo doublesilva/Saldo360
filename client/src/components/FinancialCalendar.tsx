@@ -15,6 +15,7 @@ import {
 import { addCalendarMonths, endOfMonth, formatMonthYear, startOfMonth, todayInSaoPaulo } from '../dates'
 import { formatBrlDecimal, formatDate } from '../money'
 import { FinancialCalendarDetails } from './FinancialCalendarDetails'
+import { FinancialCalendarBudgetSummary } from './FinancialCalendarBudgetSummary'
 
 type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'error'; message: string }
 type RequestLoad<T> =
@@ -35,9 +36,9 @@ function errorMessage(error: unknown): string {
 }
 
 /** Visão mensal da Agenda Financeira, com detalhes e operações financeiras existentes. */
-export function FinancialCalendarPage({ familyId, onChanged }: { familyId: string; onChanged?: () => void }) {
+export function FinancialCalendarPage({ familyId, onChanged, initialMonth, onNavigateToBudgets }: { familyId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void }) {
   const today = todayInSaoPaulo()
-  const [month, setMonth] = useState(() => startOfMonth(today))
+  const [month, setMonth] = useState(() => initialMonth ? startOfMonth(initialMonth) : startOfMonth(today))
   const [selectedDate, setSelectedDate] = useState(today)
   const [accountId, setAccountId] = useState('')
   const [type, setType] = useState<CategoryType | ''>('')
@@ -135,6 +136,12 @@ export function FinancialCalendarPage({ familyId, onChanged }: { familyId: strin
       {view === 'month' && calendar.kind === 'loaded' && (
         <>
           <FinancialCalendarSummary summary={calendar.data.summary} />
+          <FinancialCalendarBudgetSummary
+            familyId={familyId}
+            competence={month}
+            refreshKey={refreshKey}
+            onNavigateToBudgets={(competence) => onNavigateToBudgets?.(competence)}
+          />
           <div className="calendar-layout">
             <FinancialCalendarGrid
               month={month}

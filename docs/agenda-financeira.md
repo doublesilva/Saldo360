@@ -173,3 +173,10 @@ parcial é apresentado como completo.
 Contas, fluxos para saldo e totais do intervalo são consultados de uma vez em um único snapshot `REPEATABLE READ`
 somente leitura. Há agregação diária no PostgreSQL e divisão por competência em memória, sem consultas N+1, sem uma
 consulta por mês/dia e sem persistência de projeções. O React somente formata e destaca os valores recebidos.
+## Situação do orçamento
+
+A visão mensal consulta o orçamento ativo da mesma competência pelo endpoint de execução (`GET /api/families/{familyId}/budgets/{budgetId}/execution`). Planejado, realizado, comprometido, consumo projetado, disponibilidade, excedente, status e contagens de alertas são apresentados exatamente como retornados pela API; a Agenda não recalcula valores financeiros.
+
+O orçamento é familiar e independente dos filtros de conta e tipo da Agenda. A lista compacta mostra somente metas `ApproachingLimit`, `LimitReached` e `Exceeded`, em ordem de severidade e nome. Sem orçamento, a Agenda informa `Nenhum orçamento definido para esta competência.` e oferece navegação para Orçamentos sem criar registros. A falha dessa consulta permanece isolada da agenda e do fluxo de caixa.
+
+As ações financeiras da Agenda incrementam a sincronização da família: acontecimentos, resumo, evolução do saldo, risco e execução orçamentária são consultados novamente, sem atualizações otimistas. A navegação para Orçamentos e o retorno para a Agenda preservam família e competência.

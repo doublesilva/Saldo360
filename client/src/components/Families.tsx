@@ -188,6 +188,8 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
   // efetivo reabre a previsão.
   const [financeVersion, setFinanceVersion] = useState(0)
   const [section, setSection] = useState<FamilySection>('overview')
+  const [calendarMonth, setCalendarMonth] = useState<string | undefined>(undefined)
+  const [budgetCompetence, setBudgetCompetence] = useState<string | undefined>(undefined)
   const financeChanged = () => setFinanceVersion((n) => n + 1)
 
   useEffect(() => {
@@ -246,9 +248,23 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
             </div>
           )}
           {section === 'calendar' && (
-            <FinancialCalendarPage key={state.family.id} familyId={state.family.id} onChanged={financeChanged} />
+            <FinancialCalendarPage
+              key={`${state.family.id}|${calendarMonth ?? 'current'}`}
+              familyId={state.family.id}
+              initialMonth={calendarMonth}
+              onChanged={financeChanged}
+              onNavigateToBudgets={(competence) => { setBudgetCompetence(competence); setSection('budgets') }}
+            />
           )}
-          {section === 'budgets' && <FinancialBudgetsPage key={state.family.id} familyId={state.family.id} />}
+          {section === 'budgets' && (
+            <FinancialBudgetsPage
+              key={`${state.family.id}|${budgetCompetence ?? 'current'}`}
+              familyId={state.family.id}
+              initialCompetence={budgetCompetence}
+              refreshKey={financeVersion}
+              onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }}
+            />
+          )}
           {section === 'accounts' && (
             <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
           )}

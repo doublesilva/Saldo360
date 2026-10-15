@@ -156,3 +156,5 @@ A classificação usa os valores decimais brutos de `realized + committed`, ante
 
 `alertMessage` é uma mensagem informativa, não uma notificação persistida. Os contadores e os estados são calculados no backend e respeitam a competência consultada; a interface apenas os apresenta e ordena as metas pela severidade.
 
+Na Agenda Financeira, a mesma execução é exibida como “Situação do orçamento”. Ela é familiar e não muda com os filtros de conta ou de tipo da Agenda. A Agenda lista apenas categorias em atenção, no limite ou excedidas, e oferece retorno à tela completa de Orçamentos preservando a competência. Movimentações realizadas na Agenda invalidam e recarregam a execução junto com os demais indicadores financeiros.
+
