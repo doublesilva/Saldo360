@@ -222,5 +222,7 @@ A integração ponta a ponta de cartões com contas, Agenda e Orçamentos é aud
 
 A T10.1 adiciona conciliação explícita entre previsões e faturas, com histórico, unicidade ativa e exclusão da previsão conciliada dos agregados projetados. Consulte [docs/conciliacao-faturas.md](docs/conciliacao-faturas.md).
 
+A interface T10.2 está disponível em **Cartões > Conciliações**. Ela exige revisão e confirmação explícitas e preserva os valores monetários como strings.
+
 Compras no cartão e parcelas são cadastradas separadamente pela API `/api/families/{familyId}/credit-cards/{cardId}/purchases`; elas representam obrigações de crédito e não movimentam o saldo bancário.
 Os alertas de orçamento da execução são calculados no backend a partir do consumo projetado bruto; o resumo informa o pior estado das metas e as contagens de aproximação, limite atingido e excedência.

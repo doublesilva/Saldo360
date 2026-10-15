@@ -108,8 +108,9 @@ export async function listPlanned(
   filters: PlannedFilters,
   page: number,
   signal?: AbortSignal,
+  pageSize = PLANNED_PAGE_SIZE,
 ): Promise<PlannedPage> {
-  const query = new URLSearchParams({ page: String(page), pageSize: String(PLANNED_PAGE_SIZE) })
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
   if (filters.from) query.set('from', filters.from)
   if (filters.to) query.set('to', filters.to)
   if (filters.accountId) query.set('accountId', filters.accountId)

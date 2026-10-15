@@ -22,7 +22,7 @@ describe('FinancialCreditCardsPage', () => {
     render(<FinancialCreditCardsPage familyId="family-1" />)
     expect((await screen.findAllByText('Platinum')).length).toBeGreaterThan(0)
     await waitFor(() => expect(screen.getAllByText(/10\.000,00/).length).toBeGreaterThan(0))
-    expect(screen.getByText('Cartões')).toBeTruthy()
+    expect(screen.getAllByText('Cartões').length).toBeGreaterThan(0)
   })
 
   it('notifica a família após arquivar para invalidar Agenda, Contas e Orçamentos', async () => {

@@ -38,3 +38,11 @@ Previsões legadas não são comparadas por descrição, valor ou data. A aplica
 
 Os cenários PostgreSQL da T10.1 cobrem vínculo, consulta, desvinculação, incompatibilidade de conta, isolamento familiar, projeção antes/depois e preservação da previsão. A migration incremental é `AddPlannedInvoiceReconciliations`.
 
+## Interface React (T10.2)
+
+Na seção **Cartões**, a aba **Conciliações** consulta vínculos ativos e histórico. O fluxo exige selecionar uma previsão de despesa pendente, uma fatura com saldo devido e conta compatível, revisar os dados e confirmar o POST.
+
+Valores previstos e de fatura são exibidos separadamente como textos decimais. A interface não calcula diferenças, não altera contas e não aplica ajustes. O botão **Desfazer vínculo** pede confirmação e chama o DELETE; depois disso, as consultas financeiras da família são invalidadas.
+
+Como o endpoint atual retorna apenas IDs, os detalhes são compostos pelos clientes existentes de previsões, faturas, cartões e contas. A Agenda não recebe marcador adicional nesta etapa, mas a previsão conciliada já não aparece como obrigação pendente duplicada.
+
