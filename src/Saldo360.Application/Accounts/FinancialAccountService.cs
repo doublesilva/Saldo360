@@ -139,10 +139,12 @@ public sealed class FinancialAccountService(
             }
 
             var planned = await accounts.SumPendingPlannedAsync(familyId, accountId, baseDate, through, cancellationToken);
+            var creditCard = await accounts.SumCreditCardObligationsAsync(familyId, accountId, through, cancellationToken);
             var projected = FinancialBalanceCalculator.Project(realized, planned);
+            projected -= creditCard.Outstanding;
             return new AccountProjectionDto(
                 accountId, baseDate, through, realized, planned.OverdueIncome, planned.OverdueExpense,
-                planned.PlannedIncome, planned.PlannedExpense, projected, null);
+                planned.PlannedIncome, planned.PlannedExpense, projected, null, creditCard.Outstanding, !creditCard.HasUnallocated);
         }, cancellationToken);
 
         return projection is null

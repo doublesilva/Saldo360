@@ -24,7 +24,9 @@ public sealed record FinancialCalendarBalanceSnapshot(
     IReadOnlyList<FinancialCalendarBalanceAccount> Accounts,
     IReadOnlyList<FinancialCalendarDailyTotals> Realized,
     IReadOnlyList<FinancialCalendarDailyTotals> Pending,
-    IReadOnlyList<FinancialCalendarDailyTotals>? PeriodRealized = null);
+    IReadOnlyList<FinancialCalendarDailyTotals>? PeriodRealized = null,
+    IReadOnlyList<FinancialCalendarDailyTotals>? CreditCardObligations = null,
+    bool HasUnallocatedCreditCardObligations = false);
 
 public sealed record FinancialCalendarBalanceDay(
     DateOnly Date,
@@ -51,7 +53,9 @@ public sealed record FinancialCalendarBalances(
     decimal? OpeningBalance,
     BalanceUnavailableReason? UnavailableReason,
     IReadOnlyList<FinancialCalendarBalanceDay> Days,
-    FinancialCalendarBalanceRisk Risk);
+    FinancialCalendarBalanceRisk Risk,
+    bool CreditCardProjectionComplete = true,
+    decimal? CreditCardOutstanding = null);
 
 public sealed record FinancialCalendarBalanceQuery(
     DateOnly From,

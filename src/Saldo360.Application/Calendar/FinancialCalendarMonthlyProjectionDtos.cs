@@ -14,7 +14,9 @@ public sealed record FinancialCalendarMonthlyProjectionMonth(
     decimal? ClosingBalance,
     decimal? MinimumProjectedBalance,
     DateOnly? FirstNegativeProjectedDate,
-    BalanceUnavailableReason? UnavailableReason);
+    BalanceUnavailableReason? UnavailableReason,
+    bool CreditCardProjectionComplete = true,
+    decimal? CreditCardOutstanding = null);
 
 public sealed record FinancialCalendarMonthlyProjection(
     DateOnly From,

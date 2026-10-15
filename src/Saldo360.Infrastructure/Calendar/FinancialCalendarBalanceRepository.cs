@@ -139,6 +139,30 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             .Select(row => new FinancialCalendarDailyTotals(row.Date, row.Income, row.Expense, 0m, 0m))
             .ToList();
 
+        var selectedAccountIds = await selectedAccounts.Select(account => account.Id).ToListAsync(cancellationToken);
+        var cardObligations = await (from installment in db.FinancialCreditCardInstallments.AsNoTracking()
+                                     join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
+                                     join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
+                                     join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
+                                     where installment.FamilyId == familyId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
+                                        && purchase.FamilyId == familyId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
+                                        && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                        && card.DefaultPaymentAccountId != null && selectedAccountIds.Contains(card.DefaultPaymentAccountId.Value)
+                                     group installment.Amount by new { invoice.Id, invoice.DueDate } into grouped
+                                     select new { grouped.Key.Id, grouped.Key.DueDate, Total = grouped.Sum() }).ToListAsync(cancellationToken);
+        var cardPaid = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(payment => payment.FamilyId == familyId && payment.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoicePaymentStatus.Active)
+            .GroupBy(payment => payment.InvoiceId).Select(group => new { Id = group.Key, Amount = group.Sum(payment => payment.Amount) }).ToListAsync(cancellationToken);
+        var paidByInvoice = cardPaid.ToDictionary(item => item.Id, item => item.Amount);
+        var cardPending = cardObligations.Select(item => new FinancialCalendarDailyTotals(item.DueDate, 0m, Math.Max(0m, item.Total - paidByInvoice.GetValueOrDefault(item.Id)), 0m, 0m)).Where(item => item.Expense > 0m).ToList();
+        var allCardObligations = await (from installment in db.FinancialCreditCardInstallments.AsNoTracking()
+                                        join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
+                                        join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
+                                        join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
+                                        where installment.FamilyId == familyId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
+                                           && purchase.FamilyId == familyId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
+                                           && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                        select card.DefaultPaymentAccountId).AnyAsync(account => account == null || !selectedAccountIds.Contains(account.Value), cancellationToken);
+
         IReadOnlyList<FinancialCalendarDailyTotals> periodRealized = [];
         if (periodFrom is { } firstPeriodDate)
         {
@@ -165,6 +189,6 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized);
+        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations);
     }
 }

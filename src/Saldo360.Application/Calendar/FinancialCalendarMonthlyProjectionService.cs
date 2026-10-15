@@ -46,7 +46,7 @@ public sealed class FinancialCalendarMonthlyProjectionService(
             var balances = FinancialCalendarBalanceService.CalculateBalances(
                 new FinancialCalendarBalanceQuery(month, monthThrough, query.AccountId), today, snapshot);
             var realizedTotals = Sum(realized.Where(row => row.Date >= month && row.Date <= monthThrough));
-            var pendingRows = snapshot.Pending.Where(row => row.Date >= month && row.Date <= monthThrough).ToList();
+            var pendingRows = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).Where(row => row.Date >= month && row.Date <= monthThrough).ToList();
             var pendingTotals = Sum(pendingRows);
             var overdueTotals = Sum(pendingRows.Where(row => row.Date < today));
             var projectedDays = balances.Days.Where(day => day.Kind == FinancialCalendarBalanceKind.Projected
@@ -64,7 +64,9 @@ public sealed class FinancialCalendarMonthlyProjectionService(
                 balances.Days[^1].ClosingBalance,
                 projectedDays.Count == 0 ? null : projectedDays.Min(day => day.ClosingBalance!.Value),
                 projectedDays.FirstOrDefault(day => day.IsNegative)?.Date,
-                balances.UnavailableReason));
+                balances.UnavailableReason,
+                balances.CreditCardProjectionComplete,
+                (snapshot.CreditCardObligations ?? []).Where(row => row.Date >= month && row.Date <= monthThrough).Sum(row => row.Expense)));
         }
 
         return new FinancialCalendarMonthlyProjectionResult(

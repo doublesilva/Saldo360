@@ -40,7 +40,7 @@ public sealed class FinancialCalendarBalanceService(
         return new FinancialCalendarBalanceResult(CalculateBalances(query, today, snapshot), null, false);
     }
 
-    internal static FinancialCalendarBalances CalculateBalances(
+    public static FinancialCalendarBalances CalculateBalances(
         FinancialCalendarBalanceQuery query,
         DateOnly today,
         FinancialCalendarBalanceSnapshot snapshot)
@@ -66,10 +66,14 @@ public sealed class FinancialCalendarBalanceService(
                     : BalanceUnavailableReason.BeforeOpeningBalanceDate);
         }
 
+        var allPending = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? [])
+            .GroupBy(row => row.Date)
+            .Select(group => new FinancialCalendarDailyTotals(group.Key, group.Sum(row => row.Income), group.Sum(row => row.Expense), group.Sum(row => row.TransferIn), group.Sum(row => row.TransferOut)))
+            .ToList();
         var realizedByDate = snapshot.Realized.ToDictionary(row => row.Date);
-        var pendingByDate = snapshot.Pending.ToDictionary(row => row.Date);
+        var pendingByDate = allPending.ToDictionary(row => row.Date);
         var openingTotal = snapshot.Accounts.Sum(account => account.OpeningBalance ?? 0m);
-        var overdue = Sum(snapshot.Pending.Where(row => row.Date < today));
+        var overdue = Sum(allPending.Where(row => row.Date < today));
         var hasOverdue = overdue.Income != 0m || overdue.Expense != 0m;
 
         decimal CurrentActualBefore(DateOnly date) => snapshot.Realized
@@ -86,7 +90,7 @@ public sealed class FinancialCalendarBalanceService(
             var realizedToday = snapshot.Realized
                 .Where(row => row.Date <= today)
                 .Aggregate(openingTotal, (balance, row) => Apply(balance, row));
-            var plannedBefore = Sum(snapshot.Pending.Where(row => row.Date >= today && row.Date < query.From));
+            var plannedBefore = Sum(allPending.Where(row => row.Date >= today && row.Date < query.From));
             current = FinancialBalanceCalculator.ApplyMovements(
                 realizedToday,
                 overdue.Income + plannedBefore.Income,
@@ -167,7 +171,9 @@ public sealed class FinancialCalendarBalanceService(
             projected.FirstOrDefault(day => day.IsNegative)?.Date,
             projected.Count > 0 && query.Through >= today ? projected[^1].ClosingBalance : null);
         return new FinancialCalendarBalances(
-            query.From, query.Through, query.AccountId, openingBalance, null, days, risk);
+            query.From, query.Through, query.AccountId, openingBalance, null, days, risk,
+            !snapshot.HasUnallocatedCreditCardObligations,
+            (snapshot.CreditCardObligations ?? []).Sum(row => row.Expense));
     }
 
     private static FinancialCalendarBalances Unavailable(
@@ -176,8 +182,9 @@ public sealed class FinancialCalendarBalanceService(
         FinancialCalendarBalanceSnapshot snapshot,
         BalanceUnavailableReason reason)
     {
-        var pendingByDate = snapshot.Pending.ToDictionary(row => row.Date);
-        var hasOverdue = snapshot.Pending.Any(row => row.Date < today && (row.Income != 0m || row.Expense != 0m));
+        var allPending = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).ToList();
+        var pendingByDate = allPending.ToDictionary(row => row.Date);
+        var hasOverdue = allPending.Any(row => row.Date < today && (row.Income != 0m || row.Expense != 0m));
         var days = new List<FinancialCalendarBalanceDay>();
         for (var date = query.From; ; date = date.AddDays(1))
         {
@@ -209,7 +216,9 @@ public sealed class FinancialCalendarBalanceService(
             null,
             reason,
             days,
-            new FinancialCalendarBalanceRisk(null, null, null));
+            new FinancialCalendarBalanceRisk(null, null, null),
+            !snapshot.HasUnallocatedCreditCardObligations,
+            (snapshot.CreditCardObligations ?? []).Sum(row => row.Expense));
     }
 
     private static FinancialCalendarBalanceDay AvailableDay(

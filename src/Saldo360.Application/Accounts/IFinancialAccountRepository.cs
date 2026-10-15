@@ -37,6 +37,8 @@ public interface IFinancialAccountRepository
     Task<PlannedTotals> SumPendingPlannedAsync(
         Guid familyId, Guid accountId, DateOnly baseDate, DateOnly through, CancellationToken cancellationToken);
 
+    Task<CreditCardProjectionTotals> SumCreditCardObligationsAsync(Guid familyId, Guid accountId, DateOnly through, CancellationToken cancellationToken);
+
     /// <summary>
     /// Executa <paramref name="read"/> numa transação somente leitura REPEATABLE READ: todas as consultas enxergam o
     /// MESMO snapshot do banco. Uma realização (ou cancelamento) concorrente aparece inteira ou não aparece, então o

@@ -60,7 +60,11 @@ public sealed record AccountProjectionDto(
     decimal? PlannedIncome,
     decimal? PlannedExpense,
     decimal? ProjectedBalance,
-    BalanceUnavailableReason? UnavailableReason);
+    BalanceUnavailableReason? UnavailableReason,
+    decimal? CreditCardOutstanding = null,
+    bool CreditCardProjectionComplete = true);
+
+public sealed record CreditCardProjectionTotals(decimal Outstanding, bool HasUnallocated);
 
 public sealed record ProjectionResult(BalanceAccess Access, AccountProjectionDto? Projection, IDictionary<string, string[]>? Errors);
 

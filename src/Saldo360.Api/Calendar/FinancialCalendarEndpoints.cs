@@ -201,7 +201,9 @@ public sealed record FinancialCalendarBalancesResponse(
     string? OpeningBalance,
     BalanceUnavailableReason? UnavailableReason,
     IReadOnlyList<FinancialCalendarBalanceDayResponse> Days,
-    FinancialCalendarBalanceRiskResponse Risk)
+    FinancialCalendarBalanceRiskResponse Risk,
+    bool CreditCardProjectionComplete = true,
+    string? CreditCardOutstanding = null)
 {
     public static FinancialCalendarBalancesResponse Create(FinancialCalendarBalances balances) => new(
         balances.From,
@@ -210,7 +212,9 @@ public sealed record FinancialCalendarBalancesResponse(
         Format(balances.OpeningBalance),
         balances.UnavailableReason,
         balances.Days.Select(FinancialCalendarBalanceDayResponse.From).ToList(),
-        FinancialCalendarBalanceRiskResponse.From(balances.Risk));
+        FinancialCalendarBalanceRiskResponse.From(balances.Risk),
+        balances.CreditCardProjectionComplete,
+        Format(balances.CreditCardOutstanding));
 
     internal static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
 }
@@ -274,7 +278,9 @@ public sealed record FinancialCalendarMonthlyProjectionMonthResponse(
     string? ClosingBalance,
     string? MinimumProjectedBalance,
     DateOnly? FirstNegativeProjectedDate,
-    BalanceUnavailableReason? UnavailableReason)
+    BalanceUnavailableReason? UnavailableReason,
+    bool CreditCardProjectionComplete = true,
+    string? CreditCardOutstanding = null)
 {
     public static FinancialCalendarMonthlyProjectionMonthResponse From(
         FinancialCalendarMonthlyProjectionMonth month) => new(
@@ -289,7 +295,9 @@ public sealed record FinancialCalendarMonthlyProjectionMonthResponse(
             FinancialCalendarBalancesResponse.Format(month.ClosingBalance),
             FinancialCalendarBalancesResponse.Format(month.MinimumProjectedBalance),
             month.FirstNegativeProjectedDate,
-            month.UnavailableReason);
+            month.UnavailableReason,
+            month.CreditCardProjectionComplete,
+            FinancialCalendarBalancesResponse.Format(month.CreditCardOutstanding));
 }
 
 public sealed record FinancialCalendarItemResponse(

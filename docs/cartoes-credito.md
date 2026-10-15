@@ -62,6 +62,12 @@ GET /api/families/{familyId}/credit-cards/{cardId}/invoices/{invoiceId}
 
 Os valores de fatura são serializados como strings decimais exatas. As rotas exigem participação na família e retornam apenas faturas do cartão informado.
 
+## Integração com saldo projetado (T09.5.1)
+
+Faturas ainda devidas são aplicadas ao saldo projetado somente na data de vencimento, usando `remainingAmount`; faturas vencidas continuam incluídas uma única vez. Pagamentos efetivos já estão no saldo realizado e não são subtraídos novamente. O cartão só aloca a obrigação quando `DefaultPaymentAccountId` referencia uma conta da mesma família; sem essa referência, a obrigação permanece identificada como não alocada e não é atribuída arbitrariamente.
+
+As projeções por conta, evolução diária e planejamento mensal reutilizam a mesma agregação de parcelas ativas menos pagamentos ativos. Não há conciliação heurística de previsões antigas: uma previsão comum só será deduplicada mediante vínculo explícito futuro com a fatura; descrição, valor ou data não são usados como identidade.
+
 ## Pagamentos de fatura (T09.4)
 
 Um pagamento é uma liquidação da obrigação da fatura, não uma nova despesa de consumo. Cada pagamento cria exatamente um lançamento efetivo de saída na conta escolhida, com origem `CreditCardInvoicePayment`, e mantém vínculo explícito com esse lançamento. Como não possui categoria, ele não participa da execução de orçamentos nem duplica a compra do cartão.

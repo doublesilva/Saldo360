@@ -104,6 +104,26 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         return totals ?? new PlannedTotals(0m, 0m, 0m, 0m);
     }
 
+    public async Task<CreditCardProjectionTotals> SumCreditCardObligationsAsync(Guid familyId, Guid accountId, DateOnly through, CancellationToken cancellationToken)
+    {
+        var obligations = await (from installment in db.FinancialCreditCardInstallments.AsNoTracking()
+                                 join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
+                                 join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
+                                 join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
+                                 where installment.FamilyId == familyId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
+                                    && purchase.FamilyId == familyId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
+                                    && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                 group installment.Amount by new { invoice.Id, card.DefaultPaymentAccountId } into grouped
+                                 select new { grouped.Key.Id, grouped.Key.DefaultPaymentAccountId, Total = grouped.Sum() }).ToListAsync(cancellationToken);
+        var paid = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(payment => payment.FamilyId == familyId && payment.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoicePaymentStatus.Active)
+            .GroupBy(payment => payment.InvoiceId).Select(group => new { Id = group.Key, Amount = group.Sum(payment => payment.Amount) }).ToListAsync(cancellationToken);
+        var familyAccounts = await db.FinancialAccounts.AsNoTracking().Where(account => account.FamilyId == familyId).Select(account => account.Id).ToListAsync(cancellationToken);
+        var paidByInvoice = paid.ToDictionary(item => item.Id, item => item.Amount);
+        var outstanding = obligations.Where(item => item.DefaultPaymentAccountId == accountId).Sum(item => Math.Max(0m, item.Total - paidByInvoice.GetValueOrDefault(item.Id)));
+        var unallocated = obligations.Any(item => item.DefaultPaymentAccountId is null || !familyAccounts.Contains(item.DefaultPaymentAccountId.Value));
+        return new CreditCardProjectionTotals(outstanding, unallocated);
+    }
+
     // REPEATABLE READ no PostgreSQL = um snapshot para a transação inteira (tirado na primeira consulta). Somente
     // leitura: nada é gravado, e não há conflito de serialização possível.
     public async Task<T> ReadConsistentAsync<T>(Func<Task<T>> read, CancellationToken cancellationToken)

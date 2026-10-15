@@ -264,7 +264,9 @@ public sealed record AccountProjectionResponse(
     string? PlannedIncome,
     string? PlannedExpense,
     string? ProjectedBalance,
-    BalanceUnavailableReason? UnavailableReason)
+    BalanceUnavailableReason? UnavailableReason,
+    string? CreditCardOutstanding = null,
+    bool CreditCardProjectionComplete = true)
 {
     public static AccountProjectionResponse From(AccountProjectionDto dto) => new(
         dto.AccountId,
@@ -276,7 +278,9 @@ public sealed record AccountProjectionResponse(
         Format(dto.PlannedIncome),
         Format(dto.PlannedExpense),
         Format(dto.ProjectedBalance),
-        dto.UnavailableReason);
+        dto.UnavailableReason,
+        Format(dto.CreditCardOutstanding),
+        dto.CreditCardProjectionComplete);
 
     private static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
 }
