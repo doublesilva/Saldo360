@@ -16,6 +16,8 @@ public static class FinancialCreditCardInvoiceEndpoints
         group.MapGet("/{invoiceId:guid}/payments", ListPayments);
         group.MapPost("/{invoiceId:guid}/payments", CreatePayment).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{invoiceId:guid}/payments/{paymentId:guid}/cancel", CancelPayment).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        app.MapGet("/api/families/{familyId:guid}/credit-cards/{cardId:guid}/invoice-projection", Projection).RequireAuthorization();
+        app.MapGet("/api/families/{familyId:guid}/credit-cards/{cardId:guid}/limit", Limit).RequireAuthorization();
         return app;
     }
 
@@ -32,6 +34,20 @@ public static class FinancialCreditCardInvoiceEndpoints
 
     private static async Task<IResult> Get(Guid familyId, Guid cardId, Guid invoiceId, CurrentUser user, FinancialCreditCardPurchaseService service, TimeProvider timeProvider, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : await service.GetInvoiceAsync(familyId, cardId, invoiceId, userId, BusinessCalendar.Today(timeProvider.GetUtcNow()), ct) is { } invoice ? Results.Ok(invoice) : Results.NotFound();
+
+    private static async Task<IResult> Projection(Guid familyId, Guid cardId, string? from, int? months, CurrentUser user, FinancialCreditCardPurchaseService service, TimeProvider timeProvider, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var errors = new Dictionary<string, string[]>();
+        if (string.IsNullOrWhiteSpace(from) || !DateOnly.TryParseExact(from, "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)) errors["from"] = ["from deve seguir o formato yyyy-MM."];
+        if (months is < 1 or > 12) errors["months"] = ["months deve estar entre 1 e 12."];
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+        var result = await service.ProjectInvoicesAsync(familyId, cardId, userId, from!, months!.Value, BusinessCalendar.Today(timeProvider.GetUtcNow()), ct);
+        return result is null ? Results.NotFound() : Results.Ok(result);
+    }
+
+    private static async Task<IResult> Limit(Guid familyId, Guid cardId, CurrentUser user, FinancialCreditCardPurchaseService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : await service.GetLimitAsync(familyId, cardId, userId, ct) is { } limit ? Results.Ok(limit) : Results.NotFound();
 
     private static async Task<IResult> ListPayments(Guid familyId, Guid cardId, Guid invoiceId, CurrentUser user, FinancialCreditCardInvoicePaymentService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : await service.ListAsync(familyId, cardId, invoiceId, userId, ct) is { } payments ? Results.Ok(payments) : Results.NotFound();

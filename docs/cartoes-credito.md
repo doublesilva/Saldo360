@@ -77,3 +77,9 @@ POST /api/families/{familyId}/credit-cards/{cardId}/invoices/{invoiceId}/payment
 Criação e cancelamento são transacionais. O cancelamento é lógico, preserva o histórico e cancela também o lançamento efetivo, restaurando o saldo bancário. A criação usa isolamento serializável e revalida o saldo dentro da transação, impedindo pagamentos concorrentes que ultrapassem o devido. O banco mantém unicidade entre pagamento e lançamento.
 
 Uma compra não pode ser cancelada quando isso faria o total ativo de alguma fatura ficar abaixo do valor já pago. Não há juros, multas, estornos, reembolsos, rotativo ou pagamentos antecipados de parcelas nesta etapa.
+
+## Projeção e limite (T09.5)
+
+As consultas `GET /api/families/{familyId}/credit-cards/{cardId}/invoice-projection?from=yyyy-MM&months=1..12` e `GET /api/families/{familyId}/credit-cards/{cardId}/limit` agregam as parcelas e pagamentos persistidos. O limite utilizado é `obrigações ativas − pagamentos ativos`; o disponível é `limite nominal − utilizado` e `overLimitAmount` é o máximo entre zero e o excesso. Compras parceladas comprometem todas as parcelas ativas, inclusive faturas futuras.
+
+No orçamento, cada parcela é reconhecida na competência da sua fatura como `creditCardCommitted`. Pagamentos não entram novamente no consumo e não alteram metas. Faturas sem conta de pagamento continuam visíveis, mas não são atribuídas arbitrariamente ao saldo de uma conta.

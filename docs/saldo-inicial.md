@@ -209,3 +209,6 @@ total parcial.
   - `ck_financial_accounts_opening_balance_scale`: `scale(opening_balance) <= 2`. A coluna é `numeric` sem escala fixa de propósito, porque `numeric(15,2)` arredondaria `10.005` para `10.01` em silêncio.
   - `ck_financial_accounts_opening_balance_range`: `abs(opening_balance) < 10^13`. Assim o valor tem no máximo 15 dígitos significativos e o frontend o representa sem perda.
 - **Interface:** mostra "Saldo inicial não informado" ou "Saldo inicial em DD/MM/AAAA: R$ …", com a observação "no início do dia, antes das movimentações dessa data. Não é o saldo atual."
+# Projeção com faturas de cartão (T09.5)
+
+O saldo projetado considera faturas devidas somente quando há conta de pagamento válida e explícita no cartão. Sem essa alocação, a obrigação permanece disponível na projeção de faturas, mas não é atribuída silenciosamente a uma conta.

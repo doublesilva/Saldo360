@@ -180,3 +180,6 @@ A visão mensal consulta o orçamento ativo da mesma competência pelo endpoint 
 O orçamento é familiar e independente dos filtros de conta e tipo da Agenda. A lista compacta mostra somente metas `ApproachingLimit`, `LimitReached` e `Exceeded`, em ordem de severidade e nome. Sem orçamento, a Agenda informa `Nenhum orçamento definido para esta competência.` e oferece navegação para Orçamentos sem criar registros. A falha dessa consulta permanece isolada da agenda e do fluxo de caixa.
 
 As ações financeiras da Agenda incrementam a sincronização da família: acontecimentos, resumo, evolução do saldo, risco e execução orçamentária são consultados novamente, sem atualizações otimistas. A navegação para Orçamentos e o retorno para a Agenda preservam família e competência.
+# Obrigações de cartões (T09.5)
+
+Faturas podem ser consultadas como obrigações consolidadas, com total, valor pago, saldo devido e situação financeira. A Agenda identifica lançamentos efetivos de pagamento pela origem `CreditCardInvoicePayment`; parcelas não são duplicadas como saídas bancárias.

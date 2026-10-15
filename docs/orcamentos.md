@@ -158,3 +158,6 @@ A classificação usa os valores decimais brutos de `realized + committed`, ante
 
 Na Agenda Financeira, a mesma execução é exibida como “Situação do orçamento”. Ela é familiar e não muda com os filtros de conta ou de tipo da Agenda. A Agenda lista apenas categorias em atenção, no limite ou excedidas, e oferece retorno à tela completa de Orçamentos preservando a competência. Movimentações realizadas na Agenda invalidam e recarregam a execução junto com os demais indicadores financeiros.
 
+# Integração com cartões de crédito (T09.5)
+
+Compras de cartão são consumo contratado e aparecem na competência da fatura de cada parcela através do componente `creditCardCommitted`. A execução projetada soma `realized + committed + creditCardCommitted`. O pagamento da fatura possui origem própria e não é despesa categorizada, portanto não duplica o consumo nem altera metas.

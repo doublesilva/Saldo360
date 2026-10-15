@@ -55,5 +55,11 @@ public sealed class FinancialCreditCardPurchaseService(IFamilyRepository familie
     public async Task<FinancialCreditCardInvoiceDto?> GetInvoiceAsync(Guid familyId, Guid cardId, Guid invoiceId, Guid userId, DateOnly today, CancellationToken cancellationToken) =>
         await IsParticipant(familyId, userId, cancellationToken) ? await purchases.GetInvoiceAsync(familyId, cardId, invoiceId, today, cancellationToken) : null;
 
+    public async Task<IReadOnlyList<FinancialCreditCardInvoiceDto>?> ProjectInvoicesAsync(Guid familyId, Guid cardId, Guid userId, string from, int months, DateOnly today, CancellationToken cancellationToken) =>
+        await IsParticipant(familyId, userId, cancellationToken) ? await purchases.ProjectInvoicesAsync(familyId, cardId, from, months, today, cancellationToken) : null;
+
+    public async Task<FinancialCreditCardLimitDto?> GetLimitAsync(Guid familyId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
+        await IsParticipant(familyId, userId, cancellationToken) ? await purchases.GetLimitAsync(familyId, cardId, cancellationToken) : null;
+
     private async Task<bool> IsParticipant(Guid familyId, Guid userId, CancellationToken cancellationToken) => await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is not null;
 }

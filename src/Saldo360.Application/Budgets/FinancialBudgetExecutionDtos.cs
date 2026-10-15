@@ -18,7 +18,8 @@ public sealed record FinancialBudgetExecutionSourceTarget(
     Guid CategoryId,
     decimal Planned,
     decimal Realized,
-    decimal Committed);
+    decimal Committed,
+    decimal CreditCardCommitted = 0m);
 
 public sealed record FinancialBudgetExecutionDto(
     Guid BudgetId,
@@ -40,7 +41,8 @@ public sealed record FinancialBudgetExecutionAmounts(
     decimal ProjectedConsumption,
     decimal Available,
     decimal ExceededAmount,
-    decimal? ConsumptionPercentage);
+    decimal? ConsumptionPercentage,
+    decimal CreditCardCommitted = 0m);
 
 public sealed record FinancialBudgetExecutionSummary(
     decimal Planned,
@@ -54,5 +56,6 @@ public sealed record FinancialBudgetExecutionSummary(
     string AlertMessage,
     int ApproachingCount,
     int ReachedCount,
-    int ExceededCount);
+    int ExceededCount,
+    decimal CreditCardCommitted = 0m);
 

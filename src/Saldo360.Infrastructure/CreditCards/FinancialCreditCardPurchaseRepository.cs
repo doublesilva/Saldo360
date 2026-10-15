@@ -48,6 +48,29 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
         return true;
     }
 
+    public async Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ProjectInvoicesAsync(Guid familyId, Guid cardId, string from, int months, DateOnly today, CancellationToken cancellationToken)
+    {
+        var start = DateOnly.ParseExact(from, "yyyy-MM");
+        var end = start.AddMonths(months - 1);
+        return await ListInvoicesAsync(familyId, cardId, start.ToString("yyyy-MM"), end.ToString("yyyy-MM"), today, cancellationToken);
+    }
+
+    public async Task<FinancialCreditCardLimitDto?> GetLimitAsync(Guid familyId, Guid cardId, CancellationToken cancellationToken)
+    {
+        var limit = await db.FinancialCreditCards.AsNoTracking().Where(c => c.FamilyId == familyId && c.Id == cardId).Select(c => c.CreditLimit).SingleOrDefaultAsync(cancellationToken);
+        if (!await db.FinancialCreditCards.AnyAsync(c => c.FamilyId == familyId && c.Id == cardId, cancellationToken)) return null;
+        var obligations = await (from i in db.FinancialCreditCardInstallments.AsNoTracking()
+                                 join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id
+                                 where i.FamilyId == familyId && i.Status == CreditCardInstallmentStatus.Active && p.FamilyId == familyId && p.CreditCardId == cardId && p.Status == CreditCardPurchaseStatus.Active
+                                 select i.Amount).SumAsync(cancellationToken);
+        var paid = await (from payment in db.FinancialCreditCardInvoicePayments.AsNoTracking()
+                          join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on payment.InvoiceId equals invoice.Id
+                          where payment.FamilyId == familyId && payment.Status == FinancialCreditCardInvoicePaymentStatus.Active && invoice.FamilyId == familyId && invoice.CreditCardId == cardId
+                          select payment.Amount).SumAsync(cancellationToken);
+        var used = obligations - paid;
+        return new FinancialCreditCardLimitDto(Money.Format(limit), Money.Format(used), Money.Format(limit - used), Money.Format(Math.Max(0m, used - limit)));
+    }
+
     private async Task<List<FinancialCreditCardInvoiceDto>> MapInvoicesAsync(List<FinancialCreditCardInvoice> invoices, DateOnly today, CancellationToken cancellationToken)
     {
         var ids = invoices.Select(i => i.Id).ToList();
@@ -61,7 +84,8 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
             var paid = payments.Where(p => p.InvoiceId == invoice.Id).Select(p => p.Amount).SingleOrDefault();
             var remaining = Math.Max(0m, total - paid);
             var paymentStatus = total <= 0m || paid <= 0m ? InvoicePaymentStatus.Unpaid : remaining <= 0m ? InvoicePaymentStatus.Paid : InvoicePaymentStatus.PartiallyPaid;
-            return new FinancialCreditCardInvoiceDto(invoice.Id, invoice.CreditCardId, invoice.Competence, invoice.CycleStartDate, invoice.ClosingDate, invoice.DueDate, invoice.GetStatus(today), Money.Format(total), Money.Format(paid), Money.Format(remaining), paymentStatus, rows.Where(r => r.InvoiceId == invoice.Id).OrderBy(r => r.InstallmentNumber).Select(r => new FinancialCreditCardInvoiceInstallmentDto(r.Id, r.PurchaseId, r.Description, r.InstallmentNumber, r.InstallmentCount, Money.Format(r.Amount))).ToList());
+            var installmentRows = rows.Where(r => r.InvoiceId == invoice.Id).OrderBy(r => r.InstallmentNumber).Select(r => new FinancialCreditCardInvoiceInstallmentDto(r.Id, r.PurchaseId, r.Description, r.InstallmentNumber, r.InstallmentCount, Money.Format(r.Amount))).ToList();
+            return new FinancialCreditCardInvoiceDto(invoice.Id, invoice.CreditCardId, invoice.Competence, invoice.CycleStartDate, invoice.ClosingDate, invoice.DueDate, invoice.GetStatus(today), Money.Format(total), Money.Format(paid), Money.Format(remaining), paymentStatus, installmentRows, installmentRows.Count);
         }).ToList();
     }
     public Task<bool> IsActiveCardAsync(Guid familyId, Guid cardId, CancellationToken cancellationToken) => db.FinancialCreditCards.AnyAsync(c => c.FamilyId == familyId && c.Id == cardId && !c.IsArchived, cancellationToken);

@@ -19,7 +19,7 @@ public sealed class FinancialBudgetExecutionService(
         var targets = source.Targets
             .Select(item =>
             {
-                var amounts = Calculate(item.Planned, item.Realized, item.Committed);
+                var amounts = Calculate(item.Planned, item.Realized, item.Committed, item.CreditCardCommitted);
                 var status = Classify(item.Planned, amounts.ProjectedConsumption);
                 return new FinancialBudgetTargetExecutionDto(
                     item.TargetId, item.CategoryId, amounts, status, Message(status));
@@ -28,7 +28,8 @@ public sealed class FinancialBudgetExecutionService(
         var amountsTotal = Calculate(
             source.Targets.Sum(item => item.Planned),
             source.Targets.Sum(item => item.Realized),
-            source.Targets.Sum(item => item.Committed));
+            source.Targets.Sum(item => item.Committed),
+            source.Targets.Sum(item => item.CreditCardCommitted));
         var totalStatus = targets.Count == 0
             ? FinancialBudgetAlertStatus.WithinBudget
             : targets.Max(item => item.Status);
@@ -42,7 +43,8 @@ public sealed class FinancialBudgetExecutionService(
                 amountsTotal.ConsumptionPercentage, totalStatus, totalMessage,
                 targets.Count(item => item.Status == FinancialBudgetAlertStatus.ApproachingLimit),
                 targets.Count(item => item.Status == FinancialBudgetAlertStatus.LimitReached),
-                targets.Count(item => item.Status == FinancialBudgetAlertStatus.Exceeded)), targets);
+                targets.Count(item => item.Status == FinancialBudgetAlertStatus.Exceeded),
+                amountsTotal.CreditCardCommitted), targets);
     }
 
     public static FinancialBudgetAlertStatus Classify(decimal planned, decimal projected)
@@ -67,16 +69,16 @@ public sealed class FinancialBudgetExecutionService(
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
     };
 
-    internal static FinancialBudgetExecutionAmounts Calculate(decimal planned, decimal realized, decimal committed)
+    public static FinancialBudgetExecutionAmounts Calculate(decimal planned, decimal realized, decimal committed, decimal creditCardCommitted = 0m)
     {
-        var projected = realized + committed;
+        var projected = realized + committed + creditCardCommitted;
         var available = planned - projected;
         var exceeded = Math.Max(0m, projected - planned);
         decimal? percentage = planned == 0m
             ? projected == 0m ? 0m : null
             : decimal.Round(projected / planned * 100m, PercentageScale, MidpointRounding.AwayFromZero);
         return new FinancialBudgetExecutionAmounts(
-            planned, realized, committed, projected, available, exceeded, percentage);
+            planned, realized, committed, projected, available, exceeded, percentage, creditCardCommitted);
     }
 }
 

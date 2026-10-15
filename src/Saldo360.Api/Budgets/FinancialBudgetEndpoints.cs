@@ -191,14 +191,15 @@ public sealed record FinancialBudgetTargetExecutionResponse(
     string ExceededAmount,
     string? ConsumptionPercentage,
     FinancialBudgetAlertStatus Status,
-    string AlertMessage)
+    string AlertMessage,
+    string CreditCardCommitted = "0.00")
 {
     public static FinancialBudgetTargetExecutionResponse From(FinancialBudgetTargetExecutionDto dto)
     {
         var amounts = FinancialBudgetExecutionAmountsResponse.From(dto.Amounts);
         return new(dto.TargetId, dto.CategoryId, amounts.Planned, amounts.Realized, amounts.Committed,
             amounts.ProjectedConsumption, amounts.Available, amounts.ExceededAmount, amounts.ConsumptionPercentage,
-            dto.Status, dto.AlertMessage);
+            dto.Status, dto.AlertMessage, amounts.CreditCardCommitted);
     }
 }
 
@@ -209,7 +210,8 @@ public sealed record FinancialBudgetExecutionAmountsResponse(
     string ProjectedConsumption,
     string Available,
     string ExceededAmount,
-    string? ConsumptionPercentage)
+    string? ConsumptionPercentage,
+    string CreditCardCommitted = "0.00")
 {
     public static FinancialBudgetExecutionAmountsResponse From(FinancialBudgetExecutionAmounts amounts) => new(
         Money.Format(amounts.Planned),
@@ -220,7 +222,8 @@ public sealed record FinancialBudgetExecutionAmountsResponse(
         Money.Format(amounts.ExceededAmount),
         amounts.ConsumptionPercentage is { } percentage
             ? percentage.ToString("F2", CultureInfo.InvariantCulture)
-            : null);
+            : null,
+        Money.Format(amounts.CreditCardCommitted));
 }
 
 public sealed record FinancialBudgetExecutionSummaryResponse(
@@ -235,7 +238,8 @@ public sealed record FinancialBudgetExecutionSummaryResponse(
     string AlertMessage,
     int ApproachingCount,
     int ReachedCount,
-    int ExceededCount)
+    int ExceededCount,
+    string CreditCardCommitted = "0.00")
 {
     public static FinancialBudgetExecutionSummaryResponse From(FinancialBudgetExecutionSummary summary) => new(
         Money.Format(summary.Planned),
@@ -251,5 +255,6 @@ public sealed record FinancialBudgetExecutionSummaryResponse(
         summary.AlertMessage,
         summary.ApproachingCount,
         summary.ReachedCount,
-        summary.ExceededCount);
+        summary.ExceededCount,
+        Money.Format(summary.CreditCardCommitted));
 }

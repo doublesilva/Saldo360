@@ -34,7 +34,7 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
             .ToListAsync(cancellationToken);
         var categoryIds = targets.Select(item => item.CategoryId).ToList();
 
-        var realized = await db.FinancialTransactions.AsNoTracking()
+        var realized = db.FinancialTransactions.AsNoTracking()
             .Where(item => item.FamilyId == familyId
                 && item.CategoryId != null
                 && categoryIds.Contains(item.CategoryId.Value)
@@ -42,9 +42,7 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                 && !item.IsCancelled
                 && item.TransactionDate >= budget.Competence
                 && item.TransactionDate < through)
-            .GroupBy(item => item.CategoryId!.Value)
-            .Select(group => new CategoryTotal(group.Key, group.Sum(item => item.Amount)))
-            .ToListAsync(cancellationToken);
+            .Select(item => new { CategoryId = item.CategoryId!.Value, item.Amount, IsCreditCard = false });
 
         var committed = await db.FinancialPlannedTransactions.AsNoTracking()
             .Where(item => item.FamilyId == familyId
@@ -61,9 +59,23 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
             .Select(group => new CategoryTotal(group.Key, group.Sum(item => item.Amount)))
             .ToListAsync(cancellationToken);
 
+        var creditCardCommitted = from installment in db.FinancialCreditCardInstallments.AsNoTracking()
+                                         join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
+                                         join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
+                                         where installment.FamilyId == familyId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
+                                            && purchase.FamilyId == familyId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
+                                            && invoice.FamilyId == familyId && invoice.DueDate >= budget.Competence && invoice.DueDate < through
+                                            && categoryIds.Contains(purchase.CategoryId)
+                                         select new { CategoryId = purchase.CategoryId, Amount = installment.Amount, IsCreditCard = true };
+        var consumptionRows = await realized.Concat(creditCardCommitted)
+            .GroupBy(item => new { item.CategoryId, item.IsCreditCard })
+            .Select(group => new ConsumptionTotal(group.Key.CategoryId, group.Key.IsCreditCard, group.Sum(item => item.Amount)))
+            .ToListAsync(cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
-        var realizedByCategory = realized.ToDictionary(item => item.CategoryId, item => item.Amount);
+        var realizedByCategory = consumptionRows.Where(item => !item.IsCreditCard).ToDictionary(item => item.CategoryId, item => item.Amount);
         var committedByCategory = committed.ToDictionary(item => item.CategoryId, item => item.Amount);
+        var creditCardByCategory = consumptionRows.Where(item => item.IsCreditCard).ToDictionary(item => item.CategoryId, item => item.Amount);
         return new FinancialBudgetExecutionSource(
             budget.Id,
             budget.Competence,
@@ -72,9 +84,12 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                 item.CategoryId,
                 item.PlannedAmount,
                 realizedByCategory.GetValueOrDefault(item.CategoryId),
-                committedByCategory.GetValueOrDefault(item.CategoryId))).ToList());
+                committedByCategory.GetValueOrDefault(item.CategoryId),
+                creditCardByCategory.GetValueOrDefault(item.CategoryId))).ToList());
     }
 
     private sealed record CategoryTotal(Guid CategoryId, decimal Amount);
+    private sealed record ConsumptionRow(Guid CategoryId, decimal Amount, bool IsCreditCard);
+    private sealed record ConsumptionTotal(Guid CategoryId, bool IsCreditCard, decimal Amount);
 }
 
