@@ -1,4 +1,5 @@
 using Saldo360.Domain.Categories;
+using Saldo360.Domain.Transactions;
 
 namespace Saldo360.Application.Transactions;
 
@@ -14,13 +15,14 @@ public sealed record FinancialTransactionDto(
     DateOnly TransactionDate,
     string Description,
     TransactionReferenceDto Account,
-    TransactionReferenceDto Category,
+    TransactionReferenceDto? Category,
     bool IsCancelled,
     string Currency,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     DateTimeOffset? CancelledAt,
-    Guid? PlannedTransactionId);
+    Guid? PlannedTransactionId,
+    FinancialTransactionOrigin Origin);
 
 public sealed record TransactionReferenceDto(Guid Id, string Name, bool IsActive);
 

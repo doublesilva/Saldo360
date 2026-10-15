@@ -61,3 +61,19 @@ GET /api/families/{familyId}/credit-cards/{cardId}/invoices/{invoiceId}
 ```
 
 Os valores de fatura são serializados como strings decimais exatas. As rotas exigem participação na família e retornam apenas faturas do cartão informado.
+
+## Pagamentos de fatura (T09.4)
+
+Um pagamento é uma liquidação da obrigação da fatura, não uma nova despesa de consumo. Cada pagamento cria exatamente um lançamento efetivo de saída na conta escolhida, com origem `CreditCardInvoicePayment`, e mantém vínculo explícito com esse lançamento. Como não possui categoria, ele não participa da execução de orçamentos nem duplica a compra do cartão.
+
+Faturas fechadas podem receber pagamentos integrais ou parciais. O detalhe informa `totalAmount`, `paidAmount`, `remainingAmount` e `paymentStatus` (`Unpaid`, `PartiallyPaid` ou `Paid`). O saldo devido é sempre limitado a zero. Fatura aberta, fatura vazia, conta inexistente/inativa e valor acima do saldo devido são rejeitados; a conta preferencial do cartão é apenas sugestão para clientes futuros.
+
+```text
+GET  /api/families/{familyId}/credit-cards/{cardId}/invoices/{invoiceId}/payments
+POST /api/families/{familyId}/credit-cards/{cardId}/invoices/{invoiceId}/payments
+POST /api/families/{familyId}/credit-cards/{cardId}/invoices/{invoiceId}/payments/{paymentId}/cancel
+```
+
+Criação e cancelamento são transacionais. O cancelamento é lógico, preserva o histórico e cancela também o lançamento efetivo, restaurando o saldo bancário. A criação usa isolamento serializável e revalida o saldo dentro da transação, impedindo pagamentos concorrentes que ultrapassem o devido. O banco mantém unicidade entre pagamento e lançamento.
+
+Uma compra não pode ser cancelada quando isso faria o total ativo de alguma fatura ficar abaixo do valor já pago. Não há juros, multas, estornos, reembolsos, rotativo ou pagamentos antecipados de parcelas nesta etapa.

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
 using Saldo360.Application.Transactions;
+using Saldo360.Domain.Transactions;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
 
@@ -144,13 +145,14 @@ public sealed record TransactionResponse(
     DateOnly TransactionDate,
     string Description,
     TransactionReferenceDto Account,
-    TransactionReferenceDto Category,
+    TransactionReferenceDto? Category,
     bool IsCancelled,
     string Currency,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     DateTimeOffset? CancelledAt,
-    Guid? PlannedTransactionId)
+    Guid? PlannedTransactionId,
+    FinancialTransactionOrigin Origin)
 {
     public static TransactionResponse From(FinancialTransactionDto dto) => new(
         dto.Id,
@@ -165,7 +167,8 @@ public sealed record TransactionResponse(
         dto.CreatedAt,
         dto.UpdatedAt,
         dto.CancelledAt,
-        dto.PlannedTransactionId);
+        dto.PlannedTransactionId,
+        dto.Origin);
 }
 
 public sealed record TransactionPageResponse(IReadOnlyList<TransactionResponse> Items, int Page, int PageSize, int TotalCount)

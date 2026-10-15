@@ -42,7 +42,8 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
         var effective =
             from t in effectiveTransactions
             join a in db.FinancialAccounts on new { t.FamilyId, Id = t.AccountId } equals new { a.FamilyId, a.Id }
-            join c in db.FinancialCategories on new { t.FamilyId, Id = t.CategoryId } equals new { c.FamilyId, c.Id }
+            join category in db.FinancialCategories on new { t.FamilyId, t.CategoryId } equals new { category.FamilyId, CategoryId = (Guid?)category.Id } into categories
+            from c in categories.DefaultIfEmpty()
             select new FinancialCalendarItemDto(
                 t.Id,
                 FinancialCalendarSource.Transaction,
@@ -52,9 +53,10 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
                 t.TransactionDate,
                 t.Description,
                 new TransactionReferenceDto(a.Id, a.Name, a.IsActive),
-                new TransactionReferenceDto(c.Id, c.Name, c.IsActive),
+                c == null ? null : new TransactionReferenceDto(c.Id, c.Name, c.IsActive),
                 t.Currency,
-                t.PlannedTransactionId);
+                t.PlannedTransactionId,
+                t.Origin);
 
         var planned =
             from p in pendingPlannedTransactions

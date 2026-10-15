@@ -5,6 +5,7 @@ using Saldo360.Application.Calendar;
 using Saldo360.Application.Transactions;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
+using Saldo360.Domain.Transactions;
 
 namespace Saldo360.Api.Calendar;
 
@@ -300,9 +301,10 @@ public sealed record FinancialCalendarItemResponse(
     DateOnly Date,
     string Description,
     TransactionReferenceDto Account,
-    TransactionReferenceDto Category,
+    TransactionReferenceDto? Category,
     string Currency,
-    Guid? PlannedTransactionId)
+    Guid? PlannedTransactionId,
+    FinancialTransactionOrigin Origin)
 {
     public static FinancialCalendarItemResponse From(FinancialCalendarItemDto item) => new(
         item.Id,
@@ -315,5 +317,6 @@ public sealed record FinancialCalendarItemResponse(
         item.Account,
         item.Category,
         item.Currency,
-        item.PlannedTransactionId);
+        item.PlannedTransactionId,
+        item.Origin);
 }

@@ -87,7 +87,8 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
     private IQueryable<FinancialTransactionDto> Project(IQueryable<FinancialTransaction> transactions) =>
         from t in transactions.AsNoTracking()
         join a in db.FinancialAccounts on new { t.FamilyId, Id = t.AccountId } equals new { a.FamilyId, a.Id }
-        join c in db.FinancialCategories on new { t.FamilyId, Id = t.CategoryId } equals new { c.FamilyId, c.Id }
+        join category in db.FinancialCategories on new { t.FamilyId, Id = t.CategoryId } equals new { category.FamilyId, Id = (Guid?)category.Id } into categories
+        from c in categories.DefaultIfEmpty()
         orderby t.TransactionDate descending, t.Id descending
         select new FinancialTransactionDto(
             t.Id,
@@ -96,11 +97,12 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
             t.TransactionDate,
             t.Description,
             new TransactionReferenceDto(a.Id, a.Name, a.IsActive),
-            new TransactionReferenceDto(c.Id, c.Name, c.IsActive),
+            c == null ? null : new TransactionReferenceDto(c.Id, c.Name, c.IsActive),
             t.IsCancelled,
             t.Currency,
             t.CreatedAt,
             t.UpdatedAt,
             t.CancelledAt,
-            t.PlannedTransactionId);
+            t.PlannedTransactionId,
+            t.Origin);
 }

@@ -36,12 +36,13 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
 
         var realized = await db.FinancialTransactions.AsNoTracking()
             .Where(item => item.FamilyId == familyId
-                && categoryIds.Contains(item.CategoryId)
+                && item.CategoryId != null
+                && categoryIds.Contains(item.CategoryId.Value)
                 && item.Type == CategoryType.Expense
                 && !item.IsCancelled
                 && item.TransactionDate >= budget.Competence
                 && item.TransactionDate < through)
-            .GroupBy(item => item.CategoryId)
+            .GroupBy(item => item.CategoryId!.Value)
             .Select(group => new CategoryTotal(group.Key, group.Sum(item => item.Amount)))
             .ToListAsync(cancellationToken);
 

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
 using Saldo360.Application.CreditCards;
 using Saldo360.Domain.Common;
@@ -12,6 +13,9 @@ public static class FinancialCreditCardInvoiceEndpoints
         var group = app.MapGroup("/api/families/{familyId:guid}/credit-cards/{cardId:guid}/invoices").RequireAuthorization();
         group.MapGet("/", List);
         group.MapGet("/{invoiceId:guid}", Get);
+        group.MapGet("/{invoiceId:guid}/payments", ListPayments);
+        group.MapPost("/{invoiceId:guid}/payments", CreatePayment).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/{invoiceId:guid}/payments/{paymentId:guid}/cancel", CancelPayment).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
@@ -28,6 +32,26 @@ public static class FinancialCreditCardInvoiceEndpoints
 
     private static async Task<IResult> Get(Guid familyId, Guid cardId, Guid invoiceId, CurrentUser user, FinancialCreditCardPurchaseService service, TimeProvider timeProvider, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : await service.GetInvoiceAsync(familyId, cardId, invoiceId, userId, BusinessCalendar.Today(timeProvider.GetUtcNow()), ct) is { } invoice ? Results.Ok(invoice) : Results.NotFound();
+
+    private static async Task<IResult> ListPayments(Guid familyId, Guid cardId, Guid invoiceId, CurrentUser user, FinancialCreditCardInvoicePaymentService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : await service.ListAsync(familyId, cardId, invoiceId, userId, ct) is { } payments ? Results.Ok(payments) : Results.NotFound();
+
+    private static async Task<IResult> CreatePayment(Guid familyId, Guid cardId, Guid invoiceId, PaymentRequest? request, CurrentUser user, FinancialCreditCardInvoicePaymentService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var result = await service.CreateAsync(familyId, cardId, invoiceId, userId, request is null ? new(null, null, null) : new(request.FinancialAccountId, request.PaymentDate, request.Amount), ct);
+        return result.Access switch { FinancialCreditCardInvoicePaymentAccess.NotFound => Results.NotFound(), FinancialCreditCardInvoicePaymentAccess.Invalid => Results.ValidationProblem(result.Errors!), FinancialCreditCardInvoicePaymentAccess.Conflict => Results.Conflict(new { message = result.Message }), _ => Results.Created($"/api/families/{familyId}/credit-cards/{cardId}/invoices/{invoiceId}/payments/{result.Payment!.Id}", result.Payment) };
+    }
+
+    private static async Task<IResult> CancelPayment(Guid familyId, Guid cardId, Guid invoiceId, Guid paymentId, CurrentUser user, FinancialCreditCardInvoicePaymentService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var result = await service.CancelAsync(familyId, cardId, invoiceId, paymentId, userId, ct);
+        return result.Access == FinancialCreditCardInvoicePaymentAccess.NotFound ? Results.NotFound() : Results.Ok(result.Payment);
+    }
+
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    private sealed record PaymentRequest(Guid? FinancialAccountId, DateOnly? PaymentDate, decimal? Amount);
 
     private static DateOnly? Parse(string? value, string field, Dictionary<string, string[]> errors)
     {

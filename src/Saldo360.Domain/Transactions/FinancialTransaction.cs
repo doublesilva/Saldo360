@@ -31,7 +31,9 @@ public sealed class FinancialTransaction : Entity
 
     public Guid AccountId { get; private set; }
 
-    public Guid CategoryId { get; private set; }
+    public Guid? CategoryId { get; private set; }
+
+    public FinancialTransactionOrigin Origin { get; private init; }
 
     /// <summary>Receita ou despesa; precisa ser o mesmo tipo da categoria (garantido também por FK).</summary>
     public CategoryType Type { get; private set; }
@@ -65,6 +67,16 @@ public sealed class FinancialTransaction : Entity
     public static FinancialTransaction Create(Guid familyId, TransactionDetails details, Guid createdByUserId, DateTimeOffset now) =>
         Create(familyId, details, plannedTransactionId: null, createdByUserId, now);
 
+    public static FinancialTransaction CreateInvoicePayment(Guid familyId, Guid accountId, string description, decimal amount, DateOnly date, Guid createdByUserId, DateTimeOffset now) =>
+        new FinancialTransaction
+        {
+            FamilyId = familyId, CreatedAt = now, CreatedByUserId = createdByUserId,
+            Origin = FinancialTransactionOrigin.CreditCardInvoicePayment,
+            CategoryId = null,
+            AccountId = accountId, Type = CategoryType.Expense, Description = description,
+            Amount = amount, TransactionDate = date, Currency = DefaultCurrency,
+        };
+
     /// <summary>Lançamento efetivo que realiza a previsão <paramref name="plannedTransactionId"/>.</summary>
     public static FinancialTransaction CreateRealization(
         Guid familyId, TransactionDetails details, Guid plannedTransactionId, Guid createdByUserId, DateTimeOffset now) =>
@@ -79,6 +91,7 @@ public sealed class FinancialTransaction : Entity
             PlannedTransactionId = plannedTransactionId,
             CreatedAt = now,
             CreatedByUserId = createdByUserId,
+            Origin = plannedTransactionId is null ? FinancialTransactionOrigin.Manual : FinancialTransactionOrigin.PlannedRealization,
         };
         transaction.Apply(details);
         return transaction;
@@ -125,6 +138,13 @@ public sealed class FinancialTransaction : Entity
         Amount = details.Amount;
         TransactionDate = details.TransactionDate;
     }
+}
+
+public enum FinancialTransactionOrigin
+{
+    Manual,
+    PlannedRealization,
+    CreditCardInvoicePayment,
 }
 
 /// <summary>

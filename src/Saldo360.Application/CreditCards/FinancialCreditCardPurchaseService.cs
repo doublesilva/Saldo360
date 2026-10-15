@@ -42,6 +42,7 @@ public sealed class FinancialCreditCardPurchaseService(IFamilyRepository familie
     public async Task<bool> CancelAsync(Guid familyId, Guid cardId, Guid purchaseId, Guid userId, CancellationToken cancellationToken)
     {
         if (!await IsParticipant(familyId, userId, cancellationToken) || await purchases.FindAsync(familyId, cardId, purchaseId, cancellationToken) is not { } purchase) return false;
+        if (!await purchases.CanCancelAsync(familyId, cardId, purchaseId, cancellationToken)) return false;
         purchase.Cancel(userId, timeProvider.GetUtcNow());
         await purchases.SaveChangesAsync(cancellationToken);
         return true;

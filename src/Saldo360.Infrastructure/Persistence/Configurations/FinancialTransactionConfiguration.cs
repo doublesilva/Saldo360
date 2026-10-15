@@ -42,6 +42,7 @@ internal sealed class FinancialTransactionConfiguration : IEntityTypeConfigurati
         builder.HasKey(transaction => transaction.Id);
         builder.Property(transaction => transaction.Id).ValueGeneratedNever();
         builder.Property(transaction => transaction.Type).HasConversion<string>().HasMaxLength(20);
+        builder.Property(transaction => transaction.Origin).HasConversion<string>().HasMaxLength(40);
         builder.Property(transaction => transaction.Description).HasMaxLength(FinancialTransaction.DescriptionMaxLength).IsRequired();
         builder.Property(transaction => transaction.Amount).HasColumnType("numeric");
         builder.Property(transaction => transaction.TransactionDate).HasColumnType("date");

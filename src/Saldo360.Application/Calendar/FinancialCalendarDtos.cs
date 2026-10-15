@@ -1,5 +1,6 @@
 using Saldo360.Application.Transactions;
 using Saldo360.Domain.Categories;
+using Saldo360.Domain.Transactions;
 
 namespace Saldo360.Application.Calendar;
 
@@ -33,9 +34,10 @@ public sealed record FinancialCalendarItemDto(
     DateOnly Date,
     string Description,
     TransactionReferenceDto Account,
-    TransactionReferenceDto Category,
+    TransactionReferenceDto? Category,
     string Currency,
-    Guid? PlannedTransactionId);
+    Guid? PlannedTransactionId,
+    FinancialTransactionOrigin Origin = FinancialTransactionOrigin.Manual);
 
 public sealed record FinancialCalendarFilter(
     DateOnly From,
