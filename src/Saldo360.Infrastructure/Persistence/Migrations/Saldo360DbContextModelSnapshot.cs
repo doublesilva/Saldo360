@@ -502,6 +502,126 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardImportBatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<Guid>("CreditCardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_id");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("payload_hash");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_credit_card_import_batches");
+
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_credit_card_import_batches_family_id_id");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_credit_card_import_batches_created_by_user_id");
+
+                    b.HasIndex("PayloadHash")
+                        .HasDatabaseName("ix_financial_credit_card_import_batches_payload_hash");
+
+                    b.HasIndex("FamilyId", "CreditCardId")
+                        .HasDatabaseName("ix_financial_credit_card_import_batches_family_id_credit_card_");
+
+                    b.ToTable("financial_credit_card_import_batches", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_credit_card_import_batches_status", "status IN ('Completed')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardImportItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreditCardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_id");
+
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("external_id");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid>("ImportBatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("import_batch_id");
+
+                    b.Property<Guid>("PurchaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("purchase_id");
+
+                    b.Property<int>("RowNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("row_number");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_credit_card_import_items");
+
+                    b.HasIndex("FamilyId", "ImportBatchId")
+                        .HasDatabaseName("ix_financial_credit_card_import_items_family_id_import_batch_id");
+
+                    b.HasIndex("FamilyId", "PurchaseId")
+                        .HasDatabaseName("ix_financial_credit_card_import_items_family_id_purchase_id");
+
+                    b.HasIndex("ImportBatchId", "RowNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_credit_card_import_items_import_batch_id_row_numb");
+
+                    b.HasIndex("FamilyId", "CreditCardId", "ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_credit_card_import_items_family_id_credit_card_id")
+                        .HasFilter("external_id IS NOT NULL");
+
+                    b.ToTable("financial_credit_card_import_items", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_credit_card_import_items_status", "status IN ('Imported')");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardInstallment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1573,6 +1693,58 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_financial_credit_cards_family_members_holder");
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardImportBatch", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_import_batches_application_users_crea");
+
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_import_batches_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCard", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "CreditCardId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_import_batches_financial_credit_cards");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardImportItem", b =>
+                {
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCard", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "CreditCardId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_import_items_financial_credit_cards_f");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardImportBatch", null)
+                        .WithMany("Items")
+                        .HasForeignKey("FamilyId", "ImportBatchId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_import_items_financial_credit_card_im");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardPurchase", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "PurchaseId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_import_items_financial_credit_card_pu");
+                });
+
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardInstallment", b =>
                 {
                     b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardInvoice", null)
@@ -1886,6 +2058,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_transfers_source_account_same_family");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardImportBatch", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardPurchase", b =>

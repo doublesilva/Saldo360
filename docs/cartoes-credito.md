@@ -12,6 +12,8 @@ O fluxo integrado foi validado em PostgreSQL real com compra parcelada, orçamen
 
 Previsões de pagamento podem ser conciliadas explicitamente com uma fatura pela API de [conciliação](conciliacao-faturas.md). O vínculo não cancela a previsão, mas impede sua duplicação nas projeções. Na interface, acesse **Cartões > Conciliações** para selecionar, revisar, confirmar ou desfazer um vínculo; não há correspondência automática.
 
+Arquivos CSV pré-visualizados podem ser confirmados pela API somente com seleção explícita, lote atômico e `importId` idempotente. Compras importadas usam o mesmo parcelamento e calendário das compras manuais; consulte [importacao-cartoes.md](importacao-cartoes.md).
+
 ## Conceito
 
 `FinancialCreditCard` representa uma obrigação de crédito pertencente a uma família. Ele não é uma conta financeira: uma compra futura não movimenta imediatamente o saldo bancário; o pagamento de uma fatura será tratado em etapa posterior.

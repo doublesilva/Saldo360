@@ -54,3 +54,33 @@ O endpoint exige autenticação, participação na família, cartão ativo e CSR
 ## Limitações e evolução
 
 Não há reconhecimento automático de banco, importação definitiva, deduplicação, estornos, pagamentos, categorias ou PDFs. A T10.3.2 poderá reutilizar o DTO normalizado após revisão e confirmação, mantendo uma etapa explícita antes de persistir qualquer obrigação.
+
+## Confirmação definitiva (T10.3.2)
+
+A confirmação é feita por `POST /api/families/{familyId}/credit-cards/{cardId}/imports/confirm` e exige `confirm: true`, um `importId` e a lista explícita de linhas selecionadas. Cada item informa data ISO, descrição, valor, categoria de despesa e, opcionalmente, total original, parcelas e identificador externo.
+
+O lote é atômico: qualquer erro rejeita todos os itens e nenhuma compra é gravada. Compras aprovadas reutilizam `FinancialCreditCardPurchase.Create`, a distribuição de centavos e o calendário de faturas existentes. Nenhum lançamento bancário é criado.
+
+O `importId` e um hash do conteúdo formam a chave de idempotência. Reenvio com o mesmo conteúdo devolve os mesmos `purchaseId`s; o mesmo identificador com conteúdo diferente retorna `409 Conflict`. A operação é protegida por transação serializável e as tabelas `financial_credit_card_import_batches` e `financial_credit_card_import_items` preservam a rastreabilidade. Identificadores externos únicos por família e cartão impedem repetição forte; sem identificador externo, operações independentes não são comparadas.
+
+Parcelas intermediárias isoladas, como `2/6`, são rejeitadas. Um parcelamento só é aceito quando a primeira parcela e o total original estiverem explicitamente informados; o sistema não multiplica o valor da parcela nem inventa parcelas.
+
+Exemplo de confirmação:
+
+```json
+{
+  "importId": "00000000-0000-0000-0000-000000000001",
+  "confirm": true,
+  "items": [{
+    "rowNumber": 2,
+    "transactionDate": "2026-10-20",
+    "description": "Compra Loja X",
+    "amount": "123.45",
+    "categoryId": "00000000-0000-0000-0000-000000000002",
+    "installmentNumber": 1,
+    "installmentCount": 1,
+    "totalAmount": "123.45",
+    "externalId": "statement-1"
+  }]
+}
+```

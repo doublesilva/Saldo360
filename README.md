@@ -226,5 +226,7 @@ A interface T10.2 está disponível em **Cartões > Conciliações**. Ela exige 
 
 A T10.3.1 adiciona a pré-visualização segura de CSV em [docs/importacao-cartoes.md](docs/importacao-cartoes.md). O endpoint apenas interpreta e normaliza o arquivo; nenhuma movimentação é persistida.
 
+A T10.3.2 adiciona a confirmação explícita e transacional das linhas selecionadas, com idempotência por `importId`, rastreabilidade e rejeição de parcelas intermediárias.
+
 Compras no cartão e parcelas são cadastradas separadamente pela API `/api/families/{familyId}/credit-cards/{cardId}/purchases`; elas representam obrigações de crédito e não movimentam o saldo bancário.
 Os alertas de orçamento da execução são calculados no backend a partir do consumo projetado bruto; o resumo informa o pior estado das metas e as contagens de aproximação, limite atingido e excedência.
