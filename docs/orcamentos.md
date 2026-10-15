@@ -161,3 +161,5 @@ Na Agenda Financeira, a mesma execução é exibida como “Situação do orçam
 # Integração com cartões de crédito (T09.5)
 
 Compras de cartão são consumo contratado e aparecem na competência da fatura de cada parcela através do componente `creditCardCommitted`. A execução projetada soma `realized + committed + creditCardCommitted`. O pagamento da fatura possui origem própria e não é despesa categorizada, portanto não duplica o consumo nem altera metas.
+
+Esse comportamento foi exercitado no cenário integrado da T09.7: pagamento e cancelamento alteram saldo e obrigação, mas preservam o comprometimento da parcela na competência original.

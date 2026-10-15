@@ -185,3 +185,5 @@ As ações financeiras da Agenda incrementam a sincronização da família: acon
 Faturas podem ser consultadas como obrigações consolidadas, com total, valor pago, saldo devido e situação financeira. A Agenda identifica lançamentos efetivos de pagamento pela origem `CreditCardInvoicePayment`; parcelas não são duplicadas como saídas bancárias.
 
 Na evolução diária e mensal, o saldo devido é aplicado no vencimento da fatura. Os contratos expõem `creditCardProjectionComplete` e `creditCardOutstanding` para indicar cobertura e obrigações não alocadas.
+
+A auditoria T09.7 confirmou que pagamentos aparecem somente como lançamentos efetivos de origem própria; parcelas e faturas não são adicionadas como saídas efetivas na Agenda. Obrigações sem conta preferencial permanecem sinalizadas como não alocadas. Detalhes e cenários estão em [docs/T09.7-auditoria-integracao.md](T09.7-auditoria-integracao.md).

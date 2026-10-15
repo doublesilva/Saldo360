@@ -218,5 +218,7 @@ O smoke test não substitui a validação no navegador: abra <http://localhost:5
 
 Cartões de crédito estão disponíveis na navegação de cada família. A interface consome os endpoints existentes para cadastro/arquivamento, compras, faturas, pagamentos, limite e projeção de seis meses; valores monetários são exibidos a partir de strings decimais retornadas pela API, sem cálculos financeiros no React. Consulte [docs/cartoes-credito.md](docs/cartoes-credito.md).
 
+A integração ponta a ponta de cartões com contas, Agenda e Orçamentos é auditada pelos cenários PostgreSQL da T09.7; o relatório está em [docs/T09.7-auditoria-integracao.md](docs/T09.7-auditoria-integracao.md).
+
 Compras no cartão e parcelas são cadastradas separadamente pela API `/api/families/{familyId}/credit-cards/{cardId}/purchases`; elas representam obrigações de crédito e não movimentam o saldo bancário.
 Os alertas de orçamento da execução são calculados no backend a partir do consumo projetado bruto; o resumo informa o pior estado das metas e as contagens de aproximação, limite atingido e excedência.

@@ -13,13 +13,13 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 const firstError = (errors: Record<string, string[]>) => Object.values(errors).flat()[0] ?? 'Verifique os dados informados.'
 const shiftMonth = (month: string, offset: number) => { const [year, value] = month.split('-').map(Number); const date = new Date(Date.UTC(year, value - 1 + offset, 1)); return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}` }
 
-export function FinancialCreditCardsPage({ familyId, refreshKey = 0 }: { familyId: string; refreshKey?: number }) {
+export function FinancialCreditCardsPage({ familyId, refreshKey = 0, onChanged }: { familyId: string; refreshKey?: number; onChanged?: () => void }) {
   const [cards, setCards] = useState<FinancialCreditCard[]>([]); const [selected, setSelected] = useState<FinancialCreditCard | null>(null)
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]); const [categories, setCategories] = useState<FinancialCategory[]>([])
   const [month, setMonth] = useState(() => startOfMonth(todayInSaoPaulo()).slice(0, 7)); const [error, setError] = useState<string | null>(null); const [showForm, setShowForm] = useState(false)
   const load = () => { setError(null); const controller = new AbortController(); Promise.all([listCreditCards(familyId, true, controller.signal), listAccounts(familyId, true, controller.signal), listCategories(familyId, true, controller.signal)]).then(([loaded, accountList, categoryList]) => { setCards(loaded); setAccounts(accountList); setCategories(categoryList); setSelected((current) => current ? loaded.find((card) => card.id === current.id) ?? null : loaded.find((card) => !card.isArchived) ?? loaded[0] ?? null) }).catch((failure) => { if (!controller.signal.aborted) setError(errorMessage(failure)) }); return () => controller.abort() }
   useEffect(load, [familyId, refreshKey])
-  const refresh = () => { load() }
+  const refresh = () => { load(); onChanged?.() }
   return <div className="credit-cards" aria-live="polite">
     <div className="credit-cards__heading"><div><h3>Cartões</h3><p className="meta">Compras, faturas, pagamentos e limite em um só lugar.</p></div><button type="button" className="button--primary" onClick={() => setShowForm(true)}>Novo cartão</button></div>
     {error && <p className="status status--down" role="alert">{error}</p>}

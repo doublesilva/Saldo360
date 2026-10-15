@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FinancialCreditCardsPage } from './FinancialCreditCards'
 
@@ -23,5 +23,25 @@ describe('FinancialCreditCardsPage', () => {
     expect((await screen.findAllByText('Platinum')).length).toBeGreaterThan(0)
     await waitFor(() => expect(screen.getAllByText(/10\.000,00/).length).toBeGreaterThan(0))
     expect(screen.getByText('Cartões')).toBeTruthy()
+  })
+
+  it('notifica a família após arquivar para invalidar Agenda, Contas e Orçamentos', async () => {
+    const changed = vi.fn()
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }))
+      if (url.includes('/credit-cards?')) return json([card])
+      if (url.endsWith('/accounts?includeInactive=true')) return json([])
+      if (url.endsWith('/categories?includeInactive=true')) return json([])
+      if (url.endsWith('/invoices?from=2026-10&through=2026-10')) return json([])
+      if (url.endsWith('/purchases')) return json([])
+      if (url.endsWith('/limit')) return json({ creditLimit: '10000.00', usedLimit: '0.00', availableLimit: '10000.00', overLimitAmount: '0.00' })
+      if (url.includes('/invoice-projection?')) return json([])
+      return json([])
+    }))
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    render(<FinancialCreditCardsPage familyId="family-1" onChanged={changed} />)
+    await screen.findAllByText('Platinum')
+    fireEvent.click(screen.getByRole('button', { name: 'Arquivar' }))
+    await waitFor(() => expect(changed).toHaveBeenCalled())
   })
 })

@@ -267,7 +267,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
               onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }}
             />
           )}
-          {section === 'cards' && <FinancialCreditCardsPage familyId={state.family.id} refreshKey={financeVersion} />}
+          {section === 'cards' && <FinancialCreditCardsPage familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} />}
           {section === 'accounts' && (
             <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
           )}

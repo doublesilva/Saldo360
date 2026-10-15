@@ -6,6 +6,10 @@ A seção **Cartões** está disponível na navegação de cada família. Ela li
 
 Após qualquer alteração, a tela recarrega cartões, limite, compras, faturas, pagamentos e projeção para evitar dados obsoletos. Cartões arquivados continuam visíveis para consulta histórica e não podem receber novas compras ou alterações.
 
+## Auditoria de integração (T09.7)
+
+O fluxo integrado foi validado em PostgreSQL real com compra parcelada, orçamento, pagamento integral, cancelamento e cartão sem conta preferencial. Compra, fatura e pagamento permanecem entidades distintas; o pagamento altera o saldo uma única vez e não duplica o consumo do orçamento. Consulte o [relatório da auditoria](T09.7-auditoria-integracao.md).
+
 ## Conceito
 
 `FinancialCreditCard` representa uma obrigação de crédito pertencente a uma família. Ele não é uma conta financeira: uma compra futura não movimenta imediatamente o saldo bancário; o pagamento de uma fatura será tratado em etapa posterior.
