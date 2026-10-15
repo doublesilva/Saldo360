@@ -215,4 +215,6 @@ bash scripts/smoke-login.sh --authelia-local   # Authelia local
 ```
 
 O smoke test não substitui a validação no navegador: abra <http://localhost:5173>, clique em **Entrar**, autentique no Authelia, confira o nome exibido, recarregue a página e clique em **Sair**.
+
+O cadastro de cartões de crédito está disponível na API sob `/api/families/{familyId}/credit-cards`; nesta etapa ele mantém apenas dados cadastrais e não cria compras ou faturas.
 Os alertas de orçamento da execução são calculados no backend a partir do consumo projetado bruto; o resumo informa o pior estado das metas e as contagens de aproximação, limite atingido e excedência.

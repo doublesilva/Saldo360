@@ -19,6 +19,7 @@ internal sealed class FamilyMemberConfiguration : IEntityTypeConfiguration<Famil
 
         // Um usuário aparece no máximo uma vez por família; não há limite de membros.
         builder.HasIndex(member => new { member.FamilyId, member.UserId }).IsUnique();
+        builder.HasAlternateKey(member => new { member.FamilyId, member.UserId });
         builder.HasIndex(member => member.UserId);
 
         builder.HasOne<ApplicationUser>()

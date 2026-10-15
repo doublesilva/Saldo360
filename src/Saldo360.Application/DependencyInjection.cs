@@ -7,6 +7,7 @@ using Saldo360.Application.Families;
 using Saldo360.Application.Planning;
 using Saldo360.Application.Calendar;
 using Saldo360.Application.Budgets;
+using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Application;
 
@@ -27,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialCalendarMonthlyProjectionService>();
         services.AddScoped<FinancialBudgetService>();
         services.AddScoped<FinancialBudgetExecutionService>();
+        services.AddScoped<FinancialCreditCardService>();
         return services;
     }
 }

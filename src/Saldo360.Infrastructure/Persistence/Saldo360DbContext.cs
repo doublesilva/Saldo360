@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Budgets;
 using Saldo360.Domain.Categories;
+using Saldo360.Domain.CreditCards;
 using Saldo360.Domain.Families;
 using Saldo360.Domain.Planning;
 using Saldo360.Domain.Transactions;
@@ -42,6 +43,8 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialBudget> FinancialBudgets => Set<FinancialBudget>();
 
     public DbSet<FinancialBudgetTarget> FinancialBudgetTargets => Set<FinancialBudgetTarget>();
+
+    public DbSet<FinancialCreditCard> FinancialCreditCards => Set<FinancialCreditCard>();
 
     /// <summary>Configuração do provedor usada pela API, pelas ferramentas de migration e pelos testes.</summary>
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder builder, string connectionString) =>

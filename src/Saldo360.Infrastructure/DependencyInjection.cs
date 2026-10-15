@@ -21,7 +21,9 @@ using Saldo360.Infrastructure.Users;
 using Saldo360.Application.Calendar;
 using Saldo360.Infrastructure.Calendar;
 using Saldo360.Application.Budgets;
+using Saldo360.Application.CreditCards;
 using Saldo360.Infrastructure.Budgets;
+using Saldo360.Infrastructure.CreditCards;
 
 namespace Saldo360.Infrastructure;
 
@@ -66,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialCalendarBalanceRepository, FinancialCalendarBalanceRepository>();
         services.AddScoped<IFinancialBudgetRepository, FinancialBudgetRepository>();
         services.AddScoped<IFinancialBudgetExecutionRepository, FinancialBudgetExecutionRepository>();
+        services.AddScoped<IFinancialCreditCardRepository, FinancialCreditCardRepository>();
 
         return services;
     }

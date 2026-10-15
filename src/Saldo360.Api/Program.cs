@@ -10,6 +10,7 @@ using Saldo360.Api.Planning;
 using Saldo360.Api.Health;
 using Saldo360.Api.Calendar;
 using Saldo360.Api.Budgets;
+using Saldo360.Api.CreditCards;
 using Saldo360.Application;
 using Saldo360.Infrastructure;
 
@@ -52,5 +53,6 @@ app.MapFinancialTransferEndpoints();
 app.MapFinancialPlannedTransactionEndpoints();
 app.MapFinancialCalendarEndpoints();
 app.MapFinancialBudgetEndpoints();
+app.MapFinancialCreditCardEndpoints();
 
 app.Run();

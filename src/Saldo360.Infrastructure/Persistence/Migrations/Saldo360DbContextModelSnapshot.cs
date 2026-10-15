@@ -387,6 +387,118 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCard", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<Guid?>("ArchivedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("archived_by_user_id");
+
+                    b.Property<int>("ClosingDay")
+                        .HasColumnType("integer")
+                        .HasColumnName("closing_day");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<decimal>("CreditLimit")
+                        .HasColumnType("numeric")
+                        .HasColumnName("credit_limit");
+
+                    b.Property<Guid?>("DefaultPaymentAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("default_payment_account_id");
+
+                    b.Property<int>("DueDay")
+                        .HasColumnType("integer")
+                        .HasColumnName("due_day");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid?>("HolderUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("holder_user_id");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_archived");
+
+                    b.Property<string>("Issuer")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("issuer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_credit_cards");
+
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_credit_cards_family_id_id");
+
+                    b.HasIndex("ArchivedByUserId")
+                        .HasDatabaseName("ix_financial_credit_cards_archived_by_user_id");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_credit_cards_created_by_user_id");
+
+                    b.HasIndex("UpdatedByUserId")
+                        .HasDatabaseName("ix_financial_credit_cards_updated_by_user_id");
+
+                    b.HasIndex("FamilyId", "DefaultPaymentAccountId")
+                        .HasDatabaseName("ix_financial_credit_cards_family_id_default_payment_account_id");
+
+                    b.HasIndex("FamilyId", "HolderUserId")
+                        .HasDatabaseName("ix_financial_credit_cards_family_id_holder_user_id");
+
+                    b.HasIndex("FamilyId", "IsArchived")
+                        .HasDatabaseName("ix_financial_credit_cards_family_id_is_archived");
+
+                    b.ToTable("financial_credit_cards", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_credit_cards_archived", "is_archived = (archived_at IS NOT NULL) AND (archived_at IS NULL) = (archived_by_user_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_financial_credit_cards_closing_day", "closing_day BETWEEN 1 AND 31");
+
+                            t.HasCheckConstraint("ck_financial_credit_cards_credit_limit_non_negative", "credit_limit >= 0");
+
+                            t.HasCheckConstraint("ck_financial_credit_cards_credit_limit_scale", "scale(credit_limit) <= 2");
+
+                            t.HasCheckConstraint("ck_financial_credit_cards_due_day", "due_day BETWEEN 1 AND 31");
+
+                            t.HasCheckConstraint("ck_financial_credit_cards_issuer_not_blank", "btrim(issuer) <> ''");
+
+                            t.HasCheckConstraint("ck_financial_credit_cards_name_not_blank", "btrim(name) <> ''");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Families.Family", b =>
                 {
                     b.Property<Guid>("Id")
@@ -505,6 +617,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                     b.HasAlternateKey("FamilyId", "Id")
                         .HasName("ak_family_members_family_id_id");
+
+                    b.HasAlternateKey("FamilyId", "UserId")
+                        .HasName("ak_family_members_family_id_user_id");
 
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_family_members_user_id");
@@ -1059,6 +1174,50 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_categories_families_family_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCard", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ArchivedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_credit_cards_application_users_archived_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_cards_application_users_created_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_cards_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_cards_application_users_updated_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "DefaultPaymentAccountId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_credit_cards_family_accounts");
+
+                    b.HasOne("Saldo360.Domain.Families.FamilyMember", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "HolderUserId")
+                        .HasPrincipalKey("FamilyId", "UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_credit_cards_family_members_holder");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Families.FamilyInvitation", b =>
