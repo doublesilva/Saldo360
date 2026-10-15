@@ -48,6 +48,15 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
         return true;
     }
 
+    public Task<bool> HasActiveReconciliationAsync(Guid familyId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) =>
+        (from reconciliation in db.FinancialPlannedInvoiceReconciliations
+         join installment in db.FinancialCreditCardInstallments on new { reconciliation.FamilyId, InvoiceId = reconciliation.CreditCardInvoiceId }
+             equals new { installment.FamilyId, InvoiceId = installment.InvoiceId!.Value }
+         where reconciliation.FamilyId == familyId
+             && reconciliation.RemovedAt == null
+             && installment.PurchaseId == purchaseId
+         select reconciliation.Id).AnyAsync(cancellationToken);
+
     public async Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ProjectInvoicesAsync(Guid familyId, Guid cardId, string from, int months, DateOnly today, CancellationToken cancellationToken)
     {
         var start = DateOnly.ParseExact(from, "yyyy-MM");

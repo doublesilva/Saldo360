@@ -7,6 +7,7 @@ namespace Saldo360.Application.CreditCards;
 public sealed class FinancialCreditCardService(
     IFamilyRepository families,
     IFinancialCreditCardRepository cards,
+    IFinancialPlannedInvoiceReconciliationRepository reconciliations,
     TimeProvider timeProvider)
 {
     public async Task<CreditCardResult> CreateAsync(Guid familyId, Guid userId, CreditCardInput input, CancellationToken cancellationToken)
@@ -32,6 +33,11 @@ public sealed class FinancialCreditCardService(
         if (card.IsArchived) return CreditCardResult.Invalid(new Dictionary<string, string[]> { ["general"] = ["Cartão arquivado não pode ser alterado."] });
         var (details, errors) = await ValidateAsync(familyId, input, cancellationToken);
         if (details is null) return CreditCardResult.Invalid(errors);
+        if (card.DefaultPaymentAccountId != details.DefaultPaymentAccountId
+            && await reconciliations.HasActiveForCardAsync(familyId, cardId, cancellationToken))
+        {
+            return CreditCardResult.Invalid(new Dictionary<string, string[]> { ["defaultPaymentAccountId"] = ["A conta preferencial não pode ser alterada enquanto houver conciliações ativas; desfaça os vínculos primeiro."] });
+        }
         card.Update(details, userId, timeProvider.GetUtcNow());
         await cards.SaveChangesAsync(cancellationToken);
         return CreditCardResult.Ok((await cards.GetAsync(familyId, card.Id, cancellationToken))!);

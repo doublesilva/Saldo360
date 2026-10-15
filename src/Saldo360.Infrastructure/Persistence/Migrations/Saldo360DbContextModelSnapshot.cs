@@ -781,6 +781,68 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialPlannedInvoiceReconciliation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<Guid>("CreditCardInvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_invoice_id");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid>("PlannedTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("planned_transaction_id");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("removed_at");
+
+                    b.Property<Guid?>("RemovedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("removed_by_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_planned_invoice_reconciliations");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_planned_invoice_reconciliations_created_by_user_id");
+
+                    b.HasIndex("RemovedByUserId")
+                        .HasDatabaseName("ix_financial_planned_invoice_reconciliations_removed_by_user_id");
+
+                    b.HasIndex("FamilyId", "CreatedAt")
+                        .HasDatabaseName("ix_financial_planned_invoice_reconciliations_family_id_created");
+
+                    b.HasIndex("FamilyId", "CreditCardInvoiceId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_planned_invoice_reconciliations_family_id_credit_")
+                        .HasFilter("removed_at IS NULL");
+
+                    b.HasIndex("FamilyId", "PlannedTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_planned_invoice_reconciliations_family_id_planned")
+                        .HasFilter("removed_at IS NULL");
+
+                    b.ToTable("financial_planned_invoice_reconciliations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_planned_invoice_reconciliations_removed_pair", "(removed_at IS NULL) = (removed_by_user_id IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Families.Family", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1610,6 +1672,45 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_credit_card_purchases_cards_same_family");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialPlannedInvoiceReconciliation", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_planned_invoice_reconciliations_application_users");
+
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_planned_invoice_reconciliations_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RemovedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_planned_invoice_reconciliations_application_users1");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardInvoice", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "CreditCardInvoiceId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reconciliations_invoices_same_family");
+
+                    b.HasOne("Saldo360.Domain.Planning.FinancialPlannedTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "PlannedTransactionId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reconciliations_planned_same_family");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Families.FamilyInvitation", b =>

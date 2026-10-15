@@ -220,5 +220,7 @@ Cartões de crédito estão disponíveis na navegação de cada família. A inte
 
 A integração ponta a ponta de cartões com contas, Agenda e Orçamentos é auditada pelos cenários PostgreSQL da T09.7; o relatório está em [docs/T09.7-auditoria-integracao.md](docs/T09.7-auditoria-integracao.md).
 
+A T10.1 adiciona conciliação explícita entre previsões e faturas, com histórico, unicidade ativa e exclusão da previsão conciliada dos agregados projetados. Consulte [docs/conciliacao-faturas.md](docs/conciliacao-faturas.md).
+
 Compras no cartão e parcelas são cadastradas separadamente pela API `/api/families/{familyId}/credit-cards/{cardId}/purchases`; elas representam obrigações de crédito e não movimentam o saldo bancário.
 Os alertas de orçamento da execução são calculados no backend a partir do consumo projetado bruto; o resumo informa o pior estado das metas e as contagens de aproximação, limite atingido e excedência.

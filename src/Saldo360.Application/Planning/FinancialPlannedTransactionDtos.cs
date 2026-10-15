@@ -83,6 +83,9 @@ public sealed record PlannedTransactionResult(
     public const string RealizedMessage =
         "Previsão realizada não pode ser editada nem cancelada. Para corrigir, cancele o lançamento efetivo: a previsão volta a ficar pendente.";
 
+    public const string ReconciledMessage =
+        "Previsão conciliada não pode ser editada nem cancelada. Desfaça a conciliação explicitamente antes de alterar o registro.";
+
     public static PlannedTransactionResult NotFound { get; } = new(PlannedTransactionAccess.NotFound, null, null);
 
     public static PlannedTransactionResult Ok(FinancialPlannedTransactionDto planned) => new(PlannedTransactionAccess.Allowed, planned, null);
@@ -122,4 +125,7 @@ public sealed record RealizeResult(
 
     public const string AlreadyRealizedMessage =
         "A previsão já foi realizada com outro valor ou data. Para corrigir, cancele o lançamento efetivo e realize de novo.";
+
+    public const string ReconciledMessage =
+        "Previsão conciliada não pode ser realizada enquanto o vínculo estiver ativo.";
 }

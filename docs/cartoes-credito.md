@@ -10,6 +10,8 @@ Após qualquer alteração, a tela recarrega cartões, limite, compras, faturas,
 
 O fluxo integrado foi validado em PostgreSQL real com compra parcelada, orçamento, pagamento integral, cancelamento e cartão sem conta preferencial. Compra, fatura e pagamento permanecem entidades distintas; o pagamento altera o saldo uma única vez e não duplica o consumo do orçamento. Consulte o [relatório da auditoria](T09.7-auditoria-integracao.md).
 
+Previsões de pagamento podem ser conciliadas explicitamente com uma fatura pela API de [conciliação](conciliacao-faturas.md). O vínculo não cancela a previsão, mas impede sua duplicação nas projeções.
+
 ## Conceito
 
 `FinancialCreditCard` representa uma obrigação de crédito pertencente a uma família. Ele não é uma conta financeira: uma compra futura não movimenta imediatamente o saldo bancário; o pagamento de uma fatura será tratado em etapa posterior.

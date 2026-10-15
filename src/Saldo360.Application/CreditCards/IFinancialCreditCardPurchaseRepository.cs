@@ -15,6 +15,7 @@ public interface IFinancialCreditCardPurchaseRepository
     Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ListInvoicesAsync(Guid familyId, Guid cardId, string from, string through, DateOnly today, CancellationToken cancellationToken);
     Task<FinancialCreditCardInvoiceDto?> GetInvoiceAsync(Guid familyId, Guid cardId, Guid invoiceId, DateOnly today, CancellationToken cancellationToken);
     Task<bool> CanCancelAsync(Guid familyId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken);
+    Task<bool> HasActiveReconciliationAsync(Guid familyId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken);
     Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ProjectInvoicesAsync(Guid familyId, Guid cardId, string from, int months, DateOnly today, CancellationToken cancellationToken);
     Task<FinancialCreditCardLimitDto?> GetLimitAsync(Guid familyId, Guid cardId, CancellationToken cancellationToken);
     Task<bool> IsActiveCardAsync(Guid familyId, Guid cardId, CancellationToken cancellationToken);

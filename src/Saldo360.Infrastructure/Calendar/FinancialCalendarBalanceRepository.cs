@@ -119,7 +119,11 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                 && !db.FinancialTransactions.Any(transaction =>
                     transaction.FamilyId == item.FamilyId
                     && transaction.PlannedTransactionId == item.Id
-                    && !transaction.IsCancelled));
+                    && !transaction.IsCancelled)
+                && !db.FinancialPlannedInvoiceReconciliations.Any(reconciliation =>
+                    reconciliation.FamilyId == item.FamilyId
+                    && reconciliation.PlannedTransactionId == item.Id
+                    && reconciliation.RemovedAt == null));
         if (accountId is { } pendingAccountId)
         {
             pendingQuery = pendingQuery.Where(item => item.AccountId == pendingAccountId);

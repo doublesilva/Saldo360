@@ -54,7 +54,11 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                 && !db.FinancialTransactions.Any(transactionItem =>
                     transactionItem.FamilyId == item.FamilyId
                     && transactionItem.PlannedTransactionId == item.Id
-                    && !transactionItem.IsCancelled))
+                    && !transactionItem.IsCancelled)
+                && !db.FinancialPlannedInvoiceReconciliations.Any(reconciliation =>
+                    reconciliation.FamilyId == item.FamilyId
+                    && reconciliation.PlannedTransactionId == item.Id
+                    && reconciliation.RemovedAt == null))
             .GroupBy(item => item.CategoryId)
             .Select(group => new CategoryTotal(group.Key, group.Sum(item => item.Amount)))
             .ToListAsync(cancellationToken);

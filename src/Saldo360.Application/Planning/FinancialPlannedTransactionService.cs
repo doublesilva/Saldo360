@@ -126,6 +126,11 @@ public sealed class FinancialPlannedTransactionService(
                 return PlannedTransactionResult.Conflict(PlannedTransactionResult.RealizedMessage);
             }
 
+            if (await planned.HasActiveReconciliationAsync(familyId, plannedId, cancellationToken))
+            {
+                return PlannedTransactionResult.Conflict(PlannedTransactionResult.ReconciledMessage);
+            }
+
             var (details, errors) = await ValidateAsync(familyId, input, locked.Planned, cancellationToken);
             if (details is null)
             {
@@ -151,20 +156,25 @@ public sealed class FinancialPlannedTransactionService(
             return PlannedTransactionResult.NotFound;
         }
 
-        var failure = await planned.RunLockedAsync<PlannedTransactionResult?>(familyId, plannedId, locked =>
+        var failure = await planned.RunLockedAsync<PlannedTransactionResult?>(familyId, plannedId, async locked =>
         {
             if (locked is null)
             {
-                return Task.FromResult<PlannedTransactionResult?>(PlannedTransactionResult.NotFound);
+                return PlannedTransactionResult.NotFound;
             }
 
             if (locked.ActiveRealization is not null)
             {
-                return Task.FromResult<PlannedTransactionResult?>(PlannedTransactionResult.Conflict(PlannedTransactionResult.RealizedMessage));
+                return PlannedTransactionResult.Conflict(PlannedTransactionResult.RealizedMessage);
+            }
+
+            if (await planned.HasActiveReconciliationAsync(familyId, plannedId, cancellationToken))
+            {
+                return PlannedTransactionResult.Conflict(PlannedTransactionResult.ReconciledMessage);
             }
 
             locked.Planned.Cancel(userId, timeProvider.GetUtcNow());
-            return Task.FromResult<PlannedTransactionResult?>(null);
+            return null;
         }, cancellationToken);
 
         return failure ?? PlannedTransactionResult.Ok((await planned.GetAsync(familyId, plannedId, cancellationToken))!);
@@ -212,6 +222,11 @@ public sealed class FinancialPlannedTransactionService(
             if (locked.Planned.IsCancelled)
             {
                 return (RealizeAccess.Conflict, null, null, RealizeResult.CancelledMessage);
+            }
+
+            if (await planned.HasActiveReconciliationAsync(familyId, plannedId, cancellationToken))
+            {
+                return (RealizeAccess.Conflict, null, null, RealizeResult.ReconciledMessage);
             }
 
             if (locked.ActiveRealization is { } existing)

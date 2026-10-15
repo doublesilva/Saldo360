@@ -93,7 +93,8 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
     {
         var totals = await db.FinancialPlannedTransactions
             .Where(p => p.FamilyId == familyId && p.AccountId == accountId && !p.IsCancelled && p.DueDate <= through
-                && !db.FinancialTransactions.Any(t => t.FamilyId == p.FamilyId && t.PlannedTransactionId == p.Id && !t.IsCancelled))
+                && !db.FinancialTransactions.Any(t => t.FamilyId == p.FamilyId && t.PlannedTransactionId == p.Id && !t.IsCancelled)
+                && !db.FinancialPlannedInvoiceReconciliations.Any(r => r.FamilyId == p.FamilyId && r.PlannedTransactionId == p.Id && r.RemovedAt == null))
             .GroupBy(p => p.AccountId)
             .Select(g => new PlannedTotals(
                 g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Income ? p.Amount : 0m),
