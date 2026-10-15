@@ -367,6 +367,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_financial_categories");
 
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_categories_family_id_id");
+
                     b.HasAlternateKey("FamilyId", "Id", "Type")
                         .HasName("ak_financial_categories_family_id_id_type");
 
@@ -496,6 +499,158 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_credit_cards_issuer_not_blank", "btrim(issuer) <> ''");
 
                             t.HasCheckConstraint("ck_financial_credit_cards_name_not_blank", "btrim(name) <> ''");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardInstallment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<int>("InstallmentNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("installment_number");
+
+                    b.Property<Guid>("PurchaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("purchase_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_credit_card_installments");
+
+                    b.HasIndex("FamilyId", "PurchaseId", "InstallmentNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_credit_card_installments_family_id_purchase_id_in");
+
+                    b.ToTable("financial_credit_card_installments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_credit_card_installments_amount_positive", "amount > 0");
+
+                            t.HasCheckConstraint("ck_credit_card_installments_amount_scale", "scale(amount) <= 2");
+
+                            t.HasCheckConstraint("ck_credit_card_installments_number_positive", "installment_number BETWEEN 1 AND 120");
+
+                            t.HasCheckConstraint("ck_credit_card_installments_status", "status IN ('Active', 'Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardPurchase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<Guid?>("CancelledByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cancelled_by_user_id");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<Guid>("CreditCardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_id");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<int>("InstallmentCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("installment_count");
+
+                    b.Property<DateOnly>("PurchaseDate")
+                        .HasColumnType("date")
+                        .HasColumnName("purchase_date");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("total_amount");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_credit_card_purchases");
+
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_credit_card_purchases_family_id_id");
+
+                    b.HasIndex("CancelledByUserId")
+                        .HasDatabaseName("ix_financial_credit_card_purchases_cancelled_by_user_id");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_credit_card_purchases_created_by_user_id");
+
+                    b.HasIndex("UpdatedByUserId")
+                        .HasDatabaseName("ix_financial_credit_card_purchases_updated_by_user_id");
+
+                    b.HasIndex("FamilyId", "CategoryId")
+                        .HasDatabaseName("ix_financial_credit_card_purchases_family_id_category_id");
+
+                    b.HasIndex("FamilyId", "CreditCardId", "PurchaseDate")
+                        .HasDatabaseName("ix_financial_credit_card_purchases_family_id_credit_card_id_pu");
+
+                    b.ToTable("financial_credit_card_purchases", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_credit_card_purchases_description_not_blank", "btrim(description) <> ''");
+
+                            t.HasCheckConstraint("ck_credit_card_purchases_installment_count", "installment_count BETWEEN 1 AND 120");
+
+                            t.HasCheckConstraint("ck_credit_card_purchases_status", "status IN ('Active', 'Cancelled')");
+
+                            t.HasCheckConstraint("ck_credit_card_purchases_total_positive", "total_amount > 0");
+
+                            t.HasCheckConstraint("ck_credit_card_purchases_total_scale", "scale(total_amount) <= 2");
                         });
                 });
 
@@ -1220,6 +1375,63 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_financial_credit_cards_family_members_holder");
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardInstallment", b =>
+                {
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardPurchase", null)
+                        .WithMany("Installments")
+                        .HasForeignKey("FamilyId", "PurchaseId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_credit_card_installments_purchases_same_family");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardPurchase", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CancelledByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_credit_card_purchases_application_users_cancelled");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_purchases_application_users_created_b");
+
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_purchases_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_purchases_application_users_updated_b");
+
+                    b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "CategoryId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_credit_card_purchases_categories_same_family");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCard", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "CreditCardId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_credit_card_purchases_cards_same_family");
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Families.FamilyInvitation", b =>
                 {
                     b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
@@ -1394,6 +1606,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_transfers_source_account_same_family");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardPurchase", b =>
+                {
+                    b.Navigation("Installments");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Families.Family", b =>

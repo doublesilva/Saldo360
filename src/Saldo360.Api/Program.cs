@@ -54,5 +54,6 @@ app.MapFinancialPlannedTransactionEndpoints();
 app.MapFinancialCalendarEndpoints();
 app.MapFinancialBudgetEndpoints();
 app.MapFinancialCreditCardEndpoints();
+app.MapFinancialCreditCardPurchaseEndpoints();
 
 app.Run();

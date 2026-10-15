@@ -31,3 +31,18 @@ As consultas retornam somente cartões da família da rota. A listagem omite arq
 A migration `AddFinancialCreditCards` cria a tabela, índices, checks de limite/dias, FKs para família, conta e titular e FKs de auditoria. Nenhuma movimentação financeira ou cálculo de saldo/orçamento é alterado.
 
 Ainda não há regra de determinação da fatura, compras, parcelas, encargos, cashback, integração com Agenda ou Orçamentos. Essas decisões ficam para as etapas posteriores.
+
+## Compras e parcelas (T09.2)
+
+Uma compra no cartão é uma obrigação de crédito, não um lançamento bancário. A API de compras exige cartão ativo, categoria de despesa da família, descrição, data, valor total positivo e de 1 a 120 parcelas. Compras à vista no crédito usam uma parcela; não equivalem a débito em conta.
+
+```text
+POST   /api/families/{familyId}/credit-cards/{cardId}/purchases
+GET    /api/families/{familyId}/credit-cards/{cardId}/purchases?from=yyyy-MM-dd&through=yyyy-MM-dd
+GET    /api/families/{familyId}/credit-cards/{cardId}/purchases/{purchaseId}
+POST   /api/families/{familyId}/credit-cards/{cardId}/purchases/{purchaseId}/cancel
+```
+
+Os centavos são distribuídos deterministicamente: o valor é convertido em centavos decimais exatos, a divisão inteira define a base e o restante é acrescentado às primeiras parcelas. Assim, R$ 100,00 em três vezes resulta em R$ 33,34, R$ 33,33 e R$ 33,33; a soma permanece exatamente igual ao total.
+
+O cancelamento é transacional, preserva a compra e marca todas as parcelas como `Cancelled`. Não é permitido editar silenciosamente valor ou parcelamento. Parcelas ainda não recebem competência de fatura ou vencimento artificial; isso será definido na T09.3. Nenhuma compra altera saldo bancário, orçamento ou projeção.
