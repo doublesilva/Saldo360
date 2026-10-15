@@ -14,6 +14,7 @@ public static class FinancialBudgetEndpoints
         var budgets = app.MapGroup("/api/families/{familyId:guid}/budgets").RequireAuthorization();
         budgets.MapGet("/", List);
         budgets.MapGet("/{budgetId:guid}", Get);
+        budgets.MapGet("/{budgetId:guid}/execution", GetExecution);
         budgets.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         budgets.MapPut("/{budgetId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
         budgets.MapDelete("/{budgetId:guid}", Archive).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -42,6 +43,15 @@ public static class FinancialBudgetEndpoints
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         var result = await service.GetAsync(familyId, budgetId, userId, cancellationToken);
         return result is null ? Results.NotFound() : Results.Ok(FinancialBudgetResponse.From(result));
+    }
+
+    private static async Task<IResult> GetExecution(
+        Guid familyId, Guid budgetId, CurrentUser currentUser, FinancialBudgetExecutionService service,
+        CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        var result = await service.GetAsync(familyId, budgetId, userId, cancellationToken);
+        return result is null ? Results.NotFound() : Results.Ok(FinancialBudgetExecutionResponse.From(result));
     }
 
     private static async Task<IResult> Create(
@@ -155,4 +165,57 @@ public sealed record FinancialBudgetTargetResponse(
     public static FinancialBudgetTargetResponse From(FinancialBudgetTargetDto dto) => new(
         dto.Id, dto.Name, Money.Format(dto.PlannedAmount), dto.GroupingType, dto.Category, dto.IsArchived,
         dto.CreatedAt, dto.UpdatedAt, dto.ArchivedAt);
+}
+
+public sealed record FinancialBudgetExecutionResponse(
+    Guid BudgetId,
+    string Competence,
+    FinancialBudgetExecutionAmountsResponse Total,
+    IReadOnlyList<FinancialBudgetTargetExecutionResponse> Targets)
+{
+    public static FinancialBudgetExecutionResponse From(FinancialBudgetExecutionDto dto) => new(
+        dto.BudgetId,
+        dto.Competence.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+        FinancialBudgetExecutionAmountsResponse.From(dto.Total),
+        dto.Targets.Select(FinancialBudgetTargetExecutionResponse.From).ToList());
+}
+
+public sealed record FinancialBudgetTargetExecutionResponse(
+    Guid TargetId,
+    Guid CategoryId,
+    string Planned,
+    string Realized,
+    string Committed,
+    string ProjectedConsumption,
+    string Available,
+    string ExceededAmount,
+    string? ConsumptionPercentage)
+{
+    public static FinancialBudgetTargetExecutionResponse From(FinancialBudgetTargetExecutionDto dto)
+    {
+        var amounts = FinancialBudgetExecutionAmountsResponse.From(dto.Amounts);
+        return new(dto.TargetId, dto.CategoryId, amounts.Planned, amounts.Realized, amounts.Committed,
+            amounts.ProjectedConsumption, amounts.Available, amounts.ExceededAmount, amounts.ConsumptionPercentage);
+    }
+}
+
+public sealed record FinancialBudgetExecutionAmountsResponse(
+    string Planned,
+    string Realized,
+    string Committed,
+    string ProjectedConsumption,
+    string Available,
+    string ExceededAmount,
+    string? ConsumptionPercentage)
+{
+    public static FinancialBudgetExecutionAmountsResponse From(FinancialBudgetExecutionAmounts amounts) => new(
+        Money.Format(amounts.Planned),
+        Money.Format(amounts.Realized),
+        Money.Format(amounts.Committed),
+        Money.Format(amounts.ProjectedConsumption),
+        Money.Format(amounts.Available),
+        Money.Format(amounts.ExceededAmount),
+        amounts.ConsumptionPercentage is { } percentage
+            ? percentage.ToString("F2", CultureInfo.InvariantCulture)
+            : null);
 }

@@ -65,6 +65,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialCalendarRepository, FinancialCalendarRepository>();
         services.AddScoped<IFinancialCalendarBalanceRepository, FinancialCalendarBalanceRepository>();
         services.AddScoped<IFinancialBudgetRepository, FinancialBudgetRepository>();
+        services.AddScoped<IFinancialBudgetExecutionRepository, FinancialBudgetExecutionRepository>();
 
         return services;
     }

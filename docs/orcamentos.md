@@ -1,6 +1,6 @@
 # Orçamentos e metas mensais
 
-A T08.1 introduz o cadastro estrutural de orçamentos mensais. Ela não calcula consumo, disponível, percentual ou alertas: esses indicadores dependem da integração com movimentações prevista para uma etapa posterior.
+O módulo mantém orçamentos mensais e acompanha sua execução financeira por categoria. Alertas e interface visual continuam fora deste módulo.
 
 ## Modelo
 
@@ -70,9 +70,68 @@ Exemplo de resposta:
 
 Metas arquivadas permanecem em `targets`, marcadas por `isArchived`, para que a consulta detalhada preserve o histórico. Elas não entram em `totalPlannedAmount`.
 
+## Acompanhamento da execução
+
+`GET /api/families/{familyId}/budgets/{budgetId}/execution` retorna somente metas ativas de um orçamento ativo. Um orçamento arquivado, inexistente ou pertencente a outra família resulta em `404`. A consulta exige que o usuário seja participante da família.
+
+Para cada meta e para o total das categorias orçamentadas:
+
+- `planned`: valor imutável da meta;
+- `realized`: despesas efetivas não canceladas cuja `transactionDate` pertence à competência;
+- `committed`: previsões de despesa não canceladas e ainda sem realização ativa, cuja `dueDate` pertence à competência;
+- `projectedConsumption = realized + committed`;
+- `available = planned - projectedConsumption`, podendo ser negativo;
+- `exceededAmount = max(0, projectedConsumption - planned)`;
+- `consumptionPercentage = projectedConsumption / planned * 100`, arredondado para duas casas decimais com ponto médio afastado de zero.
+
+Quando `planned` é zero, o percentual é `"0.00"` se o consumo também for zero e `null` quando há consumo positivo. Valores monetários e percentuais definidos são serializados como strings decimais; os cálculos usam exclusivamente `decimal`.
+
+```json
+{
+  "budgetId": "0199...",
+  "competence": "2026-10",
+  "total": {
+    "planned": "5000.00",
+    "realized": "1900.00",
+    "committed": "1300.00",
+    "projectedConsumption": "3200.00",
+    "available": "1800.00",
+    "exceededAmount": "0.00",
+    "consumptionPercentage": "64.00"
+  },
+  "targets": [
+    {
+      "targetId": "0199...",
+      "categoryId": "0199...",
+      "planned": "5000.00",
+      "realized": "1900.00",
+      "committed": "1300.00",
+      "projectedConsumption": "3200.00",
+      "available": "1800.00",
+      "exceededAmount": "0.00",
+      "consumptionPercentage": "64.00"
+    }
+  ]
+}
+```
+
+O total representa exclusivamente categorias com metas ativas, e não todas as despesas da família. Categorias sem meta, metas arquivadas, receitas e transferências são ignoradas. Uma categoria inativa permanece no acompanhamento enquanto sua meta estiver ativa.
+
+### Competência, realização e reabertura
+
+A competência é determinada pela data financeira, nunca pela criação ou atualização do registro. Uma previsão vencida de setembro permanece comprometida em setembro; ela não é transferida para outubro. Isso difere da projeção de saldo da T06.3/T07, na qual pendências anteriores influenciam a disponibilidade financeira futura.
+
+Enquanto uma previsão possui lançamento efetivo não cancelado, seu valor previsto sai de `committed` e o valor efetivamente pago entra em `realized` na competência de `transactionDate`. Se a data efetiva estiver em outro mês, ela não entra no mês originalmente previsto e a previsão continua fora do comprometido enquanto realizada. Ao cancelar a realização, o efetivo sai e o previsto volta ao comprometido de sua competência original. Assim, os dois valores nunca são contados simultaneamente.
+
+A leitura carrega as metas e executa duas agregações por categoria no PostgreSQL, sem consulta por meta. Todo o processo ocorre num snapshot `REPEATABLE READ` somente leitura para impedir estados intermediários durante realização ou cancelamento concorrente. Nenhum total é persistido e nenhum valor planejado é modificado.
+
+### Limitações
+
+Transferências não são despesas orçamentárias. O módulo também não cria parcelas nem expande recorrências. Cartões e faturas exigirão modelagem própria; não se infere pagamento de fatura a partir de transferências ou lançamentos existentes.
+
 ## Migration e validação
 
-A migration `AddFinancialBudgets` cria somente as duas tabelas, seus índices, checks e relacionamentos; nenhuma tabela financeira anterior é reescrita. Os testes usam PostgreSQL real para validar unicidade, precisão decimal, isolamento entre famílias, categoria de despesa, ausência de cascatas, arquivamento e atualização a partir da migration anterior sem perda de famílias ou categorias.
+A migration `AddFinancialBudgets` cria somente as duas tabelas, seus índices, checks e relacionamentos; nenhuma tabela financeira anterior é reescrita. O acompanhamento da execução é calculado a partir dessas tabelas e das movimentações existentes, portanto a T08.2 não adiciona migration. Os testes usam PostgreSQL real para validar unicidade, precisão decimal, isolamento entre famílias, categoria de despesa, ausência de cascatas, arquivamento, agregações e consistência concorrente.
 
 Para aplicar em desenvolvimento:
 
