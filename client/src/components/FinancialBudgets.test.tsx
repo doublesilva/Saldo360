@@ -18,8 +18,8 @@ const budget: FinancialBudget = {
 }
 const execution: FinancialBudgetExecution = {
   budgetId: budget.id, competence: budget.competence,
-  total: { planned: '1000.00', realized: '200.00', committed: '300.00', projectedConsumption: '500.00', available: '500.00', exceededAmount: '0.00', consumptionPercentage: '50.00' },
-  targets: [{ targetId: target.id, categoryId: expense.id, planned: '1000.00', realized: '200.00', committed: '300.00', projectedConsumption: '500.00', available: '500.00', exceededAmount: '0.00', consumptionPercentage: '50.00' }],
+  total: { planned: '1000.00', realized: '200.00', committed: '300.00', projectedConsumption: '500.00', available: '500.00', exceededAmount: '0.00', consumptionPercentage: '50.00', status: 'WithinBudget', alertMessage: 'O consumo projetado está dentro do orçamento.', approachingCount: 0, reachedCount: 0, exceededCount: 0 },
+  targets: [{ targetId: target.id, categoryId: expense.id, planned: '1000.00', realized: '200.00', committed: '300.00', projectedConsumption: '500.00', available: '500.00', exceededAmount: '0.00', consumptionPercentage: '50.00', status: 'WithinBudget', alertMessage: 'O consumo projetado está dentro do orçamento.' }],
 }
 
 type Call = { url: string; init?: RequestInit }
@@ -97,11 +97,11 @@ describe('FinancialBudgetsPage', () => {
   })
 
   it('trata percentual nulo e excedente sem recalcular valores', async () => {
-    const over = { ...execution, total: { ...execution.total, planned: '0.00', realized: '10.00', committed: '5.00', projectedConsumption: '15.00', available: '-15.00', exceededAmount: '15.00', consumptionPercentage: null }, targets: [{ ...execution.targets[0], planned: '0.00', realized: '10.00', committed: '5.00', projectedConsumption: '15.00', available: '-15.00', exceededAmount: '15.00', consumptionPercentage: null }] }
+    const over = { ...execution, total: { ...execution.total, planned: '0.00', realized: '10.00', committed: '5.00', projectedConsumption: '15.00', available: '-15.00', exceededAmount: '15.00', consumptionPercentage: null, status: 'Exceeded' as const, alertMessage: 'O consumo projetado ultrapassou o orçamento.', exceededCount: 1 }, targets: [{ ...execution.targets[0], planned: '0.00', realized: '10.00', committed: '5.00', projectedConsumption: '15.00', available: '-15.00', exceededAmount: '15.00', consumptionPercentage: null, status: 'Exceeded' as const, alertMessage: 'O consumo projetado ultrapassou o orçamento.' }] }
     mockApi({ execution: over })
     render(<FinancialBudgetsPage familyId="family-1" />)
     expect((await screen.findAllByText('Sem referência')).length).toBeGreaterThan(0)
-    expect(screen.getByText('Excedida')).toBeTruthy()
+    expect(screen.getAllByText('Orçamento excedido').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText(/15,00/).length).toBeGreaterThan(0)
   })
 

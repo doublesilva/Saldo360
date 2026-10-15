@@ -7,6 +7,7 @@ public sealed class FinancialBudgetExecutionService(
     IFinancialBudgetExecutionRepository executions)
 {
     public const int PercentageScale = 2;
+    public const decimal ApproachingThreshold = 0.80m;
 
     public async Task<FinancialBudgetExecutionDto?> GetAsync(
         Guid familyId, Guid budgetId, Guid userId, CancellationToken cancellationToken)
@@ -16,15 +17,55 @@ public sealed class FinancialBudgetExecutionService(
         if (source is null) return null;
 
         var targets = source.Targets
-            .Select(item => new FinancialBudgetTargetExecutionDto(
-                item.TargetId, item.CategoryId, Calculate(item.Planned, item.Realized, item.Committed)))
+            .Select(item =>
+            {
+                var amounts = Calculate(item.Planned, item.Realized, item.Committed);
+                var status = Classify(item.Planned, amounts.ProjectedConsumption);
+                return new FinancialBudgetTargetExecutionDto(
+                    item.TargetId, item.CategoryId, amounts, status, Message(status));
+            })
             .ToList();
-        var total = Calculate(
+        var amountsTotal = Calculate(
             source.Targets.Sum(item => item.Planned),
             source.Targets.Sum(item => item.Realized),
             source.Targets.Sum(item => item.Committed));
-        return new FinancialBudgetExecutionDto(source.BudgetId, source.Competence, total, targets);
+        var totalStatus = targets.Count == 0
+            ? FinancialBudgetAlertStatus.WithinBudget
+            : targets.Max(item => item.Status);
+        var totalMessage = targets.Count == 0
+            ? "Nenhuma meta ativa para esta competência."
+            : Message(totalStatus);
+        return new FinancialBudgetExecutionDto(source.BudgetId, source.Competence,
+            new FinancialBudgetExecutionSummary(
+                amountsTotal.Planned, amountsTotal.Realized, amountsTotal.Committed,
+                amountsTotal.ProjectedConsumption, amountsTotal.Available, amountsTotal.ExceededAmount,
+                amountsTotal.ConsumptionPercentage, totalStatus, totalMessage,
+                targets.Count(item => item.Status == FinancialBudgetAlertStatus.ApproachingLimit),
+                targets.Count(item => item.Status == FinancialBudgetAlertStatus.LimitReached),
+                targets.Count(item => item.Status == FinancialBudgetAlertStatus.Exceeded)), targets);
     }
+
+    public static FinancialBudgetAlertStatus Classify(decimal planned, decimal projected)
+    {
+        if (planned == 0m) return projected == 0m
+            ? FinancialBudgetAlertStatus.WithinBudget
+            : FinancialBudgetAlertStatus.Exceeded;
+        var ratio = projected / planned;
+        if (ratio > 1m) return FinancialBudgetAlertStatus.Exceeded;
+        if (ratio == 1m) return FinancialBudgetAlertStatus.LimitReached;
+        return ratio >= ApproachingThreshold
+            ? FinancialBudgetAlertStatus.ApproachingLimit
+            : FinancialBudgetAlertStatus.WithinBudget;
+    }
+
+    public static string Message(FinancialBudgetAlertStatus status) => status switch
+    {
+        FinancialBudgetAlertStatus.WithinBudget => "O consumo projetado está dentro do orçamento.",
+        FinancialBudgetAlertStatus.ApproachingLimit => "O consumo projetado está próximo do limite.",
+        FinancialBudgetAlertStatus.LimitReached => "O consumo projetado atingiu o limite do orçamento.",
+        FinancialBudgetAlertStatus.Exceeded => "O consumo projetado ultrapassou o orçamento.",
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+    };
 
     internal static FinancialBudgetExecutionAmounts Calculate(decimal planned, decimal realized, decimal committed)
     {

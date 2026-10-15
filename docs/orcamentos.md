@@ -143,3 +143,16 @@ Para aplicar em desenvolvimento:
 npm run db:migrate
 ```
 
+### Alertas de limite (T08.4)
+
+O endpoint de execução também classifica cada meta ativa e o total consolidado:
+
+- `WithinBudget`: consumo projetado abaixo de 80% (ou orçamento e consumo zero);
+- `ApproachingLimit`: de 80% até antes de 100%;
+- `LimitReached`: exatamente 100%;
+- `Exceeded`: acima de 100% (inclusive qualquer consumo com orçamento zero).
+
+A classificação usa os valores decimais brutos de `realized + committed`, antes do arredondamento da porcentagem exibida. O total consolidado adota o pior estado entre as metas (`Exceeded` > `LimitReached` > `ApproachingLimit` > `WithinBudget`) e retorna também `approachingCount`, `reachedCount` e `exceededCount`. Sem metas ativas, o estado é `WithinBudget`, os contadores são zero e a mensagem informa que não há metas ativas.
+
+`alertMessage` é uma mensagem informativa, não uma notificação persistida. Os contadores e os estados são calculados no backend e respeitam a competência consultada; a interface apenas os apresenta e ordena as metas pela severidade.
+

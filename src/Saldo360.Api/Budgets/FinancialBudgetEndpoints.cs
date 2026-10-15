@@ -170,13 +170,13 @@ public sealed record FinancialBudgetTargetResponse(
 public sealed record FinancialBudgetExecutionResponse(
     Guid BudgetId,
     string Competence,
-    FinancialBudgetExecutionAmountsResponse Total,
+    FinancialBudgetExecutionSummaryResponse Total,
     IReadOnlyList<FinancialBudgetTargetExecutionResponse> Targets)
 {
     public static FinancialBudgetExecutionResponse From(FinancialBudgetExecutionDto dto) => new(
         dto.BudgetId,
         dto.Competence.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-        FinancialBudgetExecutionAmountsResponse.From(dto.Total),
+        FinancialBudgetExecutionSummaryResponse.From(dto.Total),
         dto.Targets.Select(FinancialBudgetTargetExecutionResponse.From).ToList());
 }
 
@@ -189,13 +189,16 @@ public sealed record FinancialBudgetTargetExecutionResponse(
     string ProjectedConsumption,
     string Available,
     string ExceededAmount,
-    string? ConsumptionPercentage)
+    string? ConsumptionPercentage,
+    FinancialBudgetAlertStatus Status,
+    string AlertMessage)
 {
     public static FinancialBudgetTargetExecutionResponse From(FinancialBudgetTargetExecutionDto dto)
     {
         var amounts = FinancialBudgetExecutionAmountsResponse.From(dto.Amounts);
         return new(dto.TargetId, dto.CategoryId, amounts.Planned, amounts.Realized, amounts.Committed,
-            amounts.ProjectedConsumption, amounts.Available, amounts.ExceededAmount, amounts.ConsumptionPercentage);
+            amounts.ProjectedConsumption, amounts.Available, amounts.ExceededAmount, amounts.ConsumptionPercentage,
+            dto.Status, dto.AlertMessage);
     }
 }
 
@@ -218,4 +221,35 @@ public sealed record FinancialBudgetExecutionAmountsResponse(
         amounts.ConsumptionPercentage is { } percentage
             ? percentage.ToString("F2", CultureInfo.InvariantCulture)
             : null);
+}
+
+public sealed record FinancialBudgetExecutionSummaryResponse(
+    string Planned,
+    string Realized,
+    string Committed,
+    string ProjectedConsumption,
+    string Available,
+    string ExceededAmount,
+    string? ConsumptionPercentage,
+    FinancialBudgetAlertStatus Status,
+    string AlertMessage,
+    int ApproachingCount,
+    int ReachedCount,
+    int ExceededCount)
+{
+    public static FinancialBudgetExecutionSummaryResponse From(FinancialBudgetExecutionSummary summary) => new(
+        Money.Format(summary.Planned),
+        Money.Format(summary.Realized),
+        Money.Format(summary.Committed),
+        Money.Format(summary.ProjectedConsumption),
+        Money.Format(summary.Available),
+        Money.Format(summary.ExceededAmount),
+        summary.ConsumptionPercentage is { } percentage
+            ? percentage.ToString("F2", CultureInfo.InvariantCulture)
+            : null,
+        summary.Status,
+        summary.AlertMessage,
+        summary.ApproachingCount,
+        summary.ReachedCount,
+        summary.ExceededCount);
 }

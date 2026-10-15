@@ -8,6 +8,7 @@ import {
   getBudgetExecution,
   listBudgets,
   type FinancialBudget,
+  type FinancialBudgetAlertStatus,
   type FinancialBudgetExecution,
   type FinancialBudgetTarget,
   updateBudgetTarget,
@@ -161,7 +162,11 @@ function BudgetContent({
       <div className="budgets__section-header"><h4 id="budget-targets-title">Metas por categoria</h4><span className="meta">{activeTargets.length} ativas</span></div>
       {activeTargets.length === 0 && <p className="meta">Nenhuma meta ativa neste orçamento.</p>}
       <div className="budget-target-grid">
-        {execution.targets.slice().sort((a, b) => categoryName(a.categoryId, budget, categories).localeCompare(categoryName(b.categoryId, budget, categories), 'pt-BR')).map((item) => {
+        {execution.targets.slice().sort((a, b) => {
+          const severity = (status: FinancialBudgetAlertStatus) => ({ Exceeded: 0, LimitReached: 1, ApproachingLimit: 2, WithinBudget: 3 })[status]
+          return severity(a.status) - severity(b.status)
+            || categoryName(a.categoryId, budget, categories).localeCompare(categoryName(b.categoryId, budget, categories), 'pt-BR')
+        }).map((item) => {
           const target = budget.targets.find((candidate) => candidate.id === item.targetId)
           if (!target) return null
           return <BudgetTargetCard key={item.targetId} target={target} execution={item} familyId={familyId} budgetId={budget.id} onChanged={onChanged} onNotice={onNotice} />
@@ -178,9 +183,22 @@ function categoryName(categoryId: string, budget: FinancialBudget, categories: F
 
 function BudgetSummary({ values }: { values: FinancialBudgetExecution['total'] }) {
   return <section className="budget-summary" aria-label="Resumo da execução">
+    <div className={`budget-alert budget-alert--${values.status}`} role="status">
+      <span aria-hidden="true">{statusIcon(values.status)}</span>
+      <div><strong>{statusLabel(values.status)}</strong><span>{values.alertMessage}</span></div>
+    </div>
     {(['planned', 'realized', 'committed', 'projectedConsumption', 'available', 'exceededAmount'] as const).map((key) => <div className={key === 'exceededAmount' && values[key] !== '0.00' ? 'budget-summary__item budget-summary__item--danger' : 'budget-summary__item'} key={key}><span>{summaryLabel(key)}</span><strong>{formatBrlDecimal(values[key])}</strong></div>)}
     <div className="budget-summary__item"><span>Consumo</span><strong>{values.consumptionPercentage === null ? 'Sem referência' : `${values.consumptionPercentage}%`}</strong></div>
+    <div className="budget-alert-counts" aria-label="Contagem de alertas"><span>Atenção: <strong>{values.approachingCount}</strong></span><span>No limite: <strong>{values.reachedCount}</strong></span><span>Excedidas: <strong>{values.exceededCount}</strong></span></div>
   </section>
+}
+
+function statusLabel(status: FinancialBudgetAlertStatus) {
+  return ({ WithinBudget: 'Dentro do orçamento', ApproachingLimit: 'Atenção', LimitReached: 'Limite atingido', Exceeded: 'Orçamento excedido' } as Record<FinancialBudgetAlertStatus, string>)[status]
+}
+
+function statusIcon(status: FinancialBudgetAlertStatus) {
+  return ({ WithinBudget: '✓', ApproachingLimit: '!', LimitReached: '●', Exceeded: '×' } as Record<FinancialBudgetAlertStatus, string>)[status]
 }
 
 function summaryLabel(key: string) {
@@ -191,10 +209,11 @@ function BudgetTargetCard({ target, execution, familyId, budgetId, onChanged, on
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const percentage = execution.consumptionPercentage === null ? null : Number.parseFloat(execution.consumptionPercentage)
-  return <article className={execution.exceededAmount !== '0.00' ? 'budget-target budget-target--exceeded' : 'budget-target'}>
-    <div className="budget-target__header"><div><h5>{target.category.name} {!target.category.isActive && <span className="meta">(inativa)</span>}</h5><span className="meta">Meta {formatBrlDecimal(execution.planned)}</span></div>{execution.exceededAmount !== '0.00' && <span className="budget-badge">Excedida</span>}</div>
+  return <article className={execution.status === 'Exceeded' ? 'budget-target budget-target--exceeded' : 'budget-target'}>
+    <div className="budget-target__header"><div><h5>{target.category.name} {!target.category.isActive && <span className="meta">(inativa)</span>}</h5><span className="meta">Meta {formatBrlDecimal(execution.planned)}</span></div><span className={`budget-badge budget-badge--${execution.status}`}><span aria-hidden="true">{statusIcon(execution.status)}</span> {statusLabel(execution.status)}</span></div>
     <div className="budget-target__values"><span>Realizado <strong>{formatBrlDecimal(execution.realized)}</strong></span><span>Comprometido <strong>{formatBrlDecimal(execution.committed)}</strong></span><span>Projetado <strong>{formatBrlDecimal(execution.projectedConsumption)}</strong></span><span>Disponível <strong>{formatBrlDecimal(execution.available)}</strong></span></div>
     <div className="budget-progress" aria-label={percentage === null ? 'Consumo sem referência percentual' : `Consumo de ${execution.consumptionPercentage}%`}><div className="budget-progress__bar" style={{ width: percentage === null ? '0%' : `${Math.min(100, Math.max(0, percentage))}%` }} /><span>{execution.consumptionPercentage === null ? 'Sem referência' : `${execution.consumptionPercentage}% consumido`}</span></div>
+    <p className="budget-target__alert"><span aria-hidden="true">{statusIcon(execution.status)}</span> {execution.alertMessage}</p>
     {editing ? <BudgetTargetEditForm familyId={familyId} budgetId={budgetId} target={target} onDone={() => { setEditing(false); onChanged() }} onCancel={() => setEditing(false)} onError={onNotice} /> : <div className="budget-target__actions"><button type="button" onClick={() => setEditing(true)}>Editar</button><button type="button" disabled={busy} onClick={() => { if (window.confirm(`Arquivar a meta de ${target.category.name} (${formatBrlDecimal(target.plannedAmount)})? Isso retira a meta dos totais, sem cancelar despesas.`)) { setBusy(true); void archiveBudgetTarget(familyId, budgetId, target.id).then((result) => result.ok ? onChanged() : onNotice(result.message)).finally(() => setBusy(false)) } }}>Arquivar meta</button></div>}
   </article>
 }

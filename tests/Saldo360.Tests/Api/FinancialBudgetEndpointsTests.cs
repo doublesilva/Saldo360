@@ -194,6 +194,10 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
 
         Assert.Empty(execution.Targets);
         Assert.Equal(("0.00", "0.00", "0.00", "0.00", "0.00", "0.00", "0.00"), Values(execution.Total));
+        Assert.Equal("WithinBudget", execution.Total.Status);
+        Assert.Equal(0, execution.Total.ApproachingCount);
+        Assert.Equal(0, execution.Total.ReachedCount);
+        Assert.Equal(0, execution.Total.ExceededCount);
     }
 
     [Fact]
@@ -426,7 +430,9 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         string TotalPlannedAmount, List<TargetDto> Targets, DateTimeOffset? ArchivedAt);
     private sealed record ExecutionDto(Guid BudgetId, string Competence, ExecutionAmountsDto Total, List<TargetExecutionDto> Targets);
     private sealed record ExecutionAmountsDto(string Planned, string Realized, string Committed,
-        string ProjectedConsumption, string Available, string ExceededAmount, string? ConsumptionPercentage);
+        string ProjectedConsumption, string Available, string ExceededAmount, string? ConsumptionPercentage,
+        string? Status, string? AlertMessage, int ApproachingCount, int ReachedCount, int ExceededCount);
     private sealed record TargetExecutionDto(Guid TargetId, Guid CategoryId, string Planned, string Realized,
-        string Committed, string ProjectedConsumption, string Available, string ExceededAmount, string? ConsumptionPercentage);
+        string Committed, string ProjectedConsumption, string Available, string ExceededAmount, string? ConsumptionPercentage,
+        string? Status, string? AlertMessage);
 }

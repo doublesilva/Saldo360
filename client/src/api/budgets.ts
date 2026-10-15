@@ -35,6 +35,8 @@ export interface FinancialBudgetExecutionAmounts {
   consumptionPercentage: string | null
 }
 
+export type FinancialBudgetAlertStatus = 'WithinBudget' | 'ApproachingLimit' | 'LimitReached' | 'Exceeded'
+
 export interface FinancialBudgetTargetExecution {
   targetId: string
   categoryId: string
@@ -45,12 +47,22 @@ export interface FinancialBudgetTargetExecution {
   available: string
   exceededAmount: string
   consumptionPercentage: string | null
+  status: FinancialBudgetAlertStatus
+  alertMessage: string
+}
+
+export interface FinancialBudgetExecutionSummary extends FinancialBudgetExecutionAmounts {
+  status: FinancialBudgetAlertStatus
+  alertMessage: string
+  approachingCount: number
+  reachedCount: number
+  exceededCount: number
 }
 
 export interface FinancialBudgetExecution {
   budgetId: string
   competence: string
-  total: FinancialBudgetExecutionAmounts
+  total: FinancialBudgetExecutionSummary
   targets: FinancialBudgetTargetExecution[]
 }
 
