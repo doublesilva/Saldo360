@@ -37,6 +37,16 @@ public sealed class FinancialRecurrenceMaterializationEndpointsTests(PostgresFix
         using var materializations = JsonDocument.Parse(await view.Content.ReadAsStringAsync());
         Assert.Equal(5, materializations.RootElement.GetArrayLength());
         Assert.Equal(JsonValueKind.Null, materializations.RootElement[4].GetProperty("plannedTransactionId").ValueKind);
+
+        var calendar = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/financial-calendar?from=2026-11-01&through=2027-03-31", owner);
+        Assert.Equal(HttpStatusCode.OK, calendar.StatusCode);
+        using var calendarBody = JsonDocument.Parse(await calendar.Content.ReadAsStringAsync());
+        Assert.Equal(4, calendarBody.RootElement.GetProperty("items").GetArrayLength());
+        Assert.All(calendarBody.RootElement.GetProperty("items").EnumerateArray(), item =>
+        {
+            Assert.Equal(recurrenceId, item.GetProperty("recurrenceId").GetGuid());
+            Assert.True(item.GetProperty("occurrenceNumber").GetInt32() > 0);
+        });
     }
 
     private async Task<Guid> CreateAccountAsync(string session, Guid familyId, string name, string openingBalance)

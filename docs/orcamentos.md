@@ -165,3 +165,6 @@ Na Agenda Financeira, a mesma execução é exibida como “Situação do orçam
 Compras de cartão são consumo contratado e aparecem na competência da fatura de cada parcela através do componente `creditCardCommitted`. A execução projetada soma `realized + committed + creditCardCommitted`. O pagamento da fatura possui origem própria e não é despesa categorizada, portanto não duplica o consumo nem altera metas.
 
 Esse comportamento foi exercitado no cenário integrado da T09.7: pagamento e cancelamento alteram saldo e obrigação, mas preservam o comprometimento da parcela na competência original.
+# Recorrências materializadas
+
+Previsões criadas explicitamente pela materialização de recorrências usam exatamente o mesmo cálculo de execução das demais previsões. Enquanto pendentes, entram em `committed`; quando realizadas, deixam de compor `committed` e passam a `realized`. O vínculo da recorrência não cria consumo adicional e a meta mensal permanece inalterada.

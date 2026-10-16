@@ -37,7 +37,10 @@ public sealed record FinancialCalendarItemDto(
     TransactionReferenceDto? Category,
     string Currency,
     Guid? PlannedTransactionId,
-    FinancialTransactionOrigin Origin = FinancialTransactionOrigin.Manual);
+    FinancialTransactionOrigin Origin = FinancialTransactionOrigin.Manual,
+    Guid? RecurrenceId = null,
+    int? OccurrenceNumber = null,
+    DateOnly? ScheduledDate = null);
 
 public sealed record FinancialCalendarFilter(
     DateOnly From,

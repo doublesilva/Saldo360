@@ -1,5 +1,7 @@
 # Saldo inicial das contas
 
+Previsões originadas de recorrências só influenciam a projeção depois de materializadas. A definição e as ocorrências virtuais não alteram o saldo inicial, o saldo realizado ou a projeção; o lançamento efetivo continua sendo o único evento que altera o saldo realizado.
+
 Obrigações de cartão, inclusive parcelas históricas importadas, não alteram o saldo realizado da conta. Afetam apenas a projeção quando a fatura possui conta preferencial válida; o pagamento da fatura é o evento que movimenta o saldo bancário.
 
 Cada conta financeira pode ter um **saldo inicial** opcional, formado por dois campos que existem juntos ou não existem:

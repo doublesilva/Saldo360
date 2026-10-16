@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Saldo360.Application.Calendar;
 using Saldo360.Application.Transactions;
 using Saldo360.Domain.Categories;
+using Saldo360.Domain.Transactions;
 using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.Calendar;
@@ -47,6 +48,9 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
             join a in db.FinancialAccounts on new { t.FamilyId, Id = t.AccountId } equals new { a.FamilyId, a.Id }
             join category in db.FinancialCategories on new { t.FamilyId, t.CategoryId } equals new { category.FamilyId, CategoryId = (Guid?)category.Id } into categories
             from c in categories.DefaultIfEmpty()
+            join materialization in db.FinancialRecurrenceMaterializations on new { t.FamilyId, PlannedTransactionId = t.PlannedTransactionId }
+                equals new { materialization.FamilyId, PlannedTransactionId = (Guid?)materialization.PlannedTransactionId } into materializations
+            from m in materializations.DefaultIfEmpty()
             select new FinancialCalendarItemDto(
                 t.Id,
                 FinancialCalendarSource.Transaction,
@@ -59,12 +63,17 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
                 c == null ? null : new TransactionReferenceDto(c.Id, c.Name, c.IsActive),
                 t.Currency,
                 t.PlannedTransactionId,
-                t.Origin);
+                t.Origin,
+                m == null ? null : m.RecurrenceId,
+                m == null ? null : m.OccurrenceNumber,
+                m == null ? null : m.ScheduledDate);
 
         var planned =
             from p in pendingPlannedTransactions
             join a in db.FinancialAccounts on new { p.FamilyId, Id = p.AccountId } equals new { a.FamilyId, a.Id }
             join c in db.FinancialCategories on new { p.FamilyId, Id = p.CategoryId } equals new { c.FamilyId, c.Id }
+            join materialization in db.FinancialRecurrenceMaterializations on p.Id equals materialization.PlannedTransactionId into materializations
+            from m in materializations.DefaultIfEmpty()
             select new FinancialCalendarItemDto(
                 p.Id,
                 FinancialCalendarSource.PlannedTransaction,
@@ -76,7 +85,11 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
                 new TransactionReferenceDto(a.Id, a.Name, a.IsActive),
                 new TransactionReferenceDto(c.Id, c.Name, c.IsActive),
                 p.Currency,
-                null);
+                null,
+                FinancialTransactionOrigin.Manual,
+                m == null ? null : m.RecurrenceId,
+                m == null ? null : m.OccurrenceNumber,
+                m == null ? null : m.ScheduledDate);
 
         var effectiveItems = await effective.ToListAsync(cancellationToken);
         var plannedItems = await planned.ToListAsync(cancellationToken);

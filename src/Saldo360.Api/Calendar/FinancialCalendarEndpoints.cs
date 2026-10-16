@@ -312,7 +312,10 @@ public sealed record FinancialCalendarItemResponse(
     TransactionReferenceDto? Category,
     string Currency,
     Guid? PlannedTransactionId,
-    FinancialTransactionOrigin Origin)
+    FinancialTransactionOrigin Origin,
+    Guid? RecurrenceId,
+    int? OccurrenceNumber,
+    DateOnly? ScheduledDate)
 {
     public static FinancialCalendarItemResponse From(FinancialCalendarItemDto item) => new(
         item.Id,
@@ -326,5 +329,8 @@ public sealed record FinancialCalendarItemResponse(
         item.Category,
         item.Currency,
         item.PlannedTransactionId,
-        item.Origin);
+        item.Origin,
+        item.RecurrenceId,
+        item.OccurrenceNumber,
+        item.ScheduledDate);
 }
