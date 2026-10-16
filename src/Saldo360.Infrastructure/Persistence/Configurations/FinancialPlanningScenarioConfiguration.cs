@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Families;
+using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Planning;
 
 namespace Saldo360.Infrastructure.Persistence.Configurations;
@@ -25,5 +26,7 @@ internal sealed class FinancialPlanningScenarioConfiguration : IEntityTypeConfig
         builder.HasIndex(x => new { x.FamilyId, x.Status, x.StartMonth });
         builder.HasIndex(x => new { x.FamilyId, x.Name }).IsUnique().HasDatabaseName(UniqueNameIndex);
         builder.HasOne<Family>().WithMany().HasForeignKey(x => x.FamilyId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialAccount>().WithMany().HasForeignKey(x => new { x.FamilyId, x.RecoveryAccountId })
+            .HasPrincipalKey(x => new { x.FamilyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
     }
 }

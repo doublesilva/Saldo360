@@ -12,6 +12,7 @@ public sealed class FinancialPlanningScenario : Entity
     private FinancialPlanningScenario() { Name = string.Empty; }
 
     public Guid FamilyId { get; private init; }
+    public Guid? RecoveryAccountId { get; private set; }
     public string Name { get; private set; }
     public string? Description { get; private set; }
     public DateOnly StartMonth { get; private set; }
@@ -21,16 +22,16 @@ public sealed class FinancialPlanningScenario : Entity
     public DateTimeOffset UpdatedAt { get; private set; }
     public DateTimeOffset? ArchivedAt { get; private set; }
 
-    public static FinancialPlanningScenario Create(Guid familyId, string name, string? description, DateOnly startMonth, int months, DateTimeOffset now) => new()
+    public static FinancialPlanningScenario Create(Guid familyId, string name, string? description, DateOnly startMonth, int months, DateTimeOffset now, Guid? recoveryAccountId = null) => new()
     {
-        FamilyId = familyId, Name = name, Description = description, StartMonth = startMonth, Months = months,
+        FamilyId = familyId, RecoveryAccountId = recoveryAccountId, Name = name, Description = description, StartMonth = startMonth, Months = months,
         Status = PlanningScenarioStatus.Active, CreatedAt = now, UpdatedAt = now,
     };
 
-    public void Update(string name, string? description, DateOnly startMonth, int months, DateTimeOffset now)
+    public void Update(string name, string? description, DateOnly startMonth, int months, DateTimeOffset now, Guid? recoveryAccountId = null)
     {
         if (Status == PlanningScenarioStatus.Archived) throw new InvalidOperationException("Cenário arquivado não pode ser editado.");
-        Name = name; Description = description; StartMonth = startMonth; Months = months; UpdatedAt = now;
+        Name = name; Description = description; StartMonth = startMonth; Months = months; RecoveryAccountId = recoveryAccountId; UpdatedAt = now;
     }
 
     public void Archive(DateTimeOffset now)

@@ -27,7 +27,7 @@ public static class FinancialPlanningScenarioEndpoints
     private static async Task<IResult> Create(Guid familyId, ScenarioRequest? request, CurrentUser user, FinancialPlanningScenarioService service, CancellationToken ct)
     {
         if (await user.GetUserIdAsync(ct) is not { } uid) return Results.Unauthorized();
-        var result = await service.CreateAsync(familyId, uid, new(request?.Name, request?.Description, request?.StartMonth, request?.Months), ct);
+        var result = await service.CreateAsync(familyId, uid, new(request?.Name, request?.Description, request?.StartMonth, request?.Months, request?.RecoveryAccountId), ct);
         return Result(result, x => Results.Created($"/api/families/{familyId}/planning-scenarios/{x.Id}", ScenarioResponse.From(x)));
     }
     private static async Task<IResult> Get(Guid familyId, Guid id, CurrentUser user, FinancialPlanningScenarioService service, CancellationToken ct) =>
@@ -35,7 +35,7 @@ public static class FinancialPlanningScenarioEndpoints
     private static async Task<IResult> Update(Guid familyId, Guid id, ScenarioRequest? request, CurrentUser user, FinancialPlanningScenarioService service, CancellationToken ct)
     {
         if (await user.GetUserIdAsync(ct) is not { } uid) return Results.Unauthorized();
-        return Result(await service.UpdateAsync(familyId, id, uid, new(request?.Name, request?.Description, request?.StartMonth, request?.Months), ct), x => Results.Ok(ScenarioResponse.From(x)));
+        return Result(await service.UpdateAsync(familyId, id, uid, new(request?.Name, request?.Description, request?.StartMonth, request?.Months, request?.RecoveryAccountId), ct), x => Results.Ok(ScenarioResponse.From(x)));
     }
     private static async Task<IResult> Archive(Guid familyId, Guid id, CurrentUser user, FinancialPlanningScenarioService service, CancellationToken ct)
     {
@@ -61,11 +61,11 @@ public static class FinancialPlanningScenarioEndpoints
     private static IResult Result(PlanningScenarioResult result, Func<PlanningScenarioDto, IResult> ok) => result.Access switch { PlanningScenarioAccess.NotFound => Results.NotFound(), PlanningScenarioAccess.Invalid => Results.ValidationProblem(result.Errors!), PlanningScenarioAccess.Conflict => Results.Conflict(new { title = result.Message }), _ => ok(result.Scenario!) };
 }
 
-public sealed record ScenarioRequest(string? Name, string? Description, string? StartMonth, int? Months);
+public sealed record ScenarioRequest(string? Name, string? Description, string? StartMonth, int? Months, Guid? RecoveryAccountId = null);
 public sealed record ParameterRequest(string? ExpectedAdditionalIncome, string? ExpectedAdditionalExpense, string? ContingencyReserve, string? RecoveryTargetPercentage, string? Notes);
-public sealed record ScenarioResponse(Guid Id, Guid FamilyId, string Name, string? Description, string StartMonth, int Months, PlanningScenarioStatus Status, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt)
+public sealed record ScenarioResponse(Guid Id, Guid FamilyId, Guid? RecoveryAccountId, string Name, string? Description, string StartMonth, int Months, PlanningScenarioStatus Status, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt)
 {
-    public static ScenarioResponse From(PlanningScenarioDto x) => new(x.Id, x.FamilyId, x.Name, x.Description, x.StartMonth.ToString("yyyy-MM"), x.Months, x.Status, x.CreatedAt, x.UpdatedAt, x.ArchivedAt);
+    public static ScenarioResponse From(PlanningScenarioDto x) => new(x.Id, x.FamilyId, x.RecoveryAccountId, x.Name, x.Description, x.StartMonth.ToString("yyyy-MM"), x.Months, x.Status, x.CreatedAt, x.UpdatedAt, x.ArchivedAt);
 }
 public sealed record ParameterResponse(Guid Id, Guid FamilyId, Guid ScenarioId, string Competence, string ExpectedAdditionalIncome, string ExpectedAdditionalExpense, string ContingencyReserve, string RecoveryTargetPercentage, string? Notes)
 {
@@ -76,8 +76,8 @@ public sealed record ScenarioProjectionResponse(Guid ScenarioId, string From, in
 {
     public static ScenarioProjectionResponse Create(PlanningScenarioProjection x) => new(x.ScenarioId, x.From.ToString("yyyy-MM"), x.Months, x.Items.Select(ScenarioProjectionMonthResponse.From).ToList());
 }
-public sealed record ScenarioProjectionMonthResponse(string Competence, string? OpeningBalance, string RealizedIncome, string RealizedExpense, string PendingIncome, string PendingExpense, string CreditCardOutstanding, string? BaseClosingBalance, string AdditionalIncome, string AdditionalExpense, string CumulativeAdjustment, string? ScenarioClosingBalance, string ContingencyReserve, string? PlannedAvailable, bool ProjectionComplete, bool UsesBaseProjectionOnly, bool HasUnallocatedObligations, string RecoveryTargetPercentage)
+public sealed record ScenarioProjectionMonthResponse(string Competence, string? OpeningBalance, string RealizedIncome, string RealizedExpense, string PendingIncome, string PendingExpense, string CreditCardOutstanding, string? BaseClosingBalance, string AdditionalIncome, string AdditionalExpense, string CumulativeAdjustment, string? ScenarioClosingBalance, string ContingencyReserve, string? PlannedAvailable, bool ProjectionComplete, bool UsesBaseProjectionOnly, bool HasUnallocatedObligations, string RecoveryTargetPercentage, Guid? RecoveryAccountId, string? OpeningNegativeBalance, string? ClosingNegativeBalance, string? ProjectedRecovery, string? CumulativeRecovery, string? RecoveryCapacity, string? RecoveryTarget, string? UncommittedMargin, string? RemainingNegativeBalance, RecoveryStatus RecoveryStatus, bool RecoveryProjectionComplete)
 {
-    public static ScenarioProjectionMonthResponse From(PlanningScenarioProjectionMonth x) => new(x.Competence.ToString("yyyy-MM"), Format(x.OpeningBalance), Money.Format(x.RealizedIncome), Money.Format(x.RealizedExpense), Money.Format(x.PendingIncome), Money.Format(x.PendingExpense), Money.Format(x.CreditCardOutstanding), Format(x.BaseClosingBalance), Money.Format(x.AdditionalIncome), Money.Format(x.AdditionalExpense), Money.Format(x.CumulativeAdjustment), Format(x.ScenarioClosingBalance), Money.Format(x.ContingencyReserve), Format(x.PlannedAvailable), x.ProjectionComplete, x.UsesBaseProjectionOnly, x.HasUnallocatedObligations, Money.Format(x.RecoveryTargetPercentage));
+    public static ScenarioProjectionMonthResponse From(PlanningScenarioProjectionMonth x) => new(x.Competence.ToString("yyyy-MM"), Format(x.OpeningBalance), Money.Format(x.RealizedIncome), Money.Format(x.RealizedExpense), Money.Format(x.PendingIncome), Money.Format(x.PendingExpense), Money.Format(x.CreditCardOutstanding), Format(x.BaseClosingBalance), Money.Format(x.AdditionalIncome), Money.Format(x.AdditionalExpense), Money.Format(x.CumulativeAdjustment), Format(x.ScenarioClosingBalance), Money.Format(x.ContingencyReserve), Format(x.PlannedAvailable), x.ProjectionComplete, x.UsesBaseProjectionOnly, x.HasUnallocatedObligations, Money.Format(x.RecoveryTargetPercentage), x.RecoveryAccountId, Format(x.OpeningNegativeBalance), Format(x.ClosingNegativeBalance), Format(x.ProjectedRecovery), Format(x.CumulativeRecovery), Format(x.RecoveryCapacity), Format(x.RecoveryTarget), Format(x.UncommittedMargin), Format(x.RemainingNegativeBalance), x.RecoveryStatus, x.RecoveryProjectionComplete);
     private static string? Format(decimal? value) => value is { } number ? Money.Format(number) : null;
 }

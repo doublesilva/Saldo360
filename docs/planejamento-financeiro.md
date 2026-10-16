@@ -30,7 +30,7 @@ O cenário é isolado por família e pode coexistir com outros cenários na mesm
 
 `POST /api/families/{familyId}/planning-scenarios`
 
-Corpo: `{ "name": "Realista", "description": "...", "startMonth": "2026-11", "months": 6 }`.
+Corpo: `{ "name": "Realista", "description": "...", "startMonth": "2026-11", "months": 6, "recoveryAccountId": "uuid-opcional" }`. A conta-alvo deve pertencer à família e estar ativa; o servidor nunca escolhe uma conta automaticamente.
 
 `GET /api/families/{familyId}/planning-scenarios/{id}`
 
@@ -54,9 +54,17 @@ Para cada competência, a resposta retorna `openingBalance`, realizados, pendên
 
 Quando não há parâmetro explícito, os ajustes e a reserva são zero e `usesBaseProjectionOnly` informa essa condição. Obrigações de cartão sem conta de pagamento mantêm a projeção parcial, com `projectionComplete=false` e `hasUnallocatedObligations=true`; nenhuma conta é escolhida arbitrariamente. A consulta é somente leitura e preserva a captura temporal do motor mensal.
 
+## Recuperação de saldo (T12.3)
+
+Quando `recoveryAccountId` é informado, a mesma projeção mensal é consultada para essa conta, sem criar transferências hipotéticas. A resposta de cada competência inclui `openingNegativeBalance`, `closingNegativeBalance`, `projectedRecovery`, `cumulativeRecovery`, `recoveryCapacity`, `recoveryTarget`, `uncommittedMargin`, `remainingNegativeBalance`, `recoveryStatus` e `recoveryProjectionComplete`.
+
+As fórmulas são determinísticas: `negativeBalance = max(0, -balance)`; `projectedRecovery = max(0, openingNegativeBalance - closingNegativeBalance)`; `recoveryCapacity = max(0, plannedAvailable)` quando a projeção está completa; `recoveryTarget = min(openingNegativeBalance, recoveryCapacity × recoveryTargetPercentage / 100)`; e `uncommittedMargin = recoveryCapacity - recoveryTarget`. A capacidade é um indicador de planejamento, não autoriza transferência automática nem altera o saldo real. A reserva continua fora do saldo de fechamento.
+
+Os estados são `NotConfigured`, `NoNegativeBalance`, `Recovering`, `Stable`, `Worsening`, `Recovered` e `IncompleteProjection`. Sem conta-alvo, as métricas de recuperação ficam nulas e o consolidado continua válido (`NotConfigured`). Se a conta não tiver saldo inicial ou houver obrigação sem cobertura, a recuperação fica incompleta; nenhum valor é atribuído arbitrariamente a outra conta.
+
 ## Persistência e limitações
 
-A migration `AddPlanningScenarios` cria tabelas com FKs compostas por família, índices de consulta, unicidade de cenário/competência e constraints de horizonte, competência, não negatividade e percentual. Não há projeção consolidada, herança de defaults, materialização em previsões, alteração de orçamento, jobs ou interface React nesta tarefa.
+A migration `AddPlanningScenarios` cria tabelas com FKs compostas por família, índices de consulta, unicidade de cenário/competência e constraints de horizonte, competência, não negatividade e percentual. A migration incremental `AddRecoveryAccountToPlanningScenario` adiciona a conta-alvo opcional com FK composta por família. Não há criação de transações, previsões, transferências, alteração de orçamento, jobs ou interface React nesta tarefa.
 
 ## Evolução
 

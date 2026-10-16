@@ -25,7 +25,7 @@ internal sealed class FinancialPlanningScenarioRepository(Saldo360DbContext db) 
         if (!includeArchived) query = query.Where(x => x.Status != PlanningScenarioStatus.Archived);
         return await Project(query.OrderBy(x => x.StartMonth).ThenBy(x => x.Name)).ToListAsync(ct);
     }
-    private static IQueryable<PlanningScenarioDto> Project(IQueryable<FinancialPlanningScenario> query) => query.Select(x => new PlanningScenarioDto(x.Id, x.FamilyId, x.Name, x.Description, x.StartMonth, x.Months, x.Status, x.CreatedAt, x.UpdatedAt, x.ArchivedAt));
+    private static IQueryable<PlanningScenarioDto> Project(IQueryable<FinancialPlanningScenario> query) => query.Select(x => new PlanningScenarioDto(x.Id, x.FamilyId, x.RecoveryAccountId, x.Name, x.Description, x.StartMonth, x.Months, x.Status, x.CreatedAt, x.UpdatedAt, x.ArchivedAt));
 
     public async Task AddParameterAsync(FinancialPlanningMonthlyParameter parameter, CancellationToken ct)
     {

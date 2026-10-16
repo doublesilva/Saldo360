@@ -51,9 +51,16 @@ public sealed class FinancialPlanningScenarioEndpointsTests(PostgresFixture post
         var other = await SignInAsync("scenario-validation-other");
         var family = await CreateFamilyAsync(owner, "Família Protegida");
         var otherFamily = await CreateFamilyAsync(other, "Outra Família");
+        var foreignAccountResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{otherFamily.Id}/accounts", other,
+            new { name = "Conta externa", type = "Checking", financialScope = "PF", openingBalance = "0.00", openingBalanceDate = "2026-01-01" });
+        using var foreignAccountBody = JsonDocument.Parse(await foreignAccountResponse.Content.ReadAsStringAsync());
+        var foreignAccountId = foreignAccountBody.RootElement.GetProperty("id").GetGuid();
         var invalid = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/planning-scenarios", owner,
             new { name = "", startMonth = "2026-1", months = 13 });
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        var foreignTarget = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/planning-scenarios", owner,
+            new { name = "Conta externa", startMonth = "2027-01", months = 1, recoveryAccountId = foreignAccountId });
+        Assert.Equal(HttpStatusCode.BadRequest, foreignTarget.StatusCode);
 
         var create = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/planning-scenarios", owner,
             new { name = "Conservador", startMonth = "2027-01", months = 12 });
@@ -110,6 +117,41 @@ public sealed class FinancialPlanningScenarioEndpointsTests(PostgresFixture post
         Assert.Equal("300.00", december.GetProperty("cumulativeAdjustment").GetString());
         Assert.Equal("5300.00", december.GetProperty("scenarioClosingBalance").GetString());
         Assert.Equal("true", december.GetProperty("projectionComplete").GetRawText());
+
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialTransactions.CountAsync());
+        Assert.Equal(0, await db.FinancialPlannedTransactions.CountAsync());
+    }
+
+    [Fact]
+    public async Task Projection_UsesExplicitRecoveryAccount_WithoutCreatingFinancialEntries()
+    {
+        var owner = await SignInAsync("scenario-recovery-owner");
+        var family = await CreateFamilyAsync(owner, "Família Recuperação");
+        var accountResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/accounts", owner,
+            new { name = "Conta negativa", type = "Checking", financialScope = "PF", openingBalance = "-1000.00", openingBalanceDate = "2026-09-01" });
+        Assert.Equal(HttpStatusCode.Created, accountResponse.StatusCode);
+        using var accountBody = JsonDocument.Parse(await accountResponse.Content.ReadAsStringAsync());
+        var accountId = accountBody.RootElement.GetProperty("id").GetGuid();
+        var create = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/planning-scenarios", owner,
+            new { name = "Recuperação", startMonth = "2026-11", months = 1, recoveryAccountId = accountId });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        using var scenarioBody = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var scenarioId = scenarioBody.RootElement.GetProperty("id").GetGuid();
+        var parameter = await SendWithCsrfAsync(HttpMethod.Put, $"/api/families/{family.Id}/planning-scenarios/{scenarioId}/parameters/2026-11", owner,
+            new { expectedAdditionalIncome = "0.00", expectedAdditionalExpense = "0.00", contingencyReserve = "0.00", recoveryTargetPercentage = "85.00" });
+        Assert.Equal(HttpStatusCode.OK, parameter.StatusCode);
+
+        var projection = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/planning-scenarios/{scenarioId}/projection", owner);
+        Assert.Equal(HttpStatusCode.OK, projection.StatusCode);
+        using var body = JsonDocument.Parse(await projection.Content.ReadAsStringAsync());
+        var item = body.RootElement.GetProperty("items")[0];
+        Assert.Equal(accountId, item.GetProperty("recoveryAccountId").GetGuid());
+        Assert.Equal("1000.00", item.GetProperty("openingNegativeBalance").GetString());
+        Assert.Equal("1000.00", item.GetProperty("closingNegativeBalance").GetString());
+        Assert.Equal("0.00", item.GetProperty("projectedRecovery").GetString());
+        Assert.Equal("Stable", item.GetProperty("recoveryStatus").GetString());
+        Assert.True(item.GetProperty("recoveryProjectionComplete").GetBoolean());
 
         await using var db = Db();
         Assert.Equal(0, await db.FinancialTransactions.CountAsync());

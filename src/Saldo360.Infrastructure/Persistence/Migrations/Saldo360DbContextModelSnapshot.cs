@@ -1447,6 +1447,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(120)")
                         .HasColumnName("name");
 
+                    b.Property<Guid?>("RecoveryAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recovery_account_id");
+
                     b.Property<DateOnly>("StartMonth")
                         .HasColumnType("date")
                         .HasColumnName("start_month");
@@ -1468,6 +1472,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("FamilyId", "Name")
                         .IsUnique()
                         .HasDatabaseName("ux_planning_scenarios_family_name");
+
+                    b.HasIndex("FamilyId", "RecoveryAccountId")
+                        .HasDatabaseName("ix_financial_planning_scenarios_family_id_recovery_account_id");
 
                     b.HasIndex("FamilyId", "Status", "StartMonth")
                         .HasDatabaseName("ix_financial_planning_scenarios_family_id_status_start_month");
@@ -2473,6 +2480,13 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_planning_scenarios_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "RecoveryAccountId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_planning_scenarios_financial_accounts_family_id_r");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>

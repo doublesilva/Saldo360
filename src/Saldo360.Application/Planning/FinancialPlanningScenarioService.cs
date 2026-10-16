@@ -1,19 +1,21 @@
 using System.Globalization;
 using Saldo360.Application.Families;
+using Saldo360.Application.Accounts;
 using Saldo360.Domain.Common;
 using Saldo360.Domain.Planning;
 
 namespace Saldo360.Application.Planning;
 
-public sealed class FinancialPlanningScenarioService(IFamilyRepository families, IFinancialPlanningScenarioRepository repository, TimeProvider time)
+public sealed class FinancialPlanningScenarioService(IFamilyRepository families, IFinancialPlanningScenarioRepository repository, IFinancialAccountRepository accounts, TimeProvider time)
 {
     public async Task<PlanningScenarioResult> CreateAsync(Guid familyId, Guid userId, PlanningScenarioInput input, CancellationToken ct)
     {
         if (!await IsParticipant(familyId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
-        var errors = ValidateScenario(input, out var name, out var description, out var startMonth, out var months);
+        var errors = ValidateScenario(input, out var name, out var description, out var startMonth, out var months, out var recoveryAccountId);
+        await ValidateRecoveryAccount(errors, familyId, recoveryAccountId, ct);
         if (errors.Count > 0) return new(PlanningScenarioAccess.Invalid, null, errors);
         if (await repository.ScenarioNameExistsAsync(familyId, name!, null, ct)) return new(PlanningScenarioAccess.Conflict, null, null, "Já existe um cenário com este nome nesta família.");
-        var entity = FinancialPlanningScenario.Create(familyId, name!, description, startMonth, months, time.GetUtcNow());
+        var entity = FinancialPlanningScenario.Create(familyId, name!, description, startMonth, months, time.GetUtcNow(), recoveryAccountId);
         try { await repository.AddScenarioAsync(entity, ct); } catch (InvalidOperationException e) { return new(PlanningScenarioAccess.Conflict, null, null, e.Message); }
         return new(PlanningScenarioAccess.Allowed, await repository.GetScenarioAsync(familyId, entity.Id, ct), null);
     }
@@ -28,10 +30,11 @@ public sealed class FinancialPlanningScenarioService(IFamilyRepository families,
     {
         if (!await IsParticipant(familyId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
         var entity = await repository.FindScenarioAsync(familyId, id, ct); if (entity is null) return new(PlanningScenarioAccess.NotFound, null, null);
-        var errors = ValidateScenario(input, out var name, out var description, out var startMonth, out var months);
+        var errors = ValidateScenario(input, out var name, out var description, out var startMonth, out var months, out var recoveryAccountId);
+        await ValidateRecoveryAccount(errors, familyId, recoveryAccountId, ct);
         if (errors.Count > 0) return new(PlanningScenarioAccess.Invalid, null, errors);
         if (await repository.ScenarioNameExistsAsync(familyId, name!, id, ct)) return new(PlanningScenarioAccess.Conflict, null, null, "Já existe um cenário com este nome nesta família.");
-        try { entity.Update(name!, description, startMonth, months, time.GetUtcNow()); await repository.SaveAsync(ct); }
+        try { entity.Update(name!, description, startMonth, months, time.GetUtcNow(), recoveryAccountId); await repository.SaveAsync(ct); }
         catch (InvalidOperationException e) { return new(PlanningScenarioAccess.Conflict, null, null, e.Message); }
         return new(PlanningScenarioAccess.Allowed, await repository.GetScenarioAsync(familyId, id, ct), null);
     }
@@ -68,14 +71,22 @@ public sealed class FinancialPlanningScenarioService(IFamilyRepository families,
         return new(PlanningScenarioAccess.Allowed, new(existing.Id, existing.FamilyId, existing.ScenarioId, existing.Competence, existing.ExpectedAdditionalIncome, existing.ExpectedAdditionalExpense, existing.ContingencyReserve, existing.RecoveryTargetPercentage, existing.Notes), null);
     }
 
-    private static Dictionary<string, string[]> ValidateScenario(PlanningScenarioInput input, out string? name, out string? description, out DateOnly startMonth, out int months)
+    private static Dictionary<string, string[]> ValidateScenario(PlanningScenarioInput input, out string? name, out string? description, out DateOnly startMonth, out int months, out Guid? recoveryAccountId)
     {
-        var errors = new Dictionary<string, string[]>(); name = input.Name?.Trim(); description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(); startMonth = default; months = input.Months ?? 0;
+        var errors = new Dictionary<string, string[]>(); name = input.Name?.Trim(); description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(); startMonth = default; months = input.Months ?? 0; recoveryAccountId = input.RecoveryAccountId;
         if (string.IsNullOrWhiteSpace(name)) errors["name"] = ["Informe o nome do cenário."]; else if (name.Length > FinancialPlanningScenario.NameMaxLength) errors["name"] = ["O nome do cenário excede o limite."];
         if (description is { Length: > FinancialPlanningScenario.DescriptionMaxLength }) errors["description"] = ["A descrição excede o limite."];
         if (input.StartMonth is null || !DateOnly.TryParseExact($"{input.StartMonth}-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out startMonth)) errors["startMonth"] = ["Informe uma competência válida no formato yyyy-MM."];
         if (months is < 1 or > 12) errors["months"] = ["O horizonte deve estar entre 1 e 12 meses."];
         return errors;
+    }
+
+    private async Task ValidateRecoveryAccount(Dictionary<string, string[]> errors, Guid familyId, Guid? accountId, CancellationToken ct)
+    {
+        if (accountId is not { } id) return;
+        var account = await accounts.GetAsync(familyId, id, ct);
+        if (account is null) errors["recoveryAccountId"] = ["A conta-alvo não pertence à família."];
+        else if (!account.IsActive) errors["recoveryAccountId"] = ["A conta-alvo está arquivada ou inativa."];
     }
 
     private static Dictionary<string, string[]> ValidateParameter(string competence, PlanningMonthlyParameterInput input, FinancialPlanningScenario scenario, out DateOnly month, out (decimal income, decimal expense, decimal reserve, decimal recovery, string? notes) values)
