@@ -82,3 +82,7 @@ A auditoria integrada da T12 está registrada em [docs/T12.5-auditoria-planejame
 Obrigações de parcelas ainda devidas são incorporadas pela projeção-base quando a conta de pagamento é conhecida. Parcelas sem conta produzem cobertura incompleta e não são alocadas arbitrariamente.
 
 O planejamento reutiliza essa projeção-base; parcelas não geram ajustes hipotéticos adicionais.
+
+## Integração com objetivos (T14.3)
+
+A projeção de cenário mantém `baseClosingBalance`, `scenarioClosingBalance` e `plannedAvailable` inalterados. Ela acrescenta `allocatedToGoals`, `goalProtectedAvailability` e `goalAllocationCoverageComplete` como informações de proteção, sem transformar aportes em despesas. A disponibilidade protegida é `scenarioClosingBalance - allocatedToGoals - contingencyReserve`; a contingência não é automaticamente considerada coberta por objetivos. A vinculação explícita de contingência e a evolução de aportes futuros permanecem fora desta etapa.

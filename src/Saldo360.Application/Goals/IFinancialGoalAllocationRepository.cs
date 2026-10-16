@@ -9,6 +9,7 @@ public interface IFinancialGoalAllocationRepository
  Task<GoalProgressDto?> ProgressAsync(Guid familyId,Guid goalId,decimal targetAmount,CancellationToken ct);
  Task<GoalAccountAvailabilityDto?> AvailabilityAsync(Guid familyId,Guid accountId,CancellationToken ct);
  Task<IReadOnlyList<GoalAccountAvailabilityDto>> ListAccountsAvailabilityAsync(Guid familyId,CancellationToken ct);
+ Task<FinancialGoalSummaryDto> SummaryAsync(Guid familyId,CancellationToken ct);
  Task<FinancialGoalAllocation?> FindAsync(Guid familyId,Guid goalId,Guid allocationId,CancellationToken ct);
  Task SaveAsync(CancellationToken ct);
 }

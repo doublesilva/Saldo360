@@ -1,0 +1,3 @@
+namespace Saldo360.Application.Goals;
+public sealed record FinancialGoalSummaryDto(decimal AllocatedToGoals,decimal RealizedBalance,decimal UnallocatedRealizedBalance,int ActiveGoals,int CompletedGoals,int PausedGoals,bool CoverageComplete,IReadOnlyList<FinancialGoalAccountSummaryDto> Accounts);
+public sealed record FinancialGoalAccountSummaryDto(Guid FinancialAccountId,decimal RealizedBalance,decimal AllocatedToGoals,decimal UnallocatedRealizedBalance);

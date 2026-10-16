@@ -1,5 +1,6 @@
 using Saldo360.Application.Calendar;
 using Saldo360.Application.Families;
+using Saldo360.Application.Goals;
 
 namespace Saldo360.Application.Planning;
 
@@ -34,7 +35,10 @@ public sealed record PlanningScenarioProjectionMonth(
     decimal? UncommittedMargin,
     decimal? RemainingNegativeBalance,
     RecoveryStatus RecoveryStatus,
-    bool RecoveryProjectionComplete);
+    bool RecoveryProjectionComplete,
+    decimal AllocatedToGoals,
+    decimal? GoalProtectedAvailability,
+    bool GoalAllocationCoverageComplete);
 
 public sealed record PlanningScenarioProjection(Guid ScenarioId, DateOnly From, int Months, IReadOnlyList<PlanningScenarioProjectionMonth> Items);
 public sealed record PlanningScenarioProjectionResult(PlanningScenarioProjection? Projection, IDictionary<string, string[]>? Errors, bool NotFound)
@@ -45,7 +49,8 @@ public sealed record PlanningScenarioProjectionResult(PlanningScenarioProjection
 public sealed class FinancialPlanningScenarioProjectionService(
     IFamilyRepository families,
     IFinancialPlanningScenarioRepository scenarios,
-    FinancialCalendarMonthlyProjectionService monthlyProjection)
+    FinancialCalendarMonthlyProjectionService monthlyProjection,
+    IFinancialGoalAllocationRepository allocations)
 {
     public async Task<PlanningScenarioProjectionResult> GetAsync(Guid familyId, Guid scenarioId, Guid userId, CancellationToken ct)
     {
@@ -56,6 +61,7 @@ public sealed class FinancialPlanningScenarioProjectionService(
         if (baseResult.NotFound) return PlanningScenarioProjectionResult.NotFoundResult;
         if (baseResult.Errors is not null) return new(null, baseResult.Errors, false);
         var parameters = (await scenarios.ListParametersAsync(familyId, scenarioId, ct)).ToDictionary(x => x.Competence);
+        var goalSummary = await allocations.SummaryAsync(familyId, ct);
         FinancialCalendarMonthlyProjection? accountProjection = null;
         if (scenario.RecoveryAccountId is { } recoveryAccountId)
         {
@@ -103,7 +109,9 @@ public sealed class FinancialPlanningScenarioProjectionService(
                 reserve, scenarioClosing is { } closing ? closing - reserve : null,
                 complete, parameter is null, !item.CreditCardProjectionComplete, parameter?.RecoveryTargetPercentage ?? 0m,
                 scenario.RecoveryAccountId, openingNegative, closingNegative, projectedRecovery, cumulativeRecovery, capacity, recoveryTarget, margin,
-                remaining, status, recoveryComplete));
+                remaining, status, recoveryComplete, goalSummary.AllocatedToGoals,
+                scenarioClosing is { } protectedClosing ? protectedClosing - goalSummary.AllocatedToGoals - reserve : null,
+                goalSummary.CoverageComplete));
         }
         return new(new(scenario.Id, scenario.StartMonth, scenario.Months, rows), null, false);
     }
