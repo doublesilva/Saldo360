@@ -69,3 +69,11 @@ A migration `AddPlanningScenarios` cria tabelas com FKs compostas por família, 
 ## Evolução
 
 A T12.3 poderá calcular metas de recuperação usando o percentual informativo, sem transformar a reserva em despesa bancária. A projeção atual não materializa hipóteses nem altera dados financeiros.
+
+## Interface React (T12.4)
+
+A seção **Planejamento** da família consome os cenários, parâmetros mensais e a projeção consolidada. É possível criar, editar e arquivar cenários, selecionar explicitamente uma conta-alvo de recuperação e salvar parâmetros por competência. A tela separa visualmente projeção-base, cenário e disponibilidade planejada, mantendo os valores monetários como strings até a formatação.
+
+O gráfico mensal é apenas uma visualização dos valores retornados pela API e possui tabela acessível equivalente. A comparação entre cenários é lado a lado por competência; meses ausentes permanecem como indisponíveis e nenhum cálculo de diferença é inventado no navegador. Projeções incompletas são sinalizadas, sem atribuição arbitrária de obrigações.
+
+A troca de família cancela as requisições pendentes e limpa o contexto do planejamento. A tela não cria transações, previsões, transferências ou metas de recuperação.

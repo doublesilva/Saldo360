@@ -1,0 +1,24 @@
+import { CSRF_HEADER, getCsrfToken } from './csrf'
+
+export type PlanningScenarioStatus = 'Active' | 'Archived'
+export type RecoveryStatus = 'NotConfigured' | 'NoNegativeBalance' | 'Recovering' | 'Stable' | 'Worsening' | 'Recovered' | 'IncompleteProjection'
+
+export interface PlanningScenario { id: string; familyId: string; recoveryAccountId: string | null; name: string; description: string | null; startMonth: string; months: number; status: PlanningScenarioStatus; createdAt: string; updatedAt: string; archivedAt: string | null }
+export interface PlanningParameter { id: string; familyId: string; scenarioId: string; competence: string; expectedAdditionalIncome: string; expectedAdditionalExpense: string; contingencyReserve: string; recoveryTargetPercentage: string; notes: string | null }
+export interface PlanningProjectionMonth {
+  competence: string; openingBalance: string | null; realizedIncome: string; realizedExpense: string; pendingIncome: string; pendingExpense: string; creditCardOutstanding: string; baseClosingBalance: string | null; additionalIncome: string; additionalExpense: string; cumulativeAdjustment: string; scenarioClosingBalance: string | null; contingencyReserve: string; plannedAvailable: string | null; projectionComplete: boolean; usesBaseProjectionOnly: boolean; hasUnallocatedObligations: boolean; recoveryTargetPercentage: string; recoveryAccountId: string | null; openingNegativeBalance: string | null; closingNegativeBalance: string | null; projectedRecovery: string | null; cumulativeRecovery: string | null; recoveryCapacity: string | null; recoveryTarget: string | null; uncommittedMargin: string | null; remainingNegativeBalance: string | null; recoveryStatus: RecoveryStatus; recoveryProjectionComplete: boolean
+}
+export interface PlanningProjection { scenarioId: string; from: string; months: number; items: PlanningProjectionMonth[] }
+
+const jsonHeaders = { Accept: 'application/json' }
+const base = (familyId: string, id?: string) => `/api/families/${encodeURIComponent(familyId)}/planning-scenarios${id ? `/${encodeURIComponent(id)}` : ''}`
+async function problem(response: Response): Promise<Record<string, string[]>> { const body = await response.json().catch(() => ({})) as { errors?: Record<string, string[]>; title?: string }; return body.errors ?? { general: [body.title ?? `Falha na operação (HTTP ${response.status}).`] } }
+async function mutate<T>(url: string, method: 'POST' | 'PUT' | 'DELETE', body?: unknown): Promise<T> { const response = await fetch(url, { method, headers: { ...jsonHeaders, 'Content-Type': 'application/json', [CSRF_HEADER]: await getCsrfToken() }, body: body === undefined ? undefined : JSON.stringify(body) }); if (!response.ok) { const errors = await problem(response); throw Object.assign(new Error(Object.values(errors).flat()[0] ?? 'Falha na operação.'), { errors }) } return response.status === 204 ? undefined as T : await response.json() as T }
+export async function listPlanningScenarios(familyId: string, includeArchived = true, signal?: AbortSignal) { const response = await fetch(`${base(familyId)}?includeArchived=${includeArchived}`, { signal, headers: jsonHeaders }); if (!response.ok) throw new Error(`Falha ao carregar cenários (HTTP ${response.status}).`); return await response.json() as PlanningScenario[] }
+export type PlanningScenarioInput = { name: string; description: string | null; startMonth: string; months: number; recoveryAccountId: string | null }
+export function createPlanningScenario(familyId: string, input: PlanningScenarioInput) { return mutate<PlanningScenario>(base(familyId), 'POST', input) }
+export function updatePlanningScenario(familyId: string, id: string, input: PlanningScenarioInput) { return mutate<PlanningScenario>(base(familyId, id), 'PUT', input) }
+export function archivePlanningScenario(familyId: string, id: string) { return mutate<PlanningScenario>(base(familyId, id), 'DELETE') }
+export async function listPlanningParameters(familyId: string, id: string, signal?: AbortSignal) { const response = await fetch(`${base(familyId, id)}/parameters`, { signal, headers: jsonHeaders }); if (!response.ok) throw new Error(`Falha ao carregar parâmetros (HTTP ${response.status}).`); return await response.json() as PlanningParameter[] }
+export function upsertPlanningParameter(familyId: string, id: string, competence: string, input: Omit<PlanningParameter, 'id' | 'familyId' | 'scenarioId' | 'competence'>) { return mutate<PlanningParameter>(`${base(familyId, id)}/parameters/${competence}`, 'PUT', input) }
+export async function getPlanningProjection(familyId: string, id: string, signal?: AbortSignal) { const response = await fetch(`${base(familyId, id)}/projection`, { signal, headers: jsonHeaders }); if (!response.ok) throw new Error(`Falha ao carregar projeção (HTTP ${response.status}).`); return await response.json() as PlanningProjection }
