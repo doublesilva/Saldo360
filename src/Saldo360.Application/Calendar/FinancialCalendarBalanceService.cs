@@ -66,7 +66,7 @@ public sealed class FinancialCalendarBalanceService(
                     : BalanceUnavailableReason.BeforeOpeningBalanceDate);
         }
 
-        var allPending = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? [])
+        var allPending = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).Concat(snapshot.DebtObligations ?? [])
             .GroupBy(row => row.Date)
             .Select(group => new FinancialCalendarDailyTotals(group.Key, group.Sum(row => row.Income), group.Sum(row => row.Expense), group.Sum(row => row.TransferIn), group.Sum(row => row.TransferOut)))
             .ToList();
@@ -172,8 +172,10 @@ public sealed class FinancialCalendarBalanceService(
             projected.Count > 0 && query.Through >= today ? projected[^1].ClosingBalance : null);
         return new FinancialCalendarBalances(
             query.From, query.Through, query.AccountId, openingBalance, null, days, risk,
-            !snapshot.HasUnallocatedCreditCardObligations,
-            (snapshot.CreditCardObligations ?? []).Sum(row => row.Expense));
+            !snapshot.HasUnallocatedCreditCardObligations && !snapshot.HasUnallocatedDebtObligations,
+            (snapshot.CreditCardObligations ?? []).Sum(row => row.Expense),
+            !snapshot.HasUnallocatedDebtObligations,
+            (snapshot.DebtObligations ?? []).Sum(row => row.Expense));
     }
 
     private static FinancialCalendarBalances Unavailable(
@@ -182,7 +184,7 @@ public sealed class FinancialCalendarBalanceService(
         FinancialCalendarBalanceSnapshot snapshot,
         BalanceUnavailableReason reason)
     {
-        var allPending = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).ToList();
+        var allPending = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).Concat(snapshot.DebtObligations ?? []).ToList();
         var pendingByDate = allPending.ToDictionary(row => row.Date);
         var hasOverdue = allPending.Any(row => row.Date < today && (row.Income != 0m || row.Expense != 0m));
         var days = new List<FinancialCalendarBalanceDay>();
@@ -217,8 +219,10 @@ public sealed class FinancialCalendarBalanceService(
             reason,
             days,
             new FinancialCalendarBalanceRisk(null, null, null),
-            !snapshot.HasUnallocatedCreditCardObligations,
-            (snapshot.CreditCardObligations ?? []).Sum(row => row.Expense));
+            !snapshot.HasUnallocatedCreditCardObligations && !snapshot.HasUnallocatedDebtObligations,
+            (snapshot.CreditCardObligations ?? []).Sum(row => row.Expense),
+            !snapshot.HasUnallocatedDebtObligations,
+            (snapshot.DebtObligations ?? []).Sum(row => row.Expense));
     }
 
     private static FinancialCalendarBalanceDay AvailableDay(

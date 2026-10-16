@@ -203,7 +203,9 @@ public sealed record FinancialCalendarBalancesResponse(
     IReadOnlyList<FinancialCalendarBalanceDayResponse> Days,
     FinancialCalendarBalanceRiskResponse Risk,
     bool CreditCardProjectionComplete = true,
-    string? CreditCardOutstanding = null)
+    string? CreditCardOutstanding = null,
+    bool DebtProjectionComplete = true,
+    string? DebtInstallmentOutstanding = null)
 {
     public static FinancialCalendarBalancesResponse Create(FinancialCalendarBalances balances) => new(
         balances.From,
@@ -214,7 +216,9 @@ public sealed record FinancialCalendarBalancesResponse(
         balances.Days.Select(FinancialCalendarBalanceDayResponse.From).ToList(),
         FinancialCalendarBalanceRiskResponse.From(balances.Risk),
         balances.CreditCardProjectionComplete,
-        Format(balances.CreditCardOutstanding));
+        Format(balances.CreditCardOutstanding),
+        balances.DebtProjectionComplete,
+        Format(balances.DebtInstallmentOutstanding));
 
     internal static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
 }

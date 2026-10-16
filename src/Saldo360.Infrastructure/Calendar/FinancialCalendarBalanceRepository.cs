@@ -144,6 +144,18 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             .ToList();
 
         var selectedAccountIds = await selectedAccounts.Select(account => account.Id).ToListAsync(cancellationToken);
+        var debtRows = await (from installment in db.FinancialDebtInstallments.AsNoTracking()
+                              join debt in db.FinancialDebts.AsNoTracking() on new { installment.FamilyId, DebtId = installment.DebtId } equals new { debt.FamilyId, DebtId = debt.Id }
+                              where installment.FamilyId == familyId && debt.Status != Saldo360.Domain.Debts.DebtStatus.Archived
+                                  && installment.CancelledAt == null && installment.DueDate <= through
+                                  && (accountId == null || debt.ResponsibleAccountId == accountId)
+                              let paid = db.FinancialDebtPayments.Where(payment => payment.FamilyId == familyId && payment.InstallmentId == installment.Id && payment.CancelledAt == null).Sum(payment => (decimal?)payment.Amount) ?? 0m
+                              let remaining = installment.ScheduledAmount - paid
+                              where remaining > 0m
+                              select new { installment.DueDate, debt.ResponsibleAccountId, remaining }).ToListAsync(cancellationToken);
+        var debtPending = debtRows.GroupBy(row => row.DueDate).Select(group => new FinancialCalendarDailyTotals(group.Key, 0m, group.Sum(row => row.remaining), 0m, 0m)).ToList();
+        var hasUnallocatedDebt = debtRows.Any(row => row.ResponsibleAccountId == null || !selectedAccountIds.Contains(row.ResponsibleAccountId.Value));
+
         var cardObligations = await (from installment in db.FinancialCreditCardInstallments.AsNoTracking()
                                      join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
                                      join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
@@ -212,6 +224,6 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations);
+        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations, debtPending, hasUnallocatedDebt);
     }
 }

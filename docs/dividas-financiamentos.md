@@ -41,4 +41,6 @@ Pagamentos parciais ou múltiplos podem ser registrados pelos endpoints `/debts/
 
 Parcelas com saldo restante aparecem na Agenda como obrigações `DebtInstallment`, pelo valor ainda devido. Pagamentos já registrados não são exibidos novamente como compromisso. Parcelas sem conta preferencial permanecem não alocadas e não são atribuídas arbitrariamente a outra conta.
 
+As projeções usam `remainingAmount = scheduledAmount - validPaidAmount`; parcelas vencidas são incorporadas uma única vez a partir da data-base. A conciliação explícita com previsões permanece fora desta etapa.
+
 Estados derivados da parcela: `Pending`, `PartiallyPaid`, `Paid`, `Overdue` e `Cancelled`. A distinção entre valor pago e amortização é preservada: somente componentes explicitamente informados reduzem a principal; nenhum componente é deduzido por diferença.
