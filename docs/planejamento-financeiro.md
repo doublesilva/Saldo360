@@ -77,3 +77,5 @@ A seção **Planejamento** da família consome os cenários, parâmetros mensais
 O gráfico mensal é apenas uma visualização dos valores retornados pela API e possui tabela acessível equivalente. A comparação entre cenários é lado a lado por competência; meses ausentes permanecem como indisponíveis e nenhum cálculo de diferença é inventado no navegador. Projeções incompletas são sinalizadas, sem atribuição arbitrária de obrigações.
 
 A troca de família cancela as requisições pendentes e limpa o contexto do planejamento. A tela não cria transações, previsões, transferências ou metas de recuperação.
+
+A auditoria integrada da T12 está registrada em [docs/T12.5-auditoria-planejamento.md](T12.5-auditoria-planejamento.md).
