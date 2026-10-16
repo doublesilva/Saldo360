@@ -87,4 +87,20 @@ describe('FinancialDebts', () => {
     await waitFor(() => expect(api.createPayment).toHaveBeenCalledTimes(2))
     expect(api.createPayment.mock.calls[0][3].operationId).toBe(api.createPayment.mock.calls[1][3].operationId)
   })
+
+  it('consulta o histórico após resposta perdida e não reenvia o pagamento confirmado', async () => {
+    let operationId = ''
+    api.createPayment.mockImplementation((_f: string, _d: string, _i: string, input: { operationId: string }) => {
+      operationId = input.operationId
+      return Promise.reject(new ApiRequestError('Resultado incerto.', 'timeout', undefined, true))
+    })
+    api.listPayments.mockImplementation(() => Promise.resolve(operationId ? [{ id: 'payment-1', operationId }] : []))
+    render(<FinancialDebts familyId="family-1" />)
+    fireEvent.click(await screen.findByText('Financiamento'))
+    const row = await screen.findByText(/nominal 400\.00/)
+    fireEvent.click(within(row.closest('li') as HTMLElement).getByRole('button', { name: 'Registrar pagamento' }))
+    await waitFor(() => expect(api.listPayments).toHaveBeenCalled())
+    expect(api.createPayment).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 })

@@ -34,16 +34,22 @@ public sealed class FinancialDebtInstallmentReconciliationEndpointsTests(Postgre
         using var plannedJson = JsonDocument.Parse(await planned.Content.ReadAsStringAsync());
         var plannedId = plannedJson.RootElement.GetProperty("id").GetGuid();
         var url = $"/api/families/{family.Id}/debt-installment-reconciliations";
-        var first = await SendWithCsrfAsync(HttpMethod.Post, url, user, new { debtInstallmentId = installmentId, plannedTransactionId = plannedId });
-        var second = await SendWithCsrfAsync(HttpMethod.Post, url, user, new { debtInstallmentId = installmentId, plannedTransactionId = plannedId });
+        var payload = new { debtInstallmentId = installmentId, plannedTransactionId = plannedId };
+        var concurrent = await Task.WhenAll(
+            SendWithCsrfAsync(HttpMethod.Post, url, user, payload),
+            SendWithCsrfAsync(HttpMethod.Post, url, user, payload));
+        var first = concurrent[0]; var second = concurrent[1];
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
         using var firstJson = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
         var reconciliationId = firstJson.RootElement.GetProperty("id").GetGuid();
+        using var secondJson = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+        Assert.Equal(reconciliationId, secondJson.RootElement.GetProperty("id").GetGuid());
         await using var db = Db();
         Assert.Equal(1, await db.FinancialDebtInstallmentReconciliations.CountAsync(r => r.RemovedAt == null));
         Assert.Equal(0, await db.FinancialTransactions.CountAsync());
         var removed = await SendWithCsrfAsync(HttpMethod.Delete, $"{url}/{reconciliationId}", user);
         Assert.Equal(HttpStatusCode.NoContent, removed.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await SendWithCsrfAsync(HttpMethod.Delete, $"{url}/{reconciliationId}", user)).StatusCode);
     }
 }

@@ -25,6 +25,12 @@ internal sealed class FinancialPlannedInvoiceReconciliationRepository(Saldo360Db
             .Where(item => item.FamilyId == familyId && item.Id == id)
             .Select(item => ToDto(item)).SingleOrDefaultAsync(cancellationToken);
 
+    public Task<FinancialPlannedInvoiceReconciliationDto?> FindActiveAsync(Guid familyId, Guid plannedTransactionId, Guid invoiceId, CancellationToken cancellationToken) =>
+        db.FinancialPlannedInvoiceReconciliations.AsNoTracking()
+            .Where(item => item.FamilyId == familyId && item.PlannedTransactionId == plannedTransactionId
+                && item.CreditCardInvoiceId == invoiceId && item.RemovedAt == null)
+            .Select(item => ToDto(item)).SingleOrDefaultAsync(cancellationToken);
+
     public async Task<ReconciliationEligibility?> GetEligibilityAsync(Guid familyId, Guid plannedTransactionId, Guid invoiceId, CancellationToken cancellationToken)
     {
         var planned = await db.FinancialPlannedTransactions.AsNoTracking()
@@ -84,8 +90,9 @@ internal sealed class FinancialPlannedInvoiceReconciliationRepository(Saldo360Db
     public async Task<bool> RemoveAsync(Guid familyId, Guid id, Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var entity = await db.FinancialPlannedInvoiceReconciliations.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.Id == id && item.RemovedAt == null, cancellationToken);
+        var entity = await db.FinancialPlannedInvoiceReconciliations.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.Id == id, cancellationToken);
         if (entity is null) return false;
+        if (entity.RemovedAt is not null) return true;
         entity.Remove(userId, now);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

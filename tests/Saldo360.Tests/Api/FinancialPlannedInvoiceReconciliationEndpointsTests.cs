@@ -29,6 +29,10 @@ public sealed class FinancialPlannedInvoiceReconciliationEndpointsTests(Postgres
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var reconciliation = await ReadAsync<JsonElement>(created);
         var reconciliationId = reconciliation.GetProperty("id").GetGuid();
+        var replay = await SendWithCsrfAsync(HttpMethod.Post, ReconciliationsUrl, _owner,
+            new { plannedTransactionId = _planned, creditCardInvoiceId = _invoice });
+        Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+        Assert.Equal(reconciliationId, (await ReadAsync<JsonElement>(replay)).GetProperty("id").GetGuid());
 
         var listed = await GetJsonAsync(ReconciliationsUrl);
         Assert.Single(listed.EnumerateArray());
@@ -42,6 +46,7 @@ public sealed class FinancialPlannedInvoiceReconciliationEndpointsTests(Postgres
 
         var removed = await SendWithCsrfAsync(HttpMethod.Delete, $"{ReconciliationsUrl}/{reconciliationId}", _owner);
         Assert.Equal(HttpStatusCode.NoContent, removed.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await SendWithCsrfAsync(HttpMethod.Delete, $"{ReconciliationsUrl}/{reconciliationId}", _owner)).StatusCode);
         var unlinked = await ProjectionAsync();
         Assert.Equal("4200.00", Money(unlinked, "projectedBalance"));
         Assert.Equal(1, (await GetJsonAsync($"{ReconciliationsUrl}?plannedTransactionId={_planned}")).GetArrayLength());

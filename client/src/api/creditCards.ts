@@ -1,4 +1,5 @@
 import { CSRF_HEADER, getCsrfToken } from './csrf'
+import { ApiRequestError, requestJson } from './apiErrors'
 
 export type CreditCardStatus = 'Active' | 'Archived'
 export type PurchaseStatus = 'Active' | 'Cancelled'
@@ -17,7 +18,7 @@ export interface Installment { id: string; number: number; amount: string; statu
 export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[] }
 export interface InvoiceInstallment { installmentId: string; purchaseId: string; purchaseDescription: string; installmentNumber: number; installmentCount: number; amount: string }
 export interface CreditCardInvoice { id: string; creditCardId: string; competence: string; cycleStartDate: string; closingDate: string; dueDate: string; status: InvoiceStatus; totalAmount: string; paidAmount: string; remainingAmount: string; paymentStatus: InvoicePaymentStatus; installments: InvoiceInstallment[]; installmentCount: number }
-export interface InvoicePayment { id: string; invoiceId: string; financialAccountId: string; transactionId: string; paymentDate: string; amount: string; status: PaymentStatus; createdAt: string; cancelledAt: string | null }
+export interface InvoicePayment { id: string; invoiceId: string; financialAccountId: string; transactionId: string; operationId: string; paymentDate: string; amount: string; status: PaymentStatus; createdAt: string; cancelledAt: string | null }
 export interface CreditCardLimit { creditLimit: string; usedLimit: string; availableLimit: string; overLimitAmount: string }
 export interface InvoiceProjectionMonth { competence: string; cycleStartDate: string; closingDate: string; dueDate: string; status: InvoiceStatus; totalAmount: string; installmentCount: number }
 export type CreditCardProjection = CreditCardInvoice[]
@@ -43,7 +44,15 @@ export async function cancelPurchase(familyId: string, cardId: string, purchaseI
 export async function listInvoices(familyId: string, cardId: string, from: string, through: string, signal?: AbortSignal) { const query = new URLSearchParams({ from, through }); const response = await fetch(`${child(familyId, cardId, 'invoices')}?${query}`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar faturas (HTTP ${response.status}).`); return await response.json() as CreditCardInvoice[] }
 export async function getInvoice(familyId: string, cardId: string, invoiceId: string, signal?: AbortSignal) { const response = await fetch(`${child(familyId, cardId, 'invoices')}/${invoiceId}`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar fatura (HTTP ${response.status}).`); return await response.json() as CreditCardInvoice }
 export async function listPayments(familyId: string, cardId: string, invoiceId: string, signal?: AbortSignal) { const response = await fetch(`${child(familyId, cardId, 'invoices')}/${invoiceId}/payments`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar pagamentos (HTTP ${response.status}).`); return await response.json() as InvoicePayment[] }
-export function createPayment(familyId: string, cardId: string, invoiceId: string, input: { financialAccountId: string; paymentDate: string; amount: string }) { return mutate<InvoicePayment>(`${child(familyId, cardId, 'invoices')}/${invoiceId}/payments`, 'POST', input, 201) }
-export async function cancelPayment(familyId: string, cardId: string, invoiceId: string, paymentId: string) { const response = await fetch(`${child(familyId, cardId, 'invoices')}/${invoiceId}/payments/${paymentId}/cancel`, { method: 'POST', headers: { ...headers, [CSRF_HEADER]: await getCsrfToken() } }); if (!response.ok) throw new Error(`Falha ao cancelar pagamento (HTTP ${response.status}).`); return await response.json() as InvoicePayment }
+export async function createPayment(familyId: string, cardId: string, invoiceId: string, input: { operationId: string; financialAccountId: string; paymentDate: string; amount: string }): Promise<SaveResult<InvoicePayment>> {
+  try {
+    const value = await requestJson<InvoicePayment>(`${child(familyId, cardId, 'invoices')}/${invoiceId}/payments`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', [CSRF_HEADER]: await getCsrfToken() }, body: JSON.stringify(input) }, { resultUncertainOnTimeout: true, fallback: 'Falha ao registrar o pagamento da fatura.' })
+    return { ok: true, value }
+  } catch (error) {
+    if (error instanceof ApiRequestError && (error.kind === 'validation' || error.kind === 'conflict' || error.kind === 'business')) return { ok: false, errors: Object.keys(error.fieldErrors).length > 0 ? error.fieldErrors : { general: [error.message] } }
+    throw error
+  }
+}
+export async function cancelPayment(familyId: string, cardId: string, invoiceId: string, paymentId: string) { return await requestJson<InvoicePayment>(`${child(familyId, cardId, 'invoices')}/${invoiceId}/payments/${paymentId}/cancel`, { method: 'POST', headers: { ...headers, [CSRF_HEADER]: await getCsrfToken() } }, { resultUncertainOnTimeout: true, fallback: 'Falha ao cancelar o pagamento.' }) }
 export async function getCreditCardLimit(familyId: string, cardId: string, signal?: AbortSignal) { const response = await fetch(`${base(familyId, cardId)}/limit`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar limite (HTTP ${response.status}).`); return await response.json() as CreditCardLimit }
 export async function getCreditCardProjection(familyId: string, cardId: string, from: string, months = 6, signal?: AbortSignal) { const query = new URLSearchParams({ from, months: String(months) }); const response = await fetch(`${base(familyId, cardId)}/invoice-projection?${query}`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar projeção (HTTP ${response.status}).`); return await response.json() as CreditCardProjection }

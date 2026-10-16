@@ -901,6 +901,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("invoice_id");
 
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operation_id");
+
                     b.Property<DateOnly>("PaymentDate")
                         .HasColumnType("date")
                         .HasColumnName("payment_date");
@@ -917,6 +921,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_financial_credit_card_invoice_payments");
+
+                    b.HasIndex("FamilyId", "OperationId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_credit_card_invoice_payments_family_id_operation_");
 
                     b.HasIndex("FamilyId", "TransactionId")
                         .IsUnique()

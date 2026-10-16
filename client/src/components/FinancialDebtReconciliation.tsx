@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createReconciliation, listReconciliations, removeReconciliation, type DebtInstallment, type DebtReconciliation, type FinancialDebt } from '../api/debts'
 import { listPlanned, type PlannedTransaction } from '../api/planned'
 import { formatBrlDecimal } from '../money'
+import { normalizeRequestError } from '../api/apiErrors'
 
 type Props = { familyId: string; debt: FinancialDebt; installment: DebtInstallment; onChanged?: () => void; onNavigateToAgenda?: (competence: string) => void; onNavigateToBudgets?: (competence: string) => void; onNavigateToPlanning?: () => void }
 
@@ -35,12 +36,30 @@ export function FinancialDebtReconciliation({ familyId, debt, installment, onCha
       const result = await createReconciliation(familyId, { debtInstallmentId: installment.id, plannedTransactionId: selected.id })
       if (!result) { setError('Conflito: parcela ou previsão já possui conciliação ativa.'); return }
       await load(new AbortController().signal); setSelectedId(''); setReview(false); onChanged?.()
-    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Falha ao conciliar. Verifique o estado da previsão.') } finally { setBusy(false) }
+    } catch (failure) {
+      if (normalizeRequestError(failure).resultUncertain) {
+        try {
+          const loaded = await listReconciliations(familyId)
+          if (loaded.some((link) => link.removedAt === null && link.debtInstallmentId === installment.id && link.plannedTransactionId === selected.id)) {
+            await load(new AbortController().signal); setSelectedId(''); setReview(false); onChanged?.(); return
+          }
+        } catch { /* Sem confirmação, preserva a seleção para reenvio manual. */ }
+      }
+      setError(failure instanceof Error ? failure.message : 'Falha ao conciliar. Verifique o estado da previsão.')
+    } finally { setBusy(false) }
   }
   const remove = async () => {
     if (!activeLink || !window.confirm('Desfazer esta conciliação? Parcela e previsão poderão voltar a ser contabilizadas separadamente.')) return
     setBusy(true); setError(null)
-    try { await removeReconciliation(familyId, activeLink.id); await load(new AbortController().signal); onChanged?.() } catch (failure) { setError(failure instanceof Error ? failure.message : 'Falha ao desfazer a conciliação.') } finally { setBusy(false) }
+    try { await removeReconciliation(familyId, activeLink.id); await load(new AbortController().signal); onChanged?.() } catch (failure) {
+      if (normalizeRequestError(failure).resultUncertain) {
+        try {
+          const loaded = await listReconciliations(familyId)
+          if (loaded.some((link) => link.id === activeLink.id && link.removedAt !== null)) { await load(new AbortController().signal); onChanged?.(); return }
+        } catch { /* A leitura também falhou; mantém o estado incerto visível. */ }
+      }
+      setError(failure instanceof Error ? failure.message : 'Falha ao desfazer a conciliação.')
+    } finally { setBusy(false) }
   }
   const competence = installment.dueDate.slice(0, 7)
   const loadMore = () => { const controller = new AbortController(); void load(controller.signal, plannedPage + 1, true).catch((failure) => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : 'Falha ao carregar mais previsões.') }) }

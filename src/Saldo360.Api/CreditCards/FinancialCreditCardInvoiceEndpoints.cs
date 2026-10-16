@@ -57,7 +57,7 @@ public static class FinancialCreditCardInvoiceEndpoints
     {
         if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
         var started = operations.Start();
-        var result = await service.CreateAsync(familyId, cardId, invoiceId, userId, request is null ? new(null, null, null) : new(request.FinancialAccountId, request.PaymentDate, request.Amount), ct);
+        var result = await service.CreateAsync(familyId, cardId, invoiceId, userId, request is null ? new(null, null, null, null) : new(request.OperationId, request.FinancialAccountId, request.PaymentDate, request.Amount), ct);
         var code = result.Access switch
         {
             FinancialCreditCardInvoicePaymentAccess.Allowed => "NONE",
@@ -77,7 +77,7 @@ public static class FinancialCreditCardInvoiceEndpoints
     }
 
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-    private sealed record PaymentRequest(Guid? FinancialAccountId, DateOnly? PaymentDate, decimal? Amount);
+    private sealed record PaymentRequest(Guid? OperationId, Guid? FinancialAccountId, DateOnly? PaymentDate, decimal? Amount);
 
     private static DateOnly? Parse(string? value, string field, Dictionary<string, string[]> errors)
     {

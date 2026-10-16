@@ -58,4 +58,20 @@ describe('FinancialGoals', () => {
     await waitFor(() => expect(api.createContribution).toHaveBeenCalledTimes(2))
     expect(api.createContribution.mock.calls[0][2].operationId).toBe(api.createContribution.mock.calls[1][2].operationId)
   })
+
+  it('consulta alocações após resposta perdida e confirma o aporte sem novo POST', async () => {
+    let operationId = ''
+    api.createContribution.mockImplementation((_family: string, _goal: string, input: { operationId: string }) => {
+      operationId = input.operationId
+      return Promise.reject(new ApiRequestError('Resultado incerto.', 'timeout', undefined, true))
+    })
+    api.listAllocations.mockResolvedValueOnce([]).mockImplementation(() => Promise.resolve(operationId ? [{ id:'allocation-1', familyId:'family-1', goalId:'goal-1', financialAccountId:'account-1', operationType:'Contribution', amount:'100.00', effectiveDate:'2026-10-16', operationId, description:null, createdAt:'', cancelledAt:null }] : []))
+    render(<FinancialGoals familyId="family-1" />)
+    fireEvent.click(await screen.findByText('Reserva'))
+    fireEvent.change(await screen.findByLabelText('Valor'), { target: { value:'100.00' } })
+    fireEvent.click(screen.getByRole('button', { name:'Registrar' }))
+    await waitFor(() => expect(api.listAllocations.mock.calls.length).toBeGreaterThanOrEqual(2))
+    expect(api.createContribution).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 })

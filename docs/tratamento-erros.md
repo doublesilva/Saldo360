@@ -57,14 +57,18 @@ O erro normalizado preserva `status`, `code`, `traceId`, `fieldErrors` e `result
 
 ## Escritas, timeout e idempotência
 
-Pagamento de parcela de dívida e aporte/retirada em objetivo usam timeout de cliente de 15 segundos. Não há repetição automática. Se a resposta se perder depois do envio, a mensagem informa que o resultado é incerto e orienta atualizar o estado antes de tentar novamente.
+Pagamentos de fatura, pagamentos de parcela de dívida e aporte/retirada em objetivo usam timeout de cliente de 15 segundos. Conciliações financeiras seguem a mesma política de resultado incerto. Não há repetição automática de POST ou DELETE.
 
-O `operationId` permanece igual após timeout ou falha de rede. Um novo identificador só é criado depois de sucesso confirmado. Um bloqueio síncrono impede dois envios simultâneos no componente. Assim, uma tentativa manual posterior pode usar a idempotência do backend sem criar um segundo efeito financeiro.
+O `operationId` é criado antes do envio e permanece igual após timeout ou falha de rede. Um novo identificador só é criado depois de sucesso confirmado. Pagamentos de fatura, dívida e alocações possuem constraint única por família e comparam o payload da intenção; reutilizar o identificador com conteúdo diferente retorna conflito.
+
+Após uma resposta perdida, o cliente faz uma leitura segura do histórico. A confirmação usa somente `operationId` ou a identidade estrutural explícita da conciliação. Se a leitura também falhar ou não localizar a operação, a interface mantém o resultado incerto e conserva a identidade para um eventual reenvio manual idempotente. Nunca deduz sucesso por descrição, valor ou data.
+
+Um bloqueio síncrono impede dois envios simultâneos no componente. Cancelamentos e desvinculações são lógicos e convergentes: repetir o mesmo comando não aplica a reversão novamente e não apaga o histórico.
 
 Consultas canceladas por mudança de contexto continuam silenciosas. Em falhas reais, a interface não deve substituir valor desconhecido por zero nem apresentar dados antigos como atuais sem indicação.
 
 ## Adoção incremental e limitações
 
-Na T16.1, o backend central passou a enriquecer Problem Details, respostas vazias de status e exceções inesperadas. Os retornos explícitos dos endpoints de pagamento de dívida e alocação em objetivo foram migrados para códigos estáveis. Os demais módulos continuam compatíveis e poderão substituir gradualmente objetos de erro legados pelo helper comum na T16.4.
+Na T16.1, o backend central passou a enriquecer Problem Details, respostas vazias de status e exceções inesperadas. Na T16.3, os fluxos financeiros prioritários passaram a reconciliar reenvios e concorrência por identidade persistida ou estrutural. Os demais módulos continuam compatíveis e poderão substituir gradualmente objetos de erro legados pelo helper comum na T16.4.
 
-Não foram alteradas regras financeiras, contratos de sucesso, autenticação, persistência ou banco de dados. Não há retry automático, telemetria distribuída completa nem notificação externa.
+Não foram alteradas regras financeiras, autenticação ou cálculos. A única mudança de banco da T16.3 é a identidade idempotente necessária para pagamentos de fatura. Não há retry automático, telemetria distribuída completa nem notificação externa.

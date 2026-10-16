@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Saldo360.Domain.Common;
 using Saldo360.Tests.Support;
 
@@ -53,10 +54,23 @@ public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture pos
         Assert.Equal("5000.00", Money(await GetJsonAsync($"/api/families/{_family.Id}/accounts/{_account}/balance?asOf={Today:yyyy-MM-dd}"), "balance"));
 
         var firstInvoiceId = invoices[0].GetProperty("id").GetGuid();
-        var payment = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/credit-cards/{_card}/invoices/{firstInvoiceId}/payments", _owner,
-            new { financialAccountId = _account, paymentDate = Today, amount = "400.00" });
+        var paymentOperationId = Guid.NewGuid();
+        var paymentPayload = new { operationId = paymentOperationId, financialAccountId = _account, paymentDate = Today, amount = "400.00" };
+        var paymentUrl = $"/api/families/{_family.Id}/credit-cards/{_card}/invoices/{firstInvoiceId}/payments";
+        var concurrentPayments = await Task.WhenAll(
+            SendWithCsrfAsync(HttpMethod.Post, paymentUrl, _owner, paymentPayload),
+            SendWithCsrfAsync(HttpMethod.Post, paymentUrl, _owner, paymentPayload));
+        var payment = concurrentPayments[0];
+        var replay = concurrentPayments[1];
         Assert.Equal(HttpStatusCode.Created, payment.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+        var paymentBody = await ReadAsync<JsonElement>(payment);
+        Assert.Equal(paymentOperationId, paymentBody.GetProperty("operationId").GetGuid());
+        Assert.Equal(paymentBody.GetProperty("id").GetGuid(), (await ReadAsync<JsonElement>(replay)).GetProperty("id").GetGuid());
+        var changedPayload = await SendWithCsrfAsync(HttpMethod.Post,
+            $"/api/families/{_family.Id}/credit-cards/{_card}/invoices/{firstInvoiceId}/payments", _owner,
+            new { operationId = paymentOperationId, financialAccountId = _account, paymentDate = Today, amount = "399.99" });
+        Assert.Equal(HttpStatusCode.Conflict, changedPayload.StatusCode);
 
         var afterPayment = await GetJsonAsync($"/api/families/{_family.Id}/credit-cards/{_card}/limit");
         Assert.Equal(("800.00", "9200.00"), (Money(afterPayment, "usedLimit"), Money(afterPayment, "availableLimit")));
@@ -68,10 +82,17 @@ public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture pos
         var projectedAfterPayment = await GetJsonAsync($"/api/families/{_family.Id}/accounts/{_account}/projection?through=2026-11-30");
         Assert.Equal(("800.00", "3800.00"), (Money(projectedAfterPayment, "creditCardOutstanding"), Money(projectedAfterPayment, "projectedBalance")));
 
-        var paymentId = payment.Content is null ? Guid.Empty : (await ReadAsync<JsonElement>(payment)).GetProperty("id").GetGuid();
+        var paymentId = paymentBody.GetProperty("id").GetGuid();
         var cancelled = await SendWithCsrfAsync(HttpMethod.Post,
             $"/api/families/{_family.Id}/credit-cards/{_card}/invoices/{firstInvoiceId}/payments/{paymentId}/cancel", _owner);
         Assert.Equal(HttpStatusCode.OK, cancelled.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post,
+            $"/api/families/{_family.Id}/credit-cards/{_card}/invoices/{firstInvoiceId}/payments/{paymentId}/cancel", _owner)).StatusCode);
+        var replayAfterCancel = await SendWithCsrfAsync(HttpMethod.Post, paymentUrl, _owner, paymentPayload);
+        Assert.Equal(HttpStatusCode.Created, replayAfterCancel.StatusCode);
+        var replayAfterCancelBody = await ReadAsync<JsonElement>(replayAfterCancel);
+        Assert.Equal(paymentId, replayAfterCancelBody.GetProperty("id").GetGuid());
+        Assert.Equal("Cancelled", replayAfterCancelBody.GetProperty("status").GetString());
         var restored = await GetJsonAsync($"/api/families/{_family.Id}/credit-cards/{_card}/limit");
         Assert.Equal(("1200.00", "8800.00"), (Money(restored, "usedLimit"), Money(restored, "availableLimit")));
         Assert.Equal("5000.00", Money(await GetJsonAsync($"/api/families/{_family.Id}/accounts/{_account}/balance?asOf={Today:yyyy-MM-dd}"), "balance"));
@@ -79,12 +100,15 @@ public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture pos
 
         var partial = await SendWithCsrfAsync(HttpMethod.Post,
             $"/api/families/{_family.Id}/credit-cards/{_card}/invoices/{firstInvoiceId}/payments", _owner,
-            new { financialAccountId = _account, paymentDate = Today, amount = "100.00" });
+            new { operationId = Guid.NewGuid(), financialAccountId = _account, paymentDate = Today, amount = "100.00" });
         Assert.Equal(HttpStatusCode.Created, partial.StatusCode);
         var partiallyPaid = await GetJsonAsync($"/api/families/{_family.Id}/credit-cards/{_card}/invoices/{firstInvoiceId}");
         Assert.Equal(("100.00", "300.00", "PartiallyPaid"),
             (Money(partiallyPaid, "paidAmount"), Money(partiallyPaid, "remainingAmount"), partiallyPaid.GetProperty("paymentStatus").GetString()));
         Assert.Equal("1100.00", Money(await GetJsonAsync($"/api/families/{_family.Id}/credit-cards/{_card}/limit"), "usedLimit"));
+        await using var db = Db();
+        Assert.Equal(2, await db.FinancialCreditCardInvoicePayments.CountAsync());
+        Assert.Equal(2, await db.FinancialTransactions.CountAsync(transaction => transaction.Origin == Saldo360.Domain.Transactions.FinancialTransactionOrigin.CreditCardInvoicePayment));
     }
 
     [Fact]

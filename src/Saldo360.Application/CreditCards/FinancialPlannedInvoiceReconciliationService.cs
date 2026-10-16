@@ -28,6 +28,9 @@ public sealed class FinancialPlannedInvoiceReconciliationService(
         if (errors.Count > 0)
             return new(FinancialPlannedInvoiceReconciliationAccess.Invalid, null, errors);
 
+        if (await reconciliations.FindActiveAsync(familyId, input.PlannedTransactionId!.Value, input.CreditCardInvoiceId!.Value, cancellationToken) is { } existing)
+            return new(FinancialPlannedInvoiceReconciliationAccess.Allowed, existing, null);
+
         var eligibility = await reconciliations.GetEligibilityAsync(familyId, input.PlannedTransactionId!.Value, input.CreditCardInvoiceId!.Value, cancellationToken);
         if (eligibility is null || !eligibility.PlannedExists || !eligibility.InvoiceExists)
             return new(FinancialPlannedInvoiceReconciliationAccess.NotFound, null, null);
@@ -43,9 +46,10 @@ public sealed class FinancialPlannedInvoiceReconciliationService(
             return Conflict("A fatura já possui uma conciliação ativa.");
 
         var created = await reconciliations.CreateAsync(familyId, input.PlannedTransactionId.Value, input.CreditCardInvoiceId.Value, userId, timeProvider.GetUtcNow(), cancellationToken);
-        return created is null
-            ? Conflict("A previsão ou a fatura foi conciliada por outra operação.")
-            : new(FinancialPlannedInvoiceReconciliationAccess.Allowed, created, null);
+        if (created is not null) return new(FinancialPlannedInvoiceReconciliationAccess.Allowed, created, null);
+        return await reconciliations.FindActiveAsync(familyId, input.PlannedTransactionId.Value, input.CreditCardInvoiceId.Value, cancellationToken) is { } concurrent
+            ? new(FinancialPlannedInvoiceReconciliationAccess.Allowed, concurrent, null)
+            : Conflict("A previsão ou a fatura foi conciliada por outra operação.");
     }
 
     public async Task<bool> RemoveAsync(Guid familyId, Guid id, Guid userId, CancellationToken cancellationToken) =>

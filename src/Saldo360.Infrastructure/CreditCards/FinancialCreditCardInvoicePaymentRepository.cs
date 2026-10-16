@@ -1,5 +1,6 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Saldo360.Application.CreditCards;
 using Saldo360.Domain.CreditCards;
 using Saldo360.Domain.Common;
@@ -25,16 +26,27 @@ internal sealed class FinancialCreditCardInvoicePaymentRepository(Saldo360DbCont
     public async Task<IReadOnlyList<FinancialCreditCardInvoicePaymentDto>?> ListAsync(Guid familyId, Guid cardId, Guid invoiceId, CancellationToken cancellationToken)
     {
         if (!await db.FinancialCreditCardInvoices.AnyAsync(i => i.FamilyId == familyId && i.CreditCardId == cardId && i.Id == invoiceId, cancellationToken)) return null;
-        return await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(p => p.FamilyId == familyId && p.InvoiceId == invoiceId).OrderBy(p => p.PaymentDate).ThenBy(p => p.Id).Select(p => new FinancialCreditCardInvoicePaymentDto(p.Id, p.InvoiceId, p.FinancialAccountId, p.TransactionId, p.PaymentDate, Money.Format(p.Amount), p.Status, p.CreatedAt, p.CancelledAt)).ToListAsync(cancellationToken);
+        return await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(p => p.FamilyId == familyId && p.InvoiceId == invoiceId).OrderBy(p => p.PaymentDate).ThenBy(p => p.Id).Select(Project).ToListAsync(cancellationToken);
     }
 
     public async Task<FinancialCreditCardInvoicePaymentDto?> GetAsync(Guid familyId, Guid cardId, Guid invoiceId, Guid paymentId, CancellationToken cancellationToken)
     {
         if (!await db.FinancialCreditCardInvoices.AnyAsync(i => i.FamilyId == familyId && i.CreditCardId == cardId && i.Id == invoiceId, cancellationToken)) return null;
-        return await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(p => p.FamilyId == familyId && p.InvoiceId == invoiceId && p.Id == paymentId).Select(p => new FinancialCreditCardInvoicePaymentDto(p.Id, p.InvoiceId, p.FinancialAccountId, p.TransactionId, p.PaymentDate, Money.Format(p.Amount), p.Status, p.CreatedAt, p.CancelledAt)).SingleOrDefaultAsync(cancellationToken);
+        return await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(p => p.FamilyId == familyId && p.InvoiceId == invoiceId && p.Id == paymentId).Select(Project).SingleOrDefaultAsync(cancellationToken);
     }
 
-    public async Task<PaymentCreationResult> CreateAsync(Guid familyId, Guid cardId, Guid invoiceId, Guid accountId, DateOnly paymentDate, decimal amount, Guid userId, DateOnly today, DateTimeOffset now, CancellationToken cancellationToken)
+    public Task<FinancialCreditCardInvoicePaymentDto?> GetByOperationAsync(Guid familyId, Guid operationId, CancellationToken cancellationToken) =>
+        db.FinancialCreditCardInvoicePayments.AsNoTracking()
+            .Where(p => p.FamilyId == familyId && p.OperationId == operationId)
+            .Select(Project).SingleOrDefaultAsync(cancellationToken);
+
+    public Task<bool> PayloadMatchesAsync(Guid familyId, Guid operationId, Guid invoiceId, Guid accountId, DateOnly paymentDate, decimal amount, CancellationToken cancellationToken) =>
+        db.FinancialCreditCardInvoicePayments.AsNoTracking().AnyAsync(p =>
+            p.FamilyId == familyId && p.OperationId == operationId && p.InvoiceId == invoiceId
+            && p.FinancialAccountId == accountId && p.PaymentDate == paymentDate && p.Amount == amount,
+            cancellationToken);
+
+    public async Task<PaymentCreationResult> CreateAsync(Guid familyId, Guid cardId, Guid invoiceId, Guid operationId, Guid accountId, DateOnly paymentDate, decimal amount, Guid userId, DateOnly today, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var invoice = await db.FinancialCreditCardInvoices.SingleOrDefaultAsync(i => i.FamilyId == familyId && i.CreditCardId == cardId && i.Id == invoiceId, cancellationToken);
@@ -47,10 +59,19 @@ internal sealed class FinancialCreditCardInvoicePaymentRepository(Saldo360DbCont
         var paid = await db.FinancialCreditCardInvoicePayments.Where(p => p.FamilyId == familyId && p.InvoiceId == invoiceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
         if (total <= 0m || amount > total - paid) return new(PaymentOperationResult.ExceedsDue);
         var transaction = FinancialTransaction.CreateInvoicePayment(familyId, accountId, $"Pagamento de fatura {invoice.Competence}", amount, paymentDate, userId, now);
-        var payment = FinancialCreditCardInvoicePayment.Create(familyId, invoiceId, accountId, transaction.Id, paymentDate, amount, userId, now);
+        var payment = FinancialCreditCardInvoicePayment.Create(familyId, invoiceId, accountId, transaction.Id, operationId, paymentDate, amount, userId, now);
         db.FinancialTransactions.Add(transaction); db.FinancialCreditCardInvoicePayments.Add(payment);
-        await db.SaveChangesAsync(cancellationToken); await tx.CommitAsync(cancellationToken);
-        return new(PaymentOperationResult.Success, payment.Id);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken); await tx.CommitAsync(cancellationToken);
+            return new(PaymentOperationResult.Success, payment.Id);
+        }
+        catch (Exception exception) when (IsConcurrencyConflict(exception))
+        {
+            await tx.RollbackAsync(cancellationToken);
+            db.ChangeTracker.Clear();
+            return new(PaymentOperationResult.DuplicateOperation);
+        }
     }
 
     public async Task<bool> CancelAsync(Guid familyId, Guid cardId, Guid invoiceId, Guid paymentId, Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
@@ -63,4 +84,11 @@ internal sealed class FinancialCreditCardInvoicePaymentRepository(Saldo360DbCont
         transaction?.Cancel(userId, now);
         await db.SaveChangesAsync(cancellationToken); await tx.CommitAsync(cancellationToken); return true;
     }
+
+    private static readonly System.Linq.Expressions.Expression<Func<FinancialCreditCardInvoicePayment, FinancialCreditCardInvoicePaymentDto>> Project = p =>
+        new(p.Id, p.InvoiceId, p.FinancialAccountId, p.TransactionId, p.OperationId, p.PaymentDate, Money.Format(p.Amount), p.Status, p.CreatedAt, p.CancelledAt);
+
+    private static bool IsConcurrencyConflict(Exception exception) =>
+        exception is PostgresException { SqlState: PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.UniqueViolation }
+        || exception.InnerException is not null && IsConcurrencyConflict(exception.InnerException);
 }

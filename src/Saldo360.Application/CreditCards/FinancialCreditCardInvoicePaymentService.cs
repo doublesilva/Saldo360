@@ -12,19 +12,31 @@ public sealed class FinancialCreditCardInvoicePaymentService(IFamilyRepository f
     {
         if (!await IsParticipant(familyId, userId, ct)) return new(FinancialCreditCardInvoicePaymentAccess.NotFound, null, null);
         var errors = new Dictionary<string, string[]>();
+        if (input.OperationId is null || input.OperationId == Guid.Empty) errors["operationId"] = ["Informe um OperationId válido."];
         if (input.FinancialAccountId is null || input.FinancialAccountId == Guid.Empty) errors["financialAccountId"] = ["Informe a conta de pagamento."];
         if (input.PaymentDate is null) errors["paymentDate"] = ["Informe a data do pagamento."];
         else if (input.PaymentDate > BusinessCalendar.Today(timeProvider.GetUtcNow())) errors["paymentDate"] = ["A data não pode ser futura."];
         if (input.Amount is null || input.Amount <= 0) errors["amount"] = ["O valor deve ser maior que zero."];
         else if (Money.Validate(input.Amount.Value, "O valor") is { } error) errors["amount"] = [error];
         if (errors.Count > 0) return new(FinancialCreditCardInvoicePaymentAccess.Invalid, null, errors);
-        var result = await payments.CreateAsync(familyId, cardId, invoiceId, input.FinancialAccountId!.Value, input.PaymentDate!.Value, input.Amount!.Value, userId, BusinessCalendar.Today(timeProvider.GetUtcNow()), timeProvider.GetUtcNow(), ct);
+        var operationId = input.OperationId!.Value;
+        if (await payments.GetByOperationAsync(familyId, operationId, ct) is { } existing)
+            return await payments.PayloadMatchesAsync(familyId, operationId, invoiceId, input.FinancialAccountId!.Value, input.PaymentDate!.Value, input.Amount!.Value, ct)
+                ? new(FinancialCreditCardInvoicePaymentAccess.Allowed, existing, null)
+                : new(FinancialCreditCardInvoicePaymentAccess.Conflict, null, null, "OperationId já utilizado com conteúdo diferente.");
+        var now = timeProvider.GetUtcNow();
+        var result = await payments.CreateAsync(familyId, cardId, invoiceId, operationId, input.FinancialAccountId!.Value, input.PaymentDate!.Value, input.Amount!.Value, userId, BusinessCalendar.Today(now), now, ct);
+        if (result.Result == PaymentOperationResult.DuplicateOperation && await payments.GetByOperationAsync(familyId, operationId, ct) is { } concurrent)
+            return await payments.PayloadMatchesAsync(familyId, operationId, invoiceId, input.FinancialAccountId.Value, input.PaymentDate.Value, input.Amount.Value, ct)
+                ? new(FinancialCreditCardInvoicePaymentAccess.Allowed, concurrent, null)
+                : new(FinancialCreditCardInvoicePaymentAccess.Conflict, null, null, "OperationId já utilizado com conteúdo diferente.");
         return result.Result switch
         {
             PaymentOperationResult.Success => new(FinancialCreditCardInvoicePaymentAccess.Allowed, await payments.GetAsync(familyId, cardId, invoiceId, result.PaymentId!.Value, ct), null),
             PaymentOperationResult.OpenInvoice => new(FinancialCreditCardInvoicePaymentAccess.Conflict, null, null, "A fatura precisa estar fechada para receber pagamentos."),
             PaymentOperationResult.InvalidAccount => new(FinancialCreditCardInvoicePaymentAccess.Invalid, null, new Dictionary<string, string[]> { ["financialAccountId"] = ["A conta não existe ou está inativa."] }),
             PaymentOperationResult.ExceedsDue => new(FinancialCreditCardInvoicePaymentAccess.Invalid, null, new Dictionary<string, string[]> { ["amount"] = ["O valor não pode exceder o saldo devido da fatura."] }),
+            PaymentOperationResult.DuplicateOperation => new(FinancialCreditCardInvoicePaymentAccess.Conflict, null, null, "OperationId concorrente não pôde ser reconciliado."),
             _ => new(FinancialCreditCardInvoicePaymentAccess.NotFound, null, null),
         };
     }

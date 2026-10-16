@@ -14,6 +14,7 @@ import {
 } from '../api/invoiceReconciliations'
 import { listPlanned, type PlannedTransaction } from '../api/planned'
 import { formatBrlDecimal } from '../money'
+import { normalizeRequestError } from '../api/apiErrors'
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Erro desconhecido.'
 const firstError = (errors: Record<string, string[]>) => Object.values(errors).flat()[0] ?? 'Verifique os dados informados.'
@@ -110,7 +111,17 @@ export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onCh
       const result = await createInvoiceReconciliation(familyId, { plannedTransactionId: selectedPlanned.id, creditCardInvoiceId: selectedInvoice.id })
       if (!result.ok) { setError(firstError(result.errors)); return }
       setSelectedPlannedId(''); setSelectedInvoiceId(''); setReview(false); refresh()
-    } catch (failure) { setError(errorMessage(failure)) } finally { setBusy(false) }
+    } catch (failure) {
+      if (normalizeRequestError(failure).resultUncertain) {
+        try {
+          const links = await listInvoiceReconciliations(familyId)
+          if (links.some((link) => link.removedAt === null && link.plannedTransactionId === selectedPlanned.id && link.creditCardInvoiceId === selectedInvoice.id)) {
+            setSelectedPlannedId(''); setSelectedInvoiceId(''); setReview(false); refresh(); return
+          }
+        } catch { /* Sem confirmação, mantém a seleção para consulta ou reenvio manual. */ }
+      }
+      setError(errorMessage(failure))
+    } finally { setBusy(false) }
   }
 
   const remove = async (view: ReconciliationView) => {
@@ -120,7 +131,15 @@ export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onCh
       const result = await removeInvoiceReconciliation(familyId, view.link.id)
       if (!result.ok) { setError(result.message); return }
       refresh()
-    } catch (failure) { setError(errorMessage(failure)) } finally { setBusy(false) }
+    } catch (failure) {
+      if (normalizeRequestError(failure).resultUncertain) {
+        try {
+          const links = await listInvoiceReconciliations(familyId)
+          if (links.some((link) => link.id === view.link.id && link.removedAt !== null)) { refresh(); return }
+        } catch { /* A leitura também falhou; o usuário poderá consultar novamente. */ }
+      }
+      setError(errorMessage(failure))
+    } finally { setBusy(false) }
   }
 
   if (error && !data) return <section className="reconciliations" aria-live="polite"><h3>Conciliações</h3><p className="status status--down" role="alert">{error}</p><button type="button" onClick={refresh}>Tentar novamente</button></section>

@@ -32,8 +32,11 @@ public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) :
 
         var operationId = Guid.NewGuid();
         var payload = new { operationId, financialAccountId = accountId, amount = "50.00", effectiveDate = today };
-        var first = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/financial-goals/{goalId}/contributions", owner, payload);
-        var replay = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/financial-goals/{goalId}/contributions", owner, payload);
+        var contributionUrl = $"/api/families/{family.Id}/financial-goals/{goalId}/contributions";
+        var concurrent = await Task.WhenAll(
+            SendWithCsrfAsync(HttpMethod.Post, contributionUrl, owner, payload),
+            SendWithCsrfAsync(HttpMethod.Post, contributionUrl, owner, payload));
+        var first = concurrent[0]; var replay = concurrent[1];
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
         Assert.Equal(
@@ -46,6 +49,24 @@ public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) :
         using var duplicateBody = JsonDocument.Parse(await duplicate.Content.ReadAsStringAsync());
         AssertProblem(duplicateBody.RootElement, 409, "DUPLICATE_OPERATION");
 
+        var withdrawalOperationId = Guid.NewGuid();
+        var withdrawalPayload = new { operationId = withdrawalOperationId, financialAccountId = accountId, amount = "10.00", effectiveDate = today };
+        var withdrawalUrl = $"/api/families/{family.Id}/financial-goals/{goalId}/withdrawals";
+        var withdrawals = await Task.WhenAll(
+            SendWithCsrfAsync(HttpMethod.Post, withdrawalUrl, owner, withdrawalPayload),
+            SendWithCsrfAsync(HttpMethod.Post, withdrawalUrl, owner, withdrawalPayload));
+        Assert.All(withdrawals, response => Assert.Equal(HttpStatusCode.Created, response.StatusCode));
+        var withdrawalId = JsonDocument.Parse(await withdrawals[0].Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+        Assert.Equal(withdrawalId, JsonDocument.Parse(await withdrawals[1].Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid());
+        var cancelUrl = $"/api/families/{family.Id}/financial-goals/{goalId}/allocations/{withdrawalId}/cancel";
+        Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post, cancelUrl, owner)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post, cancelUrl, owner)).StatusCode);
+        var withdrawalAfterCancel = await SendWithCsrfAsync(HttpMethod.Post, withdrawalUrl, owner, withdrawalPayload);
+        Assert.Equal(HttpStatusCode.Created, withdrawalAfterCancel.StatusCode);
+        var withdrawalAfterCancelBody = JsonDocument.Parse(await withdrawalAfterCancel.Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal(withdrawalId, withdrawalAfterCancelBody.GetProperty("id").GetGuid());
+        Assert.NotEqual(JsonValueKind.Null, withdrawalAfterCancelBody.GetProperty("cancelledAt").ValueKind);
+
         var operationLog = Assert.Single(Factory.Logs.StructuredEntries, entry =>
             entry.Category.EndsWith("FinancialOperationLogger")
             && Equals(entry.Properties.GetValueOrDefault("ErrorCode"), "DUPLICATE_OPERATION"));
@@ -56,7 +77,8 @@ public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) :
         Assert.DoesNotContain(accountId.ToString(), operationLog.Message, StringComparison.OrdinalIgnoreCase);
 
         await using var db = Db();
-        Assert.Equal(1, await db.FinancialGoalAllocations.CountAsync());
+        Assert.Equal(2, await db.FinancialGoalAllocations.CountAsync());
+        Assert.Equal(1, await db.FinancialGoalAllocations.CountAsync(item => item.CancelledAt != null));
         Assert.Equal(0, await db.FinancialTransactions.CountAsync());
     }
 

@@ -8,6 +8,7 @@ public interface IFinancialDebtInstallmentRepository
  Task<IReadOnlyList<InstallmentDto>> ListInstallmentsAsync(Guid familyId, Guid debtId, CancellationToken ct);
  Task<IReadOnlyList<PaymentDto>> ListPaymentsAsync(Guid familyId, Guid installmentId, CancellationToken ct);
  Task<FinancialDebtPayment?> FindPaymentByOperationAsync(Guid familyId, string operationId, CancellationToken ct);
+ Task<bool> PaymentPayloadMatchesAsync(Guid familyId, string operationId, Guid debtId, Guid installmentId, Guid accountId, DateOnly paymentDate, decimal amount, decimal? principalPaid, decimal? interestPaid, decimal? insurancePaid, decimal? otherChargesPaid, CancellationToken ct);
  Task<PaymentDto?> GetPaymentAsync(Guid familyId, Guid paymentId, CancellationToken ct);
  Task AddInstallmentAsync(FinancialDebtInstallment item, CancellationToken ct);
  Task<(FinancialDebtPayment Payment, FinancialTransaction Transaction)?> AddPaymentAsync(FinancialDebtPayment payment, FinancialTransaction transaction, CancellationToken ct);

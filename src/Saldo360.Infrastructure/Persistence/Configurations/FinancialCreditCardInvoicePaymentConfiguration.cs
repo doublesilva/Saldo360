@@ -20,6 +20,7 @@ internal sealed class FinancialCreditCardInvoicePaymentConfiguration : IEntityTy
         builder.Property(p => p.PaymentDate).HasColumnType("date");
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
         builder.HasIndex(p => new { p.FamilyId, p.InvoiceId, p.PaymentDate });
+        builder.HasIndex(p => new { p.FamilyId, p.OperationId }).IsUnique();
         builder.HasIndex(p => new { p.FamilyId, p.TransactionId }).IsUnique();
         builder.HasOne<Family>().WithMany().HasForeignKey(p => p.FamilyId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<FinancialCreditCardInvoice>().WithMany().HasForeignKey(p => new { p.FamilyId, p.InvoiceId }).HasPrincipalKey(i => new { i.FamilyId, i.Id }).OnDelete(DeleteBehavior.Restrict);

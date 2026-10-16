@@ -85,10 +85,23 @@ public sealed class FinancialDebtEndpointsTests(PostgresFixture postgres) : Post
         using var installmentBody = JsonDocument.Parse(await installment.Content.ReadAsStringAsync());
         var installmentId = installmentBody.RootElement.GetProperty("id").GetGuid();
         var payload = new { operationId = "payment-op-1", financialAccountId = accountId, paymentDate = "2026-10-16", amount = "123.45", principalPaid = "100.00" };
-        var first = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts/{debtId}/installments/{installmentId}/payments", owner, payload);
-        var second = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts/{debtId}/installments/{installmentId}/payments", owner, payload);
+        var paymentUrl = $"/api/families/{family.Id}/debts/{debtId}/installments/{installmentId}/payments";
+        var concurrent = await Task.WhenAll(
+            SendWithCsrfAsync(HttpMethod.Post, paymentUrl, owner, payload),
+            SendWithCsrfAsync(HttpMethod.Post, paymentUrl, owner, payload));
+        var first = concurrent[0]; var second = concurrent[1];
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        var paymentId = JsonDocument.Parse(await first.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+        var changed = await SendWithCsrfAsync(HttpMethod.Post, paymentUrl, owner,
+            new { operationId = "payment-op-1", financialAccountId = accountId, paymentDate = "2026-10-16", amount = "122.45", principalPaid = "100.00" });
+        Assert.Equal(HttpStatusCode.Conflict, changed.StatusCode);
+        var cancelUrl = $"{paymentUrl}/{paymentId}/cancel";
+        Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post, cancelUrl, owner)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post, cancelUrl, owner)).StatusCode);
+        var replayAfterCancel = await SendWithCsrfAsync(HttpMethod.Post, paymentUrl, owner, payload);
+        Assert.Equal(HttpStatusCode.OK, replayAfterCancel.StatusCode);
+        Assert.True(JsonDocument.Parse(await replayAfterCancel.Content.ReadAsStringAsync()).RootElement.GetProperty("isCancelled").GetBoolean());
         await using var db = Db();
         Assert.Equal(1, await db.FinancialDebtPayments.CountAsync());
         Assert.Equal(1, await db.FinancialTransactions.CountAsync(t => t.Origin == Saldo360.Domain.Transactions.FinancialTransactionOrigin.DebtInstallmentPayment));
