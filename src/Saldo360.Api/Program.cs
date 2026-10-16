@@ -13,6 +13,7 @@ using Saldo360.Api.Budgets;
 using Saldo360.Api.CreditCards;
 using Saldo360.Api.Recurrences;
 using Saldo360.Api.Debts;
+using Saldo360.Api.Goals;
 using Saldo360.Application;
 using Saldo360.Infrastructure;
 
@@ -68,5 +69,6 @@ app.MapFinancialPlanningScenarioEndpoints();
 app.MapFinancialDebtEndpoints();
 app.MapFinancialDebtInstallmentEndpoints();
 app.MapFinancialDebtInstallmentReconciliationEndpoints();
+app.MapFinancialGoalEndpoints();
 
 app.Run();

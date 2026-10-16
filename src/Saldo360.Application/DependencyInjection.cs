@@ -10,6 +10,7 @@ using Saldo360.Application.Budgets;
 using Saldo360.Application.CreditCards;
 using Saldo360.Application.Recurrences;
 using Saldo360.Application.Debts;
+using Saldo360.Application.Goals;
 
 namespace Saldo360.Application;
 
@@ -44,6 +45,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialDebtService>();
         services.AddScoped<FinancialDebtInstallmentService>();
         services.AddScoped<FinancialDebtInstallmentReconciliationService>();
+        services.AddScoped<FinancialGoalService>();
         return services;
     }
 }

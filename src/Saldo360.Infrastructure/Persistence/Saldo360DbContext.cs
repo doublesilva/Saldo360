@@ -11,6 +11,7 @@ using Saldo360.Domain.Recurrences;
 using Saldo360.Domain.Transactions;
 using Saldo360.Domain.Transfers;
 using Saldo360.Domain.Users;
+using Saldo360.Domain.Goals;
 using Saldo360.Infrastructure.Authentication;
 using Saldo360.Infrastructure.Persistence.Configurations;
 
@@ -63,6 +64,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialDebtInstallment> FinancialDebtInstallments => Set<FinancialDebtInstallment>();
     public DbSet<FinancialDebtPayment> FinancialDebtPayments => Set<FinancialDebtPayment>();
     public DbSet<FinancialDebtInstallmentReconciliation> FinancialDebtInstallmentReconciliations => Set<FinancialDebtInstallmentReconciliation>();
+    public DbSet<FinancialGoal> FinancialGoals => Set<FinancialGoal>();
 
     /// <summary>Configuração do provedor usada pela API, pelas ferramentas de migration e pelos testes.</summary>
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder builder, string connectionString) =>
