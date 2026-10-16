@@ -19,6 +19,7 @@ import { FinancialBudgetsPage } from './FinancialBudgets'
 import { FinancialCreditCardsPage } from './FinancialCreditCards'
 import { FinancialRecurrences } from './FinancialRecurrences'
 import { FinancialPlanning } from './FinancialPlanning'
+import { FinancialDebts } from './FinancialDebts'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
 
@@ -168,7 +169,7 @@ type DetailState =
   | { kind: 'not-found' }
   | { kind: 'error'; message: string }
 
-type FamilySection = 'overview' | 'calendar' | 'budgets' | 'cards' | 'recurrences' | 'planning' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
+type FamilySection = 'overview' | 'calendar' | 'budgets' | 'cards' | 'recurrences' | 'planning' | 'debts' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
 
 const familySections: Array<{ id: FamilySection; label: string }> = [
   { id: 'overview', label: 'Família' },
@@ -177,6 +178,7 @@ const familySections: Array<{ id: FamilySection; label: string }> = [
   { id: 'cards', label: 'Cartões' },
   { id: 'recurrences', label: 'Recorrências' },
   { id: 'planning', label: 'Planejamento' },
+  { id: 'debts', label: 'Dívidas' },
   { id: 'accounts', label: 'Contas' },
   { id: 'categories', label: 'Categorias' },
   { id: 'transactions', label: 'Lançamentos' },
@@ -274,6 +276,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
           {section === 'cards' && <FinancialCreditCardsPage familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} />}
           {section === 'recurrences' && <FinancialRecurrences key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }} />}
           {section === 'planning' && <FinancialPlanning key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} />}
+          {section === 'debts' && <FinancialDebts key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} />}
           {section === 'accounts' && (
             <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
           )}

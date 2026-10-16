@@ -44,3 +44,6 @@ Parcelas com saldo restante aparecem na Agenda como obrigações `DebtInstallmen
 As projeções usam `remainingAmount = scheduledAmount - validPaidAmount`; parcelas vencidas são incorporadas uma única vez a partir da data-base. A conciliação explícita com previsões permanece fora desta etapa.
 
 Estados derivados da parcela: `Pending`, `PartiallyPaid`, `Paid`, `Overdue` e `Cancelled`. A distinção entre valor pago e amortização é preservada: somente componentes explicitamente informados reduzem a principal; nenhum componente é deduzido por diferença.
+## Interface web
+
+A seção Dívidas permite consultar contratos e parcelas, registrar pagamentos com `operationId`, alterar estados do contrato e navegar para os módulos financeiros existentes. Valores permanecem strings; cálculos de saldo, comprometimento e conciliação continuam no backend.
