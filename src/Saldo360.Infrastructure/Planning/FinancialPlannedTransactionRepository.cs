@@ -124,7 +124,8 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
             .SingleOrDefaultAsync(cancellationToken);
 
     public Task<bool> HasActiveReconciliationAsync(Guid familyId, Guid plannedId, CancellationToken cancellationToken) =>
-        db.FinancialPlannedInvoiceReconciliations.AnyAsync(item => item.FamilyId == familyId && item.PlannedTransactionId == plannedId && item.RemovedAt == null, cancellationToken);
+        db.FinancialPlannedInvoiceReconciliations.AnyAsync(item => item.FamilyId == familyId && item.PlannedTransactionId == plannedId && item.RemovedAt == null, cancellationToken)
+        .ContinueWith(async card => card.Result || await db.FinancialDebtInstallmentReconciliations.AnyAsync(item => item.FamilyId == familyId && item.PlannedTransactionId == plannedId && item.RemovedAt == null, cancellationToken), cancellationToken).Unwrap();
 
     // Conta e categoria pela mesma família (as FKs garantem que existem) e o lançamento efetivo ATIVO, se houver
     // (o índice único garante no máximo um, então a junção não duplica linhas). Ordena antes de projetar: data

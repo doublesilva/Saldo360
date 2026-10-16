@@ -77,6 +77,18 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                                                 && invoice.FamilyId == familyId && invoice.DueDate >= budget.Competence && invoice.DueDate < through
                                                 && item.CategoryId != null && categoryIds.Contains(item.CategoryId.Value)
                                              select new { CategoryId = item.CategoryId!.Value, Amount = item.Amount, IsCreditCard = true };
+        var debtCommitted = await (from installment in db.FinancialDebtInstallments.AsNoTracking()
+                                   join debt in db.FinancialDebts.AsNoTracking() on new { installment.FamilyId, DebtId = installment.DebtId } equals new { debt.FamilyId, DebtId = debt.Id }
+                                   where installment.FamilyId == familyId && installment.CategoryId != null && categoryIds.Contains(installment.CategoryId.Value)
+                                      && installment.DueDate >= budget.Competence && installment.DueDate < through && installment.CancelledAt == null
+                                   let paid = db.FinancialDebtPayments.Where(payment => payment.FamilyId == familyId && payment.InstallmentId == installment.Id && payment.CancelledAt == null).Sum(payment => (decimal?)payment.Amount) ?? 0m
+                                   where installment.ScheduledAmount > paid
+                                   select new { CategoryId = installment.CategoryId!.Value, Amount = installment.ScheduledAmount - paid }).ToListAsync(cancellationToken);
+        var debtRealized = await (from payment in db.FinancialDebtPayments.AsNoTracking()
+                                  join installment in db.FinancialDebtInstallments.AsNoTracking() on new { payment.FamilyId, InstallmentId = payment.InstallmentId } equals new { installment.FamilyId, InstallmentId = installment.Id }
+                                  where payment.FamilyId == familyId && payment.CancelledAt == null && installment.CategoryId != null
+                                      && categoryIds.Contains(installment.CategoryId.Value) && payment.PaymentDate >= budget.Competence && payment.PaymentDate < through
+                                  select new { CategoryId = installment.CategoryId!.Value, Amount = payment.Amount }).ToListAsync(cancellationToken);
         var consumptionRows = await realized.Concat(creditCardCommitted).Concat(historicalCreditCardCommitted)
             .GroupBy(item => new { item.CategoryId, item.IsCreditCard })
             .Select(group => new ConsumptionTotal(group.Key.CategoryId, group.Key.IsCreditCard, group.Sum(item => item.Amount)))
@@ -85,6 +97,8 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
         await transaction.CommitAsync(cancellationToken);
         var realizedByCategory = consumptionRows.Where(item => !item.IsCreditCard).ToDictionary(item => item.CategoryId, item => item.Amount);
         var committedByCategory = committed.ToDictionary(item => item.CategoryId, item => item.Amount);
+        foreach (var row in debtRealized.GroupBy(item => item.CategoryId)) realizedByCategory[row.Key] = realizedByCategory.GetValueOrDefault(row.Key) + row.Sum(item => item.Amount);
+        foreach (var row in debtCommitted.GroupBy(item => item.CategoryId)) committedByCategory[row.Key] = committedByCategory.GetValueOrDefault(row.Key) + row.Sum(item => item.Amount);
         var creditCardByCategory = consumptionRows.Where(item => item.IsCreditCard).ToDictionary(item => item.CategoryId, item => item.Amount);
         return new FinancialBudgetExecutionSource(
             budget.Id,
