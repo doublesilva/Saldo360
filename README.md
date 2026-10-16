@@ -239,6 +239,8 @@ Os alertas de orçamento da execução são calculados no backend a partir do co
 Recorrências financeiras (T11.1/T11.2) podem ser cadastradas, calculadas e materializadas explicitamente em previsões idempotentes pela API. A materialização não cria lançamentos automaticamente; consulte [docs/recorrencias-financeiras.md](docs/recorrencias-financeiras.md).
 
 Objetivos financeiros (T14.1) podem ser cadastrados, pausados, retomados, concluídos e arquivados por família. O cadastro é apenas uma intenção: não cria transações, previsões, aportes ou alterações de saldo. Consulte [docs/objetivos-financeiros.md](docs/objetivos-financeiros.md).
+
+Na T14.2, aportes e retiradas apenas alocam recursos realizados a objetivos, com idempotência por `operationId`; não criam transferências ou lançamentos bancários.
 A T12.1 adiciona cenários de planejamento e parâmetros mensais hipotéticos, sem alterar saldos, previsões, orçamentos ou cartões. Consulte [docs/planejamento-financeiro.md](docs/planejamento-financeiro.md).
 A T12.2 adiciona a consulta de projeção consolidada por cenário, reutilizando a projeção mensal da Agenda; ajustes e reservas são apenas simulados e não geram movimentações.
 A T12.3 adiciona a conta-alvo opcional e os indicadores determinísticos de recuperação (`openingNegativeBalance`, `projectedRecovery`, `recoveryTarget`, `uncommittedMargin` e `recoveryStatus`). A capacidade é informativa, não cria transferências e não altera saldos reais; sem conta-alvo, o status é `NotConfigured`.

@@ -23,4 +23,12 @@ O arquivamento preserva o registro e o histórico. A operação exige autentica�
 
 ## Limites e efeitos
 
-O valor-alvo deve ser positivo e ter precisão decimal (PostgreSQL `numeric(18,2)`). A data-alvo é civil e opcional. O módulo não cria lançamentos, previsões, transferências, pagamentos, alterações de saldo, orçamento ou limite de cartão. Contribuições e progresso serão tratados em etapa posterior (T14.2).
+O valor-alvo deve ser positivo e ter precisão decimal (PostgreSQL `numeric(18,2)`). A data-alvo é civil e opcional. O módulo não cria lançamentos, previsões, transferências, pagamentos, alterações de saldo, orçamento ou limite de cartão.
+
+## Aportes e retiradas (T14.2)
+
+Uma alocação designa recursos já existentes de uma conta a um objetivo; ela não é transferência, despesa, receita ou previsão. Os endpoints são `GET/POST .../{goalId}/allocations`, `POST .../{goalId}/contributions`, `POST .../{goalId}/withdrawals`, `POST .../{goalId}/allocations/{allocationId}/cancel`, `GET .../{goalId}/progress` e `GET /api/families/{familyId}/financial-goals/account-availability`.
+
+Cada operação exige `operationId`, conta, valor string decimal positivo e `effectiveDate` igual ao dia corrente em `America/Sao_Paulo`. O mesmo `operationId` com o mesmo conteúdo é idempotente; conteúdo diferente resulta em conflito. A soma de aportes menos retiradas é calculada por objetivo e conta, sem saldo agregado persistido.
+
+Aportes usam o saldo realizado configurado da conta e são rejeitados quando o saldo não alocado ficaria negativo, quando a conta está inativa ou quando ultrapassam o valor-alvo. Retiradas são limitadas ao valor alocado naquela combinação de objetivo e conta. Operações concorrentes usam transação PostgreSQL `Serializable`; cancelamento é lógico e preserva o histórico. O saldo bancário, previsões, orçamentos e transferências permanecem inalterados.

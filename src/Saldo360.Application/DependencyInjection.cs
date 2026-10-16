@@ -46,6 +46,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialDebtInstallmentService>();
         services.AddScoped<FinancialDebtInstallmentReconciliationService>();
         services.AddScoped<FinancialGoalService>();
+        services.AddScoped<FinancialGoalAllocationService>();
         return services;
     }
 }

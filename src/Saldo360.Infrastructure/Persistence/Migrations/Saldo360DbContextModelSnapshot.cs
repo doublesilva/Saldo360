@@ -1660,6 +1660,76 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Goals.FinancialGoalAllocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description");
+
+                    b.Property<DateOnly>("EffectiveDate")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_date");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid>("FinancialAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("financial_account_id");
+
+                    b.Property<Guid>("GoalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("goal_id");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operation_id");
+
+                    b.Property<int>("OperationType")
+                        .HasColumnType("integer")
+                        .HasColumnName("operation_type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_goal_allocations");
+
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_goal_allocations_family_id_id");
+
+                    b.HasIndex("FamilyId", "OperationId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_goal_allocations_family_id_operation_id");
+
+                    b.HasIndex("FamilyId", "FinancialAccountId", "CancelledAt")
+                        .HasDatabaseName("ix_financial_goal_allocations_family_id_financial_account_id_c");
+
+                    b.HasIndex("FamilyId", "GoalId", "EffectiveDate")
+                        .HasDatabaseName("ix_financial_goal_allocations_family_id_goal_id_effective_date");
+
+                    b.ToTable("financial_goal_allocations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_goal_allocations_amount", "amount > 0");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlannedTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2948,6 +3018,32 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_goals_families_family_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Goals.FinancialGoalAllocation", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_goal_allocations_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "FinancialAccountId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_goal_allocations_financial_accounts_family_id_fin");
+
+                    b.HasOne("Saldo360.Domain.Goals.FinancialGoal", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "GoalId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_goal_allocations_financial_goals_family_id_goal_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlannedTransaction", b =>

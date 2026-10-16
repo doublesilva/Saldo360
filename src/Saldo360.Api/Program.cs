@@ -70,5 +70,6 @@ app.MapFinancialDebtEndpoints();
 app.MapFinancialDebtInstallmentEndpoints();
 app.MapFinancialDebtInstallmentReconciliationEndpoints();
 app.MapFinancialGoalEndpoints();
+app.MapFinancialGoalAllocationEndpoints();
 
 app.Run();
