@@ -41,3 +41,14 @@ Alterações estruturais de calendário (frequência, intervalo, data, encerrame
 ## Limitações
 
 Não há jobs, geração automática de previsões, edição individual de ocorrências, reajustes, notificações ou integração com cartões. Alterações nesta definição não modificam lançamentos, previsões, faturas, pagamentos ou orçamentos existentes.
+## Interface da Agenda de Recorrências (T11.4)
+
+A navegação de cada família inclui a opção **Recorrências**. A tela lista as definições ativas e arquivadas, permite criar e editar recorrências usando contas e categorias da própria família e apresenta as ocorrências calculadas no intervalo selecionado.
+
+As ações de pausar, retomar, encerrar e arquivar exigem confirmação quando alteram o ciclo de vida. A materialização é sempre explícita: o usuário informa `from` e `through`, revisa a quantidade de ocorrências e confirma; a interface não materializa recorrências automaticamente. A resposta da API é usada para exibir criadas e já existentes, preservando a idempotência do backend.
+
+O detalhe distingue ocorrências virtuais das materializações persistidas e informa o estado da previsão (pendente, realizada ou cancelada). Ocorrências virtuais não alteram saldos, Agenda ou orçamento. Depois da materialização, a navegação para **Agenda** mantém a família e o mês corrente.
+
+Em alterações de definição, campos estruturais do calendário permanecem bloqueados quando já há uma recorrência cadastrada, evitando que a interface sugira uma reinterpretação de ocorrências históricas. Valores monetários são enviados e exibidos como strings decimais; contas, categorias e autorização continuam sendo validados pelo backend.
+
+As consultas são canceladas quando a família muda, evitando que respostas antigas contaminem a tela. A interface é responsiva e mantém ações acessíveis por teclado. O tratamento de ocorrências já materializadas, ajustes individuais e conciliação financeira continua pertencendo aos fluxos existentes de previsões e à T11.2/T11.3.

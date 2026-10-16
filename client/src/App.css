@@ -1741,3 +1741,15 @@ button.calendar-day--selected {
 .import-panel dl > div { padding: .6rem; background: var(--surface-muted, #f7f8fa); border-radius: .4rem; }
 .import-panel dt { color: var(--muted); font-size: .8rem; }.import-panel dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
 @media (max-width: 48rem) { .import-row { grid-template-columns: 1fr; align-items: start; }.import-row .form__actions { flex-wrap: wrap; }.import-panel .form-row { align-items: stretch; flex-direction: column; } }
+
+.recurrence-page { display: grid; gap: 1rem; }
+.recurrence-layout { display: grid; grid-template-columns: minmax(14rem, .8fr) minmax(0, 1.8fr); gap: 1rem; }
+.recurrence-list { display: grid; gap: .6rem; align-content: start; }
+.recurrence-card { display: grid; gap: .25rem; text-align: left; padding: .85rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--surface); color: inherit; }
+.recurrence-card--selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+.recurrence-card span { color: var(--muted); font-size: .9rem; }
+.recurrence-details { display: grid; gap: .8rem; border: 1px solid var(--border); border-radius: .6rem; padding: 1rem; }
+.recurrence-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .6rem; margin: 0; }
+.recurrence-summary > div { padding: .6rem; border-radius: .4rem; background: var(--surface-muted, #f7f8fa); }
+.recurrence-summary dt { color: var(--muted); font-size: .8rem; }.recurrence-summary dd { margin: .2rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
+@media (max-width: 48rem) { .recurrence-layout { grid-template-columns: 1fr; }.recurrence-card { min-width: 0; } }
