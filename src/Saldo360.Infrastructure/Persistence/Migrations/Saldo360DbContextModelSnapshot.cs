@@ -1096,6 +1096,140 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int?>("AmortizationMethod")
+                        .HasColumnType("integer")
+                        .HasColumnName("amortization_method");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<DateOnly?>("BalanceReferenceDate")
+                        .HasColumnType("date")
+                        .HasColumnName("balance_reference_date");
+
+                    b.Property<DateOnly>("ContractDate")
+                        .HasColumnType("date")
+                        .HasColumnName("contract_date");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("currency");
+
+                    b.Property<int>("DebtType")
+                        .HasColumnType("integer")
+                        .HasColumnName("debt_type");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<DateOnly?>("FirstDueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("first_due_date");
+
+                    b.Property<decimal?>("InstallmentAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("installment_amount");
+
+                    b.Property<int?>("InstallmentCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("installment_count");
+
+                    b.Property<decimal?>("InterestRate")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("numeric(9,4)")
+                        .HasColumnName("interest_rate");
+
+                    b.Property<int?>("InterestRatePeriod")
+                        .HasColumnType("integer")
+                        .HasColumnName("interest_rate_period");
+
+                    b.Property<string>("LenderName")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("lender_name");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("OriginalPrincipal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("original_principal");
+
+                    b.Property<decimal?>("OutstandingBalance")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("outstanding_balance");
+
+                    b.Property<decimal?>("OutstandingPrincipal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("outstanding_principal");
+
+                    b.Property<int?>("PaidInstallmentCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("paid_installment_count");
+
+                    b.Property<Guid?>("ResponsibleAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("responsible_account_id");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_debts");
+
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_debts_family_id_id");
+
+                    b.HasIndex("FamilyId", "ResponsibleAccountId")
+                        .HasDatabaseName("ix_financial_debts_family_id_responsible_account_id");
+
+                    b.HasIndex("FamilyId", "Status")
+                        .HasDatabaseName("ix_financial_debts_family_id_status");
+
+                    b.ToTable("financial_debts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_debts_archived", "(status = 3) = (archived_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_debts_installments", "(installment_count IS NULL OR installment_count > 0) AND (paid_installment_count IS NULL OR paid_installment_count >= 0) AND (paid_installment_count IS NULL OR installment_count IS NULL OR paid_installment_count <= installment_count)");
+
+                            t.HasCheckConstraint("ck_debts_nonnegative", "(outstanding_principal IS NULL OR outstanding_principal >= 0) AND (outstanding_balance IS NULL OR outstanding_balance >= 0) AND (installment_amount IS NULL OR installment_amount >= 0) AND (interest_rate IS NULL OR interest_rate >= 0)");
+
+                            t.HasCheckConstraint("ck_debts_original_principal", "original_principal > 0");
+
+                            t.HasCheckConstraint("ck_debts_reference", "(balance_reference_date IS NULL OR outstanding_balance IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Families.Family", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2374,6 +2508,23 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_reconciliations_planned_same_family");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebt", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debts_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "ResponsibleAccountId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_debts_financial_accounts_family_id_responsible_ac");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Families.FamilyInvitation", b =>

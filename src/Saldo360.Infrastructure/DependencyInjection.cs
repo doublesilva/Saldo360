@@ -8,6 +8,7 @@ using Saldo360.Application.Transactions;
 using Saldo360.Application.Transfers;
 using Saldo360.Application.Families;
 using Saldo360.Application.Planning;
+using Saldo360.Application.Debts;
 using Saldo360.Application.Users;
 using Saldo360.Infrastructure.Accounts;
 using Saldo360.Infrastructure.Categories;
@@ -16,6 +17,7 @@ using Saldo360.Infrastructure.Transfers;
 using Saldo360.Infrastructure.Authentication;
 using Saldo360.Infrastructure.Families;
 using Saldo360.Infrastructure.Planning;
+using Saldo360.Infrastructure.Debts;
 using Saldo360.Infrastructure.Persistence;
 using Saldo360.Infrastructure.Users;
 using Saldo360.Application.Calendar;
@@ -80,6 +82,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialRecurrenceRepository, FinancialRecurrenceRepository>();
         services.AddScoped<IFinancialRecurrenceMaterializationRepository, FinancialRecurrenceMaterializationRepository>();
         services.AddScoped<IFinancialPlanningScenarioRepository, FinancialPlanningScenarioRepository>();
+        services.AddScoped<IFinancialDebtRepository, FinancialDebtRepository>();
         services.AddSingleton<ICreditCardPdfTextExtractor, CreditCardPdfTextExtractor>();
 
         return services;

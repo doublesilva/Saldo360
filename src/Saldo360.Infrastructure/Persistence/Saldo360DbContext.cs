@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Budgets;
+using Saldo360.Domain.Debts;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.CreditCards;
 using Saldo360.Domain.Families;
@@ -58,6 +59,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialRecurrenceMaterialization> FinancialRecurrenceMaterializations => Set<FinancialRecurrenceMaterialization>();
     public DbSet<FinancialPlanningScenario> FinancialPlanningScenarios => Set<FinancialPlanningScenario>();
     public DbSet<FinancialPlanningMonthlyParameter> FinancialPlanningMonthlyParameters => Set<FinancialPlanningMonthlyParameter>();
+    public DbSet<FinancialDebt> FinancialDebts => Set<FinancialDebt>();
 
     /// <summary>Configuração do provedor usada pela API, pelas ferramentas de migration e pelos testes.</summary>
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder builder, string connectionString) =>
