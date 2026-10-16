@@ -28,6 +28,14 @@ A projeção mensal usa o snapshot `REPEATABLE READ` do motor da Agenda. As cons
 
 O dashboard não calcula projeções de cenários, metas de recuperação, pagamentos ou novas obrigações. A validação global da solução permanece planejada para a T15.5.
 
+## Interface React (T15.3)
+
+A navegação da família apresenta a seção **Visão Geral**, que consome exclusivamente o endpoint acima por meio do cliente tipado `client/src/api/dashboard.ts`. A tela oferece seleção de competência (`yyyy-MM`) e horizonte de 3, 6 ou 12 meses, mantendo o mês atual de `America/Sao_Paulo` como padrão.
+
+O resumo é organizado em posição, evolução mensal, fluxo de caixa, orçamentos, cartões, dívidas, objetivos e alertas. Valores monetários permanecem strings decimais até a formatação visual; o React não soma, projeta ou deduplica obrigações. Estados de cobertura incompleta e dados desconhecidos são exibidos explicitamente, sem substituição por zero ou estimativa.
+
+Alertas e cartões possuem ações contextuais para abrir o módulo correspondente. A consulta é cancelável ao trocar família, competência ou horizonte, evitando que respostas obsoletas substituam a seleção atual. A grade se adapta a telas pequenas e os controles têm rótulos acessíveis. A prévia é somente leitura: nenhuma operação financeira é criada ou alterada.
+
 ## Indicadores e alertas (T15.2)
 
 Além das seções-base, a resposta inclui `indicators` e `alerts`.

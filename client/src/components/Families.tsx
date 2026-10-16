@@ -21,6 +21,7 @@ import { FinancialRecurrences } from './FinancialRecurrences'
 import { FinancialPlanning } from './FinancialPlanning'
 import { FinancialDebts } from './FinancialDebts'
 import { FinancialGoals } from './FinancialGoals'
+import { FinancialDashboard } from './FinancialDashboard'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
 
@@ -173,7 +174,7 @@ type DetailState =
 type FamilySection = 'overview' | 'calendar' | 'budgets' | 'cards' | 'recurrences' | 'planning' | 'debts' | 'goals' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
 
 const familySections: Array<{ id: FamilySection; label: string }> = [
-  { id: 'overview', label: 'Família' },
+  { id: 'overview', label: 'Visão Geral' },
   { id: 'calendar', label: 'Agenda' },
   { id: 'budgets', label: 'Orçamentos' },
   { id: 'cards', label: 'Cartões' },
@@ -242,7 +243,8 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
 
           {section === 'overview' && (
             <div className="family-section">
-              <h3>Membros</h3>
+              <FinancialDashboard familyId={state.family.id} refreshKey={financeVersion} onNavigate={(target) => setSection(target)} />
+              <details className="card"><summary>Membros e acesso</summary>
               <ul className="checks">
                 {state.family.members.map((member, index) => (
                   <li key={`${member.joinedAt}-${index}`}>
@@ -255,6 +257,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
                 ))}
               </ul>
               {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
+              </details>
             </div>
           )}
           {section === 'calendar' && (
