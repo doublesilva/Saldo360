@@ -1,0 +1,10 @@
+using Saldo360.Api.Authentication;using Saldo360.Application.Debts;
+namespace Saldo360.Api.Debts;
+public static class FinancialDebtInstallmentReconciliationEndpoints
+{
+ public static IEndpointRouteBuilder MapFinancialDebtInstallmentReconciliationEndpoints(this IEndpointRouteBuilder app){var g=app.MapGroup("/api/families/{familyId:guid}/debt-installment-reconciliations").RequireAuthorization();g.MapGet("/",List);g.MapPost("/",Create).AddEndpointFilter<ValidateCsrfTokenFilter>();g.MapDelete("/{id:guid}",Remove).AddEndpointFilter<ValidateCsrfTokenFilter>();return app;}
+ static async Task<IResult> List(Guid familyId,CurrentUser u,FinancialDebtInstallmentReconciliationService s,CancellationToken ct)=>await u.GetUserIdAsync(ct) is not{ } uid?Results.Unauthorized():await s.ListAsync(familyId,uid,ct) is{ } xs?Results.Ok(xs):Results.NotFound();
+ static async Task<IResult> Create(Guid familyId,Request? x,CurrentUser u,FinancialDebtInstallmentReconciliationService s,CancellationToken ct){if(await u.GetUserIdAsync(ct) is not{ } uid)return Results.Unauthorized();var r=await s.CreateAsync(familyId,uid,new(x?.DebtInstallmentId,x?.PlannedTransactionId),ct);return r.Access switch{DebtReconciliationAccess.Allowed=>Results.Created($"/api/families/{familyId}/debt-installment-reconciliations/{r.Reconciliation!.Id}",r.Reconciliation),DebtReconciliationAccess.Invalid=>Results.ValidationProblem(r.Errors!),DebtReconciliationAccess.Conflict=>Results.Conflict(new{title=r.Message}),_=>Results.NotFound()};}
+ static async Task<IResult> Remove(Guid familyId,Guid id,CurrentUser u,FinancialDebtInstallmentReconciliationService s,CancellationToken ct)=>await u.GetUserIdAsync(ct) is not{ } uid?Results.Unauthorized():await s.RemoveAsync(familyId,id,uid,ct)?Results.NoContent():Results.NotFound();
+ public sealed record Request(Guid? DebtInstallmentId,Guid? PlannedTransactionId);
+}

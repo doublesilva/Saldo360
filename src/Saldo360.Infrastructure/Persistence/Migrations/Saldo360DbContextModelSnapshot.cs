@@ -1305,6 +1305,56 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebtInstallmentReconciliation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<Guid>("DebtInstallmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("debt_installment_id");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid>("PlannedTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("planned_transaction_id");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("removed_at");
+
+                    b.Property<Guid?>("RemovedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("removed_by_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_debt_installment_reconciliations");
+
+                    b.HasIndex("FamilyId", "DebtInstallmentId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_debt_installment_reconciliations_family_id_debt_i")
+                        .HasFilter("removed_at IS NULL");
+
+                    b.HasIndex("FamilyId", "PlannedTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_debt_installment_reconciliations_family_id_planne")
+                        .HasFilter("removed_at IS NULL");
+
+                    b.ToTable("financial_debt_installment_reconciliations", (string)null);
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebtPayment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2706,6 +2756,32 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_debt_installments_financial_debts_family_id_debt_");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebtInstallmentReconciliation", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debt_installment_reconciliations_families_family_");
+
+                    b.HasOne("Saldo360.Domain.Debts.FinancialDebtInstallment", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "DebtInstallmentId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debt_installment_reconciliations_financial_debt_i");
+
+                    b.HasOne("Saldo360.Domain.Planning.FinancialPlannedTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "PlannedTransactionId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debt_installment_reconciliations_financial_planne");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebtPayment", b =>

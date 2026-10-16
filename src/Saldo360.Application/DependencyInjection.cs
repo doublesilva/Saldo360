@@ -43,6 +43,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialPlanningScenarioProjectionService>();
         services.AddScoped<FinancialDebtService>();
         services.AddScoped<FinancialDebtInstallmentService>();
+        services.AddScoped<FinancialDebtInstallmentReconciliationService>();
         return services;
     }
 }

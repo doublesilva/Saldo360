@@ -40,6 +40,8 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
                 && !db.FinancialTransactions.Any(t =>
                     t.FamilyId == p.FamilyId && t.PlannedTransactionId == p.Id && !t.IsCancelled)
                 && !db.FinancialPlannedInvoiceReconciliations.Any(r =>
+                    r.FamilyId == p.FamilyId && r.PlannedTransactionId == p.Id && r.RemovedAt == null)
+                && !db.FinancialDebtInstallmentReconciliations.Any(r =>
                     r.FamilyId == p.FamilyId && r.PlannedTransactionId == p.Id && r.RemovedAt == null));
 
 

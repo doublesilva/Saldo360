@@ -1,0 +1,9 @@
+using Saldo360.Application.Families;
+namespace Saldo360.Application.Debts;
+public sealed class FinancialDebtInstallmentReconciliationService(IFamilyRepository families,IFinancialDebtInstallmentReconciliationRepository repo,TimeProvider time)
+{
+ public async Task<IReadOnlyList<DebtInstallmentReconciliationDto>?> ListAsync(Guid f,Guid u,CancellationToken ct)=>await families.GetMemberRoleAsync(f,u,ct) is null?null:await repo.ListAsync(f,ct);
+ public async Task<DebtReconciliationResult> CreateAsync(Guid f,Guid u,DebtInstallmentReconciliationInput i,CancellationToken ct){if(await families.GetMemberRoleAsync(f,u,ct) is null)return new(DebtReconciliationAccess.NotFound,null,null);if(i.DebtInstallmentId is null||i.PlannedTransactionId is null)return new(DebtReconciliationAccess.Invalid,null,new Dictionary<string,string[]>{{"ids",["Informe parcela e previsão."]}});var e=await repo.EligibilityAsync(f,i.DebtInstallmentId.Value,i.PlannedTransactionId.Value,ct);if(!e.InstallmentExists||!e.PlannedExists)return new(DebtReconciliationAccess.NotFound,null,null);if(!e.PlannedEligible)return Conflict("A previsão precisa ser uma despesa pendente.");if(!e.InstallmentEligible)return Conflict("A parcela não possui saldo devido.");if(!e.AccountCompatible)return Conflict("A conta da previsão é incompatível.");if(e.AlreadyLinked)return Conflict("Parcela ou previsão já possui conciliação ativa.");var r=await repo.CreateAsync(f,i.DebtInstallmentId.Value,i.PlannedTransactionId.Value,u,time.GetUtcNow(),ct);return r is null?Conflict("Conciliação concorrente."):new(DebtReconciliationAccess.Allowed,r,null);}
+ public async Task<bool> RemoveAsync(Guid f,Guid id,Guid u,CancellationToken ct)=>await families.GetMemberRoleAsync(f,u,ct) is not null&&await repo.RemoveAsync(f,id,u,time.GetUtcNow(),ct);
+ private static DebtReconciliationResult Conflict(string m)=>new(DebtReconciliationAccess.Conflict,null,null,m);
+}

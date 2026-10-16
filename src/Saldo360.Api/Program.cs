@@ -67,5 +67,6 @@ app.MapFinancialRecurrenceEndpoints();
 app.MapFinancialPlanningScenarioEndpoints();
 app.MapFinancialDebtEndpoints();
 app.MapFinancialDebtInstallmentEndpoints();
+app.MapFinancialDebtInstallmentReconciliationEndpoints();
 
 app.Run();
