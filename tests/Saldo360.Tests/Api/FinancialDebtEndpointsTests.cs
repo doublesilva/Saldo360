@@ -64,4 +64,32 @@ public sealed class FinancialDebtEndpointsTests(PostgresFixture postgres) : Post
         });
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
     }
+
+    [Fact]
+    public async Task Debt_InstallmentPayment_IsIdempotentAndCreatesOneBankTransaction()
+    {
+        var owner = await SignInAsync("debt-payment-owner");
+        var family = await CreateFamilyAsync(owner, "Família Pagamentos");
+        var account = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/accounts", owner,
+            new { name = "Conta", type = "Checking", financialScope = "PF", openingBalance = "1000.00", openingBalanceDate = "2026-01-01" });
+        using var accountBody = JsonDocument.Parse(await account.Content.ReadAsStringAsync());
+        var accountId = accountBody.RootElement.GetProperty("id").GetGuid();
+        var debt = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts", owner,
+            new { name = "Empréstimo", debtType = "PersonalLoan", responsibleAccountId = accountId, originalPrincipal = "500.00", contractDate = "2026-01-01" });
+        using var debtBody = JsonDocument.Parse(await debt.Content.ReadAsStringAsync());
+        var debtId = debtBody.RootElement.GetProperty("id").GetGuid();
+        var installment = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts/{debtId}/installments", owner,
+            new { installmentNumber = 1, dueDate = "2026-11-10", scheduledAmount = "123.45", principalComponent = "100.00" });
+        Assert.Equal(HttpStatusCode.Created, installment.StatusCode);
+        using var installmentBody = JsonDocument.Parse(await installment.Content.ReadAsStringAsync());
+        var installmentId = installmentBody.RootElement.GetProperty("id").GetGuid();
+        var payload = new { operationId = "payment-op-1", financialAccountId = accountId, paymentDate = "2026-10-16", amount = "123.45", principalPaid = "100.00" };
+        var first = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts/{debtId}/installments/{installmentId}/payments", owner, payload);
+        var second = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts/{debtId}/installments/{installmentId}/payments", owner, payload);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        await using var db = Db();
+        Assert.Equal(1, await db.FinancialDebtPayments.CountAsync());
+        Assert.Equal(1, await db.FinancialTransactions.CountAsync(t => t.Origin == Saldo360.Domain.Transactions.FinancialTransactionOrigin.DebtInstallmentPayment));
+    }
 }

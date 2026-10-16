@@ -1230,6 +1230,165 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebtInstallment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("DebtId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("debt_id");
+
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("due_date");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<int>("InstallmentNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("installment_number");
+
+                    b.Property<decimal?>("InsuranceComponent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("insurance_component");
+
+                    b.Property<decimal?>("InterestComponent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("interest_component");
+
+                    b.Property<decimal?>("OtherChargesComponent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("other_charges_component");
+
+                    b.Property<decimal?>("PrincipalComponent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("principal_component");
+
+                    b.Property<decimal>("ScheduledAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("scheduled_amount");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_debt_installments");
+
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_debt_installments_family_id_id");
+
+                    b.HasIndex("FamilyId", "DueDate")
+                        .HasDatabaseName("ix_financial_debt_installments_family_id_due_date");
+
+                    b.HasIndex("FamilyId", "DebtId", "InstallmentNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_debt_installments_family_id_debt_id_installment_n");
+
+                    b.ToTable("financial_debt_installments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_debt_installment_amount_positive", "scheduled_amount > 0");
+
+                            t.HasCheckConstraint("ck_debt_installment_number_positive", "installment_number > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebtPayment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("BankTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bank_transaction_id");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("DebtId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("debt_id");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid>("FinancialAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("financial_account_id");
+
+                    b.Property<Guid>("InstallmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("installment_id");
+
+                    b.Property<decimal?>("InsurancePaid")
+                        .HasColumnType("numeric")
+                        .HasColumnName("insurance_paid");
+
+                    b.Property<decimal?>("InterestPaid")
+                        .HasColumnType("numeric")
+                        .HasColumnName("interest_paid");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_id");
+
+                    b.Property<decimal?>("OtherChargesPaid")
+                        .HasColumnType("numeric")
+                        .HasColumnName("other_charges_paid");
+
+                    b.Property<DateOnly>("PaymentDate")
+                        .HasColumnType("date")
+                        .HasColumnName("payment_date");
+
+                    b.Property<decimal?>("PrincipalPaid")
+                        .HasColumnType("numeric")
+                        .HasColumnName("principal_paid");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_debt_payments");
+
+                    b.HasIndex("FamilyId", "BankTransactionId")
+                        .HasDatabaseName("ix_financial_debt_payments_family_id_bank_transaction_id");
+
+                    b.HasIndex("FamilyId", "FinancialAccountId")
+                        .HasDatabaseName("ix_financial_debt_payments_family_id_financial_account_id");
+
+                    b.HasIndex("FamilyId", "InstallmentId")
+                        .HasDatabaseName("ix_financial_debt_payments_family_id_installment_id");
+
+                    b.HasIndex("FamilyId", "OperationId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_debt_payments_family_id_operation_id");
+
+                    b.ToTable("financial_debt_payments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_debt_payment_amount_positive", "amount > 0");
+
+                            t.HasCheckConstraint("ck_debt_payment_cancelled_pair", "(cancelled_at IS NULL) OR cancelled_at IS NOT NULL");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Families.Family", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2525,6 +2684,58 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("FamilyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_financial_debts_financial_accounts_family_id_responsible_ac");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebtInstallment", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debt_installments_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Debts.FinancialDebt", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "DebtId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debt_installments_financial_debts_family_id_debt_");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebtPayment", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debt_payments_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Transactions.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "BankTransactionId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debt_payments_financial_transactions_family_id_ba");
+
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "FinancialAccountId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debt_payments_financial_accounts_family_id_financ");
+
+                    b.HasOne("Saldo360.Domain.Debts.FinancialDebtInstallment", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "InstallmentId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_debt_payments_financial_debt_installments_family_");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Families.FamilyInvitation", b =>

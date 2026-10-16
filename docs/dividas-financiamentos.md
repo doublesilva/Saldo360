@@ -33,3 +33,10 @@ Valores monetários e taxas são strings decimais com duas casas. Datas são civ
 ## Limitações
 
 Não há geração de parcelas, pagamentos, amortizações, juros futuros, integração com Agenda/Orçamentos, associação automática a recorrências ou faturas de cartão. Recorrências existentes não são convertidas nem canceladas. A conciliação explícita será tratada na T13.2.
+## Parcelas e pagamentos (T13.2)
+
+Parcelas são cadastradas explicitamente; o sistema não gera cronogramas Price/SAC. Cada parcela possui número, vencimento e valor decimal exato. Componentes de principal, juros, seguros e encargos são opcionais e não são inferidos.
+
+Pagamentos parciais ou múltiplos podem ser registrados pelos endpoints `/debts/{debtId}/installments/{installmentId}/payments`. Cada pagamento exige `operationId` idempotente e cria exatamente um lançamento bancário com origem `DebtInstallmentPayment`. Reenvios retornam o mesmo pagamento; valores que excedem o saldo da parcela são rejeitados. O cancelamento é lógico e cancela também o lançamento bancário na mesma transação.
+
+Estados derivados da parcela: `Pending`, `PartiallyPaid`, `Paid`, `Overdue` e `Cancelled`. A distinção entre valor pago e amortização é preservada: somente componentes explicitamente informados reduzem a principal; nenhum componente é deduzido por diferença.

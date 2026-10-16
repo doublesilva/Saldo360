@@ -77,6 +77,15 @@ public sealed class FinancialTransaction : Entity
             Amount = amount, TransactionDate = date, Currency = DefaultCurrency,
         };
 
+    public static FinancialTransaction CreateDebtInstallmentPayment(Guid familyId, Guid accountId, string description, decimal amount, DateOnly date, Guid createdByUserId, DateTimeOffset now) =>
+        new FinancialTransaction
+        {
+            FamilyId = familyId, CreatedAt = now, CreatedByUserId = createdByUserId,
+            Origin = FinancialTransactionOrigin.DebtInstallmentPayment,
+            CategoryId = null, AccountId = accountId, Type = CategoryType.Expense,
+            Description = description, Amount = amount, TransactionDate = date, Currency = DefaultCurrency,
+        };
+
     /// <summary>Lançamento efetivo que realiza a previsão <paramref name="plannedTransactionId"/>.</summary>
     public static FinancialTransaction CreateRealization(
         Guid familyId, TransactionDetails details, Guid plannedTransactionId, Guid createdByUserId, DateTimeOffset now) =>
@@ -145,6 +154,7 @@ public enum FinancialTransactionOrigin
     Manual,
     PlannedRealization,
     CreditCardInvoicePayment,
+    DebtInstallmentPayment,
 }
 
 /// <summary>

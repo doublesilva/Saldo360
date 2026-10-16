@@ -60,6 +60,8 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialPlanningScenario> FinancialPlanningScenarios => Set<FinancialPlanningScenario>();
     public DbSet<FinancialPlanningMonthlyParameter> FinancialPlanningMonthlyParameters => Set<FinancialPlanningMonthlyParameter>();
     public DbSet<FinancialDebt> FinancialDebts => Set<FinancialDebt>();
+    public DbSet<FinancialDebtInstallment> FinancialDebtInstallments => Set<FinancialDebtInstallment>();
+    public DbSet<FinancialDebtPayment> FinancialDebtPayments => Set<FinancialDebtPayment>();
 
     /// <summary>Configuração do provedor usada pela API, pelas ferramentas de migration e pelos testes.</summary>
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder builder, string connectionString) =>
