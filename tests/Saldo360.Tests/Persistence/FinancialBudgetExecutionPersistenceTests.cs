@@ -67,7 +67,9 @@ public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture pos
 
         Assert.Equal(IsolationLevel.RepeatableRead, Assert.Single(capture.IsolationLevels));
         Assert.Contains(capture.Commands, command => command.Contains("SET TRANSACTION READ ONLY", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(4, capture.Commands.Count(command => command.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)));
+        // Além das quatro consultas-base, a execução agrega pagamentos e compromissos
+        // de parcelas de dívidas em lote, sem introduzir N+1.
+        Assert.Equal(6, capture.Commands.Count(command => command.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)));
         Assert.Equal(2, capture.Commands.Count(command => command.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase)));
         Assert.Empty(context.ChangeTracker.Entries());
         var target = Assert.Single(result!.Targets);

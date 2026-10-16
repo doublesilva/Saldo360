@@ -13,6 +13,7 @@ namespace Saldo360.Tests.Support;
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
+    private readonly SemaphoreSlim _databaseLock = new(1, 1);
     // Cada teste cria um banco (e um pool) próprio: mais conexões que o padrão de 100.
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine")
         .WithCommand("-c", "max_connections=300")
@@ -32,19 +33,37 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// <summary>Cria o banco da connection string e aplica todas as migrations.</summary>
     public async Task CreateDatabaseAsync(string connectionString)
     {
-        // Os testes da coleção rodam em série: fecha as conexões ociosas dos bancos anteriores.
-        NpgsqlConnection.ClearAllPools();
-
         var database = new NpgsqlConnectionStringBuilder(connectionString).Database!;
-        await using (var admin = new NpgsqlConnection(_container.GetConnectionString()))
+        await _databaseLock.WaitAsync();
+        try
         {
-            await admin.OpenAsync();
-            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", admin);
-            await create.ExecuteNonQueryAsync();
-        }
+            // Bancos são descartáveis e cada teste usa uma connection string distinta.
+            // Limpar pools ociosos antes de abrir o próximo banco evita esgotar
+            // max_connections durante a suíte longa, sem compartilhar dados.
+            NpgsqlConnection.ClearAllPools();
+            Console.WriteLine($"[PostgresFixture] criando banco isolado '{database}'.");
+            await using (var admin = new NpgsqlConnection(_container.GetConnectionString()))
+            {
+                await admin.OpenAsync();
+                await using var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", admin);
+                await create.ExecuteNonQueryAsync();
+            }
 
-        await using var db = CreateDbContext(connectionString);
-        await db.Database.MigrateAsync();
+            await using var db = CreateDbContext(connectionString);
+            Console.WriteLine($"[PostgresFixture] aplicando migrations em '{database}'.");
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await db.Database.MigrateAsync(timeout.Token);
+            Console.WriteLine($"[PostgresFixture] migrations concluídas em '{database}'.");
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"[PostgresFixture] falha no banco isolado '{database}': {exception.GetType().Name}: {exception.Message}");
+            throw;
+        }
+        finally
+        {
+            _databaseLock.Release();
+        }
     }
 
     /// <summary>Banco novo e migrado; devolve a connection string.</summary>
