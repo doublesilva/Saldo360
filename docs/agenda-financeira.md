@@ -37,6 +37,10 @@ Os indicadores combinam texto/símbolo, contorno e cor, de modo que a informaç�
 
 Ao selecionar um dia, a lista mostra descrição, conta, categoria quando disponível, valor em BRL, tipo e situação.
 
+Previsões originadas de recorrências entram na Agenda somente depois de uma materialização explícita pela API. O vínculo
+da ocorrência é preservado quando a previsão é realizada ou cancelada; a materialização não cria lançamentos bancários
+nem altera o saldo realizado.
+
 ## Detalhes e ações dos compromissos
 
 **Ver detalhes** abre um painel lateral com descrição, valor, tipo, data, conta, categoria quando disponível, origem e

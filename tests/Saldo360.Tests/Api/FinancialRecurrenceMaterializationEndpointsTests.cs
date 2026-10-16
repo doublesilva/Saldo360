@@ -1,0 +1,53 @@
+using System.Net;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Saldo360.Tests.Support;
+
+namespace Saldo360.Tests.Api;
+
+[Collection(PostgresCollection.Name)]
+public sealed class FinancialRecurrenceMaterializationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
+{
+    [Fact]
+    public async Task Materialization_IsIdempotent_AndDoesNotCreateBankTransactions()
+    {
+        var owner = await SignInAsync("recurrence-owner");
+        var family = await CreateFamilyAsync(owner, "Família Recorrência");
+        var account = await CreateAccountAsync(owner, family.Id, "Conta", "1000.00");
+        var category = await CreateCategoryAsync(owner, family.Id, "Internet", "Expense");
+        var baseUrl = $"/api/families/{family.Id}/recurrences";
+        var created = await SendWithCsrfAsync(HttpMethod.Post, baseUrl, owner, new { accountId = account, categoryId = category, type = "Expense", description = "Internet", amount = "380.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-11-10", dayOfMonth = 10 });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var recurrenceId = (await ReadAsync<IdDto>(created)).Id;
+
+        var first = await SendWithCsrfAsync(HttpMethod.Post, $"{baseUrl}/{recurrenceId}/materialize", owner, new { from = "2026-11-01", through = "2027-01-31" });
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        using (var body = JsonDocument.Parse(await first.Content.ReadAsStringAsync())) Assert.Equal((3, 0), (body.RootElement.GetProperty("createdCount").GetInt32(), body.RootElement.GetProperty("existingCount").GetInt32()));
+
+        var overlap = await SendWithCsrfAsync(HttpMethod.Post, $"{baseUrl}/{recurrenceId}/materialize", owner, new { from = "2026-12-01", through = "2027-02-28" });
+        Assert.Equal(HttpStatusCode.OK, overlap.StatusCode);
+        using (var body = JsonDocument.Parse(await overlap.Content.ReadAsStringAsync())) Assert.Equal((1, 2), (body.RootElement.GetProperty("createdCount").GetInt32(), body.RootElement.GetProperty("existingCount").GetInt32()));
+
+        await using var db = Db();
+        Assert.Equal(4, await db.FinancialPlannedTransactions.CountAsync());
+        Assert.Equal(4, await db.FinancialRecurrenceMaterializations.CountAsync());
+        Assert.Equal(0, await db.FinancialTransactions.CountAsync());
+        var view = await SendAsync(HttpMethod.Get, $"{baseUrl}/{recurrenceId}/materializations?from=2026-11-01&through=2027-03-31", owner);
+        Assert.Equal(HttpStatusCode.OK, view.StatusCode);
+        using var materializations = JsonDocument.Parse(await view.Content.ReadAsStringAsync());
+        Assert.Equal(5, materializations.RootElement.GetArrayLength());
+        Assert.Equal(JsonValueKind.Null, materializations.RootElement[4].GetProperty("plannedTransactionId").ValueKind);
+    }
+
+    private async Task<Guid> CreateAccountAsync(string session, Guid familyId, string name, string openingBalance)
+    {
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/accounts", session, new { name, type = "Checking", financialScope = "PF", openingBalance, openingBalanceDate = "2026-09-01" });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode); return (await ReadAsync<IdDto>(response)).Id;
+    }
+    private async Task<Guid> CreateCategoryAsync(string session, Guid familyId, string name, string type)
+    {
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/categories", session, new { name, type });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode); return (await ReadAsync<IdDto>(response)).Id;
+    }
+    private sealed record IdDto(Guid Id);
+}

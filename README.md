@@ -236,4 +236,4 @@ A T10.3.2 adiciona a confirmação explícita e transacional das linhas selecion
 
 Compras no cartão e parcelas são cadastradas separadamente pela API `/api/families/{familyId}/credit-cards/{cardId}/purchases`; elas representam obrigações de crédito e não movimentam o saldo bancário.
 Os alertas de orçamento da execução são calculados no backend a partir do consumo projetado bruto; o resumo informa o pior estado das metas e as contagens de aproximação, limite atingido e excedência.
-Recorrências financeiras (T11.1) podem ser cadastradas e consultadas pela API, com cálculo virtual determinístico de ocorrências semanais, mensais e anuais. Elas não geram previsões ou lançamentos automaticamente; consulte [docs/recorrencias-financeiras.md](docs/recorrencias-financeiras.md).
+Recorrências financeiras (T11.1/T11.2) podem ser cadastradas, calculadas e materializadas explicitamente em previsões idempotentes pela API. A materialização não cria lançamentos automaticamente; consulte [docs/recorrencias-financeiras.md](docs/recorrencias-financeiras.md).

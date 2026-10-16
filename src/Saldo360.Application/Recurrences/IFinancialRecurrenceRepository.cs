@@ -9,4 +9,5 @@ public interface IFinancialRecurrenceRepository
     Task<IReadOnlyList<RecurrenceDto>> ListAsync(Guid familyId, bool includeArchived, CancellationToken ct);
     Task<FinancialRecurrence?> FindEntityAsync(Guid familyId, Guid id, CancellationToken ct);
     Task SaveAsync(CancellationToken ct);
+    Task<bool> HasMaterializationsAsync(Guid familyId, Guid recurrenceId, CancellationToken ct);
 }

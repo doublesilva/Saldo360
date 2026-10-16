@@ -66,6 +66,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialTransactionRepository, FinancialTransactionRepository>();
         services.AddScoped<IFinancialTransferRepository, FinancialTransferRepository>();
         services.AddScoped<IFinancialPlannedTransactionRepository, FinancialPlannedTransactionRepository>();
+        services.AddScoped<IReferenceLookup>(sp => sp.GetRequiredService<IFinancialPlannedTransactionRepository>());
         services.AddScoped<IFinancialCalendarRepository, FinancialCalendarRepository>();
         services.AddScoped<IFinancialCalendarBalanceRepository, FinancialCalendarBalanceRepository>();
         services.AddScoped<IFinancialBudgetRepository, FinancialBudgetRepository>();
@@ -77,6 +78,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialCreditCardImportRepository, FinancialCreditCardImportRepository>();
         services.AddScoped<IFinancialCreditCardImportedInstallmentRepository, FinancialCreditCardImportedInstallmentRepository>();
         services.AddScoped<IFinancialRecurrenceRepository, FinancialRecurrenceRepository>();
+        services.AddScoped<IFinancialRecurrenceMaterializationRepository, FinancialRecurrenceMaterializationRepository>();
         services.AddSingleton<ICreditCardPdfTextExtractor, CreditCardPdfTextExtractor>();
 
         return services;

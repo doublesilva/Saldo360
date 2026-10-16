@@ -30,6 +30,14 @@ Uma definição pode ser sem encerramento, ter `endDate` ou `occurrenceCount` (a
 
 Escritas exigem autenticação, participação na família e CSRF. O retorno de ocorrência contém sequência, data, descrição, tipo, valor, conta e categoria.
 
+## Materialização em previsões (T11.2)
+
+`POST /api/families/{familyId}/recurrences/{id}/materialize` recebe `{ "from": "yyyy-MM-dd", "through": "yyyy-MM-dd" }` e exige intervalo explícito. Cada ocorrência é identificada por `FamilyId + RecurrenceId + OccurrenceNumber`; a constraint PostgreSQL impede duplicidades. Reenvios e intervalos sobrepostos retornam `Existing` para vínculos já registrados e criam somente as ocorrências novas.
+
+A operação é atômica e usa transação com bloqueio da recorrência. A previsão criada usa o modelo existente, começa pendente e não cria lançamento, pagamento, alteração de saldo ou orçamento. Realizações e cancelamentos preservam o vínculo. A consulta `GET .../{id}/materializations?from=...&through=...` também lista ocorrências calculadas sem previsão persistida (`plannedTransactionId: null`) e informa os estados Pending, Realized ou Cancelled das materializadas.
+
+Alterações estruturais de calendário (frequência, intervalo, data, encerramento ou âncora) são bloqueadas quando já existem materializações. Alterações de valor, descrição, conta ou categoria não reescrevem previsões antigas; novas materializações usam a definição vigente. Ajustes individuais das previsões continuam sob as regras existentes.
+
 ## Limitações
 
 Não há jobs, geração automática de previsões, edição individual de ocorrências, reajustes, notificações ou integração com cartões. Alterações nesta definição não modificam lançamentos, previsões, faturas, pagamentos ou orçamentos existentes.

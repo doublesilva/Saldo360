@@ -6,7 +6,7 @@ using Saldo360.Domain.Recurrences;
 
 namespace Saldo360.Application.Recurrences;
 
-public sealed class FinancialRecurrenceService(IFamilyRepository families, IFinancialRecurrenceRepository repository, IReferenceLookup references, TimeProvider time)
+public sealed class FinancialRecurrenceService(IFamilyRepository families, IFinancialRecurrenceRepository repository, IFinancialRecurrenceMaterializationRepository materializations, IReferenceLookup references, TimeProvider time)
 {
     public async Task<RecurrenceOperationResult> CreateAsync(Guid familyId, Guid userId, RecurrenceInput input, CancellationToken ct)
     {
@@ -25,8 +25,38 @@ public sealed class FinancialRecurrenceService(IFamilyRepository families, IFina
         if (!await IsParticipant(familyId,userId,ct)) return new(RecurrenceAccess.NotFound,null,null);
         var entity = await repository.FindEntityAsync(familyId,id,ct); if (entity is null) return new(RecurrenceAccess.NotFound,null,null);
         var (details, errors) = await Validate(familyId,input,ct); if (details is null) return new(RecurrenceAccess.Invalid,null,errors);
+        if (await repository.HasMaterializationsAsync(familyId, id, ct) && await ChangesCalendarAsync(entity, details)) return new(RecurrenceAccess.Conflict,null,null,"A definição de calendário não pode ser alterada depois da materialização de ocorrências.");
         try { entity.Update(details,time.GetUtcNow()); await repository.SaveAsync(ct); return new(RecurrenceAccess.Allowed,await repository.GetAsync(familyId,id,ct),null); }
         catch (InvalidOperationException e) { return new(RecurrenceAccess.Conflict,null,null,e.Message); }
+    }
+    public async Task<(MaterializationResultDto? Result, IDictionary<string,string[]>? Errors, bool NotFound, string? Conflict)> MaterializeAsync(Guid familyId, Guid id, Guid userId, DateOnly? from, DateOnly? through, CancellationToken ct)
+    {
+        if (!await IsParticipant(familyId,userId,ct)) return (null,null,true,null);
+        if (from is null || through is null) return (null,new Dictionary<string,string[]> { ["period"]=["Informe from e through no formato yyyy-MM-dd."] },false,null);
+        if (from > through) return (null,new Dictionary<string,string[]> { ["period"]=["from deve ser anterior ou igual a through."] },false,null);
+        var entity=await repository.FindEntityAsync(familyId,id,ct); if(entity is null)return(null,null,true,null);
+        if(entity.Status is RecurrenceStatus.Paused or RecurrenceStatus.Ended or RecurrenceStatus.Archived)return(null,null,false,"A recorrência não está ativa para novas materializações.");
+        var account = await references.GetAccountStateAsync(familyId, entity.FinancialAccountId, ct);
+        var category = await references.GetCategoryStateAsync(familyId, entity.FinancialCategoryId, ct);
+        if (account is null || !account.IsActive) return (null,new Dictionary<string,string[]> { ["accountId"]=["A conta da recorrência está inválida ou inativa."] },false,null);
+        if (category is null || !category.IsActive || category.Type != entity.Type) return (null,new Dictionary<string,string[]> { ["categoryId"]=["A categoria da recorrência está inválida, incompatível ou inativa."] },false,null);
+        IReadOnlyList<RecurrenceOccurrenceDto> occurrences;
+        try { occurrences=FinancialRecurrenceCalendar.CalculateOccurrences(entity,from.Value,through.Value); }
+        catch(ArgumentException e){return(null,new Dictionary<string,string[]> { ["period"]=[e.Message] },false,null);}
+        if(occurrences.Count>500)return(null,new Dictionary<string,string[]> { ["period"]=["O lote não pode conter mais de 500 ocorrências."] },false,null);
+        try{return(await materializations.MaterializeAsync(entity,occurrences,userId,time.GetUtcNow(),ct),null,false,null);}
+        catch(InvalidOperationException e){return(null,null,false,e.Message);}
+    }
+    public async Task<(IReadOnlyList<MaterializationQueryItem>? Items, string? Error, bool NotFound)> MaterializationsAsync(Guid familyId, Guid id, Guid userId, DateOnly? from, DateOnly? through, CancellationToken ct)
+    {
+        if (!await IsParticipant(familyId,userId,ct)) return (null,null,true);
+        if (from is null || through is null) return (null,"Informe from e through no formato yyyy-MM-dd.",false);
+        if (from>through)return(null,"from deve ser anterior ou igual a through.",false);
+        var entity = await repository.FindEntityAsync(familyId,id,ct); if(entity is null)return(null,null,true);
+        IReadOnlyList<RecurrenceOccurrenceDto> occurrences;
+        try { occurrences=FinancialRecurrenceCalendar.CalculateOccurrences(entity,from.Value,through.Value); } catch(ArgumentException e) { return(null,e.Message,false); }
+        var existing = (await materializations.ListAsync(familyId,id,from.Value,through.Value,ct)).ToDictionary(x=>x.OccurrenceNumber);
+        return (occurrences.Select(o => existing.TryGetValue(o.Sequence,out var item) ? item : new MaterializationQueryItem(o.Sequence,o.Date,null,null,null,null)).ToList(),null,false);
     }
     public Task<RecurrenceOperationResult> ChangeAsync(Guid familyId, Guid id, Guid userId, string operation, CancellationToken ct) => ChangeCore(familyId,id,userId,operation,ct);
     private async Task<RecurrenceOperationResult> ChangeCore(Guid familyId, Guid id, Guid userId, string operation, CancellationToken ct)
@@ -43,6 +73,7 @@ public sealed class FinancialRecurrenceService(IFamilyRepository families, IFina
         try { return (FinancialRecurrenceCalendar.CalculateOccurrences(entity,from,through),null,false); } catch(ArgumentException e) { return (null,e.Message,false); }
     }
     private async Task<bool> IsParticipant(Guid familyId, Guid userId, CancellationToken ct) => await families.GetMemberRoleAsync(familyId,userId,ct) is not null;
+    private static Task<bool> ChangesCalendarAsync(FinancialRecurrence current, RecurrenceDetails next) => Task.FromResult(current.Frequency != next.Frequency || current.Interval != next.Interval || current.StartDate != next.StartDate || current.EndDate != next.EndDate || current.OccurrenceCount != next.OccurrenceCount || current.DayOfMonth != (next.Frequency == RecurrenceFrequency.Weekly ? next.StartDate.Day : next.DayOfMonth ?? next.StartDate.Day));
     private async Task<(RecurrenceDetails?, Dictionary<string,string[]>)> Validate(Guid familyId, RecurrenceInput input, CancellationToken ct)
     {
         var errors=new Dictionary<string,string[]>(); var description=input.Description?.Trim()??string.Empty;

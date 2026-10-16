@@ -1444,6 +1444,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_financial_recurrences");
 
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_recurrences_family_id_id");
+
                     b.HasIndex("FamilyId", "FinancialAccountId")
                         .HasDatabaseName("ix_financial_recurrences_family_id_financial_account_id");
 
@@ -1469,6 +1472,52 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_recurrences_interval", "interval_value BETWEEN 1 AND 120");
                         });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrenceMaterialization", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<int>("OccurrenceNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("occurrence_number");
+
+                    b.Property<Guid>("PlannedTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("planned_transaction_id");
+
+                    b.Property<Guid>("RecurrenceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recurrence_id");
+
+                    b.Property<DateOnly>("ScheduledDate")
+                        .HasColumnType("date")
+                        .HasColumnName("scheduled_date");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_recurrence_materializations");
+
+                    b.HasIndex("PlannedTransactionId")
+                        .HasDatabaseName("ix_financial_recurrence_materializations_planned_transaction_id");
+
+                    b.HasIndex("FamilyId", "RecurrenceId", "OccurrenceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_recurrence_materializations_family_id_recurrence_");
+
+                    b.HasIndex("FamilyId", "RecurrenceId", "ScheduledDate")
+                        .HasDatabaseName("ix_financial_recurrence_materializations_family_id_recurrence_1");
+
+                    b.ToTable("financial_recurrence_materializations", (string)null);
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialTransaction", b =>
@@ -2299,6 +2348,31 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_recurrences_financial_categories_family_id_financ");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrenceMaterialization", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_recurrence_materializations_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Planning.FinancialPlannedTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("PlannedTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_recurrence_materializations_financial_planned_tra");
+
+                    b.HasOne("Saldo360.Domain.Recurrences.FinancialRecurrence", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "RecurrenceId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_recurrence_materializations_financial_recurrences");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialTransaction", b =>
