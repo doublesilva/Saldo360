@@ -79,6 +79,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialCreditCardImportedInstallmentRepository, FinancialCreditCardImportedInstallmentRepository>();
         services.AddScoped<IFinancialRecurrenceRepository, FinancialRecurrenceRepository>();
         services.AddScoped<IFinancialRecurrenceMaterializationRepository, FinancialRecurrenceMaterializationRepository>();
+        services.AddScoped<IFinancialPlanningScenarioRepository, FinancialPlanningScenarioRepository>();
         services.AddSingleton<ICreditCardPdfTextExtractor, CreditCardPdfTextExtractor>();
 
         return services;

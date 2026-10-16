@@ -1352,6 +1352,136 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlanningMonthlyParameter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateOnly>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<decimal>("ContingencyReserve")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("contingency_reserve");
+
+                    b.Property<decimal>("ExpectedAdditionalExpense")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("expected_additional_expense");
+
+                    b.Property<decimal>("ExpectedAdditionalIncome")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("expected_additional_income");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("notes");
+
+                    b.Property<decimal>("RecoveryTargetPercentage")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("recovery_target_percentage");
+
+                    b.Property<Guid>("ScenarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("scenario_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_planning_monthly_parameters");
+
+                    b.HasIndex("FamilyId", "ScenarioId", "Competence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_planning_parameters_scenario_competence");
+
+                    b.ToTable("financial_planning_monthly_parameters", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_planning_parameters_competence", "extract(day from competence) = 1");
+
+                            t.HasCheckConstraint("ck_planning_parameters_nonnegative", "expected_additional_income >= 0 AND expected_additional_expense >= 0 AND contingency_reserve >= 0");
+
+                            t.HasCheckConstraint("ck_planning_parameters_notes_trimmed", "notes IS NULL OR octet_length(notes) = octet_length(btrim(notes))");
+
+                            t.HasCheckConstraint("ck_planning_parameters_recovery", "recovery_target_percentage BETWEEN 0 AND 100");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlanningScenario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<int>("Months")
+                        .HasColumnType("integer")
+                        .HasColumnName("months");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<DateOnly>("StartMonth")
+                        .HasColumnType("date")
+                        .HasColumnName("start_month");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_planning_scenarios");
+
+                    b.HasAlternateKey("FamilyId", "Id")
+                        .HasName("ak_financial_planning_scenarios_family_id_id");
+
+                    b.HasIndex("FamilyId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_planning_scenarios_family_name");
+
+                    b.HasIndex("FamilyId", "Status", "StartMonth")
+                        .HasDatabaseName("ix_financial_planning_scenarios_family_id_status_start_month");
+
+                    b.ToTable("financial_planning_scenarios", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_planning_scenarios_archived", "(status = 1) = (archived_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_planning_scenarios_months", "months BETWEEN 1 AND 12");
+
+                            t.HasCheckConstraint("ck_planning_scenarios_start_month", "extract(day from start_month) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2322,6 +2452,27 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_planned_transactions_categories_same_family_type");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlanningMonthlyParameter", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Planning.FinancialPlanningScenario", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "ScenarioId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_planning_monthly_parameters_financial_planning_sc");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlanningScenario", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_planning_scenarios_families_family_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>

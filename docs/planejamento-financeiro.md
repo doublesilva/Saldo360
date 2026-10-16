@@ -1,0 +1,55 @@
+# Planejamento financeiro por cenários (T12.1)
+
+Um cenário é uma coleção de hipóteses de planejamento pertencente a uma família. Ele não é uma transação, previsão, orçamento, recorrência ou obrigação de cartão. Nesta etapa o Saldo360 cadastra e valida os parâmetros; nenhum saldo, Agenda, orçamento ou limite é calculado ou alterado.
+
+## Cenário e horizonte
+
+Cada cenário possui nome, descrição opcional, competência inicial (`yyyy-MM`) e horizonte de 1 a 12 meses. O nome é único dentro da família. Cenários podem começar em qualquer competência futura ou passada. O arquivamento é lógico e preserva o histórico; cenários arquivados não recebem novos parâmetros.
+
+## Parâmetros mensais
+
+Os parâmetros são explícitos por competência, sem cópia automática de defaults ou herança nesta etapa:
+
+- `expectedAdditionalIncome`: receita adicional hipotética;
+- `expectedAdditionalExpense`: despesa adicional hipotética;
+- `contingencyReserve`: margem de segurança, que não é despesa efetiva;
+- `recoveryTargetPercentage`: percentual entre 0 e 100, reservado para o futuro cálculo de recuperação;
+- `notes`: observação da hipótese.
+
+Os três valores monetários são não negativos e aceitam até duas casas decimais. Percentuais também são decimais exatos. O cliente deve enviar todos os campos explicitamente; zero deve ser representado por `"0.00"`, distinguindo ausência de um valor zero. Uma competência possui no máximo um registro por cenário; o `PUT` é uma atualização idempotente.
+
+Os parâmetros são ajustes hipotéticos em relação à projeção-base. Não existe deduplicação por descrição, data ou valor e nenhum valor do sistema real é somado automaticamente. A semântica de aplicação aos saldos será definida na T12.2/T12.3.
+
+## Escopo e transferências
+
+O cenário é isolado por família e pode coexistir com outros cenários na mesma competência. Contas PF/PJ e transferências não são materializadas nem reinterpretadas nesta tarefa. A seleção de contas e a consolidação entre escopos serão definidas no motor futuro; por enquanto a entidade não cria referências financeiras adicionais.
+
+## REST
+
+`GET /api/families/{familyId}/planning-scenarios?includeArchived=false`
+
+`POST /api/families/{familyId}/planning-scenarios`
+
+Corpo: `{ "name": "Realista", "description": "...", "startMonth": "2026-11", "months": 6 }`.
+
+`GET /api/families/{familyId}/planning-scenarios/{id}`
+
+`PUT /api/families/{familyId}/planning-scenarios/{id}` usa o mesmo corpo da criação.
+
+`DELETE /api/families/{familyId}/planning-scenarios/{id}` arquiva o cenário.
+
+`GET /api/families/{familyId}/planning-scenarios/{id}/parameters`
+
+`PUT /api/families/{familyId}/planning-scenarios/{id}/parameters/{competence}`
+
+Corpo: `{ "expectedAdditionalIncome": "500.00", "expectedAdditionalExpense": "237.45", "contingencyReserve": "1000.00", "recoveryTargetPercentage": "85.00", "notes": "..." }`.
+
+As escritas exigem autenticação, participação na família e CSRF. Respostas monetárias e percentuais são strings decimais exatas.
+
+## Persistência e limitações
+
+A migration `AddPlanningScenarios` cria tabelas com FKs compostas por família, índices de consulta, unicidade de cenário/competência e constraints de horizonte, competência, não negatividade e percentual. Não há projeção consolidada, herança de defaults, materialização em previsões, alteração de orçamento, jobs ou interface React nesta tarefa.
+
+## Evolução
+
+A T12.2 poderá consumir a projeção-base e aplicar esses ajustes sem contar novamente transações, previsões, recorrências materializadas ou obrigações de cartão. A reserva continuará sendo margem de capacidade, não despesa bancária, salvo decisão explícita posterior.

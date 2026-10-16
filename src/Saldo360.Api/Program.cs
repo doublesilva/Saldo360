@@ -63,5 +63,6 @@ app.MapCreditCardPdfPreviewEndpoints();
 app.MapFinancialCreditCardImportEndpoints();
 app.MapFinancialCreditCardImportedInstallmentEndpoints();
 app.MapFinancialRecurrenceEndpoints();
+app.MapFinancialPlanningScenarioEndpoints();
 
 app.Run();
