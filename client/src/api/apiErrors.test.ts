@@ -38,4 +38,22 @@ describe('apiErrors', () => {
     expect(error.message).toContain('resultado da operação é incerto')
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
+
+  it('fornece mensagens operacionais coerentes sem perder referência técnica', async () => {
+    const expired = await errorFromResponse(new Response('{}', { status: 401 }), 'Falha')
+    const forbidden = await errorFromResponse(new Response('{}', { status: 403 }), 'Falha')
+    const missing = await errorFromResponse(new Response('{}', { status: 404 }), 'Falha')
+    const dependency = await errorFromResponse(new Response(JSON.stringify({ traceId: 'trace-service' }), { status: 503 }), 'Falha')
+    expect(toUserMessage(expired)).toContain('sessão expirou')
+    expect(toUserMessage(forbidden)).toContain('não tem permissão')
+    expect(toUserMessage(missing)).toContain('não foi encontrado')
+    expect(toUserMessage(dependency)).toContain('serviço necessário')
+    expect(toUserMessage(dependency)).toContain('trace-service')
+  })
+
+  it('orienta consulta antes do reenvio quando o resultado é incerto', () => {
+    const error = new ApiRequestError('timeout interno', 'timeout', undefined, true)
+    expect(toUserMessage(error)).toContain('Consulte os dados atualizados antes de tentar novamente')
+    expect(toUserMessage(error)).toContain('pode já ter sido registrada')
+  })
 })

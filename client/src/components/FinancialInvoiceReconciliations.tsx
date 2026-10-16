@@ -15,8 +15,8 @@ import {
 import { listPlanned, type PlannedTransaction } from '../api/planned'
 import { formatBrlDecimal } from '../money'
 import { normalizeRequestError } from '../api/apiErrors'
+import { OperationalError, OperationalLoading } from './OperationalFeedback'
 
-const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Erro desconhecido.'
 const firstError = (errors: Record<string, string[]>) => Object.values(errors).flat()[0] ?? 'Verifique os dados informados.'
 
 type ReconciliationView = {
@@ -63,7 +63,7 @@ async function loadData(familyId: string, signal: AbortSignal): Promise<LoadedDa
 
 export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onChanged }: { familyId: string; refreshKey?: number; onChanged?: () => void }) {
   const [data, setData] = useState<LoadedData | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
   const [selectedPlannedId, setSelectedPlannedId] = useState('')
   const [selectedInvoiceId, setSelectedInvoiceId] = useState('')
@@ -75,7 +75,7 @@ export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onCh
     setError(null)
     loadData(familyId, controller.signal)
       .then(setData)
-      .catch((failure: unknown) => { if (!controller.signal.aborted) setError(errorMessage(failure)) })
+      .catch((failure: unknown) => { if (!controller.signal.aborted) setError(failure) })
     return () => controller.abort()
   }, [familyId, refreshKey])
 
@@ -120,7 +120,7 @@ export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onCh
           }
         } catch { /* Sem confirmação, mantém a seleção para consulta ou reenvio manual. */ }
       }
-      setError(errorMessage(failure))
+      setError(failure)
     } finally { setBusy(false) }
   }
 
@@ -138,18 +138,18 @@ export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onCh
           if (links.some((link) => link.id === view.link.id && link.removedAt !== null)) { refresh(); return }
         } catch { /* A leitura também falhou; o usuário poderá consultar novamente. */ }
       }
-      setError(errorMessage(failure))
+      setError(failure)
     } finally { setBusy(false) }
   }
 
-  if (error && !data) return <section className="reconciliations" aria-live="polite"><h3>Conciliações</h3><p className="status status--down" role="alert">{error}</p><button type="button" onClick={refresh}>Tentar novamente</button></section>
-  if (!data) return <section className="reconciliations" aria-live="polite"><h3>Conciliações</h3><p className="status status--pending">Carregando conciliações…</p></section>
+  if (error && !data) return <section className="reconciliations" aria-live="polite"><h3>Conciliações</h3><OperationalError error={error} onRetry={refresh} /></section>
+  if (!data) return <section className="reconciliations" aria-live="polite"><h3>Conciliações</h3><OperationalLoading>Carregando conciliações…</OperationalLoading></section>
 
   return <section className="reconciliations" aria-live="polite">
     <div className="credit-cards__heading">
       <div><h3>Conciliações</h3><p className="meta">Vincule explicitamente uma previsão pendente à obrigação de uma fatura.</p></div>
     </div>
-    {error && <p className="status status--down" role="alert">{error}</p>}
+    {error !== null && <OperationalError error={error} />}
 
     <section className="reconciliation-create" aria-labelledby="reconciliation-create-title">
       <h4 id="reconciliation-create-title">Nova conciliação</h4>

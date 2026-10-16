@@ -72,3 +72,6 @@ Consultas canceladas por mudança de contexto continuam silenciosas. Em falhas r
 Na T16.1, o backend central passou a enriquecer Problem Details, respostas vazias de status e exceções inesperadas. Na T16.3, os fluxos financeiros prioritários passaram a reconciliar reenvios e concorrência por identidade persistida ou estrutural. Os demais módulos continuam compatíveis e poderão substituir gradualmente objetos de erro legados pelo helper comum na T16.4.
 
 Não foram alteradas regras financeiras, autenticação ou cálculos. A única mudança de banco da T16.3 é a identidade idempotente necessária para pagamentos de fatura. Não há retry automático, telemetria distribuída completa nem notificação externa.
+# Experiência operacional no React
+
+O frontend usa `client/src/api/apiErrors.ts` como normalizador único. A apresentação compartilhada em `OperationalFeedback` diferencia falha de leitura (com tentativa explícita), erro de campo, conflito, sessão expirada, autorização, dependência, rede e resultado incerto. Escritas com resultado incerto não são apresentadas como falhas definitivas: a interface orienta consultar o estado atual antes de reenviar e preserva a chave idempotente quando aplicável.

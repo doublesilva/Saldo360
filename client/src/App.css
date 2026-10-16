@@ -197,6 +197,14 @@ button {
   color: var(--fail);
 }
 
+.operational-feedback { border-radius:.65rem; padding:.75rem 1rem; margin:.75rem 0; }
+.operational-feedback p { margin:0; }
+.operational-feedback button { margin-top:.6rem; }
+.operational-feedback--error { border:1px solid var(--danger, #b42318); background:#fff1f0; color:#7a271a; }
+.operational-feedback--loading { background:#f4f7fb; color:#344054; }
+.operational-feedback--empty { border:1px dashed #98a2b3; color:#475467; }
+.operational-feedback [role="alert"]:focus { outline:3px solid #84adff; outline-offset:2px; }
+
 .budgets {
   margin-top: 1rem;
 }

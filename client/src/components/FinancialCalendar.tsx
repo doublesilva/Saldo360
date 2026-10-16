@@ -16,6 +16,7 @@ import { addCalendarMonths, endOfMonth, formatMonthYear, startOfMonth, todayInSa
 import { formatBrlDecimal, formatDate } from '../money'
 import { FinancialCalendarDetails } from './FinancialCalendarDetails'
 import { FinancialCalendarBudgetSummary } from './FinancialCalendarBudgetSummary'
+import { OperationalError, OperationalLoading } from './OperationalFeedback'
 
 type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'error'; message: string }
 type RequestLoad<T> =
@@ -127,11 +128,9 @@ export function FinancialCalendarPage({ familyId, onChanged, initialMonth, onNav
         </button>
       </div>
 
-      {view === 'month' && calendar.kind === 'loading' && <p className="status status--pending">Carregando agenda…</p>}
+      {view === 'month' && calendar.kind === 'loading' && <OperationalLoading>Carregando agenda…</OperationalLoading>}
       {view === 'month' && calendar.kind === 'error' && (
-        <p className="status status--down" role="alert">
-          {calendar.message}
-        </p>
+        <OperationalError error={calendar.message} onRetry={() => setRefreshKey((current) => current + 1)} />
       )}
       {view === 'month' && calendar.kind === 'loaded' && (
         <>

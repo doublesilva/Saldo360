@@ -1,4 +1,4 @@
-export type ApiErrorKind = 'validation' | 'business' | 'conflict' | 'authentication' | 'authorization' | 'dependency' | 'network' | 'timeout' | 'cancelled' | 'unexpected'
+export type ApiErrorKind = 'validation' | 'business' | 'conflict' | 'authentication' | 'authorization' | 'notFound' | 'dependency' | 'network' | 'timeout' | 'cancelled' | 'unexpected'
 
 export interface ApiProblemDetails {
   type?: string
@@ -32,6 +32,7 @@ function kindFor(problem: ApiProblemDetails): ApiErrorKind {
   if (problem.status === 400 && problem.errors) return 'validation'
   if (problem.status === 401) return 'authentication'
   if (problem.status === 403) return 'authorization'
+  if (problem.status === 404) return 'notFound'
   if (problem.status === 409) return 'conflict'
   if (problem.status === 422) return 'business'
   if (problem.status === 503) return 'dependency'
@@ -64,7 +65,22 @@ export function normalizeRequestError(error: unknown, resultUncertain = false): 
 
 export function toUserMessage(error: unknown): string {
   const normalized = normalizeRequestError(error)
-  return `${normalized.message}${normalized.traceId ? ` Referência: ${normalized.traceId}.` : ''}`
+  const message = normalized.resultUncertain
+    ? 'Não foi possível confirmar se a operação foi concluída. Consulte os dados atualizados antes de tentar novamente; a operação pode já ter sido registrada.'
+    : normalized.kind === 'authentication'
+      ? 'Sua sessão expirou. Entre novamente para continuar.'
+      : normalized.kind === 'authorization'
+        ? 'Você não tem permissão para executar esta operação nesta família.'
+        : normalized.kind === 'notFound'
+          ? 'O recurso solicitado não foi encontrado ou não está mais disponível.'
+          : normalized.kind === 'dependency'
+            ? 'Um serviço necessário está indisponível no momento. Tente novamente em instantes.'
+            : normalized.kind === 'network'
+              ? 'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.'
+              : normalized.kind === 'conflict'
+                ? normalized.message
+                : normalized.message
+  return `${message}${normalized.traceId ? ` Referência: ${normalized.traceId}.` : ''}${normalized.kind === 'conflict' ? ' Atualize os dados antes de tentar novamente.' : ''}`
 }
 
 export async function requestJson<T>(input: RequestInfo | URL, init: RequestInit, options: { timeoutMs?: number; resultUncertainOnTimeout?: boolean; fallback?: string } = {}): Promise<T> {
