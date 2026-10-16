@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
 using Saldo360.Application.CreditCards;
+using Saldo360.Api.Observability;
 
 namespace Saldo360.Api.CreditCards;
 
@@ -22,11 +23,20 @@ public static class FinancialPlannedInvoiceReconciliationEndpoints
                 ? Results.Ok(list.Select(ReconciliationResponse.From))
                 : Results.NotFound();
 
-    private static async Task<IResult> Create(Guid familyId, ReconciliationRequest? request, CurrentUser user, FinancialPlannedInvoiceReconciliationService service, CancellationToken cancellationToken)
+    private static async Task<IResult> Create(Guid familyId, ReconciliationRequest? request, CurrentUser user, FinancialPlannedInvoiceReconciliationService service, FinancialOperationLogger operations, HttpContext context, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        var started = operations.Start();
         var result = await service.CreateAsync(familyId, userId,
             request is null ? new(null, null) : new(request.PlannedTransactionId, request.CreditCardInvoiceId), cancellationToken);
+        var code = result.Access switch
+        {
+            FinancialPlannedInvoiceReconciliationAccess.Allowed => "NONE",
+            FinancialPlannedInvoiceReconciliationAccess.Invalid => "VALIDATION_ERROR",
+            FinancialPlannedInvoiceReconciliationAccess.Conflict => "OPERATION_CONFLICT",
+            _ => "RESOURCE_NOT_FOUND",
+        };
+        operations.Completed(context, started, "InvoiceReconciliation", result.Access == FinancialPlannedInvoiceReconciliationAccess.Allowed ? "Succeeded" : "Rejected", code);
         return result.Access switch
         {
             FinancialPlannedInvoiceReconciliationAccess.NotFound => Results.NotFound(),

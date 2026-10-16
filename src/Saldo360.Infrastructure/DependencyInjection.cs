@@ -30,6 +30,8 @@ using Saldo360.Infrastructure.Budgets;
 using Saldo360.Infrastructure.CreditCards;
 using Saldo360.Infrastructure.Recurrences;
 using Saldo360.Application.Recurrences;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Saldo360.Infrastructure.Health;
 
 namespace Saldo360.Infrastructure;
 
@@ -52,8 +54,21 @@ public static class DependencyInjection
 
         services.AddDbContext<Saldo360DbContext>(options => Saldo360DbContext.Configure(options, connectionString));
 
+        var readinessTimeout = configuration.GetValue<TimeSpan?>("HealthChecks:ReadinessTimeout")
+            ?? TimeSpan.FromSeconds(3);
+        if (readinessTimeout <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("HealthChecks:ReadinessTimeout deve ser maior que zero.");
+        }
+
         services.AddHealthChecks()
-            .AddDbContextCheck<Saldo360DbContext>(DatabaseHealthCheckName);
+            .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+            .Add(new HealthCheckRegistration(
+                DatabaseHealthCheckName,
+                serviceProvider => ActivatorUtilities.CreateInstance<DatabaseReadinessHealthCheck>(serviceProvider),
+                HealthStatus.Unhealthy,
+                ["ready"],
+                readinessTimeout));
 
         services.AddDataProtection()
             .SetApplicationName("Saldo360")

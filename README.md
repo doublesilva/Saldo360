@@ -79,7 +79,7 @@ Nenhuma credencial fica no repositório. Os valores reais ficam em arquivos igno
 
    O Vite encaminha `/health`, `/api`, `/auth` e `/signin-oidc` para `http://localhost:5080`, preservando o host `localhost:5173`. Para outro endereço da API, copie `client/.env.example` para `client/.env.local` e ajuste `API_PROXY_TARGET`.
 
-Em outros ambientes, use variáveis de ambiente (`ConnectionStrings__Saldo360`, `Authentication__Oidc__ClientSecretFile`, `ReverseProxy__…`). As chaves esperadas estão em [src/Saldo360.Api/appsettings.Example.json](src/Saldo360.Api/appsettings.Example.json) (só referência; não é carregado nem publicado). Detalhes de autenticação, CA, proxy reverso e logs em [docs/autenticacao.md](docs/autenticacao.md). O contrato `Problem Details`, os códigos estáveis e a política de timeout estão em [docs/tratamento-erros.md](docs/tratamento-erros.md).
+Em outros ambientes, use variáveis de ambiente (`ConnectionStrings__Saldo360`, `Authentication__Oidc__ClientSecretFile`, `ReverseProxy__…`). As chaves esperadas estão em [src/Saldo360.Api/appsettings.Example.json](src/Saldo360.Api/appsettings.Example.json) (só referência; não é carregado nem publicado). Detalhes de autenticação, CA e proxy reverso estão em [docs/autenticacao.md](docs/autenticacao.md). O contrato `Problem Details` e a política de timeout estão em [docs/tratamento-erros.md](docs/tratamento-erros.md); logs estruturados, health checks e métricas nativas estão em [docs/observabilidade.md](docs/observabilidade.md).
 
 ## Executando
 

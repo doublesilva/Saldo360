@@ -79,31 +79,51 @@ public sealed class ApiExceptionHandler(
         CancellationToken cancellationToken)
     {
         var traceId = ApiErrorHandling.CurrentTraceId(httpContext);
+        var dependencyUnavailable = IsDatabaseDependencyUnavailable(exception);
+        var status = dependencyUnavailable
+            ? StatusCodes.Status503ServiceUnavailable
+            : StatusCodes.Status500InternalServerError;
+        var code = dependencyUnavailable ? "DEPENDENCY_UNAVAILABLE" : "INTERNAL_ERROR";
+        var dependency = dependencyUnavailable ? "PostgreSQL" : "None";
         logger.LogError(
-            "Unhandled API failure. ExceptionType: {ExceptionType}; TraceId: {TraceId}; Path: {Path}",
+            "Unhandled API failure. ExceptionType: {ExceptionType}; ErrorCode: {ErrorCode}; Dependency: {Dependency}; TraceId: {TraceId}; Path: {Path}",
             exception.GetType().FullName,
+            code,
+            dependency,
             traceId,
             httpContext.Request.Path);
 
-        httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        httpContext.Response.StatusCode = status;
         return await problemDetails.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,
             Exception = exception,
             ProblemDetails = new ProblemDetails
             {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "Falha inesperada.",
-                Detail = "Não foi possível concluir a operação. Use o identificador de diagnóstico ao solicitar suporte.",
+                Status = status,
+                Title = dependencyUnavailable ? "Serviço temporariamente indisponível." : "Falha inesperada.",
+                Detail = dependencyUnavailable
+                    ? "Uma dependência necessária está indisponível. Tente novamente mais tarde."
+                    : "Não foi possível concluir a operação. Use o identificador de diagnóstico ao solicitar suporte.",
                 Instance = httpContext.Request.Path,
-                Type = "https://saldo360.local/problems/internal-error",
+                Type = $"https://saldo360.local/problems/{code.ToLowerInvariant().Replace('_', '-')}",
                 Extensions =
                 {
-                    ["code"] = "INTERNAL_ERROR",
+                    ["code"] = code,
                     ["traceId"] = traceId,
                 },
             },
         });
+    }
+
+    private static bool IsDatabaseDependencyUnavailable(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            var type = current.GetType();
+            if (type.Namespace?.StartsWith("Npgsql", StringComparison.Ordinal) == true) return true;
+        }
+        return false;
     }
 }
 

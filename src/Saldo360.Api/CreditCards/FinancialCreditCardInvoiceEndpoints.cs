@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
 using Saldo360.Application.CreditCards;
 using Saldo360.Domain.Common;
+using Saldo360.Api.Observability;
 
 namespace Saldo360.Api.CreditCards;
 
@@ -52,10 +53,19 @@ public static class FinancialCreditCardInvoiceEndpoints
     private static async Task<IResult> ListPayments(Guid familyId, Guid cardId, Guid invoiceId, CurrentUser user, FinancialCreditCardInvoicePaymentService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : await service.ListAsync(familyId, cardId, invoiceId, userId, ct) is { } payments ? Results.Ok(payments) : Results.NotFound();
 
-    private static async Task<IResult> CreatePayment(Guid familyId, Guid cardId, Guid invoiceId, PaymentRequest? request, CurrentUser user, FinancialCreditCardInvoicePaymentService service, CancellationToken ct)
+    private static async Task<IResult> CreatePayment(Guid familyId, Guid cardId, Guid invoiceId, PaymentRequest? request, CurrentUser user, FinancialCreditCardInvoicePaymentService service, FinancialOperationLogger operations, HttpContext context, CancellationToken ct)
     {
         if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var started = operations.Start();
         var result = await service.CreateAsync(familyId, cardId, invoiceId, userId, request is null ? new(null, null, null) : new(request.FinancialAccountId, request.PaymentDate, request.Amount), ct);
+        var code = result.Access switch
+        {
+            FinancialCreditCardInvoicePaymentAccess.Allowed => "NONE",
+            FinancialCreditCardInvoicePaymentAccess.Invalid => "VALIDATION_ERROR",
+            FinancialCreditCardInvoicePaymentAccess.Conflict => "OPERATION_CONFLICT",
+            _ => "RESOURCE_NOT_FOUND",
+        };
+        operations.Completed(context, started, "CreditCardInvoicePayment", result.Access == FinancialCreditCardInvoicePaymentAccess.Allowed ? "Succeeded" : "Rejected", code);
         return result.Access switch { FinancialCreditCardInvoicePaymentAccess.NotFound => Results.NotFound(), FinancialCreditCardInvoicePaymentAccess.Invalid => Results.ValidationProblem(result.Errors!), FinancialCreditCardInvoicePaymentAccess.Conflict => Results.Conflict(new { message = result.Message }), _ => Results.Created($"/api/families/{familyId}/credit-cards/{cardId}/invoices/{invoiceId}/payments/{result.Payment!.Id}", result.Payment) };
     }
 

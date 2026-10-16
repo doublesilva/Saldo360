@@ -16,6 +16,7 @@ using Saldo360.Api.Debts;
 using Saldo360.Api.Goals;
 using Saldo360.Api.Dashboard;
 using Saldo360.Api.Errors;
+using Saldo360.Api.Observability;
 using Saldo360.Application;
 using Saldo360.Infrastructure;
 
@@ -30,6 +31,7 @@ builder.Services
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddApiErrorHandling();
+builder.Services.AddSingleton<FinancialOperationLogger>();
 
 // Enums (ex.: papel na família) trafegam pelo nome: "Owner", "Member".
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -40,6 +42,7 @@ var app = builder.Build();
 // Antes da autenticação: o callback OIDC é montado com o esquema e o host públicos do proxy confiável.
 app.UseForwardedHeaders();
 
+app.UseMiddleware<RequestObservabilityMiddleware>();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
@@ -49,6 +52,17 @@ app.UseAuthorization();
 // Público: não exige sessão.
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
+    Predicate = registration => registration.Tags.Contains("ready"),
+    ResponseWriter = HealthResponseWriter.WriteAsync,
+});
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("live"),
+    ResponseWriter = HealthResponseWriter.WriteAsync,
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ready"),
     ResponseWriter = HealthResponseWriter.WriteAsync,
 });
 

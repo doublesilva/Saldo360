@@ -46,6 +46,15 @@ public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) :
         using var duplicateBody = JsonDocument.Parse(await duplicate.Content.ReadAsStringAsync());
         AssertProblem(duplicateBody.RootElement, 409, "DUPLICATE_OPERATION");
 
+        var operationLog = Assert.Single(Factory.Logs.StructuredEntries, entry =>
+            entry.Category.EndsWith("FinancialOperationLogger")
+            && Equals(entry.Properties.GetValueOrDefault("ErrorCode"), "DUPLICATE_OPERATION"));
+        Assert.Equal("GoalContribution", operationLog.Properties["OperationType"]);
+        Assert.Equal("Rejected", operationLog.Properties["OperationResult"]);
+        Assert.DoesNotContain("50.00", operationLog.Message);
+        Assert.DoesNotContain(family.Id.ToString(), operationLog.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(accountId.ToString(), operationLog.Message, StringComparison.OrdinalIgnoreCase);
+
         await using var db = Db();
         Assert.Equal(1, await db.FinancialGoalAllocations.CountAsync());
         Assert.Equal(0, await db.FinancialTransactions.CountAsync());
