@@ -59,5 +59,6 @@ app.MapFinancialCreditCardInvoiceEndpoints();
 app.MapFinancialPlannedInvoiceReconciliationEndpoints();
 app.MapCreditCardCsvPreviewEndpoints();
 app.MapFinancialCreditCardImportEndpoints();
+app.MapFinancialCreditCardImportedInstallmentEndpoints();
 
 app.Run();

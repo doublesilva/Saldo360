@@ -14,6 +14,8 @@ Previsões de pagamento podem ser conciliadas explicitamente com uma fatura pela
 
 Arquivos CSV pré-visualizados podem ser confirmados pela API somente com seleção explícita, lote atômico e `importId` idempotente. Compras importadas usam o mesmo parcelamento e calendário das compras manuais; consulte [importacao-cartoes.md](importacao-cartoes.md).
 
+Parcelas intermediárias de extratos são tratadas pela T10.3.3 somente por vínculo explícito a uma parcela normal existente ou como obrigação histórica unitária. Obrigações históricas exigem fatura/competência existente, não criam lançamentos bancários nem parcelas adicionais e são incluídas no total da fatura, limite utilizado, pagamentos e projeções.
+
 ## Conceito
 
 `FinancialCreditCard` representa uma obrigação de crédito pertencente a uma família. Ele não é uma conta financeira: uma compra futura não movimenta imediatamente o saldo bancário; o pagamento de uma fatura será tratado em etapa posterior.

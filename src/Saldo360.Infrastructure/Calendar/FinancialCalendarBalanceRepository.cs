@@ -154,6 +154,18 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                                         && card.DefaultPaymentAccountId != null && selectedAccountIds.Contains(card.DefaultPaymentAccountId.Value)
                                      group installment.Amount by new { invoice.Id, invoice.DueDate } into grouped
                                      select new { grouped.Key.Id, grouped.Key.DueDate, Total = grouped.Sum() }).ToListAsync(cancellationToken);
+        var historicalCardObligations = await (from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
+                                               join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
+                                               join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
+                                               where item.FamilyId == familyId && item.IsHistorical && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
+                                                  && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                                  && card.DefaultPaymentAccountId != null && selectedAccountIds.Contains(card.DefaultPaymentAccountId.Value)
+                                               group item.Amount by new { invoice.Id, invoice.DueDate } into grouped
+                                               select new { grouped.Key.Id, grouped.Key.DueDate, Total = grouped.Sum() }).ToListAsync(cancellationToken);
+        cardObligations = cardObligations.Concat(historicalCardObligations)
+            .GroupBy(item => new { item.Id, item.DueDate })
+            .Select(group => new { group.Key.Id, group.Key.DueDate, Total = group.Sum(item => item.Total) })
+            .ToList();
         var cardPaid = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(payment => payment.FamilyId == familyId && payment.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoicePaymentStatus.Active)
             .GroupBy(payment => payment.InvoiceId).Select(group => new { Id = group.Key, Amount = group.Sum(payment => payment.Amount) }).ToListAsync(cancellationToken);
         var paidByInvoice = cardPaid.ToDictionary(item => item.Id, item => item.Amount);
@@ -166,6 +178,13 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                                            && purchase.FamilyId == familyId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
                                            && invoice.FamilyId == familyId && invoice.DueDate <= through
                                         select card.DefaultPaymentAccountId).AnyAsync(account => account == null || !selectedAccountIds.Contains(account.Value), cancellationToken);
+        var allHistoricalCardObligations = await (from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
+                                                  join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
+                                                  join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
+                                                  where item.FamilyId == familyId && item.IsHistorical && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
+                                                     && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                                  select card.DefaultPaymentAccountId).AnyAsync(account => account == null || !selectedAccountIds.Contains(account.Value), cancellationToken);
+        allCardObligations = allCardObligations || allHistoricalCardObligations;
 
         IReadOnlyList<FinancialCalendarDailyTotals> periodRealized = [];
         if (periodFrom is { } firstPeriodDate)

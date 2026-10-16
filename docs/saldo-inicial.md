@@ -1,5 +1,7 @@
 # Saldo inicial das contas
 
+Obrigações de cartão, inclusive parcelas históricas importadas, não alteram o saldo realizado da conta. Afetam apenas a projeção quando a fatura possui conta preferencial válida; o pagamento da fatura é o evento que movimenta o saldo bancário.
+
 Cada conta financeira pode ter um **saldo inicial** opcional, formado por dois campos que existem juntos ou não existem:
 
 | Campo | Tipo | Regra |

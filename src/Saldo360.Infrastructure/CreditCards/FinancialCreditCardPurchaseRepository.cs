@@ -72,6 +72,10 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
                                  join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id
                                  where i.FamilyId == familyId && i.Status == CreditCardInstallmentStatus.Active && p.FamilyId == familyId && p.CreditCardId == cardId && p.Status == CreditCardPurchaseStatus.Active
                                  select i.Amount).SumAsync(cancellationToken);
+        obligations += await db.FinancialCreditCardImportedInstallments.AsNoTracking()
+            .Where(i => i.FamilyId == familyId && i.CreditCardId == cardId && i.IsHistorical
+                && i.Status == FinancialCreditCardImportedInstallmentStatus.Active)
+            .SumAsync(i => (decimal?)i.Amount, cancellationToken) ?? 0m;
         var paid = await (from payment in db.FinancialCreditCardInvoicePayments.AsNoTracking()
                           join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on payment.InvoiceId equals invoice.Id
                           where payment.FamilyId == familyId && payment.Status == FinancialCreditCardInvoicePaymentStatus.Active && invoice.FamilyId == familyId && invoice.CreditCardId == cardId
@@ -87,13 +91,22 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
                           join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
                           where installment.InvoiceId != null && ids.Contains(installment.InvoiceId.Value) && installment.FamilyId == purchase.FamilyId && installment.Status == CreditCardInstallmentStatus.Active && purchase.Status == CreditCardPurchaseStatus.Active
                           select new { installment.InvoiceId, installment.Id, installment.PurchaseId, purchase.Description, purchase.InstallmentCount, installment.InstallmentNumber, installment.Amount, installment.Status }).ToListAsync(cancellationToken);
+        var historicalRows = await db.FinancialCreditCardImportedInstallments.AsNoTracking()
+            .Where(item => ids.Contains(item.InvoiceId) && item.IsHistorical && item.Status == FinancialCreditCardImportedInstallmentStatus.Active)
+            .Select(item => new { item.InvoiceId, item.Id, item.Description, item.InstallmentCount, item.InstallmentNumber, item.Amount })
+            .ToListAsync(cancellationToken);
         var payments = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(p => ids.Contains(p.InvoiceId) && p.Status == FinancialCreditCardInvoicePaymentStatus.Active).GroupBy(p => p.InvoiceId).Select(g => new { InvoiceId = g.Key, Amount = g.Sum(p => p.Amount) }).ToListAsync(cancellationToken);
         return invoices.Select(invoice => {
-            var total = rows.Where(r => r.InvoiceId == invoice.Id).Sum(r => r.Amount);
+            var total = rows.Where(r => r.InvoiceId == invoice.Id).Sum(r => r.Amount)
+                + historicalRows.Where(r => r.InvoiceId == invoice.Id).Sum(r => r.Amount);
             var paid = payments.Where(p => p.InvoiceId == invoice.Id).Select(p => p.Amount).SingleOrDefault();
             var remaining = Math.Max(0m, total - paid);
             var paymentStatus = total <= 0m || paid <= 0m ? InvoicePaymentStatus.Unpaid : remaining <= 0m ? InvoicePaymentStatus.Paid : InvoicePaymentStatus.PartiallyPaid;
-            var installmentRows = rows.Where(r => r.InvoiceId == invoice.Id).OrderBy(r => r.InstallmentNumber).Select(r => new FinancialCreditCardInvoiceInstallmentDto(r.Id, r.PurchaseId, r.Description, r.InstallmentNumber, r.InstallmentCount, Money.Format(r.Amount))).ToList();
+            var installmentRows = rows.Where(r => r.InvoiceId == invoice.Id)
+                .Select(r => new FinancialCreditCardInvoiceInstallmentDto(r.Id, r.PurchaseId, r.Description, r.InstallmentNumber, r.InstallmentCount, Money.Format(r.Amount)))
+                .Concat(historicalRows.Where(r => r.InvoiceId == invoice.Id)
+                    .Select(r => new FinancialCreditCardInvoiceInstallmentDto(r.Id, Guid.Empty, r.Description, r.InstallmentNumber, r.InstallmentCount, Money.Format(r.Amount))))
+                .OrderBy(r => r.InstallmentNumber).ToList();
             return new FinancialCreditCardInvoiceDto(invoice.Id, invoice.CreditCardId, invoice.Competence, invoice.CycleStartDate, invoice.ClosingDate, invoice.DueDate, invoice.GetStatus(today), Money.Format(total), Money.Format(paid), Money.Format(remaining), paymentStatus, installmentRows, installmentRows.Count);
         }).ToList();
     }

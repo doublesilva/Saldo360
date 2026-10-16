@@ -2,6 +2,8 @@
 
 O módulo mantém orçamentos mensais e acompanha sua execução financeira por categoria. Alertas continuam fora deste módulo.
 
+Obrigações históricas de cartão importadas entram no comprometido da competência somente quando possuem categoria de despesa válida da família. Sem categoria, permanecem na fatura e nas projeções, sem atribuição arbitrária a uma meta.
+
 A interface React está disponível na seção **Orçamentos** dentro de cada família. Ela seleciona inicialmente o mês de `America/Sao_Paulo`, permite navegar por competências e utiliza exclusivamente os contratos de orçamento e execução descritos abaixo. A tela não calcula valores financeiros: apenas formata strings decimais e usa o percentual retornado pela API para dimensionamento visual.
 
 ## Modelo

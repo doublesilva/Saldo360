@@ -15,6 +15,7 @@ internal sealed class FinancialCreditCardInvoicePaymentRepository(Saldo360DbCont
         var invoice = await db.FinancialCreditCardInvoices.AsNoTracking().Where(i => i.FamilyId == familyId && i.CreditCardId == cardId && i.Id == invoiceId).Select(i => new { i.Id, i.ClosingDate, i.CreditCardId }).SingleOrDefaultAsync(cancellationToken);
         if (invoice is null) return null;
         var total = await db.FinancialCreditCardInstallments.AsNoTracking().Where(i => i.FamilyId == familyId && i.InvoiceId == invoiceId && i.Status == CreditCardInstallmentStatus.Active).SumAsync(i => (decimal?)i.Amount, cancellationToken) ?? 0m;
+        total += await db.FinancialCreditCardImportedInstallments.AsNoTracking().Where(i => i.FamilyId == familyId && i.InvoiceId == invoiceId && i.IsHistorical && i.Status == FinancialCreditCardImportedInstallmentStatus.Active).SumAsync(i => (decimal?)i.Amount, cancellationToken) ?? 0m;
         var paid = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(p => p.FamilyId == familyId && p.InvoiceId == invoiceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
         var card = await db.FinancialCreditCards.AsNoTracking().Where(c => c.FamilyId == familyId && c.Id == cardId).Select(c => new { c.DefaultPaymentAccountId }).SingleAsync(cancellationToken);
         var account = card.DefaultPaymentAccountId is { } accountId ? await db.FinancialAccounts.AsNoTracking().Where(a => a.FamilyId == familyId && a.Id == accountId).Select(a => new { a.IsActive }).SingleOrDefaultAsync(cancellationToken) : null;
@@ -42,6 +43,7 @@ internal sealed class FinancialCreditCardInvoicePaymentRepository(Saldo360DbCont
         var account = await db.FinancialAccounts.SingleOrDefaultAsync(a => a.FamilyId == familyId && a.Id == accountId, cancellationToken);
         if (account is null || !account.IsActive) return new(PaymentOperationResult.InvalidAccount);
         var total = await db.FinancialCreditCardInstallments.Where(i => i.FamilyId == familyId && i.InvoiceId == invoiceId && i.Status == CreditCardInstallmentStatus.Active).SumAsync(i => (decimal?)i.Amount, cancellationToken) ?? 0m;
+        total += await db.FinancialCreditCardImportedInstallments.Where(i => i.FamilyId == familyId && i.InvoiceId == invoiceId && i.IsHistorical && i.Status == FinancialCreditCardImportedInstallmentStatus.Active).SumAsync(i => (decimal?)i.Amount, cancellationToken) ?? 0m;
         var paid = await db.FinancialCreditCardInvoicePayments.Where(p => p.FamilyId == familyId && p.InvoiceId == invoiceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
         if (total <= 0m || amount > total - paid) return new(PaymentOperationResult.ExceedsDue);
         var transaction = FinancialTransaction.CreateInvoicePayment(familyId, accountId, $"Pagamento de fatura {invoice.Competence}", amount, paymentDate, userId, now);

@@ -43,6 +43,14 @@ O modo `Auto` rejeita formas potencialmente ambíguas como `1.234` ou `1,234`; n
 }
 ```
 
+## Parcelas intermediárias e histórico (T10.3.3)
+
+Linhas como `2/6` não são transformadas automaticamente em uma nova compra. Há dois fluxos explícitos: `POST .../imports/installments/matches` procura parcelas normais compatíveis; `POST .../imports/installments/link` exige `installmentId` e `confirm: true` para vincular a linha; `POST .../imports/installments/historical` cria uma única obrigação histórica, sem compra nem parcelas futuras. A competência `yyyy-MM` é obrigatória e deve corresponder a uma fatura existente.
+
+`GET .../imports/installments/` lista o histórico e `DELETE .../imports/installments/{id}` cancela logicamente uma obrigação histórica ainda não consumida por pagamento. A identidade `(família, cartão, importId, rowNumber)` é idempotente; conteúdo diferente entra em conflito. `externalId` possui unicidade entre registros ativos do cartão. Não há deduplicação heurística entre operações distintas.
+
+Obrigações históricas compõem fatura, limite, pagamentos e projeções, mas não criam lançamento bancário. Com categoria de despesa válida participam do orçamento; sem categoria não são atribuídas arbitrariamente. Não é permitido reconstruir parcelas anteriores/futuras.
+
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 
 ## Limites e segurança
