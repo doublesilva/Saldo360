@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Npgsql;
@@ -34,9 +35,12 @@ public sealed class PostgresFixture : IAsyncLifetime
     public async Task CreateDatabaseAsync(string connectionString)
     {
         var database = new NpgsqlConnectionStringBuilder(connectionString).Database!;
-        await _databaseLock.WaitAsync();
+        using var lockTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var lockWatch = Stopwatch.StartNew();
+        await _databaseLock.WaitAsync(lockTimeout.Token);
         try
         {
+            Console.WriteLine($"[PostgresFixture] lock adquirido para '{database}' após {lockWatch.ElapsedMilliseconds} ms.");
             // Bancos são descartáveis e cada teste usa uma connection string distinta.
             // Limpar pools ociosos antes de abrir o próximo banco evita esgotar
             // max_connections durante a suíte longa, sem compartilhar dados.
@@ -52,8 +56,10 @@ public sealed class PostgresFixture : IAsyncLifetime
             await using var db = CreateDbContext(connectionString);
             Console.WriteLine($"[PostgresFixture] aplicando migrations em '{database}'.");
             using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            var migrationWatch = Stopwatch.StartNew();
             await db.Database.MigrateAsync(timeout.Token);
-            Console.WriteLine($"[PostgresFixture] migrations concluídas em '{database}'.");
+            Console.WriteLine($"[PostgresFixture] migrations concluídas em '{database}' após {migrationWatch.ElapsedMilliseconds} ms.");
+            NpgsqlConnection.ClearAllPools();
         }
         catch (Exception exception)
         {
