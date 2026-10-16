@@ -9,20 +9,43 @@ namespace Saldo360.Tests.Support;
 
 /// <summary>
 /// PostgreSQL real (Testcontainers) compartilhado pelos testes da coleção <see cref="PostgresCollection"/>.
-/// Cada teste usa um banco próprio, criado e migrado com as migrations do projeto.
+/// Cada consumidor usa um banco próprio, clonado de um template migrado uma vez por fixture.
 /// Requer Docker.
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
+    private readonly string _fixtureId = Guid.NewGuid().ToString("N")[..8];
+    private readonly string _templateDatabase = $"saldo360_template_{Guid.NewGuid():N}";
     private readonly SemaphoreSlim _databaseLock = new(1, 1);
-    // Cada teste cria um banco (e um pool) próprio: mais conexões que o padrão de 100.
+    // Cada consumidor cria um banco (e um pool) próprio: mais conexões que o padrão de 100.
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine")
         .WithCommand("-c", "max_connections=300")
         .Build();
 
-    public Task InitializeAsync() => _container.StartAsync();
+    public async Task InitializeAsync()
+    {
+        var watch = Stopwatch.StartNew();
+        Log("container", "início");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        try
+        {
+            await _container.StartAsync(timeout.Token);
+            Log("container", $"concluído em {watch.ElapsedMilliseconds} ms");
+            await CreateAndMigrateTemplateAsync(timeout.Token);
+        }
+        catch (Exception exception)
+        {
+            Log("inicialização", $"falha: {exception}");
+            throw;
+        }
+    }
 
-    public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+    public async Task DisposeAsync()
+    {
+        Log("container", "descarte iniciado");
+        await _container.DisposeAsync();
+        Log("container", "descarte concluído");
+    }
 
     /// <summary>Connection string para um banco ainda inexistente, com nome único.</summary>
     public string NewDatabaseConnectionString() =>
@@ -31,7 +54,7 @@ public sealed class PostgresFixture : IAsyncLifetime
             Database = $"saldo360_{Guid.NewGuid():N}",
         }.ConnectionString;
 
-    /// <summary>Cria o banco da connection string e aplica todas as migrations.</summary>
+    /// <summary>Cria o banco isolado da connection string a partir do template já migrado.</summary>
     public async Task CreateDatabaseAsync(string connectionString)
     {
         var database = new NpgsqlConnectionStringBuilder(connectionString).Database!;
@@ -40,30 +63,22 @@ public sealed class PostgresFixture : IAsyncLifetime
         await _databaseLock.WaitAsync(lockTimeout.Token);
         try
         {
-            Console.WriteLine($"[PostgresFixture] lock adquirido para '{database}' após {lockWatch.ElapsedMilliseconds} ms.");
-            // Bancos são descartáveis e cada teste usa uma connection string distinta.
-            // Limpar pools ociosos antes de abrir o próximo banco evita esgotar
-            // max_connections durante a suíte longa, sem compartilhar dados.
+            Log("lock", $"adquirido para '{database}' após {lockWatch.ElapsedMilliseconds} ms");
+            Log("clone", $"início do banco '{database}'");
             NpgsqlConnection.ClearAllPools();
-            Console.WriteLine($"[PostgresFixture] criando banco isolado '{database}'.");
             await using (var admin = new NpgsqlConnection(_container.GetConnectionString()))
             {
-                await admin.OpenAsync();
-                await using var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", admin);
-                await create.ExecuteNonQueryAsync();
+                await admin.OpenAsync(lockTimeout.Token);
+                await using var create = new NpgsqlCommand(
+                    $"CREATE DATABASE \"{database}\" WITH TEMPLATE \"{_templateDatabase}\"", admin);
+                await create.ExecuteNonQueryAsync(lockTimeout.Token);
             }
-
-            await using var db = CreateDbContext(connectionString);
-            Console.WriteLine($"[PostgresFixture] aplicando migrations em '{database}'.");
-            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-            var migrationWatch = Stopwatch.StartNew();
-            await db.Database.MigrateAsync(timeout.Token);
-            Console.WriteLine($"[PostgresFixture] migrations concluídas em '{database}' após {migrationWatch.ElapsedMilliseconds} ms.");
+            Log("clone", $"banco '{database}' concluído após {lockWatch.ElapsedMilliseconds} ms");
             NpgsqlConnection.ClearAllPools();
         }
         catch (Exception exception)
         {
-            Console.WriteLine($"[PostgresFixture] falha no banco isolado '{database}': {exception.GetType().Name}: {exception.Message}");
+            Log("clone", $"falha no banco '{database}': {exception}");
             throw;
         }
         finally
@@ -86,6 +101,31 @@ public sealed class PostgresFixture : IAsyncLifetime
             .Configure(new DbContextOptionsBuilder<Saldo360DbContext>(), connectionString)
             .AddInterceptors(interceptors)
             .Options);
+
+    private async Task CreateAndMigrateTemplateAsync(CancellationToken cancellationToken)
+    {
+        var watch = Stopwatch.StartNew();
+        var templateConnection = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
+        {
+            Database = _templateDatabase,
+        }.ConnectionString;
+        Log("template", $"criação de '{_templateDatabase}' iniciada");
+        await using (var admin = new NpgsqlConnection(_container.GetConnectionString()))
+        {
+            await admin.OpenAsync(cancellationToken);
+            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{_templateDatabase}\"", admin);
+            await create.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using (var db = CreateDbContext(templateConnection))
+        {
+            await db.Database.MigrateAsync(cancellationToken);
+        }
+        NpgsqlConnection.ClearAllPools();
+        Log("template", $"migrations concluídas em {watch.ElapsedMilliseconds} ms");
+    }
+
+    private void Log(string stage, string message) =>
+        Console.WriteLine($"[PostgresFixture:{_fixtureId}] {stage}: {message}");
 }
 
 [CollectionDefinition(Name)]

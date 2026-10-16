@@ -342,7 +342,7 @@ describe('FinancialCalendarDetails', () => {
     fireEvent.click(cancelPlannedButton)
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    fireEvent.click(screen.getByRole('gridcell', { name: /15\/12\/2026/ }))
+    fireEvent.click(await screen.findByRole('gridcell', { name: /15\/12\/2026/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Aluguel realizado' }))
     dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Cancelar lançamento' }))
