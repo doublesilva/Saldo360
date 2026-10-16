@@ -243,7 +243,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
 
           {section === 'overview' && (
             <div className="family-section">
-              <FinancialDashboard familyId={state.family.id} refreshKey={financeVersion} onNavigate={(target) => setSection(target)} />
+              <FinancialDashboard key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onNavigate={(target) => setSection(target)} />
               <details className="card"><summary>Membros e acesso</summary>
               <ul className="checks">
                 {state.family.members.map((member, index) => (

@@ -36,6 +36,14 @@ O resumo é organizado em posição, evolução mensal, fluxo de caixa, orçamen
 
 Alertas e cartões possuem ações contextuais para abrir o módulo correspondente. A consulta é cancelável ao trocar família, competência ou horizonte, evitando que respostas obsoletas substituam a seleção atual. A grade se adapta a telas pequenas e os controles têm rótulos acessíveis. A prévia é somente leitura: nenhuma operação financeira é criada ou alterada.
 
+## Refinamentos de usabilidade (T15.4)
+
+A tela foi organizada em três níveis: situação financeira (saldos efetivo e projetado, obrigações e cobertura), atenção (alertas e próximo compromisso) e detalhamento (evolução, fluxo, orçamentos, cartões, dívidas e objetivos). Saldos negativos mantêm o sinal e oferecem navegação para Contas; projeções incompletas exibem a causa conhecida e apontam para Cartões ou Dívidas quando aplicável.
+
+Alertas preservam a severidade e a ordem fornecidas pelo backend, exibem referência, origem e valor, e podem ser expandidos quando há mais de cinco itens. O próximo compromisso informa vencimento, origem e navegação para a Agenda; quando a capacidade antes do próximo recebimento é `Unknown`, a interface mostra explicitamente que a disponibilidade é indeterminada.
+
+A evolução mensal possui alternativa textual acessível, destaca competências com fechamento negativo e não interpola valores ausentes. Estados vazios são específicos por módulo (contas, orçamento, cartões, dívidas, objetivos, alertas, fluxo e projeção). Competência e horizonte permanecem selecionáveis, com carregamento anunciado por `role=status`; requisições são canceladas na troca de família ou filtros. O layout empilha cartões e controles em telas estreitas, sem alterar cálculos ou contratos.
+
 ## Indicadores e alertas (T15.2)
 
 Além das seções-base, a resposta inclui `indicators` e `alerts`.

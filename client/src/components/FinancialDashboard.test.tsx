@@ -30,7 +30,7 @@ describe('FinancialDashboard', () => {
     expect(screen.getAllByText(/R\$.*5\.000,00/).length).toBeGreaterThan(0)
     expect(screen.getByText('Evolução projetada')).toBeTruthy()
     expect(screen.getByText(/Orçamento próximo do limite/)).toBeTruthy()
-    expect(screen.getByText(/Não há dados suficientes/)).toBeTruthy()
+    expect(screen.getByText(/Disponibilidade antes do próximo recebimento indeterminada/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Ver módulo' }))
     expect(onNavigate).toHaveBeenCalledWith('budgets')
   })
@@ -45,6 +45,43 @@ describe('FinancialDashboard', () => {
     fireEvent.change(screen.getByLabelText('Horizonte da projeção'), { target: { value: '12' } })
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('competence=2026-11'), expect.anything()))
     expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('months=12'), expect.anything())
-    expect(await screen.findByText(/Cobertura incompleta:/)).toBeTruthy()
+    expect(await screen.findByText(/Projeção parcial/)).toBeTruthy()
+  })
+
+  it('destaca saldo negativo, compromisso vencido e permite expandir alertas', async () => {
+    const onNavigate = vi.fn()
+    const negative = {
+      ...dashboard,
+      indicators: { ...dashboard.indicators, projectedBalance: '-120.50', nextCommitment: { ...dashboard.indicators.nextCommitment!, date: '2026-10-01' } },
+      alerts: Array.from({ length: 6 }, (_, index) => ({ ...dashboard.alerts[0], code: `balance-${index}`, severity: 'Critical' as const, title: `Risco ${index}` })),
+    }
+    vi.mocked(fetch).mockResolvedValue(Response.json(negative))
+    render(<FinancialDashboard familyId="family-1" onNavigate={onNavigate} />)
+    expect(await screen.findByText('Risco de saldo projetado negativo.')).toBeTruthy()
+    expect(screen.getByText('Vencido')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Mostrar todos os alertas/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Mostrar todos os alertas/ }))
+    expect(screen.getByText(/Risco 5/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver Contas' }))
+    expect(onNavigate).toHaveBeenCalledWith('accounts')
+  })
+
+  it('apresenta estados vazios específicos e dados desconhecidos sem substituir por zero', async () => {
+    const empty = {
+      ...dashboard,
+      monthlyProjection: [],
+      budgets: { ...dashboard.budgets, targetCount: 0 },
+      creditCards: { ...dashboard.creditCards, count: 0 },
+      debts: { ...dashboard.debts, activeContracts: 0 },
+      goals: { ...dashboard.goals, active: 0, completed: 0 },
+      alerts: [],
+      indicators: { ...dashboard.indicators, nextCommitment: null },
+      cashFlow: { realizedIncome: '0.00', realizedExpense: '0.00', pendingIncome: '0.00', pendingExpense: '0.00' },
+    }
+    vi.mocked(fetch).mockResolvedValue(Response.json(empty))
+    render(<FinancialDashboard familyId="family-1" />)
+    expect(await screen.findByText('Nenhuma projeção disponível para o período selecionado.')).toBeTruthy()
+    expect(screen.getByText('Nenhum cartão cadastrado.')).toBeTruthy()
+    expect(screen.getByText(/Disponibilidade antes do próximo recebimento indeterminada/)).toBeTruthy()
   })
 })
