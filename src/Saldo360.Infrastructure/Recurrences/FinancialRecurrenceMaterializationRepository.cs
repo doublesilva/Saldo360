@@ -21,13 +21,26 @@ internal sealed class FinancialRecurrenceMaterializationRepository(Saldo360DbCon
             var existing = await db.FinancialRecurrenceMaterializations
                 .Where(x => x.FamilyId == recurrence.FamilyId && x.RecurrenceId == recurrence.Id && numbers.Contains(x.OccurrenceNumber))
                 .ToDictionaryAsync(x => x.OccurrenceNumber, ct);
+            var existingPlannedIds = existing.Values.Select(x => x.PlannedTransactionId).ToArray();
+            var existingPlanned = await db.FinancialPlannedTransactions
+                .Where(x => existingPlannedIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+            var realizedPlannedIds = await db.FinancialTransactions.AsNoTracking()
+                .Where(x => existingPlannedIds.Contains(x.PlannedTransactionId!.Value) && !x.IsCancelled)
+                .Select(x => x.PlannedTransactionId!.Value)
+                .ToHashSetAsync(ct);
             var items = new List<MaterializationItemDto>(occurrences.Count);
             var created = 0;
             foreach (var occurrence in occurrences)
             {
                 if (existing.ContainsKey(occurrence.Sequence))
                 {
-                    items.Add(new(occurrence.Sequence, occurrence.Date, existing[occurrence.Sequence].PlannedTransactionId, occurrence.Date, occurrence.Amount, null, "Existing"));
+                    var materialization = existing[occurrence.Sequence];
+                    var existingTransaction = existingPlanned[materialization.PlannedTransactionId];
+                    var status = existingTransaction.IsCancelled
+                        ? PlannedTransactionStatus.Cancelled
+                        : realizedPlannedIds.Contains(existingTransaction.Id) ? PlannedTransactionStatus.Realized : PlannedTransactionStatus.Pending;
+                    items.Add(new(occurrence.Sequence, materialization.ScheduledDate, existingTransaction.Id, existingTransaction.DueDate, existingTransaction.Amount, status, "Existing"));
                     continue;
                 }
 

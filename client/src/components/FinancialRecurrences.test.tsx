@@ -6,14 +6,15 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 const recurrence = { id: 'r1', familyId: 'f1', accountId: 'a1', categoryId: 'c1', type: 'Expense', description: 'Internet', amount: '380.00', isEstimated: true, frequency: 'Monthly', interval: 1, startDate: '2026-11-10', endDate: null, occurrenceCount: null, dayOfMonth: 10, status: 'Active', currency: 'BRL', createdAt: '', updatedAt: '', archivedAt: null }
 const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } }))
 
-function mockApi(items: unknown[] = []) {
+function mockApi(items: unknown[] = [], occurrences: unknown[] = []) {
   vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
     if (url === '/auth/csrf') return json({ token: 'csrf' })
     if (url.includes('/recurrences?')) return json(items)
     if (url.endsWith('/accounts?includeInactive=true')) return json([{ id: 'a1', name: 'Conta', isActive: true }])
     if (url.endsWith('/categories?includeInactive=true')) return json([{ id: 'c1', name: 'Internet', type: 'Expense', isActive: true }])
-    if (url.includes('/occurrences?')) return json([])
+    if (url.includes('/occurrences?')) return json(occurrences)
     if (url.includes('/materializations?')) return json([])
+    if (url.includes('/materialize') && init?.method === 'POST') return json({ recurrenceId: 'r1', createdCount: 1, existingCount: 0, items: [] })
     if (url.endsWith('/recurrences') && init?.method === 'POST') return json(recurrence, 201)
     return json([])
   }))
@@ -37,4 +38,5 @@ describe('FinancialRecurrences', () => {
     fireEvent.click(recurrenceButton)
     await waitFor(() => expect(screen.getByText(/ocorrência\(s\) calculada/)).toBeTruthy())
   })
+
 })
