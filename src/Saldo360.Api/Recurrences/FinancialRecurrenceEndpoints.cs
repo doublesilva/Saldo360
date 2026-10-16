@@ -1,0 +1,35 @@
+using System.Text.Json.Serialization;
+using Saldo360.Api.Authentication;
+using Saldo360.Application.Recurrences;
+using Saldo360.Domain.Common;
+
+namespace Saldo360.Api.Recurrences;
+
+public static class FinancialRecurrenceEndpoints
+{
+    public static IEndpointRouteBuilder MapFinancialRecurrenceEndpoints(this IEndpointRouteBuilder app)
+    {
+        var g=app.MapGroup("/api/families/{familyId:guid}/recurrences").RequireAuthorization();
+        g.MapGet("/",List); g.MapPost("/",Create).AddEndpointFilter<ValidateCsrfTokenFilter>(); g.MapGet("/{id:guid}",Get); g.MapPut("/{id:guid}",Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        g.MapPost("/{id:guid}/pause",(Guid f,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(f,id,u,s,"pause",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        g.MapPost("/{id:guid}/resume",(Guid f,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(f,id,u,s,"resume",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        g.MapPost("/{id:guid}/end",(Guid f,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(f,id,u,s,"end",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        g.MapDelete("/{id:guid}", (Guid f,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(f,id,u,s,"archive",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        g.MapGet("/{id:guid}/occurrences",Occurrences);
+        return app;
+    }
+    private static async Task<IResult> Create(Guid familyId,RecurrenceRequest? request,CurrentUser user,FinancialRecurrenceService service,CancellationToken ct){if(await user.GetUserIdAsync(ct) is not{ } uid)return Results.Unauthorized();var r=await service.CreateAsync(familyId,uid,ToInput(request),ct);return Result(r,x=>Results.Created($"/api/families/{familyId}/recurrences/{x.Id}",RecurrenceResponse.From(x)));}
+    private static async Task<IResult> Get(Guid familyId,Guid id,CurrentUser user,FinancialRecurrenceService service,CancellationToken ct){if(await user.GetUserIdAsync(ct) is not{ } uid)return Results.Unauthorized();var r=await service.GetAsync(familyId,id,uid,ct);return r is null?Results.NotFound():Results.Ok(RecurrenceResponse.From(r));}
+    private static async Task<IResult> List(Guid familyId,bool? includeArchived,CurrentUser user,FinancialRecurrenceService service,CancellationToken ct){if(await user.GetUserIdAsync(ct) is not{ } uid)return Results.Unauthorized();var r=await service.ListAsync(familyId,uid,includeArchived??false,ct);return r.NotFound?Results.NotFound():Results.Ok(r.Items!.Select(RecurrenceResponse.From));}
+    private static async Task<IResult> Update(Guid familyId,Guid id,RecurrenceRequest? request,CurrentUser user,FinancialRecurrenceService service,CancellationToken ct){if(await user.GetUserIdAsync(ct) is not{ } uid)return Results.Unauthorized();return Result(await service.UpdateAsync(familyId,id,uid,ToInput(request),ct),x=>Results.Ok(RecurrenceResponse.From(x)));}
+    private static async Task<IResult> Change(Guid familyId,Guid id,CurrentUser user,FinancialRecurrenceService service,string operation,CancellationToken ct){if(await user.GetUserIdAsync(ct) is not{ } uid)return Results.Unauthorized();return Result(await service.ChangeAsync(familyId,id,uid,operation,ct),x=>Results.Ok(RecurrenceResponse.From(x)));}
+    private static async Task<IResult> Occurrences(Guid familyId,Guid id,string? from,string? through,CurrentUser user,FinancialRecurrenceService service,CancellationToken ct){if(await user.GetUserIdAsync(ct) is not{ } uid)return Results.Unauthorized();var errors=new Dictionary<string,string[]>();var f=IsoDateQuery.Parse(from,"from",errors);var t=IsoDateQuery.Parse(through,"through",errors);if(f is null)errors["from"]=["Informe a data inicial no formato yyyy-MM-dd."];if(t is null)errors["through"]=["Informe a data final no formato yyyy-MM-dd."];if(errors.Count>0)return Results.ValidationProblem(errors);var r=await service.OccurrencesAsync(familyId,id,uid,f!.Value,t!.Value,ct);if(r.NotFound)return Results.NotFound();if(r.Error is not null)return Results.ValidationProblem(new Dictionary<string,string[]>{{"period",[r.Error]}});return Results.Ok(r.Items!.Select(x=>new OccurrenceResponse(x.RecurrenceId,x.Sequence,x.Date,Money.Format(x.Amount),x.Description,x.Type,x.IsEstimated,x.AccountId,x.CategoryId)));}
+    private static IResult Result(RecurrenceOperationResult r,Func<RecurrenceDto,IResult> ok)=>r.Access switch{RecurrenceAccess.NotFound=>Results.NotFound(),RecurrenceAccess.Invalid=>Results.ValidationProblem(r.Errors!),RecurrenceAccess.Conflict=>Results.Problem(statusCode:409,title:r.Message),_=>ok(r.Recurrence!)};
+    private static RecurrenceInput ToInput(RecurrenceRequest? x)=>new(x?.AccountId,x?.CategoryId,x?.Type,x?.Description,x?.Amount,x?.IsEstimated??false,x?.Frequency,x?.Interval,x?.StartDate,x?.EndDate,x?.OccurrenceCount,x?.DayOfMonth);
+}
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record RecurrenceRequest(Guid? AccountId,Guid? CategoryId,string? Type,string? Description,decimal? Amount,bool IsEstimated,string? Frequency,int? Interval,DateOnly? StartDate,DateOnly? EndDate,int? OccurrenceCount,int? DayOfMonth);
+public sealed record RecurrenceResponse(Guid Id,Guid FamilyId,Guid AccountId,Guid CategoryId,string Type,string Description,string Amount,bool IsEstimated,string Frequency,int Interval,DateOnly StartDate,DateOnly? EndDate,int? OccurrenceCount,int DayOfMonth,string Status,string Currency,DateTimeOffset CreatedAt,DateTimeOffset UpdatedAt,DateTimeOffset? ArchivedAt)
+{public static RecurrenceResponse From(RecurrenceDto x)=>new(x.Id,x.FamilyId,x.AccountId,x.CategoryId,x.Type.ToString(),x.Description,Money.Format(x.Amount),x.IsEstimated,x.Frequency.ToString(),x.Interval,x.StartDate,x.EndDate,x.OccurrenceCount,x.DayOfMonth,x.Status.ToString(),x.Currency,x.CreatedAt,x.UpdatedAt,x.ArchivedAt);}
+public sealed record OccurrenceResponse(Guid RecurrenceId,int Sequence,DateOnly Date,string Amount,string Description,Saldo360.Domain.Categories.CategoryType Type,bool IsEstimated,Guid AccountId,Guid CategoryId);

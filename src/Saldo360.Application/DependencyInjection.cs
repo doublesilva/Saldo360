@@ -8,6 +8,7 @@ using Saldo360.Application.Planning;
 using Saldo360.Application.Calendar;
 using Saldo360.Application.Budgets;
 using Saldo360.Application.CreditCards;
+using Saldo360.Application.Recurrences;
 
 namespace Saldo360.Application;
 
@@ -36,6 +37,7 @@ public static class DependencyInjection
         services.AddScoped<ICreditCardPdfPreviewService, CreditCardPdfPreviewService>();
         services.AddScoped<FinancialCreditCardImportService>();
         services.AddScoped<FinancialCreditCardImportedInstallmentService>();
+        services.AddScoped<FinancialRecurrenceService>();
         return services;
     }
 }

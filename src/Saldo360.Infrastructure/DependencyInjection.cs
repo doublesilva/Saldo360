@@ -24,6 +24,8 @@ using Saldo360.Application.Budgets;
 using Saldo360.Application.CreditCards;
 using Saldo360.Infrastructure.Budgets;
 using Saldo360.Infrastructure.CreditCards;
+using Saldo360.Infrastructure.Recurrences;
+using Saldo360.Application.Recurrences;
 
 namespace Saldo360.Infrastructure;
 
@@ -74,6 +76,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialPlannedInvoiceReconciliationRepository, FinancialPlannedInvoiceReconciliationRepository>();
         services.AddScoped<IFinancialCreditCardImportRepository, FinancialCreditCardImportRepository>();
         services.AddScoped<IFinancialCreditCardImportedInstallmentRepository, FinancialCreditCardImportedInstallmentRepository>();
+        services.AddScoped<IFinancialRecurrenceRepository, FinancialRecurrenceRepository>();
         services.AddSingleton<ICreditCardPdfTextExtractor, CreditCardPdfTextExtractor>();
 
         return services;

@@ -18,7 +18,7 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("Npgsql:CollationDefinition:case_insensitive", "und-u-ks-level2,und-u-ks-level2,icu,False")
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -1352,6 +1352,125 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<int>("DayOfMonth")
+                        .HasColumnType("integer")
+                        .HasColumnName("day_of_month");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("description");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid>("FinancialAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("financial_account_id");
+
+                    b.Property<Guid>("FinancialCategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("financial_category_id");
+
+                    b.Property<string>("Frequency")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("frequency");
+
+                    b.Property<int>("Interval")
+                        .HasColumnType("integer")
+                        .HasColumnName("interval_value");
+
+                    b.Property<bool>("IsEstimated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_estimated");
+
+                    b.Property<int?>("OccurrenceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("occurrence_count");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("type");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_recurrences");
+
+                    b.HasIndex("FamilyId", "FinancialAccountId")
+                        .HasDatabaseName("ix_financial_recurrences_family_id_financial_account_id");
+
+                    b.HasIndex("FamilyId", "FinancialCategoryId", "Type")
+                        .HasDatabaseName("ix_financial_recurrences_family_id_financial_category_id_type");
+
+                    b.HasIndex("FamilyId", "Status", "StartDate")
+                        .HasDatabaseName("ix_financial_recurrences_family_id_status_start_date");
+
+                    b.ToTable("financial_recurrences", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_recurrences_amount_positive", "amount > 0");
+
+                            t.HasCheckConstraint("ck_recurrences_amount_scale", "scale(amount) <= 2");
+
+                            t.HasCheckConstraint("ck_recurrences_count", "occurrence_count IS NULL OR occurrence_count > 0");
+
+                            t.HasCheckConstraint("ck_recurrences_day", "day_of_month BETWEEN 1 AND 31");
+
+                            t.HasCheckConstraint("ck_recurrences_end", "end_date IS NULL OR end_date >= start_date");
+
+                            t.HasCheckConstraint("ck_recurrences_end_mode", "NOT (end_date IS NOT NULL AND occurrence_count IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_recurrences_interval", "interval_value BETWEEN 1 AND 120");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2154,6 +2273,32 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_planned_transactions_categories_same_family_type");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_recurrences_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "FinancialAccountId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_recurrences_financial_accounts_family_id_financia");
+
+                    b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "FinancialCategoryId", "Type")
+                        .HasPrincipalKey("FamilyId", "Id", "Type")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_recurrences_financial_categories_family_id_financ");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialTransaction", b =>

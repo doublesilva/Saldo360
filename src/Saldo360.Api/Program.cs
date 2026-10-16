@@ -11,6 +11,7 @@ using Saldo360.Api.Health;
 using Saldo360.Api.Calendar;
 using Saldo360.Api.Budgets;
 using Saldo360.Api.CreditCards;
+using Saldo360.Api.Recurrences;
 using Saldo360.Application;
 using Saldo360.Infrastructure;
 
@@ -61,5 +62,6 @@ app.MapCreditCardCsvPreviewEndpoints();
 app.MapCreditCardPdfPreviewEndpoints();
 app.MapFinancialCreditCardImportEndpoints();
 app.MapFinancialCreditCardImportedInstallmentEndpoints();
+app.MapFinancialRecurrenceEndpoints();
 
 app.Run();

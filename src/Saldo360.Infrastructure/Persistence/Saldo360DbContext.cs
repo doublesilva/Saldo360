@@ -6,6 +6,7 @@ using Saldo360.Domain.Categories;
 using Saldo360.Domain.CreditCards;
 using Saldo360.Domain.Families;
 using Saldo360.Domain.Planning;
+using Saldo360.Domain.Recurrences;
 using Saldo360.Domain.Transactions;
 using Saldo360.Domain.Transfers;
 using Saldo360.Domain.Users;
@@ -53,6 +54,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialCreditCardImportBatch> FinancialCreditCardImportBatches => Set<FinancialCreditCardImportBatch>();
     public DbSet<FinancialCreditCardImportItem> FinancialCreditCardImportItems => Set<FinancialCreditCardImportItem>();
     public DbSet<FinancialCreditCardImportedInstallment> FinancialCreditCardImportedInstallments => Set<FinancialCreditCardImportedInstallment>();
+    public DbSet<FinancialRecurrence> FinancialRecurrences => Set<FinancialRecurrence>();
 
     /// <summary>Configuração do provedor usada pela API, pelas ferramentas de migration e pelos testes.</summary>
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder builder, string connectionString) =>
