@@ -51,6 +51,14 @@ Linhas como `2/6` não são transformadas automaticamente em uma nova compra. H�
 
 Obrigações históricas compõem fatura, limite, pagamentos e projeções, mas não criam lançamento bancário. Com categoria de despesa válida participam do orçamento; sem categoria não são atribuídas arbitrariamente. Não é permitido reconstruir parcelas anteriores/futuras.
 
+## Pré-visualização de faturas PDF (T10.3.4)
+
+`POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/preview` recebe `multipart/form-data` com `file` e, opcionalmente, `issuerProfile`, `competence` e `dateFormat`. O limite inicial é 10 MB e 50 páginas. O cartão deve pertencer à família e estar ativo.
+
+São aceitos PDFs que possuam camada textual. O parser genérico preserva página e linha de origem, reconhece datas ISO/brasileiras, valores com padrão brasileiro, competência, vencimento, total e identificadores parciais do cartão quando houver evidência textual. Linhas com `02/06` são classificadas como `Installment`; pagamentos, créditos, estornos e encargos nunca são convertidos automaticamente em compras. Linhas ambíguas ficam como `Unknown`/`Warning`.
+
+A resposta contém `statement`, `summary`, `items`, `pageCount` e o parser utilizado. A operação é somente leitura: o PDF não é armazenado, nenhuma compra/fatura/pagamento é criado e nenhum endpoint de confirmação é chamado. PDFs protegidos, corrompidos, sem texto ou com páginas acima do limite são rejeitados. OCR, perfis de instituições, conciliação e importação definitiva ficam para etapas posteriores.
+
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 
 ## Limites e segurança

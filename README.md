@@ -220,6 +220,8 @@ Cartões de crédito estão disponíveis na navegação de cada família. A inte
 
 A importação CSV possui pré-visualização, confirmação atômica e tratamento explícito de parcelas intermediárias/históricas, documentados em [docs/importacao-cartoes.md](docs/importacao-cartoes.md).
 
+A pré-visualização de faturas PDF textuais também está disponível no backend, sem persistência financeira e sem OCR; consulte a documentação de importação de cartões.
+
 A integração ponta a ponta de cartões com contas, Agenda e Orçamentos é auditada pelos cenários PostgreSQL da T09.7; o relatório está em [docs/T09.7-auditoria-integracao.md](docs/T09.7-auditoria-integracao.md).
 
 A T10.1 adiciona conciliação explícita entre previsões e faturas, com histórico, unicidade ativa e exclusão da previsão conciliada dos agregados projetados. Consulte [docs/conciliacao-faturas.md](docs/conciliacao-faturas.md).

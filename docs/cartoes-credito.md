@@ -16,6 +16,8 @@ Arquivos CSV pré-visualizados podem ser confirmados pela API somente com seleç
 
 Parcelas intermediárias de extratos são tratadas pela T10.3.3 somente por vínculo explícito a uma parcela normal existente ou como obrigação histórica unitária. Obrigações históricas exigem fatura/competência existente, não criam lançamentos bancários nem parcelas adicionais e são incluídas no total da fatura, limite utilizado, pagamentos e projeções.
 
+A pré-visualização PDF da T10.3.4 é textual e conservadora. Ela mantém página e texto de origem, sinaliza divergências e não altera cartões, faturas ou saldos. Não há OCR nem reconhecimento automático de instituições.
+
 ## Conceito
 
 `FinancialCreditCard` representa uma obrigação de crédito pertencente a uma família. Ele não é uma conta financeira: uma compra futura não movimenta imediatamente o saldo bancário; o pagamento de uma fatura será tratado em etapa posterior.
