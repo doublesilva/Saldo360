@@ -50,4 +50,29 @@ describe('FinancialCreditCardImports', () => {
     expect(screen.queryByRole('button', { name: /Confirmar/ })).toBeNull()
     expect(screen.getByText(/Nenhuma informação financeira foi gravada/)).toBeTruthy()
   })
+
+  it('mantém o mesmo importId após perda da resposta de confirmação', async () => {
+    const bodies: unknown[] = []
+    let confirmationAttempt = 0
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/auth/csrf') return json({ token: 'csrf' })
+      if (url.endsWith('/installments/') && !init?.method) return json([])
+      if (url.endsWith('/categories?includeInactive=true')) return json([{ id: 'cat-1', name: 'Compras', type: 'Expense', isActive: true, createdAt: '' }])
+      if (url.endsWith('/preview')) return json(csvPreview)
+      if (url.endsWith('/confirm')) { bodies.push(JSON.parse(String(init?.body))); confirmationAttempt += 1; if (confirmationAttempt === 1) return Promise.reject(new Error('timeout')); return json({ importId: 'same', status: 'Completed', importedCount: 1, items: [] }) }
+      return json([])
+    }))
+    render(<FinancialCreditCardImports familyId="family-1" cards={[card]} selectedCardId="card-1" />)
+    fireEvent.change(screen.getByLabelText('Arquivo'), { target: { files: [new File(['csv'], 'extrato.csv', { type: 'text/csv' })] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Executar prévia' }))
+    await screen.findByRole('button', { name: 'Selecionar elegíveis' })
+    fireEvent.click(screen.getByRole('button', { name: 'Selecionar elegíveis' }))
+    fireEvent.change(screen.getByLabelText('Categoria da linha 2'), { target: { value: 'cat-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar 1' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar 1' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar 1' }))
+    await waitFor(() => expect(screen.getByText(/compra\(s\) confirmada/)).toBeTruthy())
+    expect(bodies).toHaveLength(2)
+    expect((bodies[0] as { importId: string }).importId).toBe((bodies[1] as { importId: string }).importId)
+  })
 })

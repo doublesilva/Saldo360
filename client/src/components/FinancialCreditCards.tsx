@@ -29,7 +29,7 @@ export function FinancialCreditCardsPage({ familyId, refreshKey = 0, onChanged }
       <button type="button" className={view === 'reconciliations' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'reconciliations' ? 'page' : undefined} onClick={() => setView('reconciliations')}>Conciliações</button>
       <button type="button" className={view === 'imports' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'imports' ? 'page' : undefined} onClick={() => setView('imports')}>Importações</button>
     </nav>
-    {view === 'reconciliations' ? <FinancialInvoiceReconciliations familyId={familyId} refreshKey={refreshKey} onChanged={onChanged} /> : view === 'imports' ? <FinancialCreditCardImports familyId={familyId} cards={cards} selectedCardId={selected?.id ?? null} onChanged={onChanged} /> : <>
+    {view === 'reconciliations' ? <FinancialInvoiceReconciliations familyId={familyId} refreshKey={refreshKey} onChanged={onChanged} /> : view === 'imports' ? <FinancialCreditCardImports key={`${familyId}|${selected?.id ?? ''}`} familyId={familyId} cards={cards} selectedCardId={selected?.id ?? null} onChanged={onChanged} /> : <>
     <div className="credit-cards__heading"><div><h3>Cartões</h3><p className="meta">Compras, faturas, pagamentos e limite em um só lugar.</p></div><button type="button" className="button--primary" onClick={() => setShowForm(true)}>Novo cartão</button></div>
     {error && <p className="status status--down" role="alert">{error}</p>}
     {showForm && <CardForm familyId={familyId} accounts={accounts} onDone={() => { setShowForm(false); refresh() }} onCancel={() => setShowForm(false)} />}
