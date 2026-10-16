@@ -92,3 +92,7 @@ Exemplo seguro:
 - A classificação `DEPENDENCY_UNAVAILABLE` depende da cadeia de exceções do provedor Npgsql; erros de integridade tratados pelos serviços continuam conflitos de negócio.
 - A observabilidade é incremental. Outros fluxos podem adotar os mesmos eventos estruturados sem alterar o contrato financeiro.
 - Uma evolução futura pode adicionar OpenTelemetry e um coletor externo, mantendo os nomes de propriedades e a política de privacidade aqui definidos.
+
+## Auditoria T16.5
+
+A validação final confirmou a correlação por `Activity.TraceId` e, na ausência de Activity, por `HttpContext.TraceIdentifier`. Valores de correlação fornecidos arbitrariamente pelo cliente não substituem o identificador do servidor. As regressões também confirmaram rota normalizada, ausência de query string e credenciais nos eventos, health checks sem migrations ou gravações e auditoria NuGet sem vulnerabilidades conhecidas.

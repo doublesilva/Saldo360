@@ -84,4 +84,30 @@ describe('FinancialDashboard', () => {
     expect(screen.getByText('Nenhum cartão cadastrado.')).toBeTruthy()
     expect(screen.getByText(/Disponibilidade antes do próximo recebimento indeterminada/)).toBeTruthy()
   })
+
+  it('permite repetir uma leitura com falha e só exibe o sucesso confirmado', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+      .mockResolvedValueOnce(Response.json(dashboard))
+    render(<FinancialDashboard familyId="family-1" />)
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+    expect(await screen.findByText('Evolução projetada')).toBeTruthy()
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('não mostra resposta obsoleta depois da troca rápida de família', async () => {
+    let resolveOld!: (value: Response) => void
+    vi.mocked(fetch).mockImplementation((input) => {
+      if (String(input).includes('family-old')) return new Promise<Response>((resolve) => { resolveOld = resolve })
+      return Promise.resolve(new Response('{}', { status: 503 }))
+    })
+    const view = render(<FinancialDashboard familyId="family-old" />)
+    await screen.findByText('Carregando painel financeiro…')
+    view.rerender(<FinancialDashboard familyId="family-new" />)
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    resolveOld(Response.json(dashboard))
+    await Promise.resolve()
+    expect(screen.queryByText('Evolução projetada')).toBeNull()
+  })
 })

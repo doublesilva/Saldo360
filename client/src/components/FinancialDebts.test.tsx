@@ -82,7 +82,7 @@ describe('FinancialDebts', () => {
     fireEvent.click(pay)
     expect(api.createPayment).toHaveBeenCalledTimes(1)
     await act(async () => rejectFirst(new ApiRequestError('Resultado incerto.', 'timeout', undefined, true)))
-    expect((await screen.findByRole('alert')).textContent).toContain('Resultado incerto.')
+    expect((await screen.findByRole('alert')).textContent).toContain('Consulte os dados atualizados antes de tentar novamente')
     fireEvent.click(pay)
     await waitFor(() => expect(api.createPayment).toHaveBeenCalledTimes(2))
     expect(api.createPayment.mock.calls[0][3].operationId).toBe(api.createPayment.mock.calls[1][3].operationId)

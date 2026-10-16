@@ -66,4 +66,23 @@ public sealed class RequestObservabilityMiddlewareTests
         Assert.Equal(200, entry.Properties["StatusCode"]);
         Assert.Equal("NONE", entry.Properties["ErrorCode"]);
     }
+
+    [Fact]
+    public async Task RequestWithoutActivity_UsesServerTraceIdentifier_AndIgnoresClientCorrelationValue()
+    {
+        using var provider = new CapturingLoggerProvider();
+        using var factory = LoggerFactory.Create(builder => builder.AddProvider(provider));
+        var context = new DefaultHttpContext { TraceIdentifier = "server-trace-42" };
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Headers["X-Correlation-Id"] = "client-controlled-secret";
+        context.SetEndpoint(new RouteEndpoint(_ => Task.CompletedTask, RoutePatternFactory.Parse("/health/live"), 0, EndpointMetadataCollection.Empty, "live"));
+        var middleware = new RequestObservabilityMiddleware(_ => Task.CompletedTask, factory.CreateLogger<RequestObservabilityMiddleware>());
+
+        await middleware.InvokeAsync(context);
+
+        var entry = Assert.Single(provider.StructuredEntries);
+        Assert.Equal("server-trace-42", entry.Properties["TraceId"]);
+        Assert.DoesNotContain("client-controlled-secret", entry.Message);
+        Assert.DoesNotContain(entry.Properties.Values, value => Equals(value, "client-controlled-secret"));
+    }
 }

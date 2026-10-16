@@ -75,3 +75,5 @@ Não foram alteradas regras financeiras, autenticação ou cálculos. A única m
 # Experiência operacional no React
 
 O frontend usa `client/src/api/apiErrors.ts` como normalizador único. A apresentação compartilhada em `OperationalFeedback` diferencia falha de leitura (com tentativa explícita), erro de campo, conflito, sessão expirada, autorização, dependência, rede e resultado incerto. Escritas com resultado incerto não são apresentadas como falhas definitivas: a interface orienta consultar o estado atual antes de reenviar e preserva a chave idempotente quando aplicável.
+
+A auditoria T16.5 confirmou por regressões backend e React que não existe retry automático de POST, que a confirmação pós-timeout usa apenas identidade explícita e que respostas antigas são descartadas após troca de família. A identidade mantida em memória não sobrevive ao fechamento ou reload da aba; a interface não promete recuperação automática nesse caso.
