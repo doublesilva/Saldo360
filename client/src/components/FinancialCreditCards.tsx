@@ -9,13 +9,14 @@ import {
   type CreditCardInput, type CreditCardInvoice, type CreditCardLimit, type CreditCardPurchase, type FinancialCreditCard, type InvoicePayment,
 } from '../api/creditCards'
 import { FinancialInvoiceReconciliations } from './FinancialInvoiceReconciliations'
+import { FinancialCreditCardImports } from './FinancialCreditCardImports'
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Erro desconhecido.'
 const firstError = (errors: Record<string, string[]>) => Object.values(errors).flat()[0] ?? 'Verifique os dados informados.'
 const shiftMonth = (month: string, offset: number) => { const [year, value] = month.split('-').map(Number); const date = new Date(Date.UTC(year, value - 1 + offset, 1)); return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}` }
 
 export function FinancialCreditCardsPage({ familyId, refreshKey = 0, onChanged }: { familyId: string; refreshKey?: number; onChanged?: () => void }) {
-  const [view, setView] = useState<'cards' | 'reconciliations'>('cards')
+  const [view, setView] = useState<'cards' | 'reconciliations' | 'imports'>('cards')
   const [cards, setCards] = useState<FinancialCreditCard[]>([]); const [selected, setSelected] = useState<FinancialCreditCard | null>(null)
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]); const [categories, setCategories] = useState<FinancialCategory[]>([])
   const [month, setMonth] = useState(() => startOfMonth(todayInSaoPaulo()).slice(0, 7)); const [error, setError] = useState<string | null>(null); const [showForm, setShowForm] = useState(false)
@@ -26,8 +27,9 @@ export function FinancialCreditCardsPage({ familyId, refreshKey = 0, onChanged }
     <nav className="credit-cards__tabs" aria-label="Seção de cartões">
       <button type="button" className={view === 'cards' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'cards' ? 'page' : undefined} onClick={() => setView('cards')}>Cartões</button>
       <button type="button" className={view === 'reconciliations' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'reconciliations' ? 'page' : undefined} onClick={() => setView('reconciliations')}>Conciliações</button>
+      <button type="button" className={view === 'imports' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'imports' ? 'page' : undefined} onClick={() => setView('imports')}>Importações</button>
     </nav>
-    {view === 'reconciliations' ? <FinancialInvoiceReconciliations familyId={familyId} refreshKey={refreshKey} onChanged={onChanged} /> : <>
+    {view === 'reconciliations' ? <FinancialInvoiceReconciliations familyId={familyId} refreshKey={refreshKey} onChanged={onChanged} /> : view === 'imports' ? <FinancialCreditCardImports familyId={familyId} cards={cards} selectedCardId={selected?.id ?? null} onChanged={onChanged} /> : <>
     <div className="credit-cards__heading"><div><h3>Cartões</h3><p className="meta">Compras, faturas, pagamentos e limite em um só lugar.</p></div><button type="button" className="button--primary" onClick={() => setShowForm(true)}>Novo cartão</button></div>
     {error && <p className="status status--down" role="alert">{error}</p>}
     {showForm && <CardForm familyId={familyId} accounts={accounts} onDone={() => { setShowForm(false); refresh() }} onCancel={() => setShowForm(false)} />}

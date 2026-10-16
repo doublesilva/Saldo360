@@ -1,0 +1,53 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { FinancialCreditCardImports } from './FinancialCreditCardImports'
+
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', holderUserId: null, creditLimit: '10000.00', closingDay: 10, dueDay: 20, defaultPaymentAccountId: null, isArchived: false, createdAt: '', updatedAt: '', archivedAt: null }
+const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } }))
+const csvPreview = { totalRows: 1, validRows: 1, warningRows: 0, invalidRows: 0, ignoredRows: 0, mapping: { dateColumn: 'date', descriptionColumn: 'description', amountColumn: 'amount', delimiter: ',', dateFormat: 'yyyy-MM-dd', decimalFormat: 'Invariant' }, rows: [{ rowNumber: 2, transactionDate: '2026-10-01', description: 'Compra', amount: '10.25', installmentNumber: null, installmentCount: null, externalId: null, category: null, competence: null, status: 'Valid', errors: [], warnings: [] }] }
+
+function mockApi() {
+  vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+    if (url === '/auth/csrf') return json({ token: 'csrf' })
+    if (url.endsWith('/installments/') && !init?.method) return json([])
+    if (url.endsWith('/categories?includeInactive=true')) return json([{ id: 'cat-1', name: 'Compras', type: 'Expense', isActive: true, createdAt: '' }])
+    if (url.endsWith('/preview') && init?.method === 'POST') return json(csvPreview)
+    if (url.endsWith('/confirm') && init?.method === 'POST') return json({ importId: 'import-1', status: 'Completed', importedCount: 1, items: [{ rowNumber: 2, status: 'Imported', purchaseId: 'purchase-1', errors: [] }] })
+    return json([])
+  }))
+}
+
+describe('FinancialCreditCardImports', () => {
+  it('pré-visualiza CSV, exige categoria e confirma somente a linha selecionada', async () => {
+    mockApi()
+    render(<FinancialCreditCardImports familyId="family-1" cards={[card]} selectedCardId="card-1" />)
+    const file = new File(['date,description,amount\n2026-10-01,Compra,10.25'], 'extrato.csv', { type: 'text/csv' })
+    fireEvent.change(screen.getByLabelText('Arquivo'), { target: { files: [file] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Executar prévia' }))
+    await screen.findAllByText(/Compra/)
+    expect(screen.getByText(/1 linhas/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Selecionar elegíveis' }))
+    fireEvent.change(screen.getByLabelText('Categoria da linha 2'), { target: { value: 'cat-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar 1' }))
+    await waitFor(() => expect(screen.getByText(/1 compra\(s\) confirmada/)).toBeTruthy())
+  })
+
+  it('analisa PDF e não oferece importação definitiva', async () => {
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/auth/csrf') return json({ token: 'csrf' })
+      if (url.endsWith('/installments/') && !init?.method) return json([])
+      if (url.endsWith('/categories?includeInactive=true')) return json([])
+      if (url.endsWith('/pdf/preview')) return json({ fileName: 'fatura.pdf', pageCount: 1, parser: 'Generic', statement: { issuer: null, cardLastDigits: '1234', competence: '2026-10', closingDate: null, dueDate: null, totalAmount: '10.00' }, summary: { recognized: 1, warnings: 0, invalid: 0, unknown: 0 }, items: [], warnings: [] })
+      return json([])
+    }))
+    render(<FinancialCreditCardImports familyId="family-1" cards={[card]} selectedCardId="card-1" />)
+    fireEvent.change(screen.getByLabelText('Formato'), { target: { value: 'pdf' } })
+    fireEvent.change(screen.getByLabelText('Arquivo'), { target: { files: [new File(['%PDF'], 'fatura.pdf', { type: 'application/pdf' })] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Executar prévia' }))
+    await screen.findByText('Prévia PDF — somente análise')
+    expect(screen.queryByRole('button', { name: /Confirmar/ })).toBeNull()
+    expect(screen.getByText(/Nenhuma informação financeira foi gravada/)).toBeTruthy()
+  })
+})

@@ -1,5 +1,9 @@
 # Cartões de crédito
 
+## Importações (T10.3.5)
+
+A aba **Importações** reúne prévias CSV/PDF, seleção explícita, categorias, associação de parcelas e histórico. PDF continua somente em análise; toda gravação depende de confirmação explícita nos endpoints existentes.
+
 ## Interface da família (T09.6)
 
 A seção **Cartões** está disponível na navegação de cada família. Ela lista cartões ativos e arquivados, permite cadastrar/editar/arquivar, consultar limite (inclusive disponível negativo), compras, faturas por competência, parcelas, pagamentos e a projeção dos próximos seis meses. A tela usa exclusivamente os endpoints existentes; valores monetários permanecem como strings decimais e nenhuma soma é feita no navegador. Pagamentos só são oferecidos para faturas fechadas e o formulário usa a conta padrão do cartão quando ela estiver configurada.

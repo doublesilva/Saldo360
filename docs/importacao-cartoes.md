@@ -21,6 +21,14 @@ date;description;amount;external
 20/10/2026;"Compra; loja";1.234,56;ext-1
 ```
 
+## Interface de importações (T10.3.5)
+
+Em **Cartões > Importações**, selecione um cartão ativo e escolha CSV ou PDF. CSV permite configurar colunas, separador, formato de data e padrão decimal; a prévia mostra situação, erros, avisos, parcelas e competência. Apenas linhas elegíveis podem ser selecionadas, e cada compra exige categoria de despesa ativa antes da confirmação.
+
+Parcelas intermediárias não são selecionáveis como compras: a interface consulta candidatas e exige associação explícita ou oferece o registro histórico unitário. O `importId` é mantido durante a confirmação e não é recriado por cliques duplicados enquanto a requisição está em andamento.
+
+PDF é exclusivamente análise. A tela apresenta metadados, página, tipo, origem e avisos, mas não oferece importação definitiva nem envia registros PDF ao endpoint CSV. Após confirmações CSV ou registros históricos, os módulos financeiros são invalidados; a prévia não invalida dados.
+
 Para este arquivo, informe `delimiter=;`, `dateFormat=dd/MM/yyyy`, `decimalFormat=PtBr` e `externalIdColumn=external`.
 
 ## Datas e valores

@@ -1728,3 +1728,16 @@ button.calendar-day--selected {
 .reconciliation-history { margin-top: 1rem; color: var(--muted); }
 .reconciliation-history ul { overflow-wrap: anywhere; }
 @media (max-width: 48rem) { .reconciliation-form-grid { grid-template-columns: 1fr; }.reconciliation-card { grid-template-columns: 1fr; }.reconciliation-card dl { flex-wrap: wrap; } }
+
+.import-panel { display: grid; gap: .8rem; }
+.import-panel fieldset { border: 1px solid var(--border); border-radius: .5rem; padding: .7rem; }
+.import-panel fieldset .form-row { align-items: end; flex-wrap: wrap; }
+.import-table { display: grid; gap: .5rem; }
+.import-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: .7rem; padding: .7rem; border: 1px solid var(--border); border-radius: .5rem; }
+.import-row small { grid-column: 1 / -1; color: var(--muted); overflow-wrap: anywhere; }
+.dialog { display: grid; gap: .7rem; margin: 1rem 0; padding: 1rem; border: 2px solid var(--accent); border-radius: .6rem; background: var(--surface-muted, #f7f8fa); }
+.dialog h5 { margin: 0; }
+.import-panel dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem; }
+.import-panel dl > div { padding: .6rem; background: var(--surface-muted, #f7f8fa); border-radius: .4rem; }
+.import-panel dt { color: var(--muted); font-size: .8rem; }.import-panel dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+@media (max-width: 48rem) { .import-row { grid-template-columns: 1fr; align-items: start; }.import-row .form__actions { flex-wrap: wrap; }.import-panel .form-row { align-items: stretch; flex-direction: column; } }
