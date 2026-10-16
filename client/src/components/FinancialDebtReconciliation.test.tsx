@@ -32,4 +32,12 @@ describe('FinancialDebtReconciliation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Desfazer conciliação' }))
     await waitFor(() => expect(api.removeReconciliation).toHaveBeenCalledWith('family-1', 'link-1'))
   })
+  it('permite carregar uma previsão além da primeira página', async () => {
+    const distant = { ...planned, id: 'planned-101', description: 'Previsão distante' }
+    plannedApi.listPlanned.mockImplementation((_family: string, _filters: unknown, page: number) => Promise.resolve({ items: page === 1 ? [planned] : [distant], page, pageSize: 100, totalCount: 101 }))
+    render(<FinancialDebtReconciliation familyId="family-1" debt={debt} installment={installment} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Carregar mais previsões' }))
+    await waitFor(() => expect(plannedApi.listPlanned).toHaveBeenCalledWith('family-1', expect.anything(), 2, expect.anything(), 100))
+    expect(screen.getByRole('option', { name: /Previsão distante/ })).toBeTruthy()
+  })
 })

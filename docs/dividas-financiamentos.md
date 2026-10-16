@@ -62,7 +62,7 @@ Antes do `POST /api/families/{familyId}/debt-installment-reconciliations`, a int
 
 As ações **Ver na Agenda**, **Ver no Orçamento** e **Ver no Planejamento** preservam a família e a competência da parcela. Após conciliar ou desfazer, a família é notificada para invalidar Agenda, saldos, Orçamentos e Planejamento. Consultas são abortadas na troca de família e erros de elegibilidade/conflito são exibidos sem esconder a resposta do servidor.
 
-Limitações: a lista de previsões usa o endpoint paginado existente e filtros de despesa/conta como auxílio; a API continua sendo a autoridade final para elegibilidade, concorrência e vínculos 1:1. Não há conciliação automática nem cálculo financeiro no React.
+Limitações: a lista de previsões usa o endpoint paginado existente, filtros de despesa/conta como auxílio e carregamento incremental por página; a API continua sendo a autoridade final para elegibilidade, concorrência e vínculos 1:1. Não há conciliação automática nem cálculo financeiro no React.
 
 ### Validação frontend
 
