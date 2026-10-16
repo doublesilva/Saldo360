@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Saldo360.Domain.Common;
 using Saldo360.Tests.Support;
@@ -44,5 +45,28 @@ public sealed class FinancialDashboardEndpointsTests(PostgresFixture postgres) :
         Assert.Equal(HttpStatusCode.BadRequest, invalidMonths.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, invalidCompetence.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, forbiddenFamily.StatusCode);
+    }
+
+    [Fact]
+    public async Task NegativeAccount_ProducesStructuredAlertWithoutChangingFinancialData()
+    {
+        var owner = await SignInAsync("dashboard-negative");
+        var family = await CreateFamilyAsync(owner, "Dashboard negative");
+        var csrf = await GetCsrfAsync(owner);
+        var accountRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/families/{family.Id}/accounts")
+        {
+            Content = JsonContent.Create(new { name = "Conta negativa", type = "Checking", financialScope = "PF", openingBalance = "-100.00", openingBalanceDate = BusinessCalendar.Today(DateTimeOffset.UtcNow).AddDays(-1) })
+        };
+        accountRequest.Headers.Add("Cookie", $"{owner}; {csrf.Cookie}");
+        accountRequest.Headers.Add("X-CSRF-TOKEN", csrf.Token);
+        var created = await Client.SendAsync(accountRequest);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var response = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/financial-dashboard?months=1", owner);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var alert = body.RootElement.GetProperty("alerts").EnumerateArray().Single(x => x.GetProperty("code").GetString() == "negative-realized-balance");
+        Assert.Equal("Critical", alert.GetProperty("severity").GetString());
+        Assert.Equal("100.00", alert.GetProperty("amount").GetString());
     }
 }

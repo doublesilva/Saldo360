@@ -14,6 +14,7 @@ namespace Saldo360.Application.Dashboard;
 public sealed class FinancialDashboardService(
     IFamilyRepository families,
     IFinancialAccountRepository accounts,
+    FinancialCalendarService calendar,
     FinancialCalendarMonthlyProjectionService monthlyProjection,
     IFinancialBudgetRepository budgets,
     IFinancialBudgetExecutionRepository budgetExecutions,
@@ -39,6 +40,10 @@ public sealed class FinancialDashboardService(
         if (projection.Errors is not null) return new(null, projection.Errors, false);
         var monthsData = projection.Projection!.Months;
         var first = monthsData[0];
+        var calendarFrom = competence <= asOf ? competence : asOf;
+        var calendarThrough = competence.AddMonths(months).AddDays(-1);
+        var calendarResult = await calendar.ListAsync(familyId, userId, new FinancialCalendarQuery(calendarFrom, calendarThrough, null, null), ct);
+        if (calendarResult.NotFound) return FinancialDashboardResult.NotFoundResult;
 
         var accountDtos = await accounts.ListAsync(familyId, true, ct);
         var accountBalances = new List<FinancialDashboardAccountBalance>();
@@ -105,6 +110,38 @@ public sealed class FinancialDashboardService(
         var horizonPendingExpense = monthsData.Sum(x => x.PendingExpense);
         var accountCoverageComplete = accountBalances.Count > 0 && accountBalances.All(x => x.Complete);
         var coverageComplete = accountCoverageComplete && !hasUnallocatedCards && debtUnallocated == 0 && monthly.All(x => x.ProjectionComplete);
+        var pendingItems = calendarResult.Calendar!.Items.Where(x => x.Status is FinancialCalendarStatus.Pending or FinancialCalendarStatus.Overdue).OrderBy(x => x.Date).ThenBy(x => x.Id).ToList();
+        var next = pendingItems.FirstOrDefault();
+        var nextIncome = pendingItems.Where(x => x.Type == Saldo360.Domain.Categories.CategoryType.Income).OrderBy(x => x.Date).ThenBy(x => x.Id).FirstOrDefault();
+        var trend = DetermineTrend(monthly);
+        var alerts = new List<FinancialDashboardAlert>();
+        foreach (var account in accountBalances.Where(x => x.RealizedBalance is < 0m))
+            alerts.Add(new("negative-realized-balance", FinancialDashboardAlertSeverity.Critical, "Saldo realizado negativo", $"A conta {account.Name} possui saldo realizado negativo.", null, -account.RealizedBalance, account.AccountId, account.Name, asOf));
+        var negativeMonth = monthly.FirstOrDefault(x => x.ProjectionComplete && x.ClosingBalance < 0);
+        if (negativeMonth is not null)
+            alerts.Add(new("projected-negative-balance-risk", FinancialDashboardAlertSeverity.Warning, "Risco de saldo projetado negativo", "A projeção mensal conhecida indica fechamento negativo.", negativeMonth.Competence, -negativeMonth.ClosingBalance, null, null, asOf));
+        foreach (var item in pendingItems.Where(x => x.Status == FinancialCalendarStatus.Overdue))
+            alerts.Add(new("overdue-obligation", FinancialDashboardAlertSeverity.Warning, "Obrigação vencida", item.Description, null, item.Amount, item.Id, item.Source.ToString(), item.Date));
+        if (exceeded > 0)
+            alerts.Add(new("budget-exceeded", FinancialDashboardAlertSeverity.Critical, "Orçamento acima da meta", "Uma ou mais metas excederam o consumo conhecido.", competence, null, null, null, asOf));
+        else if (attention > 0)
+            alerts.Add(new("budget-near-limit", FinancialDashboardAlertSeverity.Warning, "Orçamento próximo do limite", "Uma ou mais metas atingiram pelo menos 85% do planejado.", competence, null, null, null, asOf));
+        if (!coverageComplete)
+            alerts.Add(new("incomplete-coverage", FinancialDashboardAlertSeverity.Warning, "Cobertura incompleta", "Parte das obrigações ou contas não está alocada para uma projeção integral.", competence, null, null, dashboardCoverageReason(accountCoverageComplete, hasUnallocatedCards, debtUnallocated), asOf));
+        alerts = alerts.OrderByDescending(x => x.Severity).ThenBy(x => x.ReferenceDate).ThenBy(x => x.Code).ThenBy(x => x.SourceId).ToList();
+        var indicators = new FinancialDashboardIndicators(
+            realized,
+            first.ClosingBalance,
+            first.ClosingBalance is { } projected && realized is { } baseBalance ? projected - baseBalance : null,
+            first.ClosingBalance is null ? null : competence.ToString("yyyy-MM"),
+            first.RealizedIncome - first.RealizedExpense,
+            first.PendingIncome - first.PendingExpense,
+            first.RealizedIncome - first.RealizedExpense + first.PendingIncome - first.PendingExpense,
+            first.PendingIncome + first.PendingExpense + (first.CreditCardOutstanding ?? 0m),
+            goalSummary.UnallocatedRealizedBalance,
+            trend,
+            next is null ? null : new(next.Source, next.Id, next.Date, next.Amount, next.Description, next.Account?.Id),
+            nextIncome is null ? new("Unknown", null, null, null, null) : new("Known", nextIncome.Date, nextIncome.Amount, null, null));
         var dashboard = new FinancialDashboard(competence, months,
             new(realized, accountBalances, accountBalances.Count, negative, goalSummary.AllocatedToGoals, realized is null ? null : realized - goalSummary.AllocatedToGoals),
             new(first.RealizedIncome, first.RealizedExpense, pendingIncome, pendingExpense),
@@ -115,7 +152,19 @@ public sealed class FinancialDashboardService(
             new(goalSummary.ActiveGoals, goalSummary.CompletedGoals, goalSummary.PausedGoals, goalSummary.AllocatedToGoals, goalSummary.UnallocatedRealizedBalance, goalSummary.CoverageComplete),
             monthly,
             new(coverageComplete, hasUnallocatedCards, debtUnallocated > 0, !accountCoverageComplete ? "Uma ou mais contas não possuem saldo inicial configurado." : hasUnallocatedCards ? "Existem obrigações de cartão sem conta de pagamento." : debtUnallocated > 0 ? "Existem parcelas de dívida sem conta responsável." : null),
+            indicators,
+            alerts,
             asOf);
         return new(dashboard, null, false);
     }
+
+    private static FinancialDashboardTrend DetermineTrend(IReadOnlyList<FinancialDashboardMonthlyProjection> months)
+    {
+        if (months.Count < 2 || months.Any(x => !x.ProjectionComplete || x.ClosingBalance is null)) return FinancialDashboardTrend.Unknown;
+        var delta = months[^1].ClosingBalance!.Value - months[0].ClosingBalance!.Value;
+        return Math.Abs(delta) <= 0.01m ? FinancialDashboardTrend.Stable : delta > 0m ? FinancialDashboardTrend.Improving : FinancialDashboardTrend.Deteriorating;
+    }
+
+    private static string dashboardCoverageReason(bool accountsComplete, bool cardsIncomplete, int debtUnallocated) =>
+        !accountsComplete ? "contas sem saldo inicial" : cardsIncomplete ? "cartões sem conta de pagamento" : debtUnallocated > 0 ? "dívidas sem conta responsável" : "projeção financeira incompleta";
 }
