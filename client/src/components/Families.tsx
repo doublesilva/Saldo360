@@ -20,6 +20,7 @@ import { FinancialCreditCardsPage } from './FinancialCreditCards'
 import { FinancialRecurrences } from './FinancialRecurrences'
 import { FinancialPlanning } from './FinancialPlanning'
 import { FinancialDebts } from './FinancialDebts'
+import { FinancialGoals } from './FinancialGoals'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
 
@@ -169,7 +170,7 @@ type DetailState =
   | { kind: 'not-found' }
   | { kind: 'error'; message: string }
 
-type FamilySection = 'overview' | 'calendar' | 'budgets' | 'cards' | 'recurrences' | 'planning' | 'debts' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
+type FamilySection = 'overview' | 'calendar' | 'budgets' | 'cards' | 'recurrences' | 'planning' | 'debts' | 'goals' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
 
 const familySections: Array<{ id: FamilySection; label: string }> = [
   { id: 'overview', label: 'Família' },
@@ -179,6 +180,7 @@ const familySections: Array<{ id: FamilySection; label: string }> = [
   { id: 'recurrences', label: 'Recorrências' },
   { id: 'planning', label: 'Planejamento' },
   { id: 'debts', label: 'Dívidas' },
+  { id: 'goals', label: 'Objetivos' },
   { id: 'accounts', label: 'Contas' },
   { id: 'categories', label: 'Categorias' },
   { id: 'transactions', label: 'Lançamentos' },
@@ -277,6 +279,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
           {section === 'recurrences' && <FinancialRecurrences key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }} />}
           {section === 'planning' && <FinancialPlanning key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} />}
           {section === 'debts' && <FinancialDebts key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }} onNavigateToBudgets={(competence) => { setBudgetCompetence(competence); setSection('budgets') }} onNavigateToPlanning={() => setSection('planning')} />}
+          {section === 'goals' && <FinancialGoals key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToPlanning={() => setSection('planning')} />}
           {section === 'accounts' && (
             <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
           )}
