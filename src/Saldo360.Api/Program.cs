@@ -15,6 +15,7 @@ using Saldo360.Api.Recurrences;
 using Saldo360.Api.Debts;
 using Saldo360.Api.Goals;
 using Saldo360.Api.Dashboard;
+using Saldo360.Api.Errors;
 using Saldo360.Application;
 using Saldo360.Infrastructure;
 
@@ -28,6 +29,7 @@ builder.Services
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUser>();
+builder.Services.AddApiErrorHandling();
 
 // Enums (ex.: papel na família) trafegam pelo nome: "Owner", "Member".
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -37,6 +39,9 @@ var app = builder.Build();
 
 // Antes da autenticação: o callback OIDC é montado com o esquema e o host públicos do proxy confiável.
 app.UseForwardedHeaders();
+
+app.UseExceptionHandler();
+app.UseStatusCodePages();
 
 app.UseAuthentication();
 app.UseAuthorization();

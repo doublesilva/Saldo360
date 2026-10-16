@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FinancialDebts } from './FinancialDebts'
 import type { DebtInstallment, FinancialDebt } from '../api/debts'
+import { ApiRequestError } from '../api/apiErrors'
 
 const api = vi.hoisted(() => ({
   listDebts: vi.fn(),
@@ -68,7 +69,9 @@ describe('FinancialDebts', () => {
     expect(api.updateDebt.mock.calls[0][2].originalPrincipal).toBe('999.90')
   })
 
-  it('usa a mesma operação ao tentar registrar pagamento novamente', async () => {
+  it('preserva a operação após resultado incerto e impede envios simultâneos', async () => {
+    let rejectFirst!: (error: unknown) => void
+    api.createPayment.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject })).mockResolvedValueOnce({ id: 'payment-1' })
     render(<FinancialDebts familyId="family-1" />)
     fireEvent.click(await screen.findByText('Financiamento'))
     const row = await screen.findByText(/nominal 400\.00/)
@@ -76,6 +79,10 @@ describe('FinancialDebts', () => {
     const pay = within(container).getByRole('button', { name: 'Registrar pagamento' })
     fireEvent.click(pay)
     await waitFor(() => expect(api.createPayment).toHaveBeenCalledTimes(1))
+    fireEvent.click(pay)
+    expect(api.createPayment).toHaveBeenCalledTimes(1)
+    await act(async () => rejectFirst(new ApiRequestError('Resultado incerto.', 'timeout', undefined, true)))
+    expect((await screen.findByRole('alert')).textContent).toContain('Resultado incerto.')
     fireEvent.click(pay)
     await waitFor(() => expect(api.createPayment).toHaveBeenCalledTimes(2))
     expect(api.createPayment.mock.calls[0][3].operationId).toBe(api.createPayment.mock.calls[1][3].operationId)

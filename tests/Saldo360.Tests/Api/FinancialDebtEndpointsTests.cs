@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Tests.Support;
@@ -91,5 +92,57 @@ public sealed class FinancialDebtEndpointsTests(PostgresFixture postgres) : Post
         await using var db = Db();
         Assert.Equal(1, await db.FinancialDebtPayments.CountAsync());
         Assert.Equal(1, await db.FinancialTransactions.CountAsync(t => t.Origin == Saldo360.Domain.Transactions.FinancialTransactionOrigin.DebtInstallmentPayment));
+    }
+
+    [Fact]
+    public async Task Debt_InstallmentPayment_ReturnsProblemDetails_ForValidationAndHiddenResource()
+    {
+        var owner = await SignInAsync("debt-problem-owner");
+        var outsider = await SignInAsync("debt-problem-outsider");
+        var family = await CreateFamilyAsync(owner, "Família Erros Dívida");
+        var account = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/accounts", owner,
+            new { name = "Conta", type = "Checking", financialScope = "PF", openingBalance = "1000.00", openingBalanceDate = "2026-01-01" });
+        var accountId = JsonDocument.Parse(await account.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+        var debt = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts", owner,
+            new { name = "Empréstimo", debtType = "PersonalLoan", responsibleAccountId = accountId, originalPrincipal = "500.00", contractDate = "2026-01-01" });
+        var debtId = JsonDocument.Parse(await debt.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+        var installment = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts/{debtId}/installments", owner,
+            new { installmentNumber = 1, dueDate = "2026-11-10", scheduledAmount = "123.45" });
+        var installmentId = JsonDocument.Parse(await installment.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+
+        var unauthenticated = await Client.PostAsync(
+            $"/api/families/{family.Id}/debts/{debtId}/installments/{installmentId}/payments",
+            new StringContent("{}", Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthenticated.StatusCode);
+        using var unauthenticatedBody = JsonDocument.Parse(await unauthenticated.Content.ReadAsStringAsync());
+        AssertProblem(unauthenticatedBody.RootElement, 401, "AUTHENTICATION_REQUIRED", "/payments");
+
+        var invalid = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts/{debtId}/installments/{installmentId}/payments", owner,
+            new { operationId = "problem-op", financialAccountId = accountId, paymentDate = "2026-10-16", amount = "invalid" });
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        using var invalidBody = JsonDocument.Parse(await invalid.Content.ReadAsStringAsync());
+        AssertProblem(invalidBody.RootElement, 400, "VALIDATION_ERROR", "/payments");
+        Assert.Equal("Valor decimal inválido.", invalidBody.RootElement.GetProperty("errors").GetProperty("amount")[0].GetString());
+
+        var hidden = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/debts/{debtId}/installments/{installmentId}/payments", outsider,
+            new { operationId = "foreign-op", financialAccountId = accountId, paymentDate = "2026-10-16", amount = "10.00" });
+        Assert.Equal(HttpStatusCode.NotFound, hidden.StatusCode);
+        using var hiddenBody = JsonDocument.Parse(await hidden.Content.ReadAsStringAsync());
+        AssertProblem(hiddenBody.RootElement, 404, "RESOURCE_NOT_FOUND", "/payments");
+
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialDebtPayments.CountAsync());
+        Assert.Equal(0, await db.FinancialTransactions.CountAsync());
+    }
+
+    private static void AssertProblem(JsonElement problem, int status, string code, string instanceSuffix)
+    {
+        Assert.Equal(status, problem.GetProperty("status").GetInt32());
+        Assert.Equal(code, problem.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(problem.GetProperty("type").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(problem.GetProperty("title").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(problem.GetProperty("detail").GetString()));
+        Assert.EndsWith(instanceSuffix, problem.GetProperty("instance").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(problem.GetProperty("traceId").GetString()));
     }
 }
