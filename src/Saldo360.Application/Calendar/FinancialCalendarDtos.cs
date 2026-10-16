@@ -9,6 +9,7 @@ public enum FinancialCalendarSource
 {
     Transaction,
     PlannedTransaction,
+    DebtInstallment,
 }
 
 /// <summary>
@@ -33,7 +34,7 @@ public sealed record FinancialCalendarItemDto(
     decimal Amount,
     DateOnly Date,
     string Description,
-    TransactionReferenceDto Account,
+    TransactionReferenceDto? Account,
     TransactionReferenceDto? Category,
     string Currency,
     Guid? PlannedTransactionId,

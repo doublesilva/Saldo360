@@ -168,3 +168,4 @@ Esse comportamento foi exercitado no cenário integrado da T09.7: pagamento e ca
 # Recorrências materializadas
 
 Previsões criadas explicitamente pela materialização de recorrências usam exatamente o mesmo cálculo de execução das demais previsões. Enquanto pendentes, entram em `committed`; quando realizadas, deixam de compor `committed` e passam a `realized`. O vínculo da recorrência não cria consumo adicional e a meta mensal permanece inalterada.
+Parcelas de dívida somente podem participar de uma execução orçamentária quando houver categoria de despesa explícita. Sem categoria, permanecem no fluxo de caixa sem serem atribuídas a uma meta.

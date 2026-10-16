@@ -93,6 +93,25 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
 
         var effectiveItems = await effective.ToListAsync(cancellationToken);
         var plannedItems = await planned.ToListAsync(cancellationToken);
+        var debtRows = await (from i in db.FinancialDebtInstallments.AsNoTracking()
+            join d in db.FinancialDebts.AsNoTracking() on new { i.FamilyId, DebtId = i.DebtId } equals new { d.FamilyId, DebtId = d.Id }
+            join a0 in db.FinancialAccounts.AsNoTracking() on new { i.FamilyId, Id = d.ResponsibleAccountId } equals new { a0.FamilyId, Id = (Guid?)a0.Id } into accounts
+            from a in accounts.DefaultIfEmpty()
+            where i.FamilyId == familyId && d.Status != Domain.Debts.DebtStatus.Archived && i.CancelledAt == null
+                && i.DueDate >= filter.From && i.DueDate <= filter.Through
+                && (filter.AccountId == null || d.ResponsibleAccountId == filter.AccountId)
+                && (filter.Type == null || filter.Type == CategoryType.Expense)
+            let paid = db.FinancialDebtPayments.Where(p => p.FamilyId == familyId && p.InstallmentId == i.Id && p.CancelledAt == null).Sum(p => (decimal?)p.Amount) ?? 0m
+            let remaining = i.ScheduledAmount - paid
+            where remaining > 0
+            select new { i, d, a, paid, remaining }).ToListAsync(cancellationToken);
+        var debtItems = debtRows.Select(x => new FinancialCalendarItemDto(
+            x.i.Id, FinancialCalendarSource.DebtInstallment,
+            x.i.DueDate < filter.Today ? FinancialCalendarStatus.Overdue : FinancialCalendarStatus.Pending,
+            CategoryType.Expense, x.remaining, x.i.DueDate, $"{x.d.Name} - parcela {x.i.InstallmentNumber}",
+            x.a == null ? null : new TransactionReferenceDto(x.a.Id, x.a.Name, x.a.IsActive), null,
+            FinancialTransaction.DefaultCurrency, null, FinancialTransactionOrigin.DebtInstallmentPayment,
+            null, null, x.i.DueDate)).ToList();
         var effectiveTotals = await effectiveTransactions
             .GroupBy(_ => 1)
             .Select(group => new TypeTotals(
@@ -107,10 +126,13 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
                 group.Sum(item => item.Type == CategoryType.Income && item.DueDate < filter.Today ? item.Amount : 0m),
                 group.Sum(item => item.Type == CategoryType.Expense && item.DueDate < filter.Today ? item.Amount : 0m)))
             .SingleOrDefaultAsync(cancellationToken) ?? new PendingTotals(0m, 0m, 0m, 0m);
+        var debtPending = debtRows.Sum(x => x.remaining);
+        var debtOverdue = debtRows.Where(x => x.i.DueDate < filter.Today).Sum(x => x.remaining);
         await transaction.CommitAsync(cancellationToken);
 
         var items = effectiveItems
             .Concat(plannedItems)
+            .Concat(debtItems)
             .OrderBy(item => item.Date)
             .ThenBy(item => item.Source)
             .ThenBy(item => item.Id)
@@ -122,9 +144,9 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
                 effectiveTotals.Income,
                 effectiveTotals.Expense,
                 pendingTotals.Income,
-                pendingTotals.Expense,
+                pendingTotals.Expense + debtPending,
                 pendingTotals.OverdueIncome,
-                pendingTotals.OverdueExpense));
+                pendingTotals.OverdueExpense + debtOverdue));
     }
 
     private sealed record TypeTotals(decimal Income, decimal Expense);

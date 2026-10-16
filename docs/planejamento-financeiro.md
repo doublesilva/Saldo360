@@ -79,3 +79,4 @@ O gráfico mensal é apenas uma visualização dos valores retornados pela API e
 A troca de família cancela as requisições pendentes e limpa o contexto do planejamento. A tela não cria transações, previsões, transferências ou metas de recuperação.
 
 A auditoria integrada da T12 está registrada em [docs/T12.5-auditoria-planejamento.md](T12.5-auditoria-planejamento.md).
+Obrigações de parcelas ainda devidas são incorporadas pela projeção-base quando a conta de pagamento é conhecida. Parcelas sem conta produzem cobertura incompleta e não são alocadas arbitrariamente.

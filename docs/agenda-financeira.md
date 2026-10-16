@@ -193,3 +193,6 @@ Na evolução diária e mensal, o saldo devido é aplicado no vencimento da fatu
 A auditoria T09.7 confirmou que pagamentos aparecem somente como lançamentos efetivos de origem própria; parcelas e faturas não são adicionadas como saídas efetivas na Agenda. Obrigações sem conta preferencial permanecem sinalizadas como não alocadas. Detalhes e cenários estão em [docs/T09.7-auditoria-integracao.md](T09.7-auditoria-integracao.md).
 
 Previsões conciliadas explicitamente com faturas deixam de aparecer como pendências duplicadas na projeção, sem serem canceladas ou removidas do histórico. A desvinculação restaura a participação da previsão.
+### Parcelas de dívidas
+
+Parcelas cadastradas são obrigações distintas dos pagamentos efetivos. A Agenda exibe somente o `remainingAmount` de parcelas não canceladas, respeitando vencimento e filtros. O lançamento bancário do pagamento continua sendo o único evento realizado; não há duplicação.

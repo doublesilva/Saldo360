@@ -308,7 +308,7 @@ public sealed record FinancialCalendarItemResponse(
     string Amount,
     DateOnly Date,
     string Description,
-    TransactionReferenceDto Account,
+    TransactionReferenceDto? Account,
     TransactionReferenceDto? Category,
     string Currency,
     Guid? PlannedTransactionId,
