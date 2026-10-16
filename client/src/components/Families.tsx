@@ -276,7 +276,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
           {section === 'cards' && <FinancialCreditCardsPage familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} />}
           {section === 'recurrences' && <FinancialRecurrences key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }} />}
           {section === 'planning' && <FinancialPlanning key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} />}
-          {section === 'debts' && <FinancialDebts key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} />}
+          {section === 'debts' && <FinancialDebts key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }} onNavigateToBudgets={(competence) => { setBudgetCompetence(competence); setSection('budgets') }} onNavigateToPlanning={() => setSection('planning')} />}
           {section === 'accounts' && (
             <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
           )}

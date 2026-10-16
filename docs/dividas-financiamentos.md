@@ -54,6 +54,16 @@ Pagamentos podem ser registrados quando existe conta responsável. Cada parcela 
 
 A troca de família cancela a consulta anterior e limpa a seleção, evitando que uma resposta antiga apareça no contexto novo. A pré-visualização e edição não implementam conciliação visual; essa etapa permanece fora da T13.4.1.
 
+## Conciliação contextual (T13.4.2)
+
+Cada parcela aberta apresenta uma seção dedicada para consultar previsões de despesa pendentes da mesma família e, quando possível, da conta responsável. A seleção é manual e a comparação mostra dívida, vencimento, valor nominal, restante, conta e categoria ao lado da previsão. Divergências de valor ou data são destacadas sem conversão numérica ou alteração automática.
+
+Antes do `POST /api/families/{familyId}/debt-installment-reconciliations`, a interface exige revisão explícita e informa que parcela e previsão permanecem armazenadas, que a obrigação será contabilizada uma única vez e que nenhum pagamento bancário será criado. O vínculo ativo é consultável e pode ser removido por `DELETE`; a remoção é lógica e não cancela a previsão.
+
+As ações **Ver na Agenda**, **Ver no Orçamento** e **Ver no Planejamento** preservam a família e a competência da parcela. Após conciliar ou desfazer, a família é notificada para invalidar Agenda, saldos, Orçamentos e Planejamento. Consultas são abortadas na troca de família e erros de elegibilidade/conflito são exibidos sem esconder a resposta do servidor.
+
+Limitações: a lista de previsões usa o endpoint paginado existente e filtros de despesa/conta como auxílio; a API continua sendo a autoridade final para elegibilidade, concorrência e vínculos 1:1. Não há conciliação automática nem cálculo financeiro no React.
+
 ### Validação frontend
 
 Foram adicionados testes comportamentais para cadastro com nulos, edição preservando precisão textual e reenvio de pagamento com a mesma chave. O Vitest padrão (`npm test -- ...`) pode permanecer aguardando workers neste ambiente; a execução determinística foi validada com `vitest run --pool=threads --maxWorkers=1 --no-file-parallelism`, que passou para `FinancialDebts.test.tsx` (3 testes) e `FinancialCalendar.test.tsx` (17 testes).

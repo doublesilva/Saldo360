@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   archiveDebt: vi.fn(),
 }))
 vi.mock('../api/debts', () => api)
+vi.mock('./FinancialDebtReconciliation', () => ({ FinancialDebtReconciliation: () => null }))
 
 const debt: FinancialDebt = {
   id: 'debt-1', familyId: 'family-1', name: 'Financiamento', description: null, debtType: 'Loan', lenderName: 'Banco',
