@@ -78,4 +78,41 @@ public sealed class FinancialPlanningScenarioEndpointsTests(PostgresFixture post
         var all = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/planning-scenarios?includeArchived=true", owner);
         Assert.Single(JsonDocument.Parse(await all.Content.ReadAsStringAsync()).RootElement.EnumerateArray());
     }
+
+    [Fact]
+    public async Task Projection_AppliesMonthlyAdjustmentsCumulatively_AndKeepsReserveOutsideBalance()
+    {
+        var owner = await SignInAsync("scenario-projection-owner");
+        var family = await CreateFamilyAsync(owner, "Família Projeção");
+        var accountResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/accounts", owner,
+            new { name = "Conta", type = "Checking", financialScope = "PF", openingBalance = "5000.00", openingBalanceDate = "2026-09-01" });
+        Assert.Equal(HttpStatusCode.Created, accountResponse.StatusCode);
+        var create = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/planning-scenarios", owner,
+            new { name = "Otimista", startMonth = "2026-11", months = 2 });
+        using var scenarioBody = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var scenarioId = scenarioBody.RootElement.GetProperty("id").GetGuid();
+        var parameterUrl = $"/api/families/{family.Id}/planning-scenarios/{scenarioId}/parameters";
+        foreach (var (month, income, expense, reserve) in new[] { ("2026-11", "500.00", "0.00", "1000.00"), ("2026-12", "0.00", "200.00", "500.00") })
+        {
+            var response = await SendWithCsrfAsync(HttpMethod.Put, $"{parameterUrl}/{month}", owner,
+                new { expectedAdditionalIncome = income, expectedAdditionalExpense = expense, contingencyReserve = reserve, recoveryTargetPercentage = "85.00" });
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        var projection = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/planning-scenarios/{scenarioId}/projection", owner);
+        Assert.Equal(HttpStatusCode.OK, projection.StatusCode);
+        using var body = JsonDocument.Parse(await projection.Content.ReadAsStringAsync());
+        var november = body.RootElement.GetProperty("items")[0];
+        var december = body.RootElement.GetProperty("items")[1];
+        Assert.Equal("5000.00", november.GetProperty("baseClosingBalance").GetString());
+        Assert.Equal("5500.00", november.GetProperty("scenarioClosingBalance").GetString());
+        Assert.Equal("4500.00", november.GetProperty("plannedAvailable").GetString());
+        Assert.Equal("300.00", december.GetProperty("cumulativeAdjustment").GetString());
+        Assert.Equal("5300.00", december.GetProperty("scenarioClosingBalance").GetString());
+        Assert.Equal("true", december.GetProperty("projectionComplete").GetRawText());
+
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialTransactions.CountAsync());
+        Assert.Equal(0, await db.FinancialPlannedTransactions.CountAsync());
+    }
 }

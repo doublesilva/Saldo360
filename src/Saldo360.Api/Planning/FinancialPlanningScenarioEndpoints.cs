@@ -17,6 +17,7 @@ public static class FinancialPlanningScenarioEndpoints
         group.MapDelete("/{id:guid}", Archive).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/{id:guid}/parameters", ListParameters);
         group.MapPut("/{id:guid}/parameters/{competence}", UpsertParameter).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapGet("/{id:guid}/projection", Projection);
         return app;
     }
 
@@ -49,6 +50,14 @@ public static class FinancialPlanningScenarioEndpoints
         var result = await service.UpsertParameterAsync(familyId, id, competence, uid, new(request?.ExpectedAdditionalIncome, request?.ExpectedAdditionalExpense, request?.ContingencyReserve, request?.RecoveryTargetPercentage, request?.Notes), ct);
         return result.Access switch { PlanningScenarioAccess.NotFound => Results.NotFound(), PlanningScenarioAccess.Invalid => Results.ValidationProblem(result.Errors!), PlanningScenarioAccess.Conflict => Results.Conflict(new { title = result.Message }), _ => Results.Ok(ParameterResponse.From(result.Parameter!)) };
     }
+    private static async Task<IResult> Projection(Guid familyId, Guid id, CurrentUser user, FinancialPlanningScenarioProjectionService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } uid) return Results.Unauthorized();
+        var result = await service.GetAsync(familyId, id, uid, ct);
+        if (result.NotFound) return Results.NotFound();
+        if (result.Errors is not null) return Results.ValidationProblem(result.Errors);
+        return Results.Ok(ScenarioProjectionResponse.Create(result.Projection!));
+    }
     private static IResult Result(PlanningScenarioResult result, Func<PlanningScenarioDto, IResult> ok) => result.Access switch { PlanningScenarioAccess.NotFound => Results.NotFound(), PlanningScenarioAccess.Invalid => Results.ValidationProblem(result.Errors!), PlanningScenarioAccess.Conflict => Results.Conflict(new { title = result.Message }), _ => ok(result.Scenario!) };
 }
 
@@ -61,4 +70,14 @@ public sealed record ScenarioResponse(Guid Id, Guid FamilyId, string Name, strin
 public sealed record ParameterResponse(Guid Id, Guid FamilyId, Guid ScenarioId, string Competence, string ExpectedAdditionalIncome, string ExpectedAdditionalExpense, string ContingencyReserve, string RecoveryTargetPercentage, string? Notes)
 {
     public static ParameterResponse From(PlanningMonthlyParameterDto x) => new(x.Id, x.FamilyId, x.ScenarioId, x.Competence.ToString("yyyy-MM"), Money.Format(x.ExpectedAdditionalIncome), Money.Format(x.ExpectedAdditionalExpense), Money.Format(x.ContingencyReserve), Money.Format(x.RecoveryTargetPercentage), x.Notes);
+}
+
+public sealed record ScenarioProjectionResponse(Guid ScenarioId, string From, int Months, IReadOnlyList<ScenarioProjectionMonthResponse> Items)
+{
+    public static ScenarioProjectionResponse Create(PlanningScenarioProjection x) => new(x.ScenarioId, x.From.ToString("yyyy-MM"), x.Months, x.Items.Select(ScenarioProjectionMonthResponse.From).ToList());
+}
+public sealed record ScenarioProjectionMonthResponse(string Competence, string? OpeningBalance, string RealizedIncome, string RealizedExpense, string PendingIncome, string PendingExpense, string CreditCardOutstanding, string? BaseClosingBalance, string AdditionalIncome, string AdditionalExpense, string CumulativeAdjustment, string? ScenarioClosingBalance, string ContingencyReserve, string? PlannedAvailable, bool ProjectionComplete, bool UsesBaseProjectionOnly, bool HasUnallocatedObligations, string RecoveryTargetPercentage)
+{
+    public static ScenarioProjectionMonthResponse From(PlanningScenarioProjectionMonth x) => new(x.Competence.ToString("yyyy-MM"), Format(x.OpeningBalance), Money.Format(x.RealizedIncome), Money.Format(x.RealizedExpense), Money.Format(x.PendingIncome), Money.Format(x.PendingExpense), Money.Format(x.CreditCardOutstanding), Format(x.BaseClosingBalance), Money.Format(x.AdditionalIncome), Money.Format(x.AdditionalExpense), Money.Format(x.CumulativeAdjustment), Format(x.ScenarioClosingBalance), Money.Format(x.ContingencyReserve), Format(x.PlannedAvailable), x.ProjectionComplete, x.UsesBaseProjectionOnly, x.HasUnallocatedObligations, Money.Format(x.RecoveryTargetPercentage));
+    private static string? Format(decimal? value) => value is { } number ? Money.Format(number) : null;
 }

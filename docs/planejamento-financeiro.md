@@ -46,10 +46,18 @@ Corpo: `{ "expectedAdditionalIncome": "500.00", "expectedAdditionalExpense": "23
 
 As escritas exigem autenticação, participação na família e CSRF. Respostas monetárias e percentuais são strings decimais exatas.
 
+## Projeção por cenário (T12.2)
+
+`GET /api/families/{familyId}/planning-scenarios/{id}/projection` consulta o horizonte cadastrado no cenário. A projeção-base é obtida pelo mesmo serviço mensal da Agenda, incluindo transações, previsões pendentes, recorrências materializadas, cartões e conciliações conforme as regras existentes. Definições e ocorrências virtuais de recorrência ficam fora da base.
+
+Para cada competência, a resposta retorna `openingBalance`, realizados, pendências, `creditCardOutstanding`, `baseClosingBalance`, ajustes, `cumulativeAdjustment`, `scenarioClosingBalance`, `contingencyReserve`, `plannedAvailable` e `projectionComplete`. O ajuste líquido é `additionalIncome - additionalExpense`; o acumulado é aplicado uma única vez ao fechamento-base. A reserva reduz somente `plannedAvailable` (`scenarioClosingBalance - contingencyReserve`) e nunca o saldo da conta.
+
+Quando não há parâmetro explícito, os ajustes e a reserva são zero e `usesBaseProjectionOnly` informa essa condição. Obrigações de cartão sem conta de pagamento mantêm a projeção parcial, com `projectionComplete=false` e `hasUnallocatedObligations=true`; nenhuma conta é escolhida arbitrariamente. A consulta é somente leitura e preserva a captura temporal do motor mensal.
+
 ## Persistência e limitações
 
 A migration `AddPlanningScenarios` cria tabelas com FKs compostas por família, índices de consulta, unicidade de cenário/competência e constraints de horizonte, competência, não negatividade e percentual. Não há projeção consolidada, herança de defaults, materialização em previsões, alteração de orçamento, jobs ou interface React nesta tarefa.
 
 ## Evolução
 
-A T12.2 poderá consumir a projeção-base e aplicar esses ajustes sem contar novamente transações, previsões, recorrências materializadas ou obrigações de cartão. A reserva continuará sendo margem de capacidade, não despesa bancária, salvo decisão explícita posterior.
+A T12.3 poderá calcular metas de recuperação usando o percentual informativo, sem transformar a reserva em despesa bancária. A projeção atual não materializa hipóteses nem altera dados financeiros.
