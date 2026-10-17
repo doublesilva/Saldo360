@@ -1329,9 +1329,21 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("last_accepted_documents");
 
+                    b.Property<int>("LastCandidateAttachments")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_candidate_attachments");
+
                     b.Property<DateTimeOffset?>("LastCompletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_completed_at");
+
+                    b.Property<int>("LastDuplicates")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_duplicates");
+
+                    b.Property<long>("LastDurationMilliseconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_duration_milliseconds");
 
                     b.Property<int>("LastFailures")
                         .HasColumnType("integer")
@@ -1345,9 +1357,22 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("last_messages_scanned");
 
+                    b.Property<int>("LastNeedsReview")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_needs_review");
+
+                    b.Property<string>("LastResult")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("last_result");
+
                     b.Property<DateTimeOffset?>("LastStartedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_started_at");
+
+                    b.Property<DateTimeOffset?>("LastSuccessfulRunAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_successful_run_at");
 
                     b.Property<string>("ProfileName")
                         .IsRequired()

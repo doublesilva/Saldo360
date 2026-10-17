@@ -16,4 +16,6 @@ internal sealed class FinancialEmailCollectorCheckpointRepository(Saldo360DbCont
         return checkpoint;
     }
     public Task SaveAsync(CancellationToken cancellationToken) => db.SaveChangesAsync(cancellationToken);
+    public async Task<IReadOnlyList<FinancialEmailCollectorCheckpoint>> ListAsync(IReadOnlyCollection<Guid> familyIds, CancellationToken cancellationToken) =>
+        await db.FinancialEmailCollectorCheckpoints.AsNoTracking().Where(item => familyIds.Contains(item.FamilyId)).OrderBy(item => item.ProfileName).ToListAsync(cancellationToken);
 }

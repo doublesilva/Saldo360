@@ -12,8 +12,8 @@ public sealed class FinancialEmailCollectorTests
     public async Task CollectsMultiplePdfsIndependentlyAndSkipsUnsupportedAttachments()
     {
         var source = new FakeEmailSource();
-        source.Add("m1", new(2026, 10, 17, 12, 0, 0, TimeSpan.Zero), ("a1", "one.pdf", "application/pdf", new byte[] { 1 }), ("a2", "image.png", "image/png", new byte[] { 2 }));
-        source.Add("m2", new(2026, 10, 17, 13, 0, 0, TimeSpan.Zero), ("a3", "two.pdf", "application/pdf", new byte[] { 3 }));
+        source.Add("m1", new(2026, 10, 17, 12, 0, 0, TimeSpan.Zero), ("a1", "Fatura_MASTERCARD_xxx.pdf", "application/octet-stream", Pdf(1)), ("a2", "image.png", "image/png", new byte[] { 2 }));
+        source.Add("m2", new(2026, 10, 17, 13, 0, 0, TimeSpan.Zero), ("a3", "two.pdf", "application/pdf", Pdf(3)));
         var fixture = Create(source, Preview("Nubank", "Reconciled", null));
 
         var result = await fixture.Collector.RunAsync("Bills", UserId, false, CancellationToken.None);
@@ -30,7 +30,7 @@ public sealed class FinancialEmailCollectorTests
     [Fact]
     public async Task DryRunListsStableExternalIdsWithoutDownloadingOrPersisting()
     {
-        var source = new FakeEmailSource(); source.Add("message", DateTimeOffset.UtcNow, ("attachment", "bill.pdf", "application/pdf", new byte[] { 1 }));
+        var source = new FakeEmailSource(); source.Add("message", DateTimeOffset.UtcNow, ("attachment", "bill.pdf", "application/pdf", Pdf(1)));
         var fixture = Create(source, Preview("Nubank", "Reconciled", null));
         var result = await fixture.Collector.RunAsync("Bills", UserId, true, CancellationToken.None);
         Assert.Equal(["gmail:message:attachment"], result!.CandidateExternalIds);
@@ -40,7 +40,7 @@ public sealed class FinancialEmailCollectorTests
     [Fact]
     public async Task RepeatedRunAndSameHashFromAnotherMessageRemainIdempotent()
     {
-        var bytes = new byte[] { 8, 9 }; var source = new FakeEmailSource();
+        var bytes = Pdf(8); var source = new FakeEmailSource();
         source.Add("m1", DateTimeOffset.UtcNow, ("a1", "one.pdf", "application/pdf", bytes));
         source.Add("m2", DateTimeOffset.UtcNow.AddMinutes(1), ("a2", "two.pdf", "application/pdf", bytes));
         var fixture = Create(source, Preview("Generic", "NeedsReview", null));
@@ -55,14 +55,23 @@ public sealed class FinancialEmailCollectorTests
     public async Task ProtectedPdfIsRetainedForReviewAndOneFailureDoesNotAbortBatch()
     {
         var source = new FakeEmailSource();
-        source.Add("bad", DateTimeOffset.UtcNow, ("fail", "bad.pdf", "application/pdf", new byte[] { 1 }));
-        source.Add("protected", DateTimeOffset.UtcNow.AddMinutes(1), ("locked", "locked.pdf", "application/pdf", new byte[] { 2 }));
+        source.Add("bad", DateTimeOffset.UtcNow, ("fail", "bad.pdf", "application/pdf", Pdf(1)));
+        source.Add("protected", DateTimeOffset.UtcNow.AddMinutes(1), ("locked", "locked.pdf", "application/pdf", Pdf(2)));
         source.FailAttachmentId = "fail";
         var fixture = Create(source, null, CreditCardPdfReadFailure.PasswordRequired);
         var result = await fixture.Collector.RunAsync("Bills", UserId, false, CancellationToken.None);
         Assert.Equal(1, result!.AcceptedDocuments); Assert.Equal(1, result.Failures);
         Assert.Equal(FinancialDocumentInboxStatus.NeedsReview, Assert.Single(fixture.Inbox.Items).Status);
         Assert.Equal("PasswordRequired", fixture.Inbox.Items[0].FailureCode);
+    }
+
+    [Fact]
+    public async Task PdfExtensionWithInvalidSignatureIsRejectedBeforeInbox()
+    {
+        var source = new FakeEmailSource(); source.Add("m1", DateTimeOffset.UtcNow, ("a1", "fake.pdf", "application/octet-stream", new byte[] { 1, 2, 3, 4, 5 }));
+        var fixture = Create(source, Preview("Nubank", "Reconciled", null));
+        var result = await fixture.Collector.RunAsync("Bills", UserId, false, CancellationToken.None);
+        Assert.Equal(1, result!.Failures); Assert.Contains(result.Errors, error => error.Code == "InvalidPdfContent"); Assert.Empty(fixture.Inbox.Items);
     }
 
     private static Fixture Create(FakeEmailSource source, CreditCardPdfPreview? preview, CreditCardPdfReadFailure? failure = null)
@@ -77,6 +86,7 @@ public sealed class FinancialEmailCollectorTests
     }
     private static CreditCardPdfPreview Preview(string parser, string status, string? digits) => new("x.pdf", 1, parser,
         new("Nubank", digits, "2026-10", null, null, "1.00"), new(0, 0, 0, 0), [], []) { Reconciliation = new(status, "1.00", "1.00", "0.00", false) };
+    private static byte[] Pdf(byte marker) => [(byte)'%', (byte)'P', (byte)'D', (byte)'F', (byte)'-', marker];
     private sealed record Fixture(FinancialEmailCollector Collector, FakeInboxRepository Inbox);
 
     private sealed class FakeEmailSource : IFinancialEmailSource
@@ -118,6 +128,7 @@ public sealed class FinancialEmailCollectorTests
     {
         private FinancialEmailCollectorCheckpoint? value;
         public Task<FinancialEmailCollectorCheckpoint> GetOrCreateAsync(Guid familyId, string profileName, CancellationToken cancellationToken) => Task.FromResult(value ??= FinancialEmailCollectorCheckpoint.Create(familyId, profileName));
+        public Task<IReadOnlyList<FinancialEmailCollectorCheckpoint>> ListAsync(IReadOnlyCollection<Guid> familyIds, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailCollectorCheckpoint>>(value is null ? [] : [value]);
         public Task SaveAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

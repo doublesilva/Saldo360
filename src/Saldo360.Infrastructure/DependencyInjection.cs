@@ -100,6 +100,9 @@ public static class DependencyInjection
         services.AddSingleton<IFinancialDocumentStorage, FileSystemFinancialDocumentStorage>();
         var emailImport = configuration.GetSection("FinancialEmailImport").Get<FinancialEmailImportOptions>() ?? new FinancialEmailImportOptions();
         services.AddSingleton(emailImport);
+        services.AddSingleton<FinancialEmailSchedule>();
+        services.AddSingleton<IFinancialEmailCollectorLock>(_ => new PostgresFinancialEmailCollectorLock(connectionString));
+        services.AddHostedService<FinancialEmailCollectorHostedService>();
         services.AddHttpClient("GmailFinancialEmail", client => client.BaseAddress = new Uri("https://gmail.googleapis.com/"));
         services.AddHttpClient("GmailFinancialEmailToken", client => client.BaseAddress = new Uri("https://oauth2.googleapis.com/"));
         services.AddSingleton<IFinancialEmailSource, GmailFinancialEmailSource>();

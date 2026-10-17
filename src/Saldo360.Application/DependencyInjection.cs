@@ -45,6 +45,9 @@ public static class DependencyInjection
         services.AddScoped<FinancialDocumentInboxService>();
         services.AddScoped<FinancialDocumentInboxConfirmationService>();
         services.AddScoped<FinancialEmailCollector>();
+        services.AddScoped<IFinancialEmailCollector>(provider => provider.GetRequiredService<FinancialEmailCollector>());
+        services.AddScoped<FinancialEmailCollectorRunner>();
+        services.AddScoped<FinancialEmailCollectorStatusService>();
         services.AddScoped<FinancialCreditCardImportService>();
         services.AddScoped<FinancialCreditCardImportedInstallmentService>();
         services.AddScoped<FinancialRecurrenceService>();

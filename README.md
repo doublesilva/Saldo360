@@ -241,7 +241,7 @@ Em **Cartões > Importações**, a interface React permite revisar CSV, confirma
 
 Documentos financeiros também podem ser recebidos em uma Inbox persistente antes da confirmação. Os metadados ficam no PostgreSQL, o PDF em storage privado abstrato e a análise reutiliza os parsers e a confirmação existentes; veja [docs/inbox-documentos-financeiros.md](docs/inbox-documentos-financeiros.md).
 
-Um coletor Gmail somente leitura pode alimentar essa Inbox por execução manual ou `dry-run`, com OAuth oficial, perfis por família, checkpoint incremental e identidade estável de mensagem/anexo. A configuração operacional está em [docs/coleta-email-financeiro.md](docs/coleta-email-financeiro.md).
+Um coletor Gmail somente leitura pode alimentar essa Inbox por execução manual, `dry-run` ou agenda diária às 09h, 13h, 18h e 23h em São Paulo, com OAuth oficial, lock PostgreSQL, status operacional, perfis por família, checkpoint incremental e identidade estável de mensagem/anexo. A configuração operacional está em [docs/coleta-email-financeiro.md](docs/coleta-email-financeiro.md).
 
 A integração ponta a ponta de cartões com contas, Agenda e Orçamentos é auditada pelos cenários PostgreSQL da T09.7; o relatório está em [docs/T09.7-auditoria-integracao.md](docs/T09.7-auditoria-integracao.md).
 
