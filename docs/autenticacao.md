@@ -75,7 +75,7 @@ Use o trecho [docs/authelia-client-saldo360.yml](authelia-client-saldo360.yml). 
 - code + PKCE obrigatório (`S256`), escopos `openid profile email` e `response_modes: [query]`;
 - `token_endpoint_auth_method` e `pushed_authorization_request_endpoint_auth_method` com o valor `client_secret_post`; o padrão do Authelia é `client_secret_basic`, que o .NET não usa;
 - redirect URI de desenvolvimento: `http://localhost:5173/signin-oidc`;
-- redirect URI de produção: `https://<origem pública do Saldo360>/signin-oidc`. **A origem de produção ainda não foi escolhida**, então a linha fica comentada até existir.
+- redirect URI de produção: `https://saldo360.home.doublesilva.com/signin-oidc`.
 
 Depois de editar, valide a configuração e reinicie o Authelia. Um `invalid_client` no login (motivo `provedor:invalid_client` no log) indica cadastro ausente, digest que não corresponde ao segredo ou método de autenticação diferente de `client_secret_post`.
 
@@ -86,7 +86,7 @@ Depois de editar, valide a configuração e reinicie o Authelia. Um `invalid_cli
 - Faça backup no mesmo padrão dos anteriores (`configuration.yml.bak-before-<mudança>-<data>`).
 - O Authelia guarda as sessões em memória: o reinício (`docker restart authelia`) exige novo login no SSO. As sessões próprias dos apps não são afetadas.
 
-**Estado:** client `saldo360` cadastrado em 2026-10-10, só com o callback de desenvolvimento, `one_factor` e `consent_mode: implicit`. O backup é `configuration.yml.bak-before-saldo360-20261010-103124`. O callback de produção continua pendente.
+**Estado:** client `saldo360` cadastrado em 2026-10-10 com `one_factor` e `consent_mode: implicit`. Para produção, manter também o callback `https://saldo360.home.doublesilva.com/signin-oidc`; o runbook está em [deploy-producao.md](deploy-producao.md).
 
 ### 3. Confiança na CA do Caddy
 
