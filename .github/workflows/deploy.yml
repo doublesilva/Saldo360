@@ -1,0 +1,132 @@
+name: Deploy Saldo360
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: saldo360-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: saldo360-production
+
+    env:
+      DEPLOY_HOST: ${{ vars.SALDO360_DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.SALDO360_DEPLOY_USER }}
+      EXPECTED_FINGERPRINT: ${{ vars.SALDO360_SSH_HOST_FINGERPRINT }}
+      TAILSCALE_TAG: ${{ vars.SALDO360_TAILSCALE_TAG }}
+
+    steps:
+      - name: Validate ref and configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Produção só pode ser publicada a partir de main."
+            exit 1
+          fi
+
+          missing=0
+          for pair in             SALDO360_DEPLOY_HOST:DEPLOY_HOST             SALDO360_DEPLOY_USER:DEPLOY_USER             SALDO360_SSH_HOST_FINGERPRINT:EXPECTED_FINGERPRINT             SALDO360_TAILSCALE_TAG:TAILSCALE_TAG; do
+            env_name="${pair#*:}"
+            if [ -z "${!env_name}" ]; then
+              echo "::error::Repository variable ${pair%%:*} não configurada."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: ${{ vars.SALDO360_TAILSCALE_TAG }}
+          ping: ${{ vars.SALDO360_DEPLOY_HOST }}
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          (umask 077 && printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519)
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
+
+          scanned="$(mktemp)"
+          ssh-keyscan -t ed25519 -T 10 "$DEPLOY_HOST" > "$scanned"
+          test "$(grep -cv '^#' "$scanned")" = "1"
+
+          actual="$(ssh-keygen -lf "$scanned" -E sha256 | awk '{print $2}')"
+          echo "Fingerprint recebido: $actual"
+          if [ "$actual" != "$EXPECTED_FINGERPRINT" ]; then
+            echo "::error::Fingerprint SSH do servidor divergente."
+            exit 1
+          fi
+
+          grep -v '^#' "$scanned" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          rm -f "$scanned"
+
+      - name: Verify server bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             'test -d /srv/saldo360-deploy/release &&
+             test -f /srv/saldo360-deploy/.env &&
+             test -f /etc/saldo360/secrets/oidc-client-secret &&
+             test -x /usr/local/sbin/deploy-saldo360'
+
+      - name: Create release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git archive --format=tar.gz --output=/tmp/saldo360-release.tar.gz HEAD
+
+      - name: Upload release
+        shell: bash
+        run: |
+          scp             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             /tmp/saldo360-release.tar.gz             "$DEPLOY_USER@$DEPLOY_HOST:/srv/saldo360-deploy/saldo360-release.tar.gz"
+
+      - name: Prepare staging
+        shell: bash
+        run: |
+          ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             'bash -s' <<'REMOTE'
+          set -euo pipefail
+          test -d /srv/saldo360-deploy/release
+          test -f /srv/saldo360-deploy/saldo360-release.tar.gz
+          find /srv/saldo360-deploy/release -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          tar -xzf /srv/saldo360-deploy/saldo360-release.tar.gz -C /srv/saldo360-deploy/release
+          rm -f /srv/saldo360-deploy/saldo360-release.tar.gz
+          REMOTE
+
+      - name: Deploy
+        shell: bash
+        run: |
+          ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             "sudo /usr/local/sbin/deploy-saldo360 '$GITHUB_SHA'"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Saldo360 production"
+            echo "- Commit: `$GITHUB_SHA`"
+            echo "- Host: `$DEPLOY_HOST`"
+            echo "- Status: deploy concluído"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 /tmp/saldo360-release.tar.gz
