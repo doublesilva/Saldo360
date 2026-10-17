@@ -94,10 +94,39 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             'test -d /srv/saldo360-deploy/release &&
-             test -f /srv/saldo360-deploy/.env &&
-             test -f /etc/saldo360/secrets/oidc-client-secret &&
-             test -x /usr/local/sbin/deploy-saldo360'
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          echo "SSH autenticado como: $(id -un)"
+          failed=0
+          for path in /srv/saldo360-deploy/release; do
+            if test -d "$path"; then
+              echo "OK diretório: $path"
+            else
+              echo "::error::Diretório ausente ou inacessível: $path"
+              failed=1
+            fi
+          done
+          for path in /srv/saldo360-deploy/.env /etc/saldo360/secrets/oidc-client-secret; do
+            if test -f "$path"; then
+              echo "OK arquivo existente: $path"
+            else
+              echo "::error::Arquivo ausente ou inacessível: $path"
+              failed=1
+            fi
+          done
+          if test -x /usr/local/sbin/deploy-saldo360; then
+            echo "OK executável: /usr/local/sbin/deploy-saldo360"
+          else
+            echo "::error::Script ausente ou não executável: /usr/local/sbin/deploy-saldo360"
+            failed=1
+          fi
+          exit "$failed"
+          REMOTE
 
       - name: Create release
         shell: bash
