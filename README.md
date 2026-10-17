@@ -227,6 +227,8 @@ O smoke test não substitui a validação no navegador: abra <http://localhost:5
 
 Cartões de crédito estão disponíveis na navegação de cada família. A interface consome os endpoints existentes para cadastro/arquivamento, compras, faturas, pagamentos, limite e projeção de seis meses; valores monetários são exibidos a partir de strings decimais retornadas pela API, sem cálculos financeiros no React. Consulte [docs/cartoes-credito.md](docs/cartoes-credito.md).
 
+O cadastro pode armazenar somente os quatro últimos dígitos do cartão. Faturas PDF usam emissor e esses dígitos para resolução determinística, com ambiguidade explícita e bloqueio quando o cartão selecionado diverge do documento.
+
 A importação CSV possui pré-visualização, confirmação atômica e tratamento explícito de parcelas intermediárias/históricas, documentados em [docs/importacao-cartoes.md](docs/importacao-cartoes.md).
 
 A pré-visualização e a pré-conciliação somente leitura de faturas PDF textuais também estão disponíveis no backend, sem persistência financeira e sem OCR; consulte a documentação de importação de cartões.

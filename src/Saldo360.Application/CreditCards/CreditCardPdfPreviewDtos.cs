@@ -44,11 +44,13 @@ public sealed record CreditCardPdfPreview(
     IReadOnlyList<string> Warnings)
 {
     public CreditCardPdfSecurity Security { get; init; } = new("Unprotected");
+    public CreditCardPdfCardResolution CardResolution { get; init; } = new("InsufficientEvidence", null);
     public CreditCardPdfReconciliation Reconciliation { get; init; } =
         new("NeedsReview", null, null, null, true);
 }
 
 public sealed record CreditCardPdfSecurity(string Status);
+public sealed record CreditCardPdfCardResolution(string Status, Guid? CardId);
 public sealed record CreditCardPdfReconciliation(
     string Status,
     string? OfficialTotal,

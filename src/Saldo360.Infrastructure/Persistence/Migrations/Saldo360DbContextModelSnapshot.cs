@@ -446,6 +446,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("issuer");
 
+                    b.Property<string>("LastFourDigits")
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)")
+                        .HasColumnName("last_four_digits");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -497,6 +502,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_credit_cards_due_day", "due_day BETWEEN 1 AND 31");
 
                             t.HasCheckConstraint("ck_financial_credit_cards_issuer_not_blank", "btrim(issuer) <> ''");
+
+                            t.HasCheckConstraint("ck_financial_credit_cards_last_four_digits", "last_four_digits IS NULL OR last_four_digits ~ '^[0-9]{4}$'");
 
                             t.HasCheckConstraint("ck_financial_credit_cards_name_not_blank", "btrim(name) <> ''");
                         });

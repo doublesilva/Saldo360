@@ -29,14 +29,14 @@ public static class FinancialCreditCardEndpoints
     private static async Task<IResult> Create(Guid familyId, CreditCardRequest? request, CurrentUser currentUser, FinancialCreditCardService cards, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        var result = await cards.CreateAsync(familyId, userId, request?.ToInput() ?? new(null, null, null, null, null, null, null), cancellationToken);
+        var result = await cards.CreateAsync(familyId, userId, request?.ToInput() ?? new(null, null, null, null, null, null, null, null), cancellationToken);
         return result.Access switch { CreditCardAccess.NotFound => Results.NotFound(), CreditCardAccess.Invalid => Results.ValidationProblem(result.Errors!), _ => Results.Created($"/api/families/{familyId}/credit-cards/{result.Card!.Id}", CreditCardResponse.From(result.Card)) };
     }
 
     private static async Task<IResult> Update(Guid familyId, Guid cardId, CreditCardRequest? request, CurrentUser currentUser, FinancialCreditCardService cards, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        var result = await cards.UpdateAsync(familyId, cardId, userId, request?.ToInput() ?? new(null, null, null, null, null, null, null), cancellationToken);
+        var result = await cards.UpdateAsync(familyId, cardId, userId, request?.ToInput() ?? new(null, null, null, null, null, null, null, null), cancellationToken);
         return result.Access switch { CreditCardAccess.NotFound => Results.NotFound(), CreditCardAccess.Invalid => Results.ValidationProblem(result.Errors!), _ => Results.Ok(CreditCardResponse.From(result.Card!)) };
     }
 
@@ -46,12 +46,12 @@ public static class FinancialCreditCardEndpoints
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record CreditCardRequest(string? Name, string? Issuer, Guid? HolderUserId, decimal? CreditLimit, int? ClosingDay, int? DueDay, Guid? DefaultPaymentAccountId)
+public sealed record CreditCardRequest(string? Name, string? Issuer, string? LastFourDigits, Guid? HolderUserId, decimal? CreditLimit, int? ClosingDay, int? DueDay, Guid? DefaultPaymentAccountId)
 {
-    public CreditCardInput ToInput() => new(Name, Issuer, HolderUserId, CreditLimit, ClosingDay, DueDay, DefaultPaymentAccountId);
+    public CreditCardInput ToInput() => new(Name, Issuer, LastFourDigits, HolderUserId, CreditLimit, ClosingDay, DueDay, DefaultPaymentAccountId);
 }
 
-public sealed record CreditCardResponse(Guid Id, string Name, string Issuer, Guid? HolderUserId, string CreditLimit, int ClosingDay, int DueDay, Guid? DefaultPaymentAccountId, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt)
+public sealed record CreditCardResponse(Guid Id, string Name, string Issuer, string? LastFourDigits, Guid? HolderUserId, string CreditLimit, int ClosingDay, int DueDay, Guid? DefaultPaymentAccountId, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt)
 {
-    public static CreditCardResponse From(FinancialCreditCardDto card) => new(card.Id, card.Name, card.Issuer, card.HolderUserId, card.CreditLimit, card.ClosingDay, card.DueDay, card.DefaultPaymentAccountId, card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt);
+    public static CreditCardResponse From(FinancialCreditCardDto card) => new(card.Id, card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId, card.CreditLimit, card.ClosingDay, card.DueDay, card.DefaultPaymentAccountId, card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt);
 }

@@ -156,6 +156,12 @@ A confirmação fica bloqueada quando a conferência interna não é `Reconciled
 
 A senha opcional existe apenas no estado em memória da tela e é apagada ao trocar o arquivo, abandonar a análise ou concluir a confirmação. Um `409 Conflict` preserva a análise visível e oferece reanálise explícita. Reenvios idempotentes são apresentados como documento já importado, sem duplicidade.
 
+### Identificação do cartão da fatura
+
+O parser fornece emissor e últimos quatro dígitos ao resolvedor determinístico. A resolução exige ambos, normaliza grafia e acentuação do emissor e retorna `Matched`, `NotFound`, `Ambiguous` ou `InsufficientEvidence`. Quando existe associação segura de titular, `HolderUserId` restringe os candidatos. Cartões arquivados não são candidatos automáticos; total, competência e descrições nunca participam do matching.
+
+As rotas continuam exigindo o `cardId` escolhido. Se o cartão selecionado possui `lastFourDigits` e o documento informa outro final, a prévia é rejeitada; pré-conciliação e confirmação reutilizam a mesma validação. Se o cadastro antigo não possui o campo, a tela sinaliza que a identidade não foi validada e nunca atualiza o cartão automaticamente.
+
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 
 ## Limites e segurança

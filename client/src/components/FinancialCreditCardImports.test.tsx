@@ -4,7 +4,7 @@ import { FinancialCreditCardImports } from './FinancialCreditCardImports'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', holderUserId: null, creditLimit: '10000.00', closingDay: 10, dueDay: 20, defaultPaymentAccountId: null, isArchived: false, createdAt: '', updatedAt: '', archivedAt: null }
+const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', lastFourDigits: null, holderUserId: null, creditLimit: '10000.00', closingDay: 10, dueDay: 20, defaultPaymentAccountId: null, isArchived: false, createdAt: '', updatedAt: '', archivedAt: null }
 const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } }))
 const csvPreview = { totalRows: 1, validRows: 1, warningRows: 0, invalidRows: 0, ignoredRows: 0, mapping: { dateColumn: 'date', descriptionColumn: 'description', amountColumn: 'amount', delimiter: ',', dateFormat: 'yyyy-MM-dd', decimalFormat: 'Invariant' }, rows: [{ rowNumber: 2, transactionDate: '2026-10-01', description: 'Compra', amount: '10.25', installmentNumber: null, installmentCount: null, externalId: null, category: null, competence: null, status: 'Valid', errors: [], warnings: [] }] }
 

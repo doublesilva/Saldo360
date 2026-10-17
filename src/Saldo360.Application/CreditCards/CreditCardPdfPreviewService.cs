@@ -3,7 +3,8 @@ namespace Saldo360.Application.CreditCards;
 public sealed class CreditCardPdfPreviewService(
     ICreditCardPdfContextRepository context,
     ICreditCardPdfTextExtractor extractor,
-    ICreditCardPdfPasswordProvider passwords) : ICreditCardPdfPreviewService
+    ICreditCardPdfPasswordProvider passwords,
+    CreditCardStatementResolver? resolver = null) : ICreditCardPdfPreviewService
 {
     public const long MaxFileBytes = 10 * 1024 * 1024;
     public const int MaxPages = 50;
@@ -22,11 +23,11 @@ public sealed class CreditCardPdfPreviewService(
             var extracted = await extractor.ExtractAsync(content, MaxPages, [], cancellationToken);
             if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.");
             var preview = extractor.Parse(extracted, fileName, competence, dateFormat);
-            return new(CreditCardPdfPreviewAccess.Allowed, preview, null);
+            return await ValidateCardAsync(familyId, cardId, card, preview, cancellationToken);
         }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.PasswordRequired)
         {
-            return await PreviewProtectedAsync(card, content, fileName, issuerProfile, competence, dateFormat, password, cancellationToken);
+            return await PreviewProtectedAsync(familyId, cardId, card, content, fileName, issuerProfile, competence, dateFormat, password, cancellationToken);
         }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.UnsupportedEncryption)
         {
@@ -38,7 +39,7 @@ public sealed class CreditCardPdfPreviewService(
         }
     }
 
-    private async Task<CreditCardPdfPreviewResult> PreviewProtectedAsync(CreditCardPdfContext card, Stream pdf, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? manualPassword, CancellationToken cancellationToken)
+    private async Task<CreditCardPdfPreviewResult> PreviewProtectedAsync(Guid familyId, Guid cardId, CreditCardPdfContext card, Stream pdf, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? manualPassword, CancellationToken cancellationToken)
     {
         var candidates = new List<string>(3);
         if (!string.IsNullOrEmpty(manualPassword)) candidates.Add(manualPassword);
@@ -56,7 +57,7 @@ public sealed class CreditCardPdfPreviewService(
             var extracted = await extractor.ExtractAsync(pdf, MaxPages, candidates, cancellationToken);
             if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.");
             var preview = extractor.Parse(extracted, fileName, competence, dateFormat) with { Security = new("Unlocked") };
-            return new(CreditCardPdfPreviewAccess.Allowed, preview, null);
+            return await ValidateCardAsync(familyId, cardId, card, preview, cancellationToken);
         }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.PasswordRejected)
         {
@@ -73,6 +74,19 @@ public sealed class CreditCardPdfPreviewService(
     }
 
     private static CreditCardPdfPreviewResult Invalid(string field, string message) => new(CreditCardPdfPreviewAccess.Invalid, null, new Dictionary<string, string[]> { [field] = [message] });
+
+    private async Task<CreditCardPdfPreviewResult> ValidateCardAsync(Guid familyId, Guid selectedCardId, CreditCardPdfContext card, CreditCardPdfPreview preview, CancellationToken cancellationToken)
+    {
+        var documentDigits = preview.Statement.CardLastDigits;
+        if (documentDigits is not null && card.LastFourDigits is not null && documentDigits != card.LastFourDigits)
+            return Invalid("cardId", $"A fatura pertence ao cartão •••• {documentDigits}, diferente do cartão selecionado •••• {card.LastFourDigits}.");
+        var resolution = resolver is null
+            ? new CreditCardStatementResolution(CreditCardStatementResolutionStatus.InsufficientEvidence)
+            : await resolver.ResolveAsync(familyId, preview.Statement.Issuer, documentDigits, card.HolderUserId, cancellationToken);
+        if (resolution.Status == CreditCardStatementResolutionStatus.Matched && resolution.CardId != selectedCardId)
+            return Invalid("cardId", "A fatura corresponde inequivocamente a outro cartão da família.");
+        return new(CreditCardPdfPreviewAccess.Allowed, preview with { CardResolution = new(resolution.Status.ToString(), resolution.CardId) }, null);
+    }
 }
 
 public sealed record CreditCardPdfExtractedPage(
@@ -106,7 +120,7 @@ public interface ICreditCardPdfContextRepository
     Task<CreditCardPdfContext?> GetAsync(Guid familyId, Guid cardId, Guid userId, CancellationToken cancellationToken);
 }
 
-public sealed record CreditCardPdfContext(string Issuer, Guid? HolderUserId);
+public sealed record CreditCardPdfContext(string Issuer, Guid? HolderUserId, string? LastFourDigits = null);
 
 public sealed record CreditCardPdfPasswordResolution(IReadOnlyList<string> Candidates)
 {

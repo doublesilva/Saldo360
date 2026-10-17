@@ -80,6 +80,16 @@ public sealed class CreditCardPdfPreviewServiceTests
         Assert.Contains("OCR não é suportado", result.Errors!["file"].Single(), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task BlocksStatementWhoseDigitsDifferFromSelectedCard()
+    {
+        var service = new CreditCardPdfPreviewService(new FakeContextRepository("5678"), new FakeExtractor(null, cardLastDigits: "1234"), new FakePasswordProvider([]));
+        var result = await PreviewAsync(service);
+        Assert.Equal(CreditCardPdfPreviewAccess.Invalid, result.Access);
+        Assert.Contains("1234", result.Errors!["cardId"].Single());
+        Assert.Contains("5678", result.Errors["cardId"].Single());
+    }
+
     private static CreditCardPdfPreviewService CreateService(FakeExtractor extractor, FakePasswordProvider provider) =>
         new(new FakeContextRepository(), extractor, provider);
 
@@ -90,10 +100,10 @@ public sealed class CreditCardPdfPreviewServiceTests
             "fatura.pdf", null, "2026-10", null, password, CancellationToken.None);
     }
 
-    private sealed class FakeContextRepository : ICreditCardPdfContextRepository
+    private sealed class FakeContextRepository(string? lastFourDigits = null) : ICreditCardPdfContextRepository
     {
         public Task<CreditCardPdfContext?> GetAsync(Guid familyId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
-            Task.FromResult<CreditCardPdfContext?>(new("Banco Teste", HolderId));
+            Task.FromResult<CreditCardPdfContext?>(new("Banco Teste", HolderId, lastFourDigits));
     }
 
     private sealed class FakePasswordProvider(IReadOnlyList<string> candidates) : ICreditCardPdfPasswordProvider
@@ -112,10 +122,11 @@ public sealed class CreditCardPdfPreviewServiceTests
         private readonly string? _requiredPassword;
         private readonly CreditCardPdfReadFailure? _failure;
         private readonly string _text;
+        private readonly string? _cardLastDigits;
         public List<IReadOnlyList<string>> Attempts { get; } = [];
 
-        public FakeExtractor(string? requiredPassword, string text = "10/10/2026 MERCADO 10.00") => (_requiredPassword, _text) = (requiredPassword, text);
-        public FakeExtractor(CreditCardPdfReadFailure failure) => (_failure, _text) = (failure, string.Empty);
+        public FakeExtractor(string? requiredPassword, string text = "10/10/2026 MERCADO 10.00", string? cardLastDigits = null) => (_requiredPassword, _text, _cardLastDigits) = (requiredPassword, text, cardLastDigits);
+        public FakeExtractor(CreditCardPdfReadFailure failure) => (_failure, _text, _cardLastDigits) = (failure, string.Empty, null);
 
         public Task<CreditCardPdfExtractedDocument> ExtractAsync(Stream pdf, int maxPages, IReadOnlyList<string> passwords, CancellationToken cancellationToken)
         {
@@ -127,6 +138,6 @@ public sealed class CreditCardPdfPreviewServiceTests
         }
 
         public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat) =>
-            new(fileName, 1, "Generic", new(null, null, competence, null, null, null), new(1, 0, 0, 0), [], []);
+            new(fileName, 1, "Generic", new(null, _cardLastDigits, competence, null, null, null), new(1, 0, 0, 0), [], []);
     }
 }
