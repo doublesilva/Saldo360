@@ -24,6 +24,8 @@ services:
       dockerfile: Dockerfile.api
     image: saldo360-api:${SALDO360_IMAGE_TAG:-local}
     restart: unless-stopped
+    group_add:
+      - "1654"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
@@ -34,8 +36,6 @@ services:
       Authentication__Oidc__BackchannelCaCertificatePath: /usr/local/share/ca-certificates/caddy-local-root.crt
       ReverseProxy__KnownNetworks__0: 172.16.0.0/12
       ReverseProxy__AllowedHosts__0: ${SALDO360_PUBLIC_HOST:?Defina SALDO360_PUBLIC_HOST no .env}
-    group_add:
-      - "1654"
     volumes:
       - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
       - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro
@@ -63,6 +63,8 @@ services:
     image: saldo360-api:${SALDO360_IMAGE_TAG:-local}
     profiles: ["migration"]
     entrypoint: ["/app/efbundle"]
+    group_add:
+      - "1654"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Saldo360: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
@@ -70,8 +72,6 @@ services:
       Authentication__Oidc__ClientId: saldo360
       Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret
       Authentication__Oidc__BackchannelCaCertificatePath: /usr/local/share/ca-certificates/caddy-local-root.crt
-    group_add:
-      - "1654"
     volumes:
       - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
       - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro

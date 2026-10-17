@@ -62,17 +62,27 @@ jobs:
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
-          (umask 077 && printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519)
-          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "::error::Secret DEPLOY_SSH_KEY vazio ou não disponível no environment."
+            exit 1
+          fi
+          # Aceita finais de linha CRLF ao colar uma chave OpenSSH no GitHub.
+          (umask 077 && printf '%s\n' "$DEPLOY_SSH_KEY" | sed 's/\r$//' > ~/.ssh/id_ed25519)
+          if ! ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null 2>&1; then
+            echo "::error::DEPLOY_SSH_KEY inválida ou protegida por passphrase. Cadastre a chave privada OpenSSH completa (não o arquivo .pub), preservando as quebras de linha."
+            exit 1
+          fi
 
           scanned="$(mktemp)"
           ssh-keyscan -t ed25519 -T 10 "$DEPLOY_HOST" > "$scanned"
           test "$(grep -cv '^#' "$scanned")" = "1"
 
           actual="$(ssh-keygen -lf "$scanned" -E sha256 | awk '{print $2}')"
+          # Remove apenas espaços de borda/CRLF; nunca aceita uma chave de host diferente.
+          expected="$(printf '%s' "$EXPECTED_FINGERPRINT" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
           echo "Fingerprint recebido: $actual"
-          if [ "$actual" != "$EXPECTED_FINGERPRINT" ]; then
-            echo "::error::Fingerprint SSH do servidor divergente."
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::Fingerprint SSH divergente. Verifique SALDO360_SSH_HOST_FINGERPRINT e compare com ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256 no servidor."
             exit 1
           fi
 
@@ -84,10 +94,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             'test -d /srv/saldo360-deploy/release &&
-             test -f /srv/saldo360-deploy/.env &&
-             test -f /etc/saldo360/secrets/oidc-client-secret &&
-             test -x /usr/local/sbin/deploy-saldo360'
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          echo "SSH autenticado como: $(id -un)"
+          failed=0
+          for path in /srv/saldo360-deploy/release; do
+            if test -d "$path"; then
+              echo "OK diretório: $path"
+            else
+              echo "::error::Diretório ausente ou inacessível: $path"
+              failed=1
+            fi
+          done
+          # Segredo OIDC em diretório root:700: apenas o script sudo pode validá-lo.
+          for path in /srv/saldo360-deploy/.env; do
+            if test -f "$path"; then
+              echo "OK arquivo existente: $path"
+            else
+              echo "::error::Arquivo ausente ou inacessível: $path"
+              failed=1
+            fi
+          done
+          if test -x /usr/local/sbin/deploy-saldo360; then
+            echo "OK executável: /usr/local/sbin/deploy-saldo360"
+          else
+            echo "::error::Script ausente ou não executável: /usr/local/sbin/deploy-saldo360"
+            failed=1
+          fi
+          exit "$failed"
+          REMOTE
 
       - name: Create release
         shell: bash

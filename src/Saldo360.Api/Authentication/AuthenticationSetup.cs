@@ -98,6 +98,8 @@ public static class AuthenticationSetup
                 options.ResponseType = OpenIdConnectResponseType.Code;
                 options.ResponseMode = OpenIdConnectResponseMode.Query;
                 options.UsePkce = true;
+                // Authelia anuncia PAR, mas não o exige; manter Authorization Code + PKCE sem PAR.
+                options.PushedAuthorizationBehavior = PushedAuthorizationBehavior.Disable;
 
                 options.Scope.Clear();
                 foreach (var scope in oidc.Scopes)

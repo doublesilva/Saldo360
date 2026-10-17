@@ -64,32 +64,34 @@ public sealed class OidcCallbackTests : ApiTestBase
     }
 
     [Fact]
-    public async Task ParAndTokenEndpoints_ReceiveClientSecretInBody_AsClientSecretPost()
+    public async Task LoginWithoutOptionalPar_UsesPkceAndTokenClientSecretPost()
     {
+        // O provedor anuncia PAR, mas a aplicação usa o fluxo OIDC convencional com PKCE.
         Factory.OidcProvider.EnablePushedAuthorization = true;
-        Factory.OidcProvider.IdTokenClaims["sub"] = "usuario-par";
-        Factory.OidcProvider.UserInfo["sub"] = "usuario-par";
+        Factory.OidcProvider.IdTokenClaims["sub"] = "usuario-sem-par";
+        Factory.OidcProvider.UserInfo["sub"] = "usuario-sem-par";
 
         var start = await StartLoginAsync();
 
-        // Com PAR, o navegador só leva client_id e request_uri; o resto foi pelo backchannel.
         var authorize = QueryHelpers.ParseQuery(start.Location.Query);
-        Assert.Equal(["client_id", "request_uri"], authorize.Keys.Order());
+        Assert.False(authorize.ContainsKey("request_uri"));
+        Assert.Equal(FakeOidcProvider.ClientId, authorize["client_id"].ToString());
+        Assert.Equal("S256", authorize["code_challenge_method"].ToString());
+        Assert.False(string.IsNullOrWhiteSpace(authorize["code_challenge"].ToString()));
+        Assert.False(string.IsNullOrWhiteSpace(authorize["nonce"].ToString()));
+        Assert.False(string.IsNullOrWhiteSpace(authorize["redirect_uri"].ToString()));
 
         var callback = await CallbackAsync(start, "code=code-de-teste");
         Assert.Equal("/", callback.Headers.Location!.ToString());
-        Assert.Equal("usuario-par", (await GetMeAsync(FindCookie(callback, SessionCookieName))).Subject);
+        Assert.Equal("usuario-sem-par", (await GetMeAsync(FindCookie(callback, SessionCookieName))).Subject);
 
-        foreach (var path in new[] { "/par", "/token" })
-        {
-            var request = Assert.Single(Factory.OidcProvider.Requests, r => r.Path == path);
-            Assert.False(request.HasAuthorizationHeader, $"{path}: não deve usar client_secret_basic");
-            Assert.Equal(FakeOidcProvider.ClientId, request.Form["client_id"]);
-            Assert.Equal(Saldo360ApiFactory.TestClientSecret, request.Form["client_secret"]);
-        }
+        Assert.DoesNotContain(Factory.OidcProvider.Requests, request => request.Path == "/par");
 
-        Assert.Equal("S256", Assert.Single(Factory.OidcProvider.Requests, r => r.Path == "/par").Form["code_challenge_method"]);
-        Assert.True(Assert.Single(Factory.OidcProvider.Requests, r => r.Path == "/token").Form.ContainsKey("code_verifier"));
+        var token = Assert.Single(Factory.OidcProvider.Requests, request => request.Path == "/token");
+        Assert.False(token.HasAuthorizationHeader, "token: não deve usar client_secret_basic");
+        Assert.Equal(FakeOidcProvider.ClientId, token.Form["client_id"]);
+        Assert.Equal(Saldo360ApiFactory.TestClientSecret, token.Form["client_secret"]);
+        Assert.True(token.Form.ContainsKey("code_verifier"));
     }
 
     /// <summary>Inicia o login, simula o provedor devolvendo o code e chama o callback com os cookies de correlação.</summary>
