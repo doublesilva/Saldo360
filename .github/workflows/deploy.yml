@@ -111,7 +111,8 @@ jobs:
               failed=1
             fi
           done
-          for path in /srv/saldo360-deploy/.env /etc/saldo360/secrets/oidc-client-secret; do
+          # Segredo OIDC em diretório root:700: apenas o script sudo pode validá-lo.
+          for path in /srv/saldo360-deploy/.env; do
             if test -f "$path"; then
               echo "OK arquivo existente: $path"
             else
