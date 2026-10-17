@@ -32,7 +32,12 @@ public sealed record CreditCardPdfPreview(
     CreditCardPdfPreviewStatement Statement,
     CreditCardPdfPreviewSummary Summary,
     IReadOnlyList<CreditCardPdfPreviewItem> Items,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings)
+{
+    public CreditCardPdfSecurity Security { get; init; } = new("Unprotected");
+}
+
+public sealed record CreditCardPdfSecurity(string Status);
 
 public enum CreditCardPdfPreviewAccess { Allowed, NotFound, Invalid }
 
