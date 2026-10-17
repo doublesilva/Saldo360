@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1.7
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY Directory.Build.props ./
+COPY dotnet-tools.json ./
+COPY Saldo360.slnx ./
+COPY src ./src
+
+RUN dotnet restore Saldo360.slnx
+RUN dotnet publish src/Saldo360.Api/Saldo360.Api.csproj \
+    --configuration Release \
+    --no-restore \
+    --output /out/app \
+    /p:UseAppHost=false
+
+# Valores somente de build: o bundle é criado sem acessar banco ou provedor.
+RUN dotnet tool restore \
+    && ConnectionStrings__Saldo360='Host=localhost;Port=5432;Database=saldo360;Username=saldo360;Password=build-only' \
+       Authentication__Oidc__Authority='https://example.invalid' \
+       Authentication__Oidc__ClientId='saldo360' \
+       Authentication__Oidc__ClientSecret='build-only' \
+       dotnet ef migrations bundle \
+         --project src/Saldo360.Infrastructure \
+         --startup-project src/Saldo360.Api \
+         --configuration Release \
+         --no-build \
+         --output /out/efbundle
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /out/app ./
+COPY --from=build /out/efbundle ./efbundle
+
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+USER $APP_UID
+
+HEALTHCHECK --interval=10s --timeout=4s --start-period=20s --retries=6 \
+  CMD curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8080/health/ready >/dev/null || exit 1
+
+ENTRYPOINT ["dotnet", "Saldo360.Api.dll"]

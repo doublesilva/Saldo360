@@ -115,6 +115,15 @@ cd client && npm run dev                # Frontend em http://localhost:5173
 
 Acesse **<http://localhost:5173>** (não a porta da API): a página mostra **Entrar** ou o usuário conectado com **Sair**, além do status da API.
 
+## Produção
+
+A implantação no `home-server` usa Docker, Caddy e GitHub Actions. A origem definida é
+`https://saldo360.home.doublesilva.com`. O frontend e a API compartilham essa origem; PostgreSQL e API não
+expõem portas diretamente no host.
+
+O bootstrap, secrets, configuração do Authelia/Caddy, pipeline e procedimento de recuperação estão em
+[docs/deploy-producao.md](docs/deploy-producao.md).
+
 ## Endpoints
 
 | Método | Caminho | Autenticação | Descrição |

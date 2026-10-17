@@ -1,0 +1,84 @@
+name: saldo360
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Defina POSTGRES_DB no .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Defina POSTGRES_USER no .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - saldo360-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks:
+      - backend
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: saldo360-api:${SALDO360_IMAGE_TAG:-local}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Saldo360: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      Authentication__Oidc__Authority: https://auth.home.doublesilva.com
+      Authentication__Oidc__ClientId: saldo360
+      Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret
+      Authentication__Oidc__BackchannelCaCertificatePath: /usr/local/share/ca-certificates/caddy-local-root.crt
+      ReverseProxy__KnownNetworks__0: 172.16.0.0/12
+      ReverseProxy__AllowedHosts__0: ${SALDO360_PUBLIC_HOST:?Defina SALDO360_PUBLIC_HOST no .env}
+    volumes:
+      - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
+      - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: saldo360-web:${SALDO360_IMAGE_TAG:-local}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SALDO360_WEB_PORT:-5600}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - backend
+
+  migrate:
+    image: saldo360-api:${SALDO360_IMAGE_TAG:-local}
+    profiles: ["migration"]
+    entrypoint: ["/app/efbundle"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Saldo360: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      Authentication__Oidc__Authority: https://auth.home.doublesilva.com
+      Authentication__Oidc__ClientId: saldo360
+      Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret
+      Authentication__Oidc__BackchannelCaCertificatePath: /usr/local/share/ca-certificates/caddy-local-root.crt
+    volumes:
+      - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
+      - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+
+volumes:
+  saldo360-pgdata:
+
+networks:
+  backend: {}
