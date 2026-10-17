@@ -13,9 +13,6 @@
 # Placeholders:
 #   <DIGEST_DO_SEGREDO_SALDO360>  saída de: pwsh scripts/new-oidc-client-secret.ps1
 #                                 (o texto puro fica só no user-secrets da API / arquivo de segredo)
-#   <ORIGEM_PUBLICA_DO_SALDO360>  origem HTTPS em que o frontend do Saldo360 for publicado.
-#                                 Ainda não definida: mantenha a linha comentada até existir.
-#
 # Depois de editar: valide e reinicie o Authelia (ex.: authelia validate-config; restart do container).
 
       - client_id: saldo360
@@ -31,7 +28,7 @@
         pkce_challenge_method: S256
         redirect_uris:
           - http://localhost:5173/signin-oidc
-          # - https://<ORIGEM_PUBLICA_DO_SALDO360>/signin-oidc
+          - https://saldo360.home.doublesilva.com/signin-oidc
         scopes: [openid, profile, email]
         response_types: [code]
         grant_types: [authorization_code]
