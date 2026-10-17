@@ -90,16 +90,17 @@ if ! wait_healthy saldo360-api-candidate "api candidate"; then
   docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
   exit 1
 fi
-docker rm -f saldo360-api-candidate >/dev/null
-
+# Manter a API candidata ativa enquanto o Nginx candidato valida a resolução de api:8080.
 echo "==> Pré-validando nova imagem web"
 docker rm -f saldo360-web-candidate >/dev/null 2>&1 || true
 compose run -d --no-deps --name saldo360-web-candidate web >/dev/null
 if ! wait_healthy saldo360-web-candidate "web candidate"; then
   docker rm -f saldo360-web-candidate >/dev/null 2>&1 || true
+  docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
   exit 1
 fi
 docker rm -f saldo360-web-candidate >/dev/null
+docker rm -f saldo360-api-candidate >/dev/null
 
 echo "==> Publicando API e web"
 compose up -d --wait api web
