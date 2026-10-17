@@ -93,6 +93,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialCreditCardRepository, FinancialCreditCardRepository>();
         services.AddScoped<ICreditCardPdfContextRepository, FinancialCreditCardRepository>();
         services.AddScoped<ICreditCardPdfPreReconciliationRepository, CreditCardPdfPreReconciliationRepository>();
+        services.AddScoped<ICreditCardPdfConfirmationRepository, CreditCardPdfConfirmationRepository>();
         services.AddScoped<IFinancialCreditCardPurchaseRepository, FinancialCreditCardPurchaseRepository>();
         services.AddScoped<IFinancialCreditCardInvoicePaymentRepository, FinancialCreditCardInvoicePaymentRepository>();
         services.AddScoped<IFinancialCreditCardInvoiceAdjustmentRepository, FinancialCreditCardInvoiceAdjustmentRepository>();

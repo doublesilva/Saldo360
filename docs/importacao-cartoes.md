@@ -134,7 +134,19 @@ O total bruto não é limitado a zero. Apenas o saldo devido continua como `max(
 
 `ExternalId`, como `pdf:{documentHash}:p{page}:r{row}`, é único permanentemente por família e cartão. Reenvio com conteúdo idêntico é idempotente; conteúdo divergente é conflito. O cancelamento é lógico e mantém a identidade. Um débito não pode ser cancelado se o novo total ficar abaixo do valor já pago.
 
-`CategoryId` é opcional e, quando informado, deve apontar para categoria ativa da mesma família. Ajustes não entram no orçamento nesta etapa, mesmo categorizados: a semântica de estorno/crédito por competência exige decisão funcional própria e não foi inferida. Não foi criado endpoint público de criação manual; Application e Infrastructure oferecem apenas os contratos necessários ao domínio e aos testes. A confirmação definitiva de PDF permanece fora do escopo.
+`CategoryId` é opcional e, quando informado, deve apontar para categoria ativa da mesma família. Ajustes não entram no orçamento nesta etapa, mesmo categorizados: a semântica de estorno/crédito por competência exige decisão funcional própria e não foi inferida. Não foi criado endpoint público de criação manual; ajustes são persistidos somente pelo fluxo confirmado de importação PDF descrito a seguir.
+
+### Confirmação definitiva de PDF (T15.3.5)
+
+`POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/confirm` recebe `multipart/form-data` com `file`, `confirm=true`, `documentId`, `categories` em JSON e os mesmos campos opcionais da prévia, inclusive `password`. `categories` contém somente pares `componentId`/`categoryId`; valores, descrições, datas, sinais e parcelas são sempre reconstruídos pelo backend a partir do PDF reenviado.
+
+O backend recalcula o SHA-256, desbloqueia e interpreta novamente o documento, exige o parser especializado `ItauMastercard`, `reconciliation.status = Reconciled`, fatura de destino validada e igualdade com o `documentId` revisado. Componentes financeiros `NeedsReview`, `Conflict` ou `Unsupported` bloqueiam o lote. `Informational` é apenas registrado na rastreabilidade; pagamentos exibidos pelo emissor nunca criam pagamento ou transação bancária.
+
+Compras integrais `Create` exigem categoria de despesa ativa da mesma família e reutilizam `FinancialCreditCardPurchase`, distribuição e calendário existentes. Parcelas intermediárias continuam bloqueadas enquanto não houver decisão explícita pelo fluxo próprio. `Fee`, `Credit` e `Refund` criam `FinancialCreditCardInvoiceAdjustment`, com identidade `pdf:{hash}:p{page}:r{row}`. `AlreadyExists` não cria nova entidade.
+
+A infraestrutura existente de `FinancialCreditCardImportBatch` foi ampliada com origem `Csv`/`Pdf`, hash do documento, parser, competência, hash das decisões e total oficial. Os itens registram componente, resultado e entidade vinculada. O lote inteiro usa transação `SERIALIZABLE`; após gravar, o backend recalcula o saldo devido persistido e exige diferença `0.00` contra o total oficial antes do commit.
+
+O mesmo documento e decisões retorna o resultado anterior. Decisões diferentes retornam conflito. O PDF, senha, CPF e nome completo do titular não são armazenados. SHA-256 identifica bytes exatos: uma fatura regenerada pelo emissor pode ter outro hash e continuará exigindo nova pré-conciliação; não existe deduplicação heurística por emissor, competência ou valor.
 
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 

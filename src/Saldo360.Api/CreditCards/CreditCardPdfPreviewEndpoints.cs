@@ -1,5 +1,6 @@
 using Saldo360.Api.Authentication;
 using Saldo360.Application.CreditCards;
+using System.Text.Json;
 
 namespace Saldo360.Api.CreditCards;
 
@@ -10,6 +11,7 @@ public static class CreditCardPdfPreviewEndpoints
         var group = app.MapGroup("/api/families/{familyId:guid}/credit-cards/{cardId:guid}/imports/pdf").RequireAuthorization();
         group.MapPost("/preview", Preview).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/pre-reconcile", PreReconcile).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/confirm", Confirm).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
@@ -45,6 +47,39 @@ public static class CreditCardPdfPreviewEndpoints
             CreditCardPdfPreviewAccess.NotFound => Results.NotFound(),
             CreditCardPdfPreviewAccess.Invalid => Results.ValidationProblem(result.Errors!),
             _ => Results.Ok(result.Report)
+        };
+    }
+
+    private static async Task<IResult> Confirm(Guid familyId, Guid cardId, HttpRequest request, CurrentUser user, CreditCardPdfConfirmationService service, CancellationToken cancellationToken)
+    {
+        if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        if (!request.HasFormContentType) return Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["Envie o arquivo usando multipart/form-data."] });
+        var form = await request.ReadFormAsync(cancellationToken);
+        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+        if (file is null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["Informe um arquivo PDF."] });
+        IReadOnlyList<CreditCardPdfCategoryDecision> categories;
+        try
+        {
+            categories = string.IsNullOrWhiteSpace(form["categories"])
+                ? []
+                : JsonSerializer.Deserialize<List<CreditCardPdfCategoryDecision>>(form["categories"]!, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
+        }
+        catch (JsonException)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["categories"] = ["Informe decisões de categoria em JSON válido."] });
+        }
+        var input = new CreditCardPdfConfirmationInput(
+            bool.TryParse(form["confirm"], out var confirm) && confirm,
+            form["documentId"].ToString(), categories);
+        await using var stream = file.OpenReadStream();
+        var result = await service.ConfirmAsync(familyId, cardId, userId, stream, file.Length, file.FileName,
+            form["issuerProfile"], form["competence"], form["dateFormat"], form["password"], input, cancellationToken);
+        return result.Access switch
+        {
+            CreditCardPdfConfirmationAccess.NotFound => Results.NotFound(),
+            CreditCardPdfConfirmationAccess.Invalid => Results.ValidationProblem(result.Errors!),
+            CreditCardPdfConfirmationAccess.Conflict => Results.Conflict(new { message = result.Message }),
+            _ => Results.Ok(result.Result)
         };
     }
 }

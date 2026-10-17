@@ -38,7 +38,7 @@ internal sealed class CreditCardPdfPreReconciliationRepository(Saldo360DbContext
                 on new { installment.FamilyId, InvoiceId = installment.InvoiceId!.Value }
                 equals new { invoiceRow.FamilyId, InvoiceId = invoiceRow.Id }
             join importItem in db.FinancialCreditCardImportItems.AsNoTracking()
-                on new { purchase.FamilyId, PurchaseId = purchase.Id }
+                on new { purchase.FamilyId, PurchaseId = (Guid?)purchase.Id }
                 equals new { importItem.FamilyId, importItem.PurchaseId } into imports
             from importItem in imports.DefaultIfEmpty()
             where purchase.FamilyId == familyId && purchase.CreditCardId == cardId

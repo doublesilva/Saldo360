@@ -508,6 +508,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("Competence")
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("competence");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -520,15 +525,40 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("credit_card_id");
 
+                    b.Property<string>("DecisionHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("decision_hash");
+
+                    b.Property<string>("DocumentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("document_hash");
+
                     b.Property<Guid>("FamilyId")
                         .HasColumnType("uuid")
                         .HasColumnName("family_id");
+
+                    b.Property<decimal?>("OfficialTotal")
+                        .HasColumnType("numeric")
+                        .HasColumnName("official_total");
+
+                    b.Property<string>("Parser")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("parser");
 
                     b.Property<string>("PayloadHash")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("payload_hash");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("source");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -548,11 +578,15 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("PayloadHash")
                         .HasDatabaseName("ix_financial_credit_card_import_batches_payload_hash");
 
-                    b.HasIndex("FamilyId", "CreditCardId")
-                        .HasDatabaseName("ix_financial_credit_card_import_batches_family_id_credit_card_");
+                    b.HasIndex("FamilyId", "CreditCardId", "Source", "DocumentHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_credit_card_import_batches_family_id_credit_card_")
+                        .HasFilter("document_hash IS NOT NULL");
 
                     b.ToTable("financial_credit_card_import_batches", null, t =>
                         {
+                            t.HasCheckConstraint("ck_credit_card_import_batches_source", "source IN ('Csv', 'Pdf')");
+
                             t.HasCheckConstraint("ck_credit_card_import_batches_status", "status IN ('Completed')");
                         });
                 });
@@ -563,6 +597,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("ComponentId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("component_id");
+
+                    b.Property<string>("ComponentType")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("component_type");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -570,6 +614,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CreditCardId")
                         .HasColumnType("uuid")
                         .HasColumnName("credit_card_id");
+
+                    b.Property<Guid?>("EntityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("entity_id");
 
                     b.Property<string>("ExternalId")
                         .HasMaxLength(200)
@@ -584,7 +632,7 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("import_batch_id");
 
-                    b.Property<Guid>("PurchaseId")
+                    b.Property<Guid?>("PurchaseId")
                         .HasColumnType("uuid")
                         .HasColumnName("purchase_id");
 
@@ -618,7 +666,7 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                     b.ToTable("financial_credit_card_import_items", null, t =>
                         {
-                            t.HasCheckConstraint("ck_credit_card_import_items_status", "status IN ('Imported')");
+                            t.HasCheckConstraint("ck_credit_card_import_items_status", "status IN ('Imported', 'AlreadyExisting', 'Informational')");
                         });
                 });
 
@@ -2797,7 +2845,6 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasForeignKey("FamilyId", "PurchaseId")
                         .HasPrincipalKey("FamilyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_financial_credit_card_import_items_financial_credit_card_pu");
                 });
 
