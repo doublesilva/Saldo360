@@ -13,6 +13,7 @@ public interface IFinancialDocumentStorage
 public interface IFinancialDocumentInboxRepository
 {
     Task<bool> CanAccessFamilyAsync(Guid familyId, Guid userId, CancellationToken cancellationToken);
+    Task<bool> FamilyExistsAsync(Guid familyId, CancellationToken cancellationToken);
     Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid familyId, string hash, CancellationToken cancellationToken);
     Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid familyId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken);
     Task<FinancialDocumentInboxItem?> GetAsync(Guid familyId, Guid id, Guid userId, CancellationToken cancellationToken);
@@ -36,9 +37,22 @@ public sealed class FinancialDocumentInboxService(
 {
     public async Task<FinancialDocumentInboxReceiveResult> ReceiveAsync(Guid familyId, Guid userId, Stream content, long length,
         string fileName, string contentType, FinancialDocumentSource source, string? externalSourceId, Guid? selectedCardId,
-        string? password, CancellationToken cancellationToken)
+        string? password, CancellationToken cancellationToken) =>
+        await ReceiveCoreAsync(familyId, userId, true, content, length, fileName, contentType, source, externalSourceId, selectedCardId, password, null, cancellationToken);
+
+    public async Task<FinancialDocumentInboxReceiveResult> ReceiveAutomationAsync(Guid familyId, Stream content, long length,
+        string fileName, string contentType, string externalSourceId, DateTimeOffset receivedAt, CancellationToken cancellationToken) =>
+        await ReceiveCoreAsync(familyId, null, false, content, length, fileName, contentType, FinancialDocumentSource.Email,
+            externalSourceId, null, null, receivedAt, cancellationToken);
+
+    private async Task<FinancialDocumentInboxReceiveResult> ReceiveCoreAsync(Guid familyId, Guid? userId, bool requireMembership, Stream content, long length,
+        string fileName, string contentType, FinancialDocumentSource source, string? externalSourceId, Guid? selectedCardId,
+        string? password, DateTimeOffset? receivedAt, CancellationToken cancellationToken)
     {
-        if (!await repository.CanAccessFamilyAsync(familyId, userId, cancellationToken)) return new("NotFound", null);
+        var authorized = requireMembership
+            ? userId is { } memberId && await repository.CanAccessFamilyAsync(familyId, memberId, cancellationToken)
+            : await repository.FamilyExistsAsync(familyId, cancellationToken);
+        if (!authorized) return new("NotFound", null);
         if (length <= 0 || length > CreditCardPdfPreviewService.MaxFileBytes || !fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             return Invalid("file", length <= 0 ? "O arquivo PDF está vazio." : length > CreditCardPdfPreviewService.MaxFileBytes ? "O arquivo excede o limite de 10 MB." : "O arquivo deve ter extensão .pdf.");
         if (password?.Length > 128) return Invalid("password", "A senha informada excede o limite permitido.");
@@ -57,7 +71,7 @@ public sealed class FinancialDocumentInboxService(
         var reference = await storage.SaveAsync(familyId, id, buffer, cancellationToken);
         var now = clock.GetUtcNow();
         var item = FinancialDocumentInboxItem.Create(id, familyId, source, externalSourceId, safeFileName, hash,
-            "application/pdf", reference, now);
+            "application/pdf", reference, receivedAt ?? now, now);
         try
         {
             if (!await repository.TryAddAsync(item, cancellationToken))
@@ -69,8 +83,41 @@ public sealed class FinancialDocumentInboxService(
             }
         }
         catch { await storage.DeleteAsync(reference, CancellationToken.None); throw; }
-        await ProcessCoreAsync(item, userId, selectedCardId, password, cancellationToken);
+        if (userId is { } processingUser)
+            await ProcessCoreAsync(item, processingUser, selectedCardId, password, cancellationToken);
+        else
+            await ProcessAutomationCoreAsync(item, cancellationToken);
         return new("Created", Map(item));
+    }
+
+    private async Task ProcessAutomationCoreAsync(FinancialDocumentInboxItem item, CancellationToken cancellationToken)
+    {
+        item.StartAnalysis(clock.GetUtcNow()); await repository.SaveAsync(cancellationToken);
+        await using var stored = await storage.OpenReadAsync(item.StorageReference, cancellationToken);
+        if (stored is null) { item.Fail("StorageObjectMissing", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
+        try
+        {
+            var document = await extractor.ExtractAsync(stored, CreditCardPdfPreviewService.MaxPages, [], cancellationToken);
+            if (document.Pages.Count == 0 || document.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) { item.Fail("TextUnavailable", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
+            var preview = extractor.Parse(document, item.OriginalFileName, null, null);
+            var resolution = await resolver.ResolveAsync(item.FamilyId, preview.Statement.Issuer, preview.Statement.CardLastDigits, null, cancellationToken);
+            var cardId = resolution.Status == CreditCardStatementResolutionStatus.Matched ? resolution.CardId : null;
+            var ready = preview.Parser != "Generic" && preview.Reconciliation?.Status == "Reconciled" && cardId is not null;
+            item.CompleteAnalysis(preview.Parser, preview.Statement.Competence, cardId,
+                ready ? FinancialDocumentInboxStatus.ReadyToConfirm : FinancialDocumentInboxStatus.NeedsReview, clock.GetUtcNow());
+            await repository.SaveAsync(cancellationToken);
+        }
+        catch (CreditCardPdfReadException exception)
+        {
+            if (exception.Failure is CreditCardPdfReadFailure.PasswordRequired or CreditCardPdfReadFailure.PasswordRejected)
+                item.RequireReview(exception.Failure.ToString(), clock.GetUtcNow());
+            else item.Fail(exception.Failure.ToString(), clock.GetUtcNow());
+            await repository.SaveAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            item.Fail("AnalysisFailed", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken);
+        }
     }
 
     public async Task<FinancialDocumentInboxDto?> ReprocessAsync(Guid familyId, Guid id, Guid userId, Guid? selectedCardId, string? password, CancellationToken cancellationToken)

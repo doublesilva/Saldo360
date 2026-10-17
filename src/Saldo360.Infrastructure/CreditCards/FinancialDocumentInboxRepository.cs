@@ -10,6 +10,7 @@ internal sealed class FinancialDocumentInboxRepository(Saldo360DbContext db) : I
 {
     public Task<bool> CanAccessFamilyAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>
         db.FamilyMembers.AsNoTracking().AnyAsync(member => member.FamilyId == familyId && member.UserId == userId, cancellationToken);
+    public Task<bool> FamilyExistsAsync(Guid familyId, CancellationToken cancellationToken) => db.Families.AsNoTracking().AnyAsync(family => family.Id == familyId, cancellationToken);
     public Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid familyId, string hash, CancellationToken cancellationToken) =>
         db.FinancialDocumentInboxItems.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.ContentHash == hash, cancellationToken);
     public Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid familyId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken) =>

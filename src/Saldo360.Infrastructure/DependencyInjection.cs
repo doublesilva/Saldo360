@@ -96,7 +96,13 @@ public static class DependencyInjection
         services.AddScoped<ICreditCardPdfPreReconciliationRepository, CreditCardPdfPreReconciliationRepository>();
         services.AddScoped<ICreditCardPdfConfirmationRepository, CreditCardPdfConfirmationRepository>();
         services.AddScoped<IFinancialDocumentInboxRepository, FinancialDocumentInboxRepository>();
+        services.AddScoped<IFinancialEmailCollectorCheckpointRepository, FinancialEmailCollectorCheckpointRepository>();
         services.AddSingleton<IFinancialDocumentStorage, FileSystemFinancialDocumentStorage>();
+        var emailImport = configuration.GetSection("FinancialEmailImport").Get<FinancialEmailImportOptions>() ?? new FinancialEmailImportOptions();
+        services.AddSingleton(emailImport);
+        services.AddHttpClient("GmailFinancialEmail", client => client.BaseAddress = new Uri("https://gmail.googleapis.com/"));
+        services.AddHttpClient("GmailFinancialEmailToken", client => client.BaseAddress = new Uri("https://oauth2.googleapis.com/"));
+        services.AddSingleton<IFinancialEmailSource, GmailFinancialEmailSource>();
         services.AddScoped<IFinancialCreditCardPurchaseRepository, FinancialCreditCardPurchaseRepository>();
         services.AddScoped<IFinancialCreditCardInvoicePaymentRepository, FinancialCreditCardInvoicePaymentRepository>();
         services.AddScoped<IFinancialCreditCardInvoiceAdjustmentRepository, FinancialCreditCardInvoiceAdjustmentRepository>();

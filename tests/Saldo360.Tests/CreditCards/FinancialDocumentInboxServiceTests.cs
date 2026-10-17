@@ -77,6 +77,7 @@ public sealed class FinancialDocumentInboxServiceTests
     {
         public List<FinancialDocumentInboxItem> Items { get; } = [];
         public Task<bool> CanAccessFamilyAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) => Task.FromResult(familyId == FamilyId && userId == UserId);
+        public Task<bool> FamilyExistsAsync(Guid familyId, CancellationToken cancellationToken) => Task.FromResult(familyId == FamilyId);
         public Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid familyId, string hash, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.FamilyId == familyId && item.ContentHash == hash));
         public Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid familyId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.FamilyId == familyId && item.Source == source && item.ExternalSourceId == externalId));
         public Task<FinancialDocumentInboxItem?> GetAsync(Guid familyId, Guid id, Guid userId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.FamilyId == familyId && item.Id == id && userId == UserId));

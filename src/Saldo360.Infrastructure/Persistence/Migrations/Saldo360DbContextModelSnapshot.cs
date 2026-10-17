@@ -1315,6 +1315,56 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("financial_document_inbox_items", (string)null);
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialEmailCollectorCheckpoint", b =>
+                {
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("LastAcceptedDocuments")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_accepted_documents");
+
+                    b.Property<DateTimeOffset?>("LastCompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_completed_at");
+
+                    b.Property<int>("LastFailures")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_failures");
+
+                    b.Property<DateTimeOffset?>("LastMessageAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_message_at");
+
+                    b.Property<int>("LastMessagesScanned")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_messages_scanned");
+
+                    b.Property<DateTimeOffset?>("LastStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_started_at");
+
+                    b.Property<string>("ProfileName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("profile_name");
+
+                    b.HasKey("FamilyId", "Id")
+                        .HasName("pk_financial_email_collector_checkpoints");
+
+                    b.HasIndex("FamilyId", "ProfileName")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_email_collector_checkpoints_family_id_profile_name");
+
+                    b.ToTable("financial_email_collector_checkpoints", (string)null);
+                });
+
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialPlannedInvoiceReconciliation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3177,6 +3227,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("FamilyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_financial_document_inbox_items_financial_credit_cards_famil");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialEmailCollectorCheckpoint", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_email_collector_checkpoints_families_family_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialPlannedInvoiceReconciliation", b =>

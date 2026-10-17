@@ -25,10 +25,10 @@ public sealed class FinancialDocumentInboxItem : Entity
     public DateTimeOffset UpdatedAt { get; private set; }
 
     public static FinancialDocumentInboxItem Create(Guid id, Guid familyId, FinancialDocumentSource source,
-        string? externalSourceId, string fileName, string contentHash, string contentType, string storageReference, DateTimeOffset now) =>
+        string? externalSourceId, string fileName, string contentHash, string contentType, string storageReference, DateTimeOffset receivedAt, DateTimeOffset now) =>
         new() { Id = id, FamilyId = familyId, Source = source, ExternalSourceId = NullIfBlank(externalSourceId),
             OriginalFileName = fileName, ContentHash = contentHash, ContentType = contentType,
-            StorageReference = storageReference, ReceivedAt = now, Status = FinancialDocumentInboxStatus.Received,
+            StorageReference = storageReference, ReceivedAt = receivedAt, Status = FinancialDocumentInboxStatus.Received,
             CreatedAt = now, UpdatedAt = now };
 
     public void StartAnalysis(DateTimeOffset now) { EnsureMutable(); Status = FinancialDocumentInboxStatus.Analyzing; FailureCode = null; UpdatedAt = now; }
@@ -39,6 +39,7 @@ public sealed class FinancialDocumentInboxItem : Entity
         Parser = parser; Competence = competence; CreditCardId = cardId; Status = status; FailureCode = null; UpdatedAt = now;
     }
     public void Fail(string code, DateTimeOffset now) { Status = FinancialDocumentInboxStatus.Failed; FailureCode = code; UpdatedAt = now; }
+    public void RequireReview(string code, DateTimeOffset now) { Status = FinancialDocumentInboxStatus.NeedsReview; FailureCode = code; UpdatedAt = now; }
     public void MarkImported(Guid cardId, DateTimeOffset now) { CreditCardId = cardId; Status = FinancialDocumentInboxStatus.Imported; FailureCode = null; UpdatedAt = now; }
     public void Ignore(DateTimeOffset now) { EnsureMutable(); Status = FinancialDocumentInboxStatus.Ignored; UpdatedAt = now; }
     private void EnsureMutable() { if (Status == FinancialDocumentInboxStatus.Imported) throw new InvalidOperationException("Documento já importado."); }
