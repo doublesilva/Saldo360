@@ -33,6 +33,27 @@ public sealed class GmailFinancialEmailSourceTests
         Assert.All(gmail.Requests, request => Assert.Equal("Bearer", request.AuthorizationScheme));
     }
 
+    [Fact]
+    public void SecretFilesTakePrecedenceAndOnlyTrimTrailingLineBreaks()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, " value with spaces \r\n");
+            Assert.Equal(" value with spaces ", GmailSecretReader.Read(path, "fallback", "ClientSecret"));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void MissingSecretFileFailsWithoutFallingBackToInlineValue()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"saldo360-missing-{Guid.NewGuid():N}");
+        var error = Assert.Throws<InvalidOperationException>(() => GmailSecretReader.Read(path, "fallback", "RefreshToken"));
+        Assert.Contains("não encontrado", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("fallback", error.Message, StringComparison.Ordinal);
+    }
+
     private sealed class FakeHttpClientFactory(RecordingHandler gmail, RecordingHandler token) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => name == "GmailFinancialEmailToken"

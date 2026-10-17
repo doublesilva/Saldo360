@@ -38,6 +38,17 @@ public sealed class FinancialEmailCollectorTests
     }
 
     [Fact]
+    public async Task ManualDryRunWorksWhileSchedulerIsDisabled()
+    {
+        var source = new FakeEmailSource(); source.Add("message", DateTimeOffset.UtcNow, ("attachment", "bill.pdf", "application/pdf", Pdf(1)));
+        var fixture = Create(source, Preview("Nubank", "Reconciled", null), schedulerEnabled: false);
+
+        var result = await fixture.Collector.RunAsync("Bills", UserId, true, CancellationToken.None);
+
+        Assert.NotNull(result); Assert.Single(result.CandidateExternalIds); Assert.Equal(0, source.Downloads); Assert.Empty(fixture.Inbox.Items);
+    }
+
+    [Fact]
     public async Task RepeatedRunAndSameHashFromAnotherMessageRemainIdempotent()
     {
         var bytes = Pdf(8); var source = new FakeEmailSource();
@@ -74,12 +85,12 @@ public sealed class FinancialEmailCollectorTests
         Assert.Equal(1, result!.Failures); Assert.Contains(result.Errors, error => error.Code == "InvalidPdfContent"); Assert.Empty(fixture.Inbox.Items);
     }
 
-    private static Fixture Create(FakeEmailSource source, CreditCardPdfPreview? preview, CreditCardPdfReadFailure? failure = null)
+    private static Fixture Create(FakeEmailSource source, CreditCardPdfPreview? preview, CreditCardPdfReadFailure? failure = null, bool schedulerEnabled = true)
     {
         var inboxRepository = new FakeInboxRepository(); var storage = new FakeStorage();
         var extractor = new FakeExtractor(preview, failure); var resolver = new CreditCardStatementResolver(new EmptyResolutionRepository());
         var inbox = new FinancialDocumentInboxService(inboxRepository, storage, extractor, new UnusedPreview(), resolver, TimeProvider.System);
-        var options = new FinancialEmailImportOptions { Enabled = true, LookbackDays = 7, MaxMessages = 20,
+        var options = new FinancialEmailImportOptions { Enabled = schedulerEnabled, LookbackDays = 7, MaxMessages = 20,
             Sources = [new() { Name = "Bills", FamilyId = FamilyId, Query = "has:attachment filename:pdf", Enabled = true }] };
         var checkpoints = new FakeCheckpoints();
         return new(new(options, source, checkpoints, inboxRepository, inbox, TimeProvider.System), inboxRepository);

@@ -25,6 +25,30 @@ public sealed class FinancialEmailCollectorRunnerTests
         Assert.Equal("Failed", result!.Status); Assert.Equal("Failed", checkpoints.Value!.LastResult); Assert.Equal(1, checkpoints.Saves);
     }
 
+    [Fact]
+    public async Task ManualDryRunRemainsAvailableWhileSchedulerIsDisabled()
+    {
+        var options = Options(); options.Enabled = false;
+        var collector = new FakeCollector();
+        var runner = new FinancialEmailCollectorRunner(options, collector, new FakeLock(true), new FakeCheckpoints(), new FakeInbox(), TimeProvider.System);
+
+        var result = await runner.RunAsync("Itau", UserId, true, CancellationToken.None);
+
+        Assert.NotNull(result); Assert.Equal(1, collector.Calls);
+    }
+
+    [Fact]
+    public async Task ScheduledRunStaysDisabledWhileManualValidationIsAllowed()
+    {
+        var options = Options(); options.Enabled = false;
+        var collector = new FakeCollector();
+        var runner = new FinancialEmailCollectorRunner(options, collector, new FakeLock(true), new FakeCheckpoints(), new FakeInbox(), TimeProvider.System);
+
+        var result = await runner.RunAsync("Itau", null, false, CancellationToken.None);
+
+        Assert.Null(result); Assert.Equal(0, collector.Calls);
+    }
+
     private static FinancialEmailImportOptions Options() => new() { Enabled = true, Sources = [new() { Name = "Itau", FamilyId = FamilyId, Enabled = true }] };
     private sealed class FakeCollector : IFinancialEmailCollector
     {

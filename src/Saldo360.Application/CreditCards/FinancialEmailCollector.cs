@@ -14,7 +14,16 @@ public sealed class FinancialEmailImportOptions
     public GmailOptions Gmail { get; set; } = new();
 }
 public sealed class FinancialEmailImportProfile { public string Name { get; set; } = string.Empty; public Guid FamilyId { get; set; } public string Query { get; set; } = "has:attachment filename:pdf"; public bool Enabled { get; set; } }
-public sealed class GmailOptions { public string Mailbox { get; set; } = string.Empty; public string ClientId { get; set; } = string.Empty; public string ClientSecret { get; set; } = string.Empty; public string RefreshToken { get; set; } = string.Empty; }
+public sealed class GmailOptions
+{
+    public string Mailbox { get; set; } = string.Empty;
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientIdFile { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+    public string ClientSecretFile { get; set; } = string.Empty;
+    public string RefreshToken { get; set; } = string.Empty;
+    public string RefreshTokenFile { get; set; } = string.Empty;
+}
 
 public sealed record FinancialEmailMessage(string Id, DateTimeOffset ReceivedAt);
 public sealed record FinancialEmailAttachment(string Id, string FileName, string ContentType, long Size);
@@ -52,7 +61,9 @@ public sealed class FinancialEmailCollector(
     public async Task<FinancialEmailCollectorResult?> RunAsync(string profileName, Guid userId, bool dryRun, CancellationToken cancellationToken)
     {
         var profile = options.Sources.SingleOrDefault(candidate => candidate.Enabled && string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase));
-        if (!options.Enabled || !string.Equals(options.Provider, "Gmail", StringComparison.OrdinalIgnoreCase) || profile is null
+        // Enabled controla somente o agendador. A execução manual autenticada permanece
+        // disponível para provisionamento, dry-run e recuperação operacional.
+        if (!string.Equals(options.Provider, "Gmail", StringComparison.OrdinalIgnoreCase) || profile is null
             || !await inboxRepository.CanAccessFamilyAsync(profile.FamilyId, userId, cancellationToken)) return null;
         return await RunCoreAsync(profile, dryRun, cancellationToken);
     }

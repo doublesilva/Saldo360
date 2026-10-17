@@ -62,11 +62,12 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
         {
             if (accessToken is not null && expiresAt > DateTimeOffset.UtcNow.AddMinutes(1)) return accessToken;
             var gmail = options.Gmail;
-            if (string.IsNullOrWhiteSpace(gmail.ClientId) || string.IsNullOrWhiteSpace(gmail.ClientSecret) || string.IsNullOrWhiteSpace(gmail.RefreshToken))
-                throw new InvalidOperationException("Credenciais OAuth do Gmail não configuradas.");
+            var clientId = GmailSecretReader.Read(gmail.ClientIdFile, gmail.ClientId, "ClientId");
+            var clientSecret = GmailSecretReader.Read(gmail.ClientSecretFile, gmail.ClientSecret, "ClientSecret");
+            var refreshToken = GmailSecretReader.Read(gmail.RefreshTokenFile, gmail.RefreshToken, "RefreshToken");
             var client = clients.CreateClient("GmailFinancialEmailToken");
             using var response = await client.PostAsync("token", new FormUrlEncodedContent(new Dictionary<string, string>
-            { ["client_id"] = gmail.ClientId, ["client_secret"] = gmail.ClientSecret, ["refresh_token"] = gmail.RefreshToken, ["grant_type"] = "refresh_token" }), cancellationToken);
+            { ["client_id"] = clientId, ["client_secret"] = clientSecret, ["refresh_token"] = refreshToken, ["grant_type"] = "refresh_token" }), cancellationToken);
             response.EnsureSuccessStatusCode();
             var token = await response.Content.ReadFromJsonAsync<GmailTokenResponse>(cancellationToken: cancellationToken) ?? throw new InvalidDataException("Resposta OAuth vazia.");
             accessToken = token.AccessToken; expiresAt = DateTimeOffset.UtcNow.AddSeconds(token.ExpiresIn); return accessToken;
@@ -88,4 +89,21 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
     private sealed class GmailPart { [JsonPropertyName("filename")] public string? FileName { get; set; } [JsonPropertyName("mimeType")] public string? MimeType { get; set; } [JsonPropertyName("body")] public GmailAttachmentBody? Body { get; set; } [JsonPropertyName("parts")] public List<GmailPart>? Parts { get; set; } }
     private sealed class GmailAttachmentBody { [JsonPropertyName("attachmentId")] public string AttachmentId { get; set; } = string.Empty; [JsonPropertyName("size")] public long Size { get; set; } [JsonPropertyName("data")] public string Data { get; set; } = string.Empty; }
     private sealed class GmailTokenResponse { [JsonPropertyName("access_token")] public string AccessToken { get; set; } = string.Empty; [JsonPropertyName("expires_in")] public int ExpiresIn { get; set; } }
+}
+
+internal static class GmailSecretReader
+{
+    public static string Read(string? file, string? configuredValue, string name)
+    {
+        if (!string.IsNullOrWhiteSpace(file))
+        {
+            var path = Path.GetFullPath(file);
+            if (!File.Exists(path)) throw new InvalidOperationException($"Arquivo do segredo Gmail {name} não encontrado: '{path}'.");
+            var value = File.ReadAllText(path).TrimEnd('\r', '\n');
+            if (string.IsNullOrWhiteSpace(value)) throw new InvalidOperationException($"Arquivo do segredo Gmail {name} está vazio: '{path}'.");
+            return value;
+        }
+        if (!string.IsNullOrWhiteSpace(configuredValue)) return configuredValue;
+        throw new InvalidOperationException($"Credencial OAuth Gmail {name} não configurada.");
+    }
 }

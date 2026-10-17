@@ -16,7 +16,7 @@ public sealed class FinancialEmailCollectorRunner(
     public async Task<FinancialEmailCollectorResult?> RunAsync(string profileName, Guid? userId, bool dryRun, CancellationToken cancellationToken)
     {
         var profile = options.Sources.SingleOrDefault(item => item.Enabled && string.Equals(item.Name, profileName, StringComparison.OrdinalIgnoreCase));
-        if (!options.Enabled || profile is null) return null;
+        if (profile is null || (userId is null && !options.Enabled)) return null;
         if (userId is { } actor && !await inbox.CanAccessFamilyAsync(profile.FamilyId, actor, cancellationToken)) return null;
         await using var lease = await distributedLock.TryAcquireAsync(profile.FamilyId, profile.Name, cancellationToken);
         if (lease is null)

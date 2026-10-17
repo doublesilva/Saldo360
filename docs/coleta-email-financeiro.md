@@ -10,12 +10,12 @@ O identificador externo é `gmail:{messageId}:{attachmentId}`. Assunto e nome do
 
 ## Autenticação
 
-A execução autônoma requer um cliente OAuth 2.0 do Google e um refresh token obtido com consentimento offline para a mailbox configurada, limitado ao escopo `https://www.googleapis.com/auth/gmail.readonly`. Mailbox, client ID, client secret e refresh token devem vir de user-secrets, secrets de contêiner ou variáveis de ambiente. Não se usa senha Gmail nem IMAP.
+A execução autônoma requer um cliente OAuth 2.0 do Google e um refresh token obtido com consentimento offline para a mailbox configurada, limitado ao escopo `https://www.googleapis.com/auth/gmail.readonly`. Não se usa senha Gmail nem IMAP. Em produção, as três credenciais OAuth são lidas preferencialmente de arquivos montados somente leitura; quando um caminho de arquivo é configurado, arquivo ausente ou vazio falha de forma fechada e não recorre ao valor inline.
 
 Exemplos de variáveis:
 
 ```text
-FinancialEmailImport__Enabled=true
+FinancialEmailImport__Enabled=false
 FinancialEmailImport__Provider=Gmail
 FinancialEmailImport__TimeZone=America/Sao_Paulo
 FinancialEmailImport__Schedule__0=09:00
@@ -23,9 +23,9 @@ FinancialEmailImport__Schedule__1=13:00
 FinancialEmailImport__Schedule__2=18:00
 FinancialEmailImport__Schedule__3=23:00
 FinancialEmailImport__Gmail__Mailbox=<mailbox-explicita>
-FinancialEmailImport__Gmail__ClientId=<secret>
-FinancialEmailImport__Gmail__ClientSecret=<secret>
-FinancialEmailImport__Gmail__RefreshToken=<secret>
+FinancialEmailImport__Gmail__ClientIdFile=/etc/saldo360/secrets/gmail/client-id
+FinancialEmailImport__Gmail__ClientSecretFile=/etc/saldo360/secrets/gmail/client-secret
+FinancialEmailImport__Gmail__RefreshTokenFile=/etc/saldo360/secrets/gmail/refresh-token
 FinancialEmailImport__Sources__0__Name=Bills
 FinancialEmailImport__Sources__0__FamilyId=<uuid-da-familia>
 FinancialEmailImport__Sources__0__Query=has:attachment filename:pdf
@@ -49,7 +49,7 @@ POST /api/financial-email-import/{profile}/run?dryRun=true
 POST /api/financial-email-import/{profile}/run?dryRun=false
 ```
 
-O endpoint exige autenticação, CSRF e participação na família configurada. `dryRun=true` pesquisa e lista apenas IDs técnicos dos candidatos; não baixa anexos, não grava Inbox e não avança checkpoint. A execução efetiva retorna contadores de mensagens, anexos, aceitos, duplicados, itens em revisão e falhas sanitizadas.
+O endpoint exige autenticação, CSRF e participação na família configurada. Ele permanece disponível quando `FinancialEmailImport.Enabled=false`; essa chave controla exclusivamente o hosted service. O perfil solicitado ainda precisa estar habilitado. Assim, o bootstrap pode ser validado manualmente sem ativar o scheduler. `dryRun=true` pesquisa e lista apenas IDs técnicos dos candidatos; não baixa anexos, não grava Inbox e não avança checkpoint. A execução efetiva retorna contadores de mensagens, anexos, aceitos, duplicados, itens em revisão e falhas sanitizadas.
 
 Uma falha não interrompe os demais anexos. PDF protegido é preservado na Inbox como `NeedsReview` com código sanitizado, sem CPF ou senha. O Gmail não é marcado como lido, movido, rotulado, respondido ou excluído.
 
