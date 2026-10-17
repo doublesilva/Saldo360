@@ -5,7 +5,7 @@ using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
-internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFinancialCreditCardRepository
+internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFinancialCreditCardRepository, ICreditCardPdfContextRepository
 {
     public async Task AddAsync(FinancialCreditCard card, CancellationToken cancellationToken)
     {
@@ -33,6 +33,13 @@ internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFin
 
     public Task<bool> IsActiveAccountOfFamilyAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken) =>
         db.FinancialAccounts.AnyAsync(account => account.FamilyId == familyId && account.Id == accountId && account.IsActive, cancellationToken);
+
+    public Task<CreditCardPdfContext?> GetAsync(Guid familyId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
+        (from card in db.FinancialCreditCards
+         where card.FamilyId == familyId && card.Id == cardId && !card.IsArchived
+             && db.FamilyMembers.Any(member => member.FamilyId == familyId && member.UserId == userId)
+         select new CreditCardPdfContext(card.Issuer, card.HolderUserId))
+        .SingleOrDefaultAsync(cancellationToken);
 
     private static FinancialCreditCardDto ToDto(FinancialCreditCard card) => new(
         card.Id, card.FamilyId, card.Name, card.Issuer, card.HolderUserId,

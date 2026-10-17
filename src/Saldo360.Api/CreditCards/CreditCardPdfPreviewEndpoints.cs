@@ -20,7 +20,7 @@ public static class CreditCardPdfPreviewEndpoints
         var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
         if (file is null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["Informe um arquivo PDF."] });
         await using var stream = file.OpenReadStream();
-        var result = await service.PreviewAsync(familyId, cardId, userId, stream, file.Length, file.FileName, form["issuerProfile"], form["competence"], form["dateFormat"], cancellationToken);
+        var result = await service.PreviewAsync(familyId, cardId, userId, stream, file.Length, file.FileName, form["issuerProfile"], form["competence"], form["dateFormat"], form["password"], cancellationToken);
         return result.Access switch
         {
             CreditCardPdfPreviewAccess.NotFound => Results.NotFound(),

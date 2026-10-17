@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.Exceptions;
 using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Infrastructure.CreditCards;
@@ -12,22 +13,59 @@ internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
     private static readonly Regex InstallmentRegex = new(@"(?<!\d)(\d{1,2})\s*/\s*(\d{1,2})(?!\d)", RegexOptions.Compiled);
     private static readonly Regex CardRegex = new(@"(?:cart[aã]o|card)[^\d]{0,20}(?:\*{2,}|x{2,}|•{2,})?\s*(\d{4})\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public Task<CreditCardPdfExtractedDocument> ExtractAsync(Stream pdf, int maxPages, CancellationToken cancellationToken)
+    public async Task<CreditCardPdfExtractedDocument> ExtractAsync(Stream pdf, int maxPages, IReadOnlyList<string> passwords, CancellationToken cancellationToken)
     {
-        using var document = PdfDocument.Open(pdf);
-        if (document.NumberOfPages > maxPages) throw new InvalidDataException("page limit");
-        var pages = new List<CreditCardPdfExtractedPage>(document.NumberOfPages);
-        for (var pageNumber = 1; pageNumber <= document.NumberOfPages; pageNumber++)
+        byte[] bytes;
+        using (var buffer = new MemoryStream())
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var text = document.GetPage(pageNumber).Text;
-            pages.Add(new(pageNumber, text));
+            if (pdf.CanSeek) pdf.Position = 0;
+            await pdf.CopyToAsync(buffer, cancellationToken);
+            bytes = buffer.ToArray();
         }
-        return Task.FromResult<CreditCardPdfExtractedDocument>(new(pages));
+
+        try
+        {
+            var options = passwords.Count == 0 ? null : new ParsingOptions { Passwords = passwords.ToList() };
+            using var input = new MemoryStream(bytes, writable: false);
+            using var document = options is null ? PdfDocument.Open(input) : PdfDocument.Open(input, options);
+            if (document.NumberOfPages > maxPages) throw new InvalidDataException("page limit");
+            var pages = new List<CreditCardPdfExtractedPage>(document.NumberOfPages);
+            for (var pageNumber = 1; pageNumber <= document.NumberOfPages; pageNumber++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var page = document.GetPage(pageNumber);
+                var words = page.GetWords()
+                    .Select(word => new CreditCardPdfExtractedWord(
+                        word.Text,
+                        word.BoundingBox.Left,
+                        page.Height - word.BoundingBox.Top,
+                        word.BoundingBox.Right,
+                        page.Height - word.BoundingBox.Bottom))
+                    .ToList();
+                pages.Add(new(pageNumber, page.Text, words));
+            }
+            return new(pages);
+        }
+        catch (PdfDocumentEncryptedException exception)
+        {
+            throw new CreditCardPdfReadException(passwords.Count == 0 ? CreditCardPdfReadFailure.PasswordRequired : CreditCardPdfReadFailure.PasswordRejected, exception);
+        }
+        catch (NotSupportedException exception)
+        {
+            throw new CreditCardPdfReadException(CreditCardPdfReadFailure.UnsupportedEncryption, exception);
+        }
+        catch (InvalidDataException) { throw; }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new CreditCardPdfReadException(CreditCardPdfReadFailure.Corrupt, exception);
+        }
     }
 
     public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat)
     {
+        if (ItauCreditCardPdfParser.CanParse(document))
+            return ItauCreditCardPdfParser.Parse(document, fileName, competence);
+
         var allText = string.Join("\n", document.Pages.Select(page => page.Text));
         var statement = new CreditCardPdfPreviewStatement(
             FindLabel(allText, "(?:emissor|institui[cç][aã]o|issuer)"),
@@ -65,6 +103,7 @@ internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
         }
         var summary = new CreditCardPdfPreviewSummary(items.Count(item => item.Status == "Valid"), items.Count(item => item.Warnings.Count > 0), items.Count(item => item.Status == "Invalid"), items.Count(item => item.Type == "Unknown"));
         var warningsGeneral = document.Pages.Count == 0 ? new List<string> { "O PDF não possui camada textual suficiente; OCR não é suportado." } : new List<string>();
+        warningsGeneral.Add("Parser genérico: a composição financeira não foi validada contra o total oficial.");
         return new(fileName, document.Pages.Count, "Generic", statement, summary, items, warningsGeneral);
     }
 

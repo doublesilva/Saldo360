@@ -61,11 +61,52 @@ Obrigações históricas compõem fatura, limite, pagamentos e projeções, mas 
 
 ## Pré-visualização de faturas PDF (T10.3.4)
 
-`POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/preview` recebe `multipart/form-data` com `file` e, opcionalmente, `issuerProfile`, `competence` e `dateFormat`. O limite inicial é 10 MB e 50 páginas. O cartão deve pertencer à família e estar ativo.
+`POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/preview` recebe `multipart/form-data` com `file` e, opcionalmente, `issuerProfile`, `competence`, `dateFormat` e `password`. A senha manual existe apenas durante a requisição, não é persistida nem devolvida. O limite inicial é 10 MB e 50 páginas. O cartão deve pertencer à família, estar ativo e o solicitante deve participar dela.
 
 São aceitos PDFs que possuam camada textual. O parser genérico preserva página e linha de origem, reconhece datas ISO/brasileiras, valores com padrão brasileiro, competência, vencimento, total e identificadores parciais do cartão quando houver evidência textual. Linhas com `02/06` são classificadas como `Installment`; pagamentos, créditos, estornos e encargos nunca são convertidos automaticamente em compras. Linhas ambíguas ficam como `Unknown`/`Warning`.
 
-A resposta contém `statement`, `summary`, `items`, `pageCount` e o parser utilizado. A operação é somente leitura: o PDF não é armazenado, nenhuma compra/fatura/pagamento é criado e nenhum endpoint de confirmação é chamado. PDFs protegidos, corrompidos, sem texto ou com páginas acima do limite são rejeitados. OCR, perfis de instituições, conciliação e importação definitiva ficam para etapas posteriores.
+A abertura sem senha ocorre primeiro. Somente quando o PdfPig identifica proteção por senha o serviço consulta o material autorizado do titular configurado no cartão. São suportadas as estratégias `First5` e `First3`; a estratégia da instituição é tentada primeiro e, sem configuração, a ordem determinística é `First5`, `First3`, sem força bruta. O conteúdo é rebobinado entre tentativas. O prefixo, o CPF e as senhas derivadas não são gravados, registrados em log ou incluídos na resposta.
+
+O provedor atual é um mock exclusivo de `Development` e `Testing`. Ele precisa ser habilitado e receber prefixos sintéticos por configuração externa ao Git:
+
+```text
+CreditCardPdfPasswordMock__Enabled=true
+CreditCardPdfPasswordMock__Identities__{holderUserId}__First5=<prefixo-sintetico>
+CreditCardPdfPasswordMock__IssuerStrategies__{instituicao}=First5
+```
+
+Em `Production`, o mock sempre responde como indisponível, mesmo que essas chaves sejam fornecidas. A integração real com atributos autorizados do Authelia continua pendente.
+
+A resposta contém `statement`, `summary`, `items`, `pageCount`, o parser utilizado e `security.status`, com `Unprotected` ou `Unlocked`. A operação é somente leitura: o PDF não é armazenado, nenhuma compra/fatura/pagamento é criado e nenhum endpoint de confirmação é chamado. As falhas distinguem material de identidade indisponível, senha não resolvida, criptografia não suportada, corrupção e ausência de texto sem expor segredos. OCR, perfis de instituições, integração real com o Authelia, conciliação e importação definitiva ficam para etapas posteriores.
+
+### Parser Itaú Mastercard (T15.3.2)
+
+O parser `ItauMastercard` foi construído a partir de uma fatura Mastercard Black real, analisada somente no ambiente local e não incorporada ao repositório. O reconhecimento exige marcadores estruturais do Itaú e utiliza palavras com coordenadas para separar as duas colunas. O parser genérico permanece como fallback e sempre devolve `reconciliation.status = NeedsReview`, acompanhado de aviso de que a composição não foi validada.
+
+O layout especializado reconhece:
+
+- titular, quatro últimos dígitos do cartão, competência, emissão/fechamento, vencimento e total oficial;
+- saldo da fatura anterior, pagamento e saldo financiado;
+- compras nacionais, créditos, compras parceladas e parcelas de produtos/serviços;
+- transação internacional e seu repasse de IOF;
+- juros, mora, multa, IOF e demais encargos exibidos na seção da fatura;
+- parcelas de próximas faturas, preservadas como `FutureInstallment` e marcadas com `includedInCurrentTotal = false`.
+
+Cada item preserva `sourceText`, página, descrição original, descrição normalizada, natureza (`Debit`, `Credit`, `Informational` ou `Unknown`), valor decimal exato, parcela e participação no total atual. Parcelas futuras não são multiplicadas nem tratadas como compras completas.
+
+A conferência segue a composição oficial apresentada no documento:
+
+```text
+saldo anterior + pagamentos/créditos + lançamentos atuais detalhados + encargos = total oficial
+```
+
+O objeto `reconciliation` retorna `officialTotal`, `componentsTotal`, `difference`, `hasUnknownCurrentItems` e um estado:
+
+- `Reconciled`: diferença exatamente zero e nenhuma linha financeira corrente desconhecida;
+- `Divergent`: os componentes reconhecidos não fecham o total;
+- `NeedsReview`: total insuficiente ou linha corrente potencialmente financeira não reconhecida.
+
+Na prova local, a amostra real foi classificada como `Reconciled`, com diferença `0.00`. Os testes versionados usam somente uma representação posicional sintética e anonimizada do layout.
 
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 
