@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=/srv/saldo360-deploy
+RELEASE="$ROOT/release"
+ENV_FILE="$ROOT/.env"
+BACKUP_DIR="$ROOT/backups"
+
+if [ "$#" -ne 1 ] || ! [[ "$1" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Uso: deploy-saldo360 <commit-sha>" >&2
+  exit 2
+fi
+
+SHA="$1"
+export SALDO360_IMAGE_TAG="$SHA"
+
+test -d "$RELEASE"
+test -f "$ENV_FILE"
+test -f "$RELEASE/docker-compose.production.yml"
+test -f /etc/saldo360/secrets/oidc-client-secret
+test -f /etc/homeautomation/certs/caddy-local-root.crt
+
+mkdir -p "$BACKUP_DIR"
+
+compose() {
+  docker compose     --env-file "$ENV_FILE"     --project-directory "$RELEASE"     -f "$RELEASE/docker-compose.production.yml"     "$@"
+}
+
+wait_healthy() {
+  local container="$1"
+  local label="$2"
+  local deadline=$(( $(date +%s) + 120 ))
+
+  while true; do
+    local status health
+    status="$(docker inspect --format '{{.State.Status}}' "$container" 2>/dev/null || true)"
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || true)"
+    echo "$label: container=$status health=$health"
+
+    case "$status/$health" in
+      running/healthy) return 0 ;;
+      running/starting) ;;
+      running/unhealthy)
+        docker logs "$container" || true
+        return 1 ;;
+      *)
+        docker logs "$container" 2>/dev/null || true
+        return 1 ;;
+    esac
+
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      docker logs "$container" || true
+      echo "$label não ficou healthy dentro do limite." >&2
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+echo "==> Validando compose"
+compose config --quiet
+
+echo "==> Construindo imagens do commit $SHA"
+compose build --pull api web
+
+echo "==> Backup pré-migração, quando já houver banco em execução"
+postgres_id="$(compose ps -q postgres || true)"
+if [ -n "$postgres_id" ] && [ "$(docker inspect --format '{{.State.Running}}' "$postgres_id" 2>/dev/null || true)" = "true" ]; then
+  backup="$BACKUP_DIR/pre-deploy-$(date +%Y%m%d-%H%M%S)-${SHA:0:12}.dump"
+  compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > "$backup"
+  test -s "$backup"
+  chmod 600 "$backup"
+  echo "Backup criado: $backup"
+  find "$BACKUP_DIR" -maxdepth 1 -type f -name 'pre-deploy-*.dump' -printf '%T@ %p\n'     | sort -nr     | awk 'NR>30 {print $2}'     | xargs -r rm -f --
+else
+  echo "Primeiro deploy: não existe PostgreSQL anterior para backup."
+fi
+
+echo "==> Garantindo PostgreSQL"
+compose up -d --wait postgres
+
+echo "==> Aplicando migrations"
+compose --profile migration run --rm migrate
+
+echo "==> Pré-validando nova API sem trocar a versão ativa"
+docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
+compose run -d --no-deps --name saldo360-api-candidate api >/dev/null
+if ! wait_healthy saldo360-api-candidate "api candidate"; then
+  docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
+  exit 1
+fi
+docker rm -f saldo360-api-candidate >/dev/null
+
+echo "==> Pré-validando nova imagem web"
+docker rm -f saldo360-web-candidate >/dev/null 2>&1 || true
+compose run -d --no-deps --name saldo360-web-candidate web >/dev/null
+if ! wait_healthy saldo360-web-candidate "web candidate"; then
+  docker rm -f saldo360-web-candidate >/dev/null 2>&1 || true
+  exit 1
+fi
+docker rm -f saldo360-web-candidate >/dev/null
+
+echo "==> Publicando API e web"
+compose up -d --wait api web
+
+echo "==> Smoke interno"
+compose exec -T web wget -q -O /dev/null http://127.0.0.1:8080/web-health
+compose exec -T api curl --fail --silent --show-error --max-time 4 http://127.0.0.1:8080/health/ready >/dev/null
+
+printf '%s\n' "$SHA" > "$ROOT/deployed-sha"
+chmod 644 "$ROOT/deployed-sha"
+
+echo "Deploy Saldo360 concluído em $SHA"
+compose ps
