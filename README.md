@@ -231,7 +231,7 @@ O cadastro pode armazenar somente os quatro últimos dígitos do cartão. Fatura
 
 A importação CSV possui pré-visualização, confirmação atômica e tratamento explícito de parcelas intermediárias/históricas, documentados em [docs/importacao-cartoes.md](docs/importacao-cartoes.md).
 
-A pré-visualização e a pré-conciliação somente leitura de faturas PDF textuais também estão disponíveis no backend, sem persistência financeira e sem OCR; consulte a documentação de importação de cartões.
+A pré-visualização e a pré-conciliação de faturas PDF textuais possuem parsers especializados para os layouts Itaú Mastercard e Nubank observados, além de fallback genérico conservador, sem OCR; consulte a documentação de importação de cartões.
 
 Encargos, créditos e reembolsos de faturas possuem representação própria como ajustes, distinta de compras e pagamentos, com impacto em total, limite e projeções sem criar movimentação bancária.
 

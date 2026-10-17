@@ -108,6 +108,14 @@ O objeto `reconciliation` retorna `officialTotal`, `componentsTotal`, `differenc
 
 Na prova local, a amostra real foi classificada como `Reconciled`, com diferença `0.00`. Os testes versionados usam somente uma representação posicional sintética e anonimizada do layout.
 
+### Parser Nubank (T15.3.8)
+
+O parser `Nubank` foi construído a partir de uma fatura textual real de seis páginas, analisada somente no ambiente local e nunca adicionada ao repositório. A seleção é determinística pelos marcadores `NU PAGAMENTOS S.A`, `RESUMO DA FATURA ATUAL` e `PRÓXIMAS FATURAS`; o resolvedor tenta os parsers especializados Itaú e Nubank antes do fallback genérico.
+
+O layout observado contém capa, instruções, resumo da fatura atual, lançamentos detalhados e próximas faturas. O parser usa as coordenadas das palavras para reconstruir linhas visuais e extrai competência, emissão/fechamento, vencimento, total oficial, saldo anterior, pagamento recebido, compras nacionais e internacionais, parcelas e IOF. Saldo anterior e pagamento são preservados como informações históricas e não voltam a compor o total atual; compras e encargos correntes compõem a conferência. Parcela intermediária mantém apenas seu valor e numeração, sem multiplicação ou reconstrução da compra original.
+
+Na prova local, os componentes correntes somaram exatamente `785.33`, iguais ao total oficial, com diferença `0.00` e estado `Reconciled`. A amostra reúne lançamentos de dois finais de cartão: por isso `cardLastDigits` permanece nulo, um aviso explícito é retornado e a escolha do cartão continua obrigatória. Um layout alterado, total ausente ou linha financeira corrente desconhecida produz `NeedsReview`/`Divergent`, nunca conciliação silenciosa. Os três testes versionados usam fixture posicional sintética e anonimizada e também protegem a precedência do Itaú e o fallback genérico.
+
 ### Pré-conciliação PDF (T15.3.3)
 
 `POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/pre-reconcile` aceita o mesmo `multipart/form-data` da prévia e executa uma comparação somente leitura com o cartão explicitamente selecionado. O endpoint exige autenticação, participação na família, cartão ativo e CSRF. O conteúdo do PDF, a senha e o nome do titular não são persistidos nem devolvidos pelo relatório.
@@ -116,7 +124,7 @@ O relatório mantém `reconciliation` como a conferência interna do documento e
 
 A identidade do documento é `pdf-sha256:{hash}`, calculada sobre os bytes integrais, e a identidade de componente é `pdf:{hash}:p{page}:r{row}`. Nesta etapa essas chaves são apenas apresentadas em memória. Se uma identidade externa igual já estiver nos registros de importação CSV ou de parcela histórica, conteúdo idêntico resulta em `AlreadyExists` e conteúdo divergente em `Conflict`. Comparações por data, valor, descrição, parcela ou competência produzem somente candidatos `NeedsReview`; não constituem deduplicação.
 
-A validação de destino confronta família, cartão, titular configurado, competência, fechamento e vencimento. O cadastro atual de cartão não guarda os últimos dígitos, portanto o número mascarado sempre é explicitado como `NeedsReview`; não se associa fatura por emissor ou coincidência de total. Compras integrais suportadas, sem identidade nem candidata e em ciclo não conflitante, podem ser marcadas `Create`. O impacto estimado é separado como débito, crédito e líquido na categoria `Uncategorized`: nenhuma categoria, conta ou compra original é inventada.
+A validação de destino confronta família, cartão, titular configurado, competência, fechamento, vencimento e, quando unívoco, os quatro últimos dígitos. Ausência ou múltiplos finais permanecem `NeedsReview`; divergência é `Conflict`. Não se associa fatura apenas por emissor ou coincidência de total. Compras integrais suportadas, sem identidade nem candidata e em ciclo não conflitante, podem ser marcadas `Create`. O impacto estimado é separado como débito, crédito e líquido na categoria `Uncategorized`: nenhuma categoria, conta ou compra original é inventada.
 
 A leitura do banco ocorre em snapshot `REPEATABLE READ`, em consultas em lote sobre compras/parcelas, importações, obrigações históricas, ajustes, faturas e pagamentos. Nenhuma entidade é adicionada ou modificada; a importação definitiva de PDF continua fora do escopo.
 
@@ -140,7 +148,7 @@ O total bruto não é limitado a zero. Apenas o saldo devido continua como `max(
 
 `POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/confirm` recebe `multipart/form-data` com `file`, `confirm=true`, `documentId`, `categories` em JSON e os mesmos campos opcionais da prévia, inclusive `password`. `categories` contém somente pares `componentId`/`categoryId`; valores, descrições, datas, sinais e parcelas são sempre reconstruídos pelo backend a partir do PDF reenviado.
 
-O backend recalcula o SHA-256, desbloqueia e interpreta novamente o documento, exige o parser especializado `ItauMastercard`, `reconciliation.status = Reconciled`, fatura de destino validada e igualdade com o `documentId` revisado. Componentes financeiros `NeedsReview`, `Conflict` ou `Unsupported` bloqueiam o lote. `Informational` é apenas registrado na rastreabilidade; pagamentos exibidos pelo emissor nunca criam pagamento ou transação bancária.
+O backend recalcula o SHA-256, desbloqueia e interpreta novamente o documento, exige um parser especializado (`ItauMastercard` ou `Nubank`), `reconciliation.status = Reconciled`, fatura de destino validada e igualdade com o `documentId` revisado. Componentes financeiros `NeedsReview`, `Conflict` ou `Unsupported` bloqueiam o lote. `Informational` é apenas registrado na rastreabilidade; pagamentos exibidos pelo emissor nunca criam pagamento ou transação bancária.
 
 Compras integrais `Create` exigem categoria de despesa ativa da mesma família e reutilizam `FinancialCreditCardPurchase`, distribuição e calendário existentes. Parcelas intermediárias continuam bloqueadas enquanto não houver decisão explícita pelo fluxo próprio. `Fee`, `Credit` e `Refund` criam `FinancialCreditCardInvoiceAdjustment`, com identidade `pdf:{hash}:p{page}:r{row}`. `AlreadyExists` não cria nova entidade.
 

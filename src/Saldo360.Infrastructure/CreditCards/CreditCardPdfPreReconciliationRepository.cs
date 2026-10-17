@@ -16,7 +16,7 @@ internal sealed class CreditCardPdfPreReconciliationRepository(Saldo360DbContext
         var card = await (from candidate in db.FinancialCreditCards.AsNoTracking()
                           where candidate.FamilyId == familyId && candidate.Id == cardId && !candidate.IsArchived
                               && db.FamilyMembers.Any(member => member.FamilyId == familyId && member.UserId == userId)
-                          select new { candidate.Name, candidate.Issuer, candidate.HolderUserId })
+                          select new { candidate.Name, candidate.Issuer, candidate.LastFourDigits, candidate.HolderUserId })
             .SingleOrDefaultAsync(cancellationToken);
         if (card is null)
         {
@@ -78,7 +78,7 @@ internal sealed class CreditCardPdfPreReconciliationRepository(Saldo360DbContext
             .ToListAsync(cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
-        return new(card.Name, card.Issuer, card.HolderUserId, invoice,
+        return new(card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId, invoice,
             purchaseOperations.Concat(historicalOperations).Concat(paymentOperations).Concat(adjustmentOperations).ToList());
     }
 }

@@ -38,7 +38,7 @@ public sealed class CreditCardPdfPreReconciliationServiceTests
         Assert.Equal("HistoricalInstallment", candidate.MatchedEntityType);
         Assert.Equal("Informational", Assert.Single(result.Report.Items, item => item.Type == "Payment").Classification);
         Assert.Equal("Create", Assert.Single(result.Report.Items, item => item.Type == "Fee").Classification);
-        Assert.Equal("NeedsReview", result.Report.Destination.MaskedCard);
+        Assert.Equal("Validated", result.Report.Destination.MaskedCard);
         Assert.Equal("0.00", result.Report.Reconciliation.Difference);
         Assert.DoesNotContain("HolderName", System.Text.Json.JsonSerializer.Serialize(result.Report));
     }
@@ -98,7 +98,7 @@ public sealed class CreditCardPdfPreReconciliationServiceTests
     {
         public Task<CreditCardPdfPreReconciliationSnapshot?> GetSnapshotAsync(Guid familyId, Guid cardId, Guid userId, string? competence, CancellationToken cancellationToken) =>
             Task.FromResult<CreditCardPdfPreReconciliationSnapshot?>(new(
-                "Cartão teste", "Itau", UserId,
+                "Cartão teste", "Itau", "9876", UserId,
                 new(Guid.NewGuid(), "2026-10", new(2026, 10, 8), new(2026, 10, 15)), operations));
     }
 }

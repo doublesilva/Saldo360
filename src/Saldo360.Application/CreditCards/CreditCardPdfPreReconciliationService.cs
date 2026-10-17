@@ -51,7 +51,7 @@ public sealed class CreditCardPdfPreReconciliationService(
         var impact = new CreditCardPdfEstimatedImpact("Uncategorized", Money(debit), Money(credit), Money(debit - credit), impactItems.Count);
         var limitations = new List<string>
         {
-            "O modelo atual do cartão não armazena a identificação mascarada; esse vínculo exige revisão humana.",
+            "A identificação usa emissor e os quatro últimos dígitos; ausência ou múltiplos finais exigem escolha explícita.",
             "Coincidências de descrição, data e valor são apenas candidatas e nunca comprovam duplicidade.",
             "A chave do documento e dos componentes é calculada em memória e não é persistida nesta etapa somente leitura.",
             "Encargos, créditos e estornos ainda não possuem fluxo de importação definitivo por PDF.",
@@ -84,8 +84,12 @@ public sealed class CreditCardPdfPreReconciliationService(
             if (invoice == "Conflict") notes.Add("Fechamento ou vencimento diverge da fatura persistida para a competência.");
         }
         else notes.Add("Não existe fatura persistida para validar a competência informada pelo documento.");
-        notes.Add("A identificação mascarada não pode ser validada porque o cadastro atual não armazena os últimos dígitos.");
-        return new(familyId, cardId, "Validated", "Validated", holder, "NeedsReview", invoice, snapshot.Invoice?.Id, notes);
+        var cardIdentity = statement.CardLastDigits is null || snapshot.LastFourDigits is null
+            ? "NeedsReview"
+            : statement.CardLastDigits == snapshot.LastFourDigits ? "Validated" : "Conflict";
+        if (cardIdentity == "NeedsReview") notes.Add("O documento ou o cadastro não fornece um único final de cartão para validação automática.");
+        if (cardIdentity == "Conflict") notes.Add("O final de cartão do documento diverge do cartão selecionado.");
+        return new(familyId, cardId, "Validated", "Validated", holder, cardIdentity, invoice, snapshot.Invoice?.Id, notes);
     }
 
     private static CreditCardPdfPreReconciliationItem Classify(

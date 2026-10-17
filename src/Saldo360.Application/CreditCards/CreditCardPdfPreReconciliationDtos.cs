@@ -80,6 +80,7 @@ public sealed record CreditCardPdfPreReconciliationResult(
 public sealed record CreditCardPdfPreReconciliationSnapshot(
     string CardName,
     string Issuer,
+    string? LastFourDigits,
     Guid? HolderUserId,
     CreditCardPdfInvoiceSnapshot? Invoice,
     IReadOnlyList<CreditCardPdfExistingOperation> Operations);
