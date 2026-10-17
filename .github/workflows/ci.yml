@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saldo360-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Build, tests and production images
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.15.0
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix client ci
+
+      - name: Check
+        run: npm run check
+
+      - name: Validate production compose
+        shell: bash
+        run: |
+          cp .env.production.example .env.production
+          sed -i 's/troque-esta-senha-forte/ci-only-not-a-secret/' .env.production
+          docker compose             --env-file .env.production             -f docker-compose.production.yml             config --quiet
+
+      - name: Build production API image
+        run: docker build -f Dockerfile.api -t saldo360-api:ci .
+
+      - name: Build production web image
+        run: docker build -f Dockerfile.web -t saldo360-web:ci .
