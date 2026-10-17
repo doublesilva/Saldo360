@@ -1208,6 +1208,113 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialDocumentInboxItem", b =>
+                {
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Competence")
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("competence");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("content_hash");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreditCardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_id");
+
+                    b.Property<string>("ExternalSourceId")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("external_source_id");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("original_file_name");
+
+                    b.Property<string>("Parser")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("parser");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StorageReference")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("storage_reference");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("FamilyId", "Id")
+                        .HasName("pk_financial_document_inbox_items");
+
+                    b.HasIndex("StorageReference")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_document_inbox_items_storage_reference");
+
+                    b.HasIndex("FamilyId", "ContentHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_document_inbox_items_family_id_content_hash");
+
+                    b.HasIndex("FamilyId", "CreditCardId")
+                        .HasDatabaseName("ix_financial_document_inbox_items_family_id_credit_card_id");
+
+                    b.HasIndex("FamilyId", "Source", "ExternalSourceId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_document_inbox_items_family_id_source_external_so")
+                        .HasFilter("external_source_id IS NOT NULL");
+
+                    b.HasIndex("FamilyId", "Status", "ReceivedAt")
+                        .HasDatabaseName("ix_financial_document_inbox_items_family_id_status_received_at");
+
+                    b.ToTable("financial_document_inbox_items", (string)null);
+                });
+
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialPlannedInvoiceReconciliation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3053,6 +3160,23 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_credit_card_purchases_cards_same_family");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialDocumentInboxItem", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_document_inbox_items_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCard", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "CreditCardId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_document_inbox_items_financial_credit_cards_famil");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialPlannedInvoiceReconciliation", b =>
