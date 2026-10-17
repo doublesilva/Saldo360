@@ -8,7 +8,7 @@ COPY dotnet-tools.json ./
 COPY Saldo360.slnx ./
 COPY src ./src
 
-RUN dotnet restore Saldo360.slnx
+RUN dotnet restore src/Saldo360.Api/Saldo360.Api.csproj
 RUN dotnet publish src/Saldo360.Api/Saldo360.Api.csproj \
     --configuration Release \
     --no-restore \
