@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Application.CreditCards;
+using Saldo360.Domain.CreditCards;
 using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.CreditCards;
@@ -67,8 +68,17 @@ internal sealed class CreditCardPdfPreReconciliationRepository(Saldo360DbContext
                 -payment.Amount, null, null, invoiceRow.Competence))
             .ToListAsync(cancellationToken);
 
+        var adjustmentOperations = await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
+            .Where(item => item.FamilyId == familyId && item.CreditCardId == cardId)
+            .Join(db.FinancialCreditCardInvoices.AsNoTracking(), item => new { item.FamilyId, Id = item.InvoiceId }, invoiceRow => new { invoiceRow.FamilyId, invoiceRow.Id },
+                (item, invoiceRow) => new CreditCardPdfExistingOperation(
+                    "InvoiceAdjustment", item.Id, item.ExternalId, item.TransactionDate, item.Description,
+                    item.Nature == FinancialCreditCardInvoiceAdjustmentNature.Debit ? item.Amount : -item.Amount,
+                    null, null, invoiceRow.Competence))
+            .ToListAsync(cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
         return new(card.Name, card.Issuer, card.HolderUserId, invoice,
-            purchaseOperations.Concat(historicalOperations).Concat(paymentOperations).ToList());
+            purchaseOperations.Concat(historicalOperations).Concat(paymentOperations).Concat(adjustmentOperations).ToList());
     }
 }

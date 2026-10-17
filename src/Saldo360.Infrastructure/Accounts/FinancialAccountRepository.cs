@@ -123,7 +123,14 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
                                               && invoice.FamilyId == familyId && invoice.DueDate <= through
                                            group item.Amount by new { invoice.Id, card.DefaultPaymentAccountId } into grouped
                                            select new { grouped.Key.Id, grouped.Key.DefaultPaymentAccountId, Total = grouped.Sum() }).ToListAsync(cancellationToken);
-        obligations = obligations.Concat(historicalObligations)
+        var adjustmentObligations = await (from item in db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
+                                           join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
+                                           join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
+                                           where item.FamilyId == familyId && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentStatus.Active
+                                              && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                           group item by new { invoice.Id, card.DefaultPaymentAccountId } into grouped
+                                           select new { grouped.Key.Id, grouped.Key.DefaultPaymentAccountId, Total = grouped.Sum(item => item.Nature == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentNature.Debit ? item.Amount : -item.Amount) }).ToListAsync(cancellationToken);
+        obligations = obligations.Concat(historicalObligations).Concat(adjustmentObligations)
             .GroupBy(item => new { item.Id, item.DefaultPaymentAccountId })
             .Select(group => new { group.Key.Id, group.Key.DefaultPaymentAccountId, Total = group.Sum(item => item.Total) })
             .ToList();

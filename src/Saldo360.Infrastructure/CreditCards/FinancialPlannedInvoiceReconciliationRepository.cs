@@ -53,6 +53,11 @@ internal sealed class FinancialPlannedInvoiceReconciliationRepository(Saldo360Db
                                                        && installment.Status == CreditCardInstallmentStatus.Active
                                                        && purchase.Status == CreditCardPurchaseStatus.Active
                                                    select installment.Amount).SumAsync(cancellationToken);
+        if (invoice is not null)
+        {
+            total += await db.FinancialCreditCardImportedInstallments.AsNoTracking().Where(item => item.FamilyId == familyId && item.InvoiceId == invoiceId && item.IsHistorical && item.Status == FinancialCreditCardImportedInstallmentStatus.Active).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+            total += await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking().Where(item => item.FamilyId == familyId && item.InvoiceId == invoiceId && item.Status == FinancialCreditCardInvoiceAdjustmentStatus.Active).SumAsync(item => (decimal?)(item.Nature == FinancialCreditCardInvoiceAdjustmentNature.Debit ? item.Amount : -item.Amount), cancellationToken) ?? 0m;
+        }
         var plannedLinked = planned is null || await db.FinancialPlannedInvoiceReconciliations.AnyAsync(item => item.FamilyId == familyId && item.PlannedTransactionId == plannedTransactionId && item.RemovedAt == null, cancellationToken);
         var invoiceLinked = invoice is null || await db.FinancialPlannedInvoiceReconciliations.AnyAsync(item => item.FamilyId == familyId && item.CreditCardInvoiceId == invoiceId && item.RemovedAt == null, cancellationToken);
         var realized = planned is null || await db.FinancialTransactions.AnyAsync(item => item.FamilyId == familyId && item.PlannedTransactionId == plannedTransactionId && !item.IsCancelled, cancellationToken);

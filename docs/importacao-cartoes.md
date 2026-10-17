@@ -112,13 +112,29 @@ Na prova local, a amostra real foi classificada como `Reconciled`, com diferenç
 
 `POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/pre-reconcile` aceita o mesmo `multipart/form-data` da prévia e executa uma comparação somente leitura com o cartão explicitamente selecionado. O endpoint exige autenticação, participação na família, cartão ativo e CSRF. O conteúdo do PDF, a senha e o nome do titular não são persistidos nem devolvidos pelo relatório.
 
-O relatório mantém `reconciliation` como a conferência interna do documento e usa uma classificação independente para cada componente: `Create`, `AlreadyExists`, `NeedsReview`, `Conflict`, `Unsupported` ou `Informational`. Saldo anterior, saldo financiado, pagamentos e parcelas futuras são informativos. Encargos, créditos e estornos permanecem não suportados para importação PDF; eles nunca são convertidos em compras positivas. Uma parcela intermediária isolada permanece em revisão e não gera a compra original nem parcelas futuras.
+O relatório mantém `reconciliation` como a conferência interna do documento e usa uma classificação independente para cada componente: `Create`, `AlreadyExists`, `NeedsReview`, `Conflict`, `Unsupported` ou `Informational`. Saldo anterior, saldo financiado, pagamentos e parcelas futuras são informativos. Encargos, créditos e estornos são reconhecidos como ajustes de fatura suportados pelo domínio, mas ainda não podem ser confirmados a partir do PDF; eles nunca são convertidos em compras positivas. Uma parcela intermediária isolada permanece em revisão e não gera a compra original nem parcelas futuras.
 
 A identidade do documento é `pdf-sha256:{hash}`, calculada sobre os bytes integrais, e a identidade de componente é `pdf:{hash}:p{page}:r{row}`. Nesta etapa essas chaves são apenas apresentadas em memória. Se uma identidade externa igual já estiver nos registros de importação CSV ou de parcela histórica, conteúdo idêntico resulta em `AlreadyExists` e conteúdo divergente em `Conflict`. Comparações por data, valor, descrição, parcela ou competência produzem somente candidatos `NeedsReview`; não constituem deduplicação.
 
 A validação de destino confronta família, cartão, titular configurado, competência, fechamento e vencimento. O cadastro atual de cartão não guarda os últimos dígitos, portanto o número mascarado sempre é explicitado como `NeedsReview`; não se associa fatura por emissor ou coincidência de total. Compras integrais suportadas, sem identidade nem candidata e em ciclo não conflitante, podem ser marcadas `Create`. O impacto estimado é separado como débito, crédito e líquido na categoria `Uncategorized`: nenhuma categoria, conta ou compra original é inventada.
 
-A leitura do banco ocorre em snapshot `REPEATABLE READ`, em consultas em lote sobre compras/parcelas, importações, obrigações históricas, faturas e pagamentos. Nenhuma entidade é adicionada ou modificada; a importação definitiva de PDF continua fora do escopo.
+A leitura do banco ocorre em snapshot `REPEATABLE READ`, em consultas em lote sobre compras/parcelas, importações, obrigações históricas, ajustes, faturas e pagamentos. Nenhuma entidade é adicionada ou modificada; a importação definitiva de PDF continua fora do escopo.
+
+### Ajustes financeiros de fatura (T15.3.4)
+
+`FinancialCreditCardInvoiceAdjustment` representa componentes que alteram a fatura sem constituir compra ou pagamento. Os tipos iniciais são `Fee`, `Credit` e `Refund`. O valor persistido é sempre positivo; `Debit` soma ao total e `Credit` subtrai. A combinação é explícita e validada: taxas são débito, enquanto crédito e reembolso são crédito.
+
+O total passa a ser:
+
+```text
+parcelas ativas + parcelas históricas ativas + ajustes Debit ativos - ajustes Credit ativos
+```
+
+O total bruto não é limitado a zero. Apenas o saldo devido continua como `max(0, total - pagamentos ativos)`. Ajustes integram o limite utilizado e as projeções de fatura/conta pela mesma composição, mas não criam `FinancialTransaction` e não são pagamentos.
+
+`ExternalId`, como `pdf:{documentHash}:p{page}:r{row}`, é único permanentemente por família e cartão. Reenvio com conteúdo idêntico é idempotente; conteúdo divergente é conflito. O cancelamento é lógico e mantém a identidade. Um débito não pode ser cancelado se o novo total ficar abaixo do valor já pago.
+
+`CategoryId` é opcional e, quando informado, deve apontar para categoria ativa da mesma família. Ajustes não entram no orçamento nesta etapa, mesmo categorizados: a semântica de estorno/crédito por competência exige decisão funcional própria e não foi inferida. Não foi criado endpoint público de criação manual; Application e Infrastructure oferecem apenas os contratos necessários ao domínio e aos testes. A confirmação definitiva de PDF permanece fora do escopo.
 
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 

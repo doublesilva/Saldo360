@@ -231,6 +231,8 @@ A importação CSV possui pré-visualização, confirmação atômica e tratamen
 
 A pré-visualização e a pré-conciliação somente leitura de faturas PDF textuais também estão disponíveis no backend, sem persistência financeira e sem OCR; consulte a documentação de importação de cartões.
 
+Encargos, créditos e reembolsos de faturas possuem representação própria como ajustes, distinta de compras e pagamentos, com impacto em total, limite e projeções sem criar movimentação bancária.
+
 Em **Cartões > Importações**, a interface React permite revisar CSV, confirmar compras elegíveis, associar parcelas ou registrar obrigações históricas. PDFs permanecem somente em pré-visualização.
 
 A integração ponta a ponta de cartões com contas, Agenda e Orçamentos é auditada pelos cenários PostgreSQL da T09.7; o relatório está em [docs/T09.7-auditoria-integracao.md](docs/T09.7-auditoria-integracao.md).

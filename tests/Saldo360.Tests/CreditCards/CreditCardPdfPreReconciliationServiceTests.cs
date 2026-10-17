@@ -29,15 +29,15 @@ public sealed class CreditCardPdfPreReconciliationServiceTests
         var result = await Run(service, [1, 2, 3]);
 
         Assert.Equal(CreditCardPdfPreviewAccess.Allowed, result.Access);
-        Assert.Equal(1, result.Report!.Counts.Create);
+        Assert.Equal(3, result.Report!.Counts.Create);
         Assert.Equal(1, result.Report.Counts.NeedsReview);
         Assert.Equal(3, result.Report.Counts.Informational);
-        Assert.Equal(2, result.Report.Counts.Unsupported);
+        Assert.Equal(0, result.Report.Counts.Unsupported);
         var candidate = Assert.Single(result.Report.Items, item => item.RowNumber == 2);
         Assert.Equal("NeedsReview", candidate.Classification);
         Assert.Equal("HistoricalInstallment", candidate.MatchedEntityType);
         Assert.Equal("Informational", Assert.Single(result.Report.Items, item => item.Type == "Payment").Classification);
-        Assert.Equal("Unsupported", Assert.Single(result.Report.Items, item => item.Type == "Fee").Classification);
+        Assert.Equal("Create", Assert.Single(result.Report.Items, item => item.Type == "Fee").Classification);
         Assert.Equal("NeedsReview", result.Report.Destination.MaskedCard);
         Assert.Equal("0.00", result.Report.Reconciliation.Difference);
         Assert.DoesNotContain("HolderName", System.Text.Json.JsonSerializer.Serialize(result.Report));

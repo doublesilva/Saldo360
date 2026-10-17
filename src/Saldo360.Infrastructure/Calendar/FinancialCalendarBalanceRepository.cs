@@ -178,7 +178,15 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                                                   && card.DefaultPaymentAccountId != null && selectedAccountIds.Contains(card.DefaultPaymentAccountId.Value)
                                                group item.Amount by new { invoice.Id, invoice.DueDate } into grouped
                                                select new { grouped.Key.Id, grouped.Key.DueDate, Total = grouped.Sum() }).ToListAsync(cancellationToken);
-        cardObligations = cardObligations.Concat(historicalCardObligations)
+        var adjustmentCardObligations = await (from item in db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
+                                               join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
+                                               join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
+                                               where item.FamilyId == familyId && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentStatus.Active
+                                                  && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                                  && card.DefaultPaymentAccountId != null && selectedAccountIds.Contains(card.DefaultPaymentAccountId.Value)
+                                               group item by new { invoice.Id, invoice.DueDate } into grouped
+                                               select new { grouped.Key.Id, grouped.Key.DueDate, Total = grouped.Sum(item => item.Nature == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentNature.Debit ? item.Amount : -item.Amount) }).ToListAsync(cancellationToken);
+        cardObligations = cardObligations.Concat(historicalCardObligations).Concat(adjustmentCardObligations)
             .GroupBy(item => new { item.Id, item.DueDate })
             .Select(group => new { group.Key.Id, group.Key.DueDate, Total = group.Sum(item => item.Total) })
             .ToList();
@@ -200,7 +208,13 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                                                   where item.FamilyId == familyId && item.IsHistorical && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
                                                      && invoice.FamilyId == familyId && invoice.DueDate <= through
                                                   select card.DefaultPaymentAccountId).AnyAsync(account => account == null || !selectedAccountIds.Contains(account.Value), cancellationToken);
-        allCardObligations = allCardObligations || allHistoricalCardObligations;
+        var allAdjustmentCardObligations = await (from item in db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
+                                                  join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
+                                                  join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
+                                                  where item.FamilyId == familyId && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentStatus.Active
+                                                     && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                                  select card.DefaultPaymentAccountId).AnyAsync(account => account == null || !selectedAccountIds.Contains(account.Value), cancellationToken);
+        allCardObligations = allCardObligations || allHistoricalCardObligations || allAdjustmentCardObligations;
 
         IReadOnlyList<FinancialCalendarDailyTotals> periodRealized = [];
         if (periodFrom is { } firstPeriodDate)

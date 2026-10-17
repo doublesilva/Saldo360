@@ -95,11 +95,10 @@ public sealed class CreditCardPdfPreReconciliationService(
         var componentId = $"pdf:{hash}:p{item.Page}:r{item.RowNumber}";
         var reasons = new List<string>();
         var informational = item.Type is "PreviousBalance" or "FinancedBalance" or "Payment" or "FutureInstallment";
-        var unsupported = item.Type is "Fee" or "Credit" or "Refund";
+        var adjustment = item.Type is "Fee" or "Credit" or "Refund";
         CreditCardPdfExistingOperation? match = null;
         var classification = informational
             ? CreditCardPdfComponentClassification.Informational
-            : unsupported ? CreditCardPdfComponentClassification.Unsupported
             : CreditCardPdfComponentClassification.NeedsReview;
 
         var strong = operations.Where(operation => operation.ExternalId == componentId).ToList();
@@ -113,12 +112,12 @@ public sealed class CreditCardPdfPreReconciliationService(
                 ? "Identidade externa estável e conteúdo conferem com o registro existente."
                 : "A identidade externa já existe, mas o conteúdo financeiro diverge.");
         }
-        else if (!informational && !unsupported && destinationConflict)
+        else if (!informational && destinationConflict)
         {
             classification = CreditCardPdfComponentClassification.Conflict;
             reasons.Add("A identificação da fatura diverge do ciclo persistido.");
         }
-        else if (!informational && !unsupported)
+        else if (!informational)
         {
             var candidates = operations.Where(operation => IsCandidate(item, operation)).ToList();
             if (candidates.Count == 1)
@@ -127,10 +126,12 @@ public sealed class CreditCardPdfPreReconciliationService(
                 reasons.Add("Existe uma operação candidata, mas data, descrição e valor isolados não comprovam identidade.");
             }
             else if (candidates.Count > 1) reasons.Add("Existem múltiplas operações candidatas; é necessária seleção explícita.");
-            else if (item.Type is "Purchase" or "InternationalPurchase" && item.InstallmentNumber is null)
+            else if ((item.Type is "Purchase" or "InternationalPurchase" && item.InstallmentNumber is null) || adjustment)
             {
                 classification = CreditCardPdfComponentClassification.Create;
-                reasons.Add("Compra integral suportada, sem identidade existente nem operação candidata no cartão selecionado.");
+                reasons.Add(adjustment
+                    ? "Ajuste de fatura suportado, sem identidade existente nem operação candidata no cartão selecionado."
+                    : "Compra integral suportada, sem identidade existente nem operação candidata no cartão selecionado.");
             }
             else reasons.Add("Parcela isolada não comprova a compra original e exige revisão antes de importar.");
         }
@@ -143,7 +144,6 @@ public sealed class CreditCardPdfPreReconciliationService(
                 _ => "Saldo histórico ou informação de fechamento não representa nova compra.",
             });
         }
-        else reasons.Add("A natureza financeira requer fluxo de domínio específico e não será convertida em compra.");
 
         return new(componentId, item.RowNumber, item.Page, item.Type, item.Nature,
             item.TransactionDate, item.OriginalDescription ?? item.Description, item.Amount,
