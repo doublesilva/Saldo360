@@ -229,7 +229,7 @@ Cartões de crédito estão disponíveis na navegação de cada família. A inte
 
 A importação CSV possui pré-visualização, confirmação atômica e tratamento explícito de parcelas intermediárias/históricas, documentados em [docs/importacao-cartoes.md](docs/importacao-cartoes.md).
 
-A pré-visualização de faturas PDF textuais também está disponível no backend, sem persistência financeira e sem OCR; consulte a documentação de importação de cartões.
+A pré-visualização e a pré-conciliação somente leitura de faturas PDF textuais também estão disponíveis no backend, sem persistência financeira e sem OCR; consulte a documentação de importação de cartões.
 
 Em **Cartões > Importações**, a interface React permite revisar CSV, confirmar compras elegíveis, associar parcelas ou registrar obrigações históricas. PDFs permanecem somente em pré-visualização.
 

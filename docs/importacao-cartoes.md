@@ -108,6 +108,18 @@ O objeto `reconciliation` retorna `officialTotal`, `componentsTotal`, `differenc
 
 Na prova local, a amostra real foi classificada como `Reconciled`, com diferença `0.00`. Os testes versionados usam somente uma representação posicional sintética e anonimizada do layout.
 
+### Pré-conciliação PDF (T15.3.3)
+
+`POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/pre-reconcile` aceita o mesmo `multipart/form-data` da prévia e executa uma comparação somente leitura com o cartão explicitamente selecionado. O endpoint exige autenticação, participação na família, cartão ativo e CSRF. O conteúdo do PDF, a senha e o nome do titular não são persistidos nem devolvidos pelo relatório.
+
+O relatório mantém `reconciliation` como a conferência interna do documento e usa uma classificação independente para cada componente: `Create`, `AlreadyExists`, `NeedsReview`, `Conflict`, `Unsupported` ou `Informational`. Saldo anterior, saldo financiado, pagamentos e parcelas futuras são informativos. Encargos, créditos e estornos permanecem não suportados para importação PDF; eles nunca são convertidos em compras positivas. Uma parcela intermediária isolada permanece em revisão e não gera a compra original nem parcelas futuras.
+
+A identidade do documento é `pdf-sha256:{hash}`, calculada sobre os bytes integrais, e a identidade de componente é `pdf:{hash}:p{page}:r{row}`. Nesta etapa essas chaves são apenas apresentadas em memória. Se uma identidade externa igual já estiver nos registros de importação CSV ou de parcela histórica, conteúdo idêntico resulta em `AlreadyExists` e conteúdo divergente em `Conflict`. Comparações por data, valor, descrição, parcela ou competência produzem somente candidatos `NeedsReview`; não constituem deduplicação.
+
+A validação de destino confronta família, cartão, titular configurado, competência, fechamento e vencimento. O cadastro atual de cartão não guarda os últimos dígitos, portanto o número mascarado sempre é explicitado como `NeedsReview`; não se associa fatura por emissor ou coincidência de total. Compras integrais suportadas, sem identidade nem candidata e em ciclo não conflitante, podem ser marcadas `Create`. O impacto estimado é separado como débito, crédito e líquido na categoria `Uncategorized`: nenhuma categoria, conta ou compra original é inventada.
+
+A leitura do banco ocorre em snapshot `REPEATABLE READ`, em consultas em lote sobre compras/parcelas, importações, obrigações históricas, faturas e pagamentos. Nenhuma entidade é adicionada ou modificada; a importação definitiva de PDF continua fora do escopo.
+
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 
 ## Limites e segurança
