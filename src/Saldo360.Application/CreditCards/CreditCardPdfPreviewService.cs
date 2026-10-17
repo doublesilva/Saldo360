@@ -75,7 +75,11 @@ public sealed class CreditCardPdfPreviewService(
     private static CreditCardPdfPreviewResult Invalid(string field, string message) => new(CreditCardPdfPreviewAccess.Invalid, null, new Dictionary<string, string[]> { [field] = [message] });
 }
 
-public sealed record CreditCardPdfExtractedPage(int Number, string Text);
+public sealed record CreditCardPdfExtractedPage(
+    int Number,
+    string Text,
+    IReadOnlyList<CreditCardPdfExtractedWord>? Words = null);
+public sealed record CreditCardPdfExtractedWord(string Text, double X, double Top, double Right, double Bottom);
 public sealed record CreditCardPdfExtractedDocument(IReadOnlyList<CreditCardPdfExtractedPage> Pages);
 
 public interface ICreditCardPdfTextExtractor

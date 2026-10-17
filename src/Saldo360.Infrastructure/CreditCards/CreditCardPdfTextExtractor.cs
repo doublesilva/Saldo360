@@ -33,7 +33,16 @@ internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
             for (var pageNumber = 1; pageNumber <= document.NumberOfPages; pageNumber++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                pages.Add(new(pageNumber, document.GetPage(pageNumber).Text));
+                var page = document.GetPage(pageNumber);
+                var words = page.GetWords()
+                    .Select(word => new CreditCardPdfExtractedWord(
+                        word.Text,
+                        word.BoundingBox.Left,
+                        page.Height - word.BoundingBox.Top,
+                        word.BoundingBox.Right,
+                        page.Height - word.BoundingBox.Bottom))
+                    .ToList();
+                pages.Add(new(pageNumber, page.Text, words));
             }
             return new(pages);
         }
@@ -54,6 +63,9 @@ internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
 
     public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat)
     {
+        if (ItauCreditCardPdfParser.CanParse(document))
+            return ItauCreditCardPdfParser.Parse(document, fileName, competence);
+
         var allText = string.Join("\n", document.Pages.Select(page => page.Text));
         var statement = new CreditCardPdfPreviewStatement(
             FindLabel(allText, "(?:emissor|institui[cç][aã]o|issuer)"),
@@ -91,6 +103,7 @@ internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
         }
         var summary = new CreditCardPdfPreviewSummary(items.Count(item => item.Status == "Valid"), items.Count(item => item.Warnings.Count > 0), items.Count(item => item.Status == "Invalid"), items.Count(item => item.Type == "Unknown"));
         var warningsGeneral = document.Pages.Count == 0 ? new List<string> { "O PDF não possui camada textual suficiente; OCR não é suportado." } : new List<string>();
+        warningsGeneral.Add("Parser genérico: a composição financeira não foi validada contra o total oficial.");
         return new(fileName, document.Pages.Count, "Generic", statement, summary, items, warningsGeneral);
     }
 

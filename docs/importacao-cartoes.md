@@ -79,6 +79,35 @@ Em `Production`, o mock sempre responde como indisponível, mesmo que essas chav
 
 A resposta contém `statement`, `summary`, `items`, `pageCount`, o parser utilizado e `security.status`, com `Unprotected` ou `Unlocked`. A operação é somente leitura: o PDF não é armazenado, nenhuma compra/fatura/pagamento é criado e nenhum endpoint de confirmação é chamado. As falhas distinguem material de identidade indisponível, senha não resolvida, criptografia não suportada, corrupção e ausência de texto sem expor segredos. OCR, perfis de instituições, integração real com o Authelia, conciliação e importação definitiva ficam para etapas posteriores.
 
+### Parser Itaú Mastercard (T15.3.2)
+
+O parser `ItauMastercard` foi construído a partir de uma fatura Mastercard Black real, analisada somente no ambiente local e não incorporada ao repositório. O reconhecimento exige marcadores estruturais do Itaú e utiliza palavras com coordenadas para separar as duas colunas. O parser genérico permanece como fallback e sempre devolve `reconciliation.status = NeedsReview`, acompanhado de aviso de que a composição não foi validada.
+
+O layout especializado reconhece:
+
+- titular, quatro últimos dígitos do cartão, competência, emissão/fechamento, vencimento e total oficial;
+- saldo da fatura anterior, pagamento e saldo financiado;
+- compras nacionais, créditos, compras parceladas e parcelas de produtos/serviços;
+- transação internacional e seu repasse de IOF;
+- juros, mora, multa, IOF e demais encargos exibidos na seção da fatura;
+- parcelas de próximas faturas, preservadas como `FutureInstallment` e marcadas com `includedInCurrentTotal = false`.
+
+Cada item preserva `sourceText`, página, descrição original, descrição normalizada, natureza (`Debit`, `Credit`, `Informational` ou `Unknown`), valor decimal exato, parcela e participação no total atual. Parcelas futuras não são multiplicadas nem tratadas como compras completas.
+
+A conferência segue a composição oficial apresentada no documento:
+
+```text
+saldo anterior + pagamentos/créditos + lançamentos atuais detalhados + encargos = total oficial
+```
+
+O objeto `reconciliation` retorna `officialTotal`, `componentsTotal`, `difference`, `hasUnknownCurrentItems` e um estado:
+
+- `Reconciled`: diferença exatamente zero e nenhuma linha financeira corrente desconhecida;
+- `Divergent`: os componentes reconhecidos não fecham o total;
+- `NeedsReview`: total insuficiente ou linha corrente potencialmente financeira não reconhecida.
+
+Na prova local, a amostra real foi classificada como `Reconciled`, com diferença `0.00`. Os testes versionados usam somente uma representação posicional sintética e anonimizada do layout.
+
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 
 ## Limites e segurança
