@@ -84,7 +84,8 @@ compose --profile migration run --rm migrate
 
 echo "==> Pré-validando nova API sem trocar a versão ativa"
 docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
-compose run -d --no-deps --name saldo360-api-candidate api >/dev/null
+# Permite que o nginx candidato resolva api:8080 durante o primeiro deploy.
+compose run -d --no-deps --use-aliases --name saldo360-api-candidate api >/dev/null
 if ! wait_healthy saldo360-api-candidate "api candidate"; then
   docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
   exit 1
