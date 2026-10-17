@@ -235,7 +235,7 @@ Encargos, créditos e reembolsos de faturas possuem representação própria com
 
 Faturas PDF reconciliadas podem ser confirmadas por um fluxo atômico e idempotente que reprocessa o arquivo no backend, exige decisões por `componentId` e valida novamente a composição persistida antes do commit.
 
-Em **Cartões > Importações**, a interface React permite revisar CSV, confirmar compras elegíveis, associar parcelas ou registrar obrigações históricas. PDFs permanecem somente em pré-visualização.
+Em **Cartões > Importações**, a interface React permite revisar CSV, confirmar compras elegíveis, associar parcelas ou registrar obrigações históricas. Para PDFs especializados e reconciliados, a tela também conduz prévia, pré-conciliação, revisão por componente, escolha explícita de categorias e confirmação atômica/idempotente.
 
 A integração ponta a ponta de cartões com contas, Agenda e Orçamentos é auditada pelos cenários PostgreSQL da T09.7; o relatório está em [docs/T09.7-auditoria-integracao.md](docs/T09.7-auditoria-integracao.md).
 

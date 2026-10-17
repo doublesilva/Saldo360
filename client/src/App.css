@@ -1812,6 +1812,11 @@ button.calendar-day--selected {
 .import-panel dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem; }
 .import-panel dl > div { padding: .6rem; background: var(--surface-muted, #f7f8fa); border-radius: .4rem; }
 .import-panel dt { color: var(--muted); font-size: .8rem; }.import-panel dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+.pdf-import-flow { display: grid; gap: 1rem; }
+.pdf-import-flow h6 { margin: .8rem 0 .45rem; }
+.pdf-import-confirm { display: grid; gap: .55rem; padding: .8rem; border: 1px solid var(--border); border-radius: .5rem; }
+.pdf-classification--Conflict, .pdf-classification--Unsupported, .pdf-classification--NeedsReview { border-color: var(--fail); }
+.pdf-classification--AlreadyExists, .pdf-classification--Informational { opacity: .82; }
 @media (max-width: 48rem) { .import-row { grid-template-columns: 1fr; align-items: start; }.import-row .form__actions { flex-wrap: wrap; }.import-panel .form-row { align-items: stretch; flex-direction: column; } }
 
 .recurrence-page { display: grid; gap: 1rem; }

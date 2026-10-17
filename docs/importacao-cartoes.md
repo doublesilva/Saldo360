@@ -148,6 +148,14 @@ A infraestrutura existente de `FinancialCreditCardImportBatch` foi ampliada com 
 
 O mesmo documento e decisões retorna o resultado anterior. Decisões diferentes retornam conflito. O PDF, senha, CPF e nome completo do titular não são armazenados. SHA-256 identifica bytes exatos: uma fatura regenerada pelo emissor pode ter outro hash e continuará exigindo nova pré-conciliação; não existe deduplicação heurística por emissor, competência ou valor.
 
+### Fluxo da interface PDF
+
+Em **Cartões > Importações**, selecione PDF e siga as três ações explícitas: analisar o documento, comparar seus componentes com o Saldo360 e confirmar a importação. A tela mantém separados os componentes da fatura atual e as parcelas futuras/informativas, mostra as seis classificações da pré-conciliação e exige categoria de despesa apenas para compras `Create`.
+
+A confirmação fica bloqueada quando a conferência interna não é `Reconciled`, quando há componente financeiro atual `NeedsReview`, `Conflict` ou `Unsupported`, ou quando falta categoria de uma compra nova. O navegador reenvia o arquivo original, `documentId` e somente as decisões `componentId`/`categoryId`; valores, descrições e datas não são enviados como decisões do cliente.
+
+A senha opcional existe apenas no estado em memória da tela e é apagada ao trocar o arquivo, abandonar a análise ou concluir a confirmação. Um `409 Conflict` preserva a análise visível e oferece reanálise explícita. Reenvios idempotentes são apresentados como documento já importado, sem duplicidade.
+
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 
 ## Limites e segurança
