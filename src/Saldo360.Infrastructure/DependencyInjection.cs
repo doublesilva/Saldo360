@@ -121,6 +121,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialGoalRepository, FinancialGoalRepository>();
         services.AddScoped<IFinancialGoalAllocationRepository, FinancialGoalAllocationRepository>();
         services.AddSingleton<ICreditCardPdfTextExtractor, CreditCardPdfTextExtractor>();
+        services.AddSingleton<ICreditCardStatementExtractorAgent, ParserBackedCreditCardStatementExtractorAgent>();
         services.AddSingleton<ICreditCardPdfPasswordProvider>(serviceProvider =>
             new LocalCreditCardPdfPasswordProvider(configuration, serviceProvider.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>()));
 
