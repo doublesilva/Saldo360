@@ -45,7 +45,15 @@ Nenhuma credencial real é versionada. Service accounts só são apropriadas qua
 
 Cada perfil possui família, nome e query explícitos. O checkpoint persiste a data da mensagem mais recente concluída e os contadores da última execução. No bootstrap, a busca fica limitada por `LookbackDays`; toda execução limita `MaxMessages`. A query configurada recebe `after:{epoch}` com uma sobreposição conservadora de cinco minutos nas execuções seguintes. A identidade Gmail e a Inbox continuam sendo a defesa definitiva contra reprocessamento nas fronteiras do cursor. Se houver falha no lote, o cursor não avança, permitindo nova tentativa sem perder mensagens posteriores.
 
-Anexos `application/pdf` ou com extensão `.pdf` case-insensitive, positivos e até 10 MB, são candidatos. Isso contempla o Itaú observado com MIME `application/octet-stream`. Depois do download, os primeiros bytes devem conter `%PDF-`; extensão e MIME sozinhos não autorizam a Inbox. Os anexos são processados sequencialmente. Imagens, HTML, ZIP, links e planilhas são ignorados.
+Anexos `application/pdf` ou com extensão `.pdf` case-insensitive, positivos e até 10 MB, são candidatos. Isso contempla o Itaú observado com MIME `application/octet-stream`. Depois do download, os primeiros bytes devem conter `%PDF-`; extensão e MIME sozinhos não autorizam a Inbox. Os anexos são processados sequencialmente. Imagens, ZIP e planilhas são ignorados; links somente são considerados nos perfis que habilitam explicitamente `Links` ou `AttachmentsAndLinks`.
+
+## Classificação documental experimental
+
+`POST /api/families/{familyId}/financial-documents/inbox/{id}/classify-preview` classifica, em modo somente leitura, um PDF já armazenado. Uma senha efêmera opcional pode ser enviada em `multipart/form-data`; ela nunca é persistida. O endpoint não altera status, parser, cartão, competência ou qualquer dado financeiro.
+
+Os tipos genéricos são `CreditCardStatement`, `ElectricityBill`, `WaterBill`, `BillingDocument` e `Unknown`. Sinais fortes combinados classificam localmente faturas de cartão, contas de energia, contas de água e cobranças. Palavra isolada, nome do arquivo ou fonte Gmail não são prova. Quando a decisão local é inconclusiva e `FinancialDocumentClassification.AgentEnabled=true`, o provider estruturado já usado pelo agente de faturas recebe apenas texto paginado e prompt versionado. Resposta inválida, provider indisponível, baixa confiança, texto insuficiente ou PDF protegido produzem `Unknown` com código sanitizado.
+
+`FinancialDocumentClassification.Enabled=false` mantém qualquer futura integração automática desligada; nesta etapa não existe roteamento produtivo. `AgentEnabled=false` é o padrão e mantém o preview exclusivamente determinístico. A classificação não é persistida e nenhum extrator financeiro é executado depois dela.
 
 Os perfis iniciais de exemplo são `ItauCards`, com `has:attachment subject:"fatura do seu cartão"`, e `NuEmpresas`, com `has:attachment subject:"fatura do seu cartão Nu Empresas"`. Ambos permanecem desabilitados até receberem família, mailbox e credenciais válidas. Nenhum final de cartão, nome, competência ou valor faz parte das queries.
 

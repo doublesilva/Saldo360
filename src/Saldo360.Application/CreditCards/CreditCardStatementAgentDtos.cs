@@ -29,7 +29,11 @@ public sealed class CreditCardStatementAgentOptions
     public int TimeoutSeconds { get; set; } = 60;
 }
 
-public sealed record CreditCardStatementAgentProviderRequest(string SystemPrompt, string DocumentText);
+public sealed record CreditCardStatementAgentProviderRequest(string SystemPrompt, string DocumentText)
+{
+    public string SchemaName { get; init; } = "credit_card_statement";
+    public JsonElement? OutputSchema { get; init; }
+}
 
 public interface ICreditCardStatementAgentProvider
 {

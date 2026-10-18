@@ -57,7 +57,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
                 new { role = "system", content = new[] { new { type = "input_text", text = request.SystemPrompt } } },
                 new { role = "user", content = new[] { new { type = "input_text", text = request.DocumentText } } },
             },
-            text = new { format = new { type = "json_schema", name = "credit_card_statement", strict = true, schema = OutputSchema } },
+            text = new { format = new { type = "json_schema", name = request.SchemaName, strict = true, schema = request.OutputSchema ?? OutputSchema } },
         });
         var started = System.Diagnostics.Stopwatch.StartNew();
         try
