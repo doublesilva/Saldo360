@@ -47,7 +47,7 @@ public sealed class FinancialDocumentClassificationTests
     public async Task UnavailableAgentFailsSafe()
     {
         var result = await Create(new FakeAgent(error: true), true).ClassifyAsync(Request("Documento financeiro inconclusivo com texto amplo para avaliação."), CancellationToken.None);
-        Assert.Equal("Unknown", result.DocumentType); Assert.Equal("AgentUnavailable", result.FailureCode);
+        Assert.Equal("Unknown", result.DocumentType); Assert.Equal("ClassificationProviderUnavailable", result.FailureCode);
     }
 
     private static CompositeFinancialDocumentClassifier Create(FakeAgent agent, bool enabled) => new(new() { AgentEnabled = enabled }, agent);

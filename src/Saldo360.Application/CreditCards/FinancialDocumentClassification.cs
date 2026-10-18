@@ -77,7 +77,7 @@ public sealed class CompositeFinancialDocumentClassifier(
             Record(result!, request.Document.Pages.Count, started.ElapsedMilliseconds); return result!;
         }
         catch (CreditCardStatementAgentUnavailableException)
-        { var unavailable = Unknown("AgentUnavailable"); Record(unavailable, request.Document.Pages.Count, started.ElapsedMilliseconds); return unavailable; }
+        { var unavailable = Unknown("ClassificationProviderUnavailable"); Record(unavailable, request.Document.Pages.Count, started.ElapsedMilliseconds); return unavailable; }
     }
 
     public static FinancialDocumentClassificationResult? Deterministic(CreditCardPdfExtractedDocument document)

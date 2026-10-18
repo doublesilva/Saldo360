@@ -5,7 +5,7 @@ import { FinancialDocumentInbox } from './FinancialDocumentInbox'
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 const json = (value: unknown, status = 200) => Promise.resolve(Response.json(value, { status }))
 const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', lastFourDigits: '1234', holderUserId: null, creditLimit: '1000.00', closingDay: 8, dueDay: 15, defaultPaymentAccountId: null, isArchived: false, createdAt: '', updatedAt: '', archivedAt: null }
-const document = (overrides: Record<string, unknown> = {}) => ({ id: 'doc-1', source: 'Email', originalFileName: 'fatura.pdf', receivedAt: '2026-10-18T10:00:00Z', status: 'NeedsReview', parser: 'ItauMastercard', competence: '2026-10', creditCardId: null, failureCode: 'PasswordRequired', updatedAt: '2026-10-18T10:00:00Z', ...overrides })
+const document = (overrides: Record<string, unknown> = {}) => ({ id: 'doc-1', source: 'Email', originalFileName: 'fatura.pdf', receivedAt: '2026-10-18T10:00:00Z', status: 'NeedsReview', parser: 'ItauMastercard', competence: '2026-10', creditCardId: null, failureCode: 'PasswordRequired', updatedAt: '2026-10-18T10:00:00Z', documentType: null, classificationConfidence: null, classificationSource: null, classificationFailureCode: null, classifiedAt: null, ...overrides })
 function common(items: unknown[]) { return vi.fn((input: string | URL | Request, init?: RequestInit) => { const url = String(input); if (url === '/auth/csrf') return json({ token: 'csrf' }); if (url.endsWith('/financial-documents/inbox')) return json(items); if (url.includes('/credit-cards?')) return json([card]); if (url.endsWith('/categories')) return json([{ id: 'cat-1', name: 'Compras', type: 'Expense', isActive: true, createdAt: '' }]); throw new Error(`${init?.method ?? 'GET'} ${url}`) }) }
 
 describe('FinancialDocumentInbox', () => {
@@ -48,5 +48,13 @@ describe('FinancialDocumentInbox', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true); let ignored = false
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => { const url = String(input); if (url === '/auth/csrf') return json({ token: 'csrf' }); if (url.endsWith('/ignore')) { ignored = true; return json(document({ status: 'Ignored', failureCode: null })) } if (url.endsWith('/financial-documents/inbox')) return json([document()]); if (url.includes('/credit-cards?')) return json([card]); if (url.endsWith('/categories')) return json([]); throw new Error(`${init?.method ?? 'GET'} ${url}`) }))
     render(<FinancialDocumentInbox familyId="family-1" />); fireEvent.click(await screen.findByText('fatura.pdf')); fireEvent.click(screen.getByRole('button', { name: 'Ignorar documento' })); expect(ignored).toBe(false); fireEvent.click(screen.getByRole('button', { name: 'Ignorar documento' })); await waitFor(() => expect(ignored).toBe(true)); expect(confirm).toHaveBeenCalledTimes(2); expect(screen.getByText('Ignorado')).toBeTruthy()
+  })
+
+  it('exibe tipo conhecido sem tratar ausência de extractor como falha técnica', async () => {
+    vi.stubGlobal('fetch', common([document({ originalFileName: 'energia.pdf', documentType: 'ElectricityBill', classificationConfidence: 'High', classificationSource: 'Deterministic', failureCode: 'RecognizedDocumentWithoutExtractor' })]))
+    render(<FinancialDocumentInbox familyId="family-1" />)
+    expect(await screen.findByText(/Conta de energia · Recebido por e-mail/)).toBeTruthy()
+    expect(screen.getByText('Reconhecido · Extração financeira ainda não disponível')).toBeTruthy()
+    expect(screen.getAllByText('Requer revisão').length).toBeGreaterThan(0)
   })
 })
