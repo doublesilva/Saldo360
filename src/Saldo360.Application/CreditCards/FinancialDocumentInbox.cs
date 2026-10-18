@@ -171,7 +171,10 @@ public sealed class FinancialDocumentInboxService(
         }
         catch (CreditCardPdfReadException exception)
         {
-            item.Fail(exception.Failure.ToString(), clock.GetUtcNow()); await repository.SaveAsync(cancellationToken);
+            if (exception.Failure is CreditCardPdfReadFailure.PasswordRequired or CreditCardPdfReadFailure.PasswordRejected)
+                item.RequireReview(exception.Failure.ToString(), clock.GetUtcNow());
+            else item.Fail(exception.Failure.ToString(), clock.GetUtcNow());
+            await repository.SaveAsync(cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -183,6 +186,24 @@ public sealed class FinancialDocumentInboxService(
     private static FinancialDocumentInboxDto Map(FinancialDocumentInboxItem item) => new(item.Id, item.Source.ToString(), item.ExternalSourceId,
         item.OriginalFileName, item.ContentHash, item.ContentType, item.ReceivedAt.ToString("O"), item.Status.ToString(), item.Parser,
         item.Competence, item.CreditCardId, item.FailureCode, item.UpdatedAt.ToString("O"));
+}
+
+public sealed class FinancialDocumentInboxReviewService(
+    IFinancialDocumentInboxRepository repository,
+    IFinancialDocumentStorage storage,
+    ICreditCardPdfPreReconciliationService preReconciliation)
+{
+    public async Task<CreditCardPdfPreReconciliationResult> ReviewAsync(Guid familyId, Guid inboxItemId, Guid cardId,
+        Guid userId, string? password, CancellationToken cancellationToken)
+    {
+        var item = await repository.GetAsync(familyId, inboxItemId, userId, cancellationToken);
+        if (item is null) return new(CreditCardPdfPreviewAccess.NotFound, null, null);
+        await using var content = await storage.OpenReadAsync(item.StorageReference, cancellationToken);
+        if (content is null) return new(CreditCardPdfPreviewAccess.Invalid, null,
+            new Dictionary<string, string[]> { ["document"] = ["O documento armazenado não está disponível."] });
+        return await preReconciliation.PreReconcileAsync(familyId, cardId, userId, content, content.Length,
+            item.OriginalFileName, null, item.Competence, null, password, cancellationToken);
+    }
 }
 
 public sealed class FinancialDocumentInboxConfirmationService(

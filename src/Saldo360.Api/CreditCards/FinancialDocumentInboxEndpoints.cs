@@ -13,9 +13,26 @@ public static class FinancialDocumentInboxEndpoints
         group.MapGet("/", List);
         group.MapPost("/", Receive).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/reanalyze", Reanalyze).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/{id:guid}/pre-reconcile", PreReconcile).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/ignore", Ignore).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/confirm", Confirm).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
+    }
+
+    private static async Task<IResult> PreReconcile(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
+        FinancialDocumentInboxReviewService service, CancellationToken cancellationToken)
+    {
+        if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        if (!request.HasFormContentType) return Validation("request", "Envie a revisão usando multipart/form-data.");
+        var form = await request.ReadFormAsync(cancellationToken);
+        if (!Guid.TryParse(form["creditCardId"], out var cardId)) return Validation("creditCardId", "Informe o cartão selecionado.");
+        var result = await service.ReviewAsync(familyId, id, cardId, userId, form["password"], cancellationToken);
+        return result.Access switch
+        {
+            CreditCardPdfPreviewAccess.NotFound => Results.NotFound(),
+            CreditCardPdfPreviewAccess.Invalid => Results.ValidationProblem(result.Errors!),
+            _ => Results.Ok(result.Report)
+        };
     }
 
     private static async Task<IResult> List(Guid familyId, CurrentUser user, FinancialDocumentInboxService service, CancellationToken cancellationToken)

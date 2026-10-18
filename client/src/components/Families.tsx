@@ -22,6 +22,8 @@ import { FinancialPlanning } from './FinancialPlanning'
 import { FinancialDebts } from './FinancialDebts'
 import { FinancialGoals } from './FinancialGoals'
 import { FinancialDashboard } from './FinancialDashboard'
+import { FinancialDocumentInbox } from './FinancialDocumentInbox'
+import { listFinancialDocuments } from '../api/financialDocuments'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
 
@@ -171,13 +173,14 @@ type DetailState =
   | { kind: 'not-found' }
   | { kind: 'error'; message: string }
 
-type FamilySection = 'overview' | 'calendar' | 'budgets' | 'cards' | 'recurrences' | 'planning' | 'debts' | 'goals' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
+type FamilySection = 'overview' | 'calendar' | 'budgets' | 'cards' | 'documents' | 'recurrences' | 'planning' | 'debts' | 'goals' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
 
 const familySections: Array<{ id: FamilySection; label: string }> = [
   { id: 'overview', label: 'Visão Geral' },
   { id: 'calendar', label: 'Agenda' },
   { id: 'budgets', label: 'Orçamentos' },
   { id: 'cards', label: 'Cartões' },
+  { id: 'documents', label: 'Documentos' },
   { id: 'recurrences', label: 'Recorrências' },
   { id: 'planning', label: 'Planejamento' },
   { id: 'debts', label: 'Dívidas' },
@@ -201,7 +204,17 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
   const [section, setSection] = useState<FamilySection>('overview')
   const [calendarMonth, setCalendarMonth] = useState<string | undefined>(undefined)
   const [budgetCompetence, setBudgetCompetence] = useState<string | undefined>(undefined)
+  const [documentAttentionCount, setDocumentAttentionCount] = useState(0)
   const financeChanged = () => setFinanceVersion((n) => n + 1)
+
+  useEffect(() => {
+    if (state.kind !== 'loaded') return
+    const controller = new AbortController()
+    void listFinancialDocuments(state.family.id, controller.signal)
+      .then((items) => setDocumentAttentionCount(items.filter((item) => ['NeedsReview', 'Conflict', 'Failed'].includes(item.status)).length))
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [state])
 
   useEffect(() => {
     if (typeof family !== 'string') return
@@ -236,7 +249,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
                 aria-current={section === item.id ? 'page' : undefined}
                 onClick={() => setSection(item.id)}
               >
-                {item.label}
+                {item.label}{item.id === 'documents' && documentAttentionCount > 0 && <span className="inbox-counter" aria-label={`${documentAttentionCount} documentos exigem atenção`}>{documentAttentionCount}</span>}
               </button>
             ))}
           </nav>
@@ -279,6 +292,7 @@ function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack
             />
           )}
           {section === 'cards' && <FinancialCreditCardsPage familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} />}
+          {section === 'documents' && <FinancialDocumentInbox key={state.family.id} familyId={state.family.id} onChanged={financeChanged} onAttentionCount={setDocumentAttentionCount} />}
           {section === 'recurrences' && <FinancialRecurrences key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }} />}
           {section === 'planning' && <FinancialPlanning key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} />}
           {section === 'debts' && <FinancialDebts key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }} onNavigateToBudgets={(competence) => { setBudgetCompetence(competence); setSection('budgets') }} onNavigateToPlanning={() => setSection('planning')} />}

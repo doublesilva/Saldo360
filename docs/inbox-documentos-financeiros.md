@@ -34,8 +34,15 @@ Mesmo identificador externo e mesmo hash retorna o item existente. Mesmo identif
 - `GET /api/families/{familyId}/financial-documents/inbox`
 - `POST /api/families/{familyId}/financial-documents/inbox` — `multipart/form-data` com `file`, `externalSourceId`, `creditCardId` e `password` opcionais.
 - `POST /api/families/{familyId}/financial-documents/inbox/{id}/reanalyze` — cartão e senha efêmera opcionais.
+- `POST /api/families/{familyId}/financial-documents/inbox/{id}/pre-reconcile` — calcula a revisão detalhada a partir do arquivo privado, exigindo seleção explícita de cartão; não persiste operações financeiras.
 - `POST /api/families/{familyId}/financial-documents/inbox/{id}/ignore`.
 - `POST /api/families/{familyId}/financial-documents/inbox/{id}/confirm` — reusa integralmente a confirmação T15.3.5, com `creditCardId`, `confirm`, `documentId`, `categories` e senha efêmera.
+
+## Interface
+
+A área **Documentos** da família lista uploads manuais e documentos recebidos por e-mail, com contador de atenção, filtros por estado, origem, cartão e competência. A origem Gmail é apresentada apenas como “Recebido por e-mail”; IDs externos, hash e referência de storage não são exibidos.
+
+Senha de PDF é mantida somente no estado em memória do componente, enviada em `multipart/form-data` e limpa após cada operação. Cartões ambíguos ou ausentes exigem escolha explícita. A revisão e a confirmação reutilizam os contratos PDF já existentes, inclusive a obrigatoriedade de categoria ativa de despesa para compras novas. `Conflict` nunca oferece importação forçada e ignorar preserva o arquivo físico.
 
 Escritas exigem autenticação, participação na família e CSRF. Senha, CPF, titular e texto integral nunca são persistidos ou devolvidos. O endpoint não oferece acesso direto aos bytes armazenados.
 

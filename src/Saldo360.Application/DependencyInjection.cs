@@ -43,6 +43,7 @@ public static class DependencyInjection
         services.AddScoped<ICreditCardPdfPreReconciliationService, CreditCardPdfPreReconciliationService>();
         services.AddScoped<CreditCardPdfConfirmationService>();
         services.AddScoped<FinancialDocumentInboxService>();
+        services.AddScoped<FinancialDocumentInboxReviewService>();
         services.AddScoped<FinancialDocumentInboxConfirmationService>();
         services.AddScoped<FinancialEmailCollector>();
         services.AddScoped<IFinancialEmailCollector>(provider => provider.GetRequiredService<FinancialEmailCollector>());
