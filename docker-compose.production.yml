@@ -37,12 +37,44 @@ services:
       FinancialEmailImport__Gmail__ClientIdFile: /etc/saldo360/secrets/gmail/client-id
       FinancialEmailImport__Gmail__ClientSecretFile: /etc/saldo360/secrets/gmail/client-secret
       FinancialEmailImport__Gmail__RefreshTokenFile: /etc/saldo360/secrets/gmail/refresh-token
+      FinancialEmailImport__Enabled: "false"
+      FinancialEmailImport__Provider: Gmail
+      FinancialEmailImport__TimeZone: America/Sao_Paulo
+      FinancialEmailImport__Gmail__Mailbox: silva.pucrs@gmail.com
+
+      FinancialEmailImport__Sources__0__Name: ItauCards
+      FinancialEmailImport__Sources__0__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
+      FinancialEmailImport__Sources__0__Query: 'has:attachment subject:"fatura do seu cartão" -subject:"Nu Empresas"'
+      FinancialEmailImport__Sources__0__Enabled: "true"
+
+      FinancialEmailImport__Sources__1__Name: NuEmpresas
+      FinancialEmailImport__Sources__1__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
+      FinancialEmailImport__Sources__1__Query: 'has:attachment subject:"fatura do seu cartão Nu Empresas"'
+      FinancialEmailImport__Sources__1__Enabled: "true"
+
+      FinancialEmailImport__Sources__2__Name: ZaffariBourbon
+      FinancialEmailImport__Sources__2__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
+      FinancialEmailImport__Sources__2__Query: 'Fatura Bourbon has:attachment'
+      FinancialEmailImport__Sources__2__Enabled: "true"
+
+      FinancialEmailImport__Sources__3__Name: Ceee
+      FinancialEmailImport__Sources__3__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
+      FinancialEmailImport__Sources__3__Query: 'has:attachment subject:"fatura ceee"'
+      FinancialEmailImport__Sources__3__Enabled: "true"
+
+      FinancialEmailImport__Sources__4__Name: Dmae
+      FinancialEmailImport__Sources__4__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
+      FinancialEmailImport__Sources__4__Query: 'dmae conta'
+      FinancialEmailImport__Sources__4__Enabled: "true"
+
+      FinancialDocuments__StoragePath: /var/lib/saldo360/financial-documents
       ReverseProxy__KnownNetworks__0: 172.16.0.0/12
       ReverseProxy__AllowedHosts__0: ${SALDO360_PUBLIC_HOST:?Defina SALDO360_PUBLIC_HOST no .env}
     volumes:
       - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
       - /etc/saldo360/secrets/gmail:/etc/saldo360/secrets/gmail:ro
       - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro
+      - /var/lib/saldo360/financial-documents:/var/lib/saldo360/financial-documents:rw
     depends_on:
       postgres:
         condition: service_healthy
