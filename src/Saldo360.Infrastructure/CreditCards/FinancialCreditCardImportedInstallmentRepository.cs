@@ -57,7 +57,7 @@ internal sealed class FinancialCreditCardImportedInstallmentRepository(Saldo360D
         var invoice = await db.FinancialCreditCardInvoices.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.CreditCardId == cardId && item.Competence == input.Competence, cancellationToken);
         if (invoice is null) { await transaction.RollbackAsync(cancellationToken); return Invalid("competence", "Não existe fatura correspondente à competência informada."); }
         var paid = await db.FinancialCreditCardInvoicePayments.Where(item => item.FamilyId == familyId && item.InvoiceId == invoice.Id && item.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
-        var current = await InvoiceTotalAsync(invoice.Id, cancellationToken);
+        var current = await InvoiceTotalAsync(familyId, invoice.Id, cancellationToken);
         if (paid >= current && current > 0m) { await transaction.RollbackAsync(cancellationToken); return Invalid("invoiceId", "A fatura já está quitada e não pode receber obrigação histórica silenciosamente."); }
         if (await ExternalExistsAsync(familyId, cardId, input.ExternalId, cancellationToken)) { await transaction.RollbackAsync(cancellationToken); return Invalid("externalId", "O identificador externo já foi utilizado."); }
         var record = FinancialCreditCardImportedInstallment.Create(familyId, cardId, input.ImportId, input.RowNumber, input.ExternalId, null, invoice.Id, DateOnly.Parse(input.TransactionDate), input.Description, decimal.Parse(input.Amount, System.Globalization.CultureInfo.InvariantCulture), input.InstallmentNumber, input.InstallmentCount, input.CategoryId, true, userId, now);
@@ -77,7 +77,7 @@ internal sealed class FinancialCreditCardImportedInstallmentRepository(Saldo360D
         var record = await db.FinancialCreditCardImportedInstallments.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.CreditCardId == cardId && item.Id == id && item.Status == FinancialCreditCardImportedInstallmentStatus.Active, cancellationToken);
         if (record is null || !record.IsHistorical) return false;
         var paid = await db.FinancialCreditCardInvoicePayments.Where(item => item.FamilyId == familyId && item.InvoiceId == record.InvoiceId && item.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
-        var total = await InvoiceTotalAsync(record.InvoiceId, cancellationToken);
+        var total = await InvoiceTotalAsync(familyId, record.InvoiceId, cancellationToken);
         if (paid > total - record.Amount) return false;
         record.Cancel(userId, now); await db.SaveChangesAsync(cancellationToken); return true;
     }
@@ -86,7 +86,7 @@ internal sealed class FinancialCreditCardImportedInstallmentRepository(Saldo360D
 
     private async Task<FinancialCreditCardImportedInstallment?> FindExistingAsync(Guid familyId, Guid cardId, ImportedInstallmentInput input, CancellationToken cancellationToken) => await db.FinancialCreditCardImportedInstallments.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.CreditCardId == cardId && item.ImportId == input.ImportId && item.RowNumber == input.RowNumber, cancellationToken);
     private async Task<bool> ExternalExistsAsync(Guid familyId, Guid cardId, string? externalId, CancellationToken cancellationToken) => externalId is not null && await db.FinancialCreditCardImportedInstallments.AnyAsync(item => item.FamilyId == familyId && item.CreditCardId == cardId && item.ExternalId == externalId && item.Status == FinancialCreditCardImportedInstallmentStatus.Active, cancellationToken);
-    private async Task<decimal> InvoiceTotalAsync(Guid invoiceId, CancellationToken cancellationToken) => (await db.FinancialCreditCardInstallments.Where(item => item.InvoiceId == invoiceId && item.Status == CreditCardInstallmentStatus.Active).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m) + (await db.FinancialCreditCardImportedInstallments.Where(item => item.InvoiceId == invoiceId && item.IsHistorical && item.Status == FinancialCreditCardImportedInstallmentStatus.Active).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m);
+    private Task<decimal> InvoiceTotalAsync(Guid familyId, Guid invoiceId, CancellationToken cancellationToken) => FinancialCreditCardInvoiceTotals.TotalAsync(db, familyId, invoiceId, cancellationToken);
     private static ImportedInstallmentOperationResult Invalid(string field, string message) => new(ImportedInstallmentAccess.Invalid, null, null, new Dictionary<string, string[]> { [field] = [message] });
     private static ImportedInstallmentOperationResult SameOrConflict(FinancialCreditCardImportedInstallment existing, ImportedInstallmentInput input) =>
         existing.TransactionDate.ToString("yyyy-MM-dd") == input.TransactionDate

@@ -32,6 +32,8 @@ Esta etapa cobre somente cadastro, consulta, edição e arquivamento lógico. N�
 
 Cada cartão possui instituição emissora, nome identificador, titular opcional, limite nominal, dia de fechamento, dia de vencimento e conta financeira preferencial de pagamento opcional. O titular precisa ser usuário membro da mesma família. A conta de pagamento precisa pertencer à família e estar ativa no momento do cadastro; desativar uma conta depois não remove o histórico do cartão.
 
+O cadastro aceita opcionalmente `lastFourDigits`, sempre como texto com exatamente quatro algarismos (`0000` a `9999`). Zeros à esquerda são preservados e a API nunca recebe nem devolve o número completo. Cartões anteriores à migration permanecem compatíveis com valor `null`. Não há unicidade artificial: cartões legítimos podem compartilhar emissor e final, e a identificação de faturas retorna ambiguidade em vez de escolher o primeiro registro.
+
 O limite é `decimal` não negativo, com até duas casas, e é serializado pela API como string decimal exata. Ele é apenas o limite nominal: limite utilizado ou disponível ainda não é calculado.
 
 Fechamento e vencimento aceitam dias de 1 a 31. Dias 29, 30 e 31 são armazenados sem ajuste; a política para meses sem esse dia será definida quando forem implementados os ciclos de fatura.

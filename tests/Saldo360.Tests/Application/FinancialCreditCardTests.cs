@@ -67,4 +67,26 @@ public sealed class FinancialCreditCardTests
         Assert.Equal(1234.56m, card.CreditLimit);
         Assert.Equal(10, card.ClosingDay);
     }
+
+    [Theory]
+    [InlineData("1234")]
+    [InlineData("0007")]
+    public void AcceptsExactLastFourDigits(string digits)
+    {
+        var details = CreditCardDetails.TryCreate("Principal", "Banco", digits, null, 100m, 10, 20, null, out var errors);
+        Assert.NotNull(details);
+        Assert.Empty(errors);
+        Assert.Equal(digits, details!.LastFourDigits);
+    }
+
+    [Theory]
+    [InlineData("123")]
+    [InlineData("12345")]
+    [InlineData("12A4")]
+    [InlineData("１２３４")]
+    public void RejectsInvalidLastFourDigits(string digits)
+    {
+        Assert.Null(CreditCardDetails.TryCreate("Principal", "Banco", digits, null, 100m, 10, 20, null, out var errors));
+        Assert.Contains("lastFourDigits", errors.Keys);
+    }
 }

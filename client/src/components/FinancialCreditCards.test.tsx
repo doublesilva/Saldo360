@@ -4,7 +4,7 @@ import { FinancialCreditCardsPage } from './FinancialCreditCards'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', holderUserId: null, creditLimit: '10000.00', closingDay: 10, dueDay: 20, defaultPaymentAccountId: null, isArchived: false, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', archivedAt: null }
+const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', lastFourDigits: '0012', holderUserId: null, creditLimit: '10000.00', closingDay: 10, dueDay: 20, defaultPaymentAccountId: null, isArchived: false, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', archivedAt: null }
 const json = (value: unknown) => Promise.resolve(new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } }))
 
 describe('FinancialCreditCardsPage', () => {
@@ -22,6 +22,7 @@ describe('FinancialCreditCardsPage', () => {
     render(<FinancialCreditCardsPage familyId="family-1" />)
     expect((await screen.findAllByText('Platinum')).length).toBeGreaterThan(0)
     await waitFor(() => expect(screen.getAllByText(/10\.000,00/).length).toBeGreaterThan(0))
+    expect(screen.getAllByText(/•••• 0012/).length).toBeGreaterThan(0)
     expect(screen.getAllByText('Cartões').length).toBeGreaterThan(0)
   })
 

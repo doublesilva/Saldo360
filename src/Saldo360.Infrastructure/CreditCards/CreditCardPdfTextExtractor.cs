@@ -8,6 +8,7 @@ namespace Saldo360.Infrastructure.CreditCards;
 
 internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
 {
+    private readonly CreditCardPdfParserResolver _parsers = new();
     private static readonly Regex DateRegex = new(@"(?<!\d)(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2})(?!\d)", RegexOptions.Compiled);
     private static readonly Regex AmountRegex = new(@"(?<!\w)(?:R\$\s*)?-?\d{1,3}(?:\.\d{3})*,\d{2}|(?<!\w)-?\d+\.\d{2}(?!\d)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex InstallmentRegex = new(@"(?<!\d)(\d{1,2})\s*/\s*(\d{1,2})(?!\d)", RegexOptions.Compiled);
@@ -63,8 +64,7 @@ internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
 
     public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat)
     {
-        if (ItauCreditCardPdfParser.CanParse(document))
-            return ItauCreditCardPdfParser.Parse(document, fileName, competence);
+        if (_parsers.TryParse(document, fileName, competence) is { } specialized) return specialized;
 
         var allText = string.Join("\n", document.Pages.Select(page => page.Text));
         var statement = new CreditCardPdfPreviewStatement(

@@ -43,6 +43,8 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
         {
             var paid = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(p => p.FamilyId == familyId && p.InvoiceId == invoiceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
             var otherTotal = await (from i in db.FinancialCreditCardInstallments.AsNoTracking() join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id where i.FamilyId == familyId && i.InvoiceId == invoiceId && i.PurchaseId != purchaseId && i.Status == CreditCardInstallmentStatus.Active && p.Status == CreditCardPurchaseStatus.Active select i.Amount).SumAsync(cancellationToken);
+            otherTotal += await db.FinancialCreditCardImportedInstallments.AsNoTracking().Where(i => i.FamilyId == familyId && i.InvoiceId == invoiceId && i.IsHistorical && i.Status == FinancialCreditCardImportedInstallmentStatus.Active).SumAsync(i => (decimal?)i.Amount, cancellationToken) ?? 0m;
+            otherTotal += await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking().Where(i => i.FamilyId == familyId && i.InvoiceId == invoiceId && i.Status == FinancialCreditCardInvoiceAdjustmentStatus.Active).SumAsync(i => (decimal?)(i.Nature == FinancialCreditCardInvoiceAdjustmentNature.Debit ? i.Amount : -i.Amount), cancellationToken) ?? 0m;
             if (otherTotal < paid) return false;
         }
         return true;
@@ -76,6 +78,9 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
             .Where(i => i.FamilyId == familyId && i.CreditCardId == cardId && i.IsHistorical
                 && i.Status == FinancialCreditCardImportedInstallmentStatus.Active)
             .SumAsync(i => (decimal?)i.Amount, cancellationToken) ?? 0m;
+        obligations += await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
+            .Where(i => i.FamilyId == familyId && i.CreditCardId == cardId && i.Status == FinancialCreditCardInvoiceAdjustmentStatus.Active)
+            .SumAsync(i => (decimal?)(i.Nature == FinancialCreditCardInvoiceAdjustmentNature.Debit ? i.Amount : -i.Amount), cancellationToken) ?? 0m;
         var paid = await (from payment in db.FinancialCreditCardInvoicePayments.AsNoTracking()
                           join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on payment.InvoiceId equals invoice.Id
                           where payment.FamilyId == familyId && payment.Status == FinancialCreditCardInvoicePaymentStatus.Active && invoice.FamilyId == familyId && invoice.CreditCardId == cardId
@@ -95,10 +100,16 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
             .Where(item => ids.Contains(item.InvoiceId) && item.IsHistorical && item.Status == FinancialCreditCardImportedInstallmentStatus.Active)
             .Select(item => new { item.InvoiceId, item.Id, item.Description, item.InstallmentCount, item.InstallmentNumber, item.Amount })
             .ToListAsync(cancellationToken);
+        var adjustments = await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
+            .Where(item => ids.Contains(item.InvoiceId) && item.Status == FinancialCreditCardInvoiceAdjustmentStatus.Active)
+            .GroupBy(item => item.InvoiceId)
+            .Select(group => new { InvoiceId = group.Key, Amount = group.Sum(item => item.Nature == FinancialCreditCardInvoiceAdjustmentNature.Debit ? item.Amount : -item.Amount) })
+            .ToListAsync(cancellationToken);
         var payments = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(p => ids.Contains(p.InvoiceId) && p.Status == FinancialCreditCardInvoicePaymentStatus.Active).GroupBy(p => p.InvoiceId).Select(g => new { InvoiceId = g.Key, Amount = g.Sum(p => p.Amount) }).ToListAsync(cancellationToken);
         return invoices.Select(invoice => {
             var total = rows.Where(r => r.InvoiceId == invoice.Id).Sum(r => r.Amount)
-                + historicalRows.Where(r => r.InvoiceId == invoice.Id).Sum(r => r.Amount);
+                + historicalRows.Where(r => r.InvoiceId == invoice.Id).Sum(r => r.Amount)
+                + adjustments.Where(r => r.InvoiceId == invoice.Id).Select(r => r.Amount).SingleOrDefault();
             var paid = payments.Where(p => p.InvoiceId == invoice.Id).Select(p => p.Amount).SingleOrDefault();
             var remaining = Math.Max(0m, total - paid);
             var paymentStatus = total <= 0m || paid <= 0m ? InvoicePaymentStatus.Unpaid : remaining <= 0m ? InvoicePaymentStatus.Paid : InvoicePaymentStatus.PartiallyPaid;

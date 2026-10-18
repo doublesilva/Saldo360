@@ -56,6 +56,9 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialCreditCardImportBatch> FinancialCreditCardImportBatches => Set<FinancialCreditCardImportBatch>();
     public DbSet<FinancialCreditCardImportItem> FinancialCreditCardImportItems => Set<FinancialCreditCardImportItem>();
     public DbSet<FinancialCreditCardImportedInstallment> FinancialCreditCardImportedInstallments => Set<FinancialCreditCardImportedInstallment>();
+    public DbSet<FinancialCreditCardInvoiceAdjustment> FinancialCreditCardInvoiceAdjustments => Set<FinancialCreditCardInvoiceAdjustment>();
+    public DbSet<FinancialDocumentInboxItem> FinancialDocumentInboxItems => Set<FinancialDocumentInboxItem>();
+    public DbSet<FinancialEmailCollectorCheckpoint> FinancialEmailCollectorCheckpoints => Set<FinancialEmailCollectorCheckpoint>();
     public DbSet<FinancialRecurrence> FinancialRecurrences => Set<FinancialRecurrence>();
     public DbSet<FinancialRecurrenceMaterialization> FinancialRecurrenceMaterializations => Set<FinancialRecurrenceMaterialization>();
     public DbSet<FinancialPlanningScenario> FinancialPlanningScenarios => Set<FinancialPlanningScenario>();

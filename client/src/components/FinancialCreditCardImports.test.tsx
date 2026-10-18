@@ -4,7 +4,7 @@ import { FinancialCreditCardImports } from './FinancialCreditCardImports'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', holderUserId: null, creditLimit: '10000.00', closingDay: 10, dueDay: 20, defaultPaymentAccountId: null, isArchived: false, createdAt: '', updatedAt: '', archivedAt: null }
+const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', lastFourDigits: null, holderUserId: null, creditLimit: '10000.00', closingDay: 10, dueDay: 20, defaultPaymentAccountId: null, isArchived: false, createdAt: '', updatedAt: '', archivedAt: null }
 const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } }))
 const csvPreview = { totalRows: 1, validRows: 1, warningRows: 0, invalidRows: 0, ignoredRows: 0, mapping: { dateColumn: 'date', descriptionColumn: 'description', amountColumn: 'amount', delimiter: ',', dateFormat: 'yyyy-MM-dd', decimalFormat: 'Invariant' }, rows: [{ rowNumber: 2, transactionDate: '2026-10-01', description: 'Compra', amount: '10.25', installmentNumber: null, installmentCount: null, externalId: null, category: null, competence: null, status: 'Valid', errors: [], warnings: [] }] }
 
@@ -34,23 +34,54 @@ describe('FinancialCreditCardImports', () => {
     await waitFor(() => expect(screen.getByText(/1 compra\(s\) confirmada/)).toBeTruthy())
   })
 
-  it('analisa PDF e não oferece importação definitiva', async () => {
+  it('executa prévia, pré-conciliação e confirmação explícita do PDF', async () => {
+    const forms: FormData[] = []
     vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
       if (url === '/auth/csrf') return json({ token: 'csrf' })
       if (url.endsWith('/installments/') && !init?.method) return json([])
-      if (url.endsWith('/categories?includeInactive=true')) return json([])
+      if (url.endsWith('/categories?includeInactive=true')) return json([{ id: 'cat-1', name: 'Compras', type: 'Expense', isActive: true, createdAt: '' }])
       if (url.endsWith('/pdf/preview')) return json({ fileName: 'fatura.pdf', pageCount: 1, parser: 'ItauMastercard', statement: { issuer: 'Itaú', cardLastDigits: '1234', competence: '2026-10', closingDate: '2026-10-08', dueDate: '2026-10-15', totalAmount: '10.00' }, summary: { recognized: 1, warnings: 0, invalid: 0, unknown: 0 }, reconciliation: { status: 'Reconciled', officialTotal: '10.00', componentsTotal: '10.00', difference: '0.00', hasUnknownCurrentItems: false }, items: [{ rowNumber: 1, page: 1, sourceText: '01/10 COMPRA 10,00', transactionDate: '2026-10-01', description: 'COMPRA', originalDescription: 'COMPRA', normalizedDescription: 'COMPRA', amount: '10.00', type: 'Purchase', nature: 'Debit', includedInCurrentTotal: true, installmentNumber: null, installmentCount: null, competence: '2026-10', status: 'Valid', errors: [], warnings: [] }], warnings: [] })
+      if (url.endsWith('/pdf/pre-reconcile')) return json({ documentKey: 'pdf-sha256:abc', parser: 'ItauMastercard', statement: { issuer: 'Itaú', cardLastDigits: '1234', competence: '2026-10', closingDate: '2026-10-08', dueDate: '2026-10-15', totalAmount: '10.00' }, reconciliation: { status: 'Reconciled', officialTotal: '10.00', componentsTotal: '10.00', difference: '0.00', hasUnknownCurrentItems: false }, destination: { familyId: 'family-1', creditCardId: 'card-1', family: 'Família', creditCard: 'Platinum', holder: 'Validated', maskedCard: 'Validated', invoice: 'Validated', invoiceId: 'invoice-1', notes: [] }, counts: { create: 1, alreadyExists: 0, needsReview: 0, conflict: 0, unsupported: 0, informational: 1 }, items: [{ componentId: 'c1', rowNumber: 1, page: 1, type: 'Purchase', nature: 'Debit', transactionDate: '2026-10-01', description: 'COMPRA', amount: '10.00', installmentNumber: null, installmentCount: null, includedInCurrentTotal: true, classification: 'Create', matchedEntityType: null, matchedEntityId: null, reasons: [] }, { componentId: 'c2', rowNumber: 2, page: 1, type: 'FutureInstallment', nature: 'Debit', transactionDate: null, description: 'FUTURA', amount: '5.00', installmentNumber: 2, installmentCount: 3, includedInCurrentTotal: false, classification: 'Informational', matchedEntityType: null, matchedEntityId: null, reasons: ['Não integra a fatura atual.'] }], estimatedImpact: [], limitations: [] })
+      if (url.endsWith('/pdf/confirm')) { forms.push(init?.body as FormData); return json({ importId: 'import-pdf-1', documentId: 'pdf-sha256:abc', status: 'Completed', parser: 'ItauMastercard', competence: '2026-10', createdPurchases: 1, createdHistoricalInstallments: 0, createdAdjustments: 0, alreadyExisting: 0, informational: 1, items: [], finalReconciliation: { officialTotal: '10.00', persistedTotal: '10.00', difference: '0.00' } }) }
       return json([])
     }))
     render(<FinancialCreditCardImports familyId="family-1" cards={[card]} selectedCardId="card-1" />)
     fireEvent.change(screen.getByLabelText('Formato'), { target: { value: 'pdf' } })
-    fireEvent.change(screen.getByLabelText('Arquivo'), { target: { files: [new File(['%PDF'], 'fatura.pdf', { type: 'application/pdf' })] } })
-    fireEvent.click(screen.getByRole('button', { name: 'Executar prévia' }))
-    await screen.findByText('Prévia PDF — somente análise')
-    expect(screen.getByText(/Conferência: Reconciled/)).toBeTruthy()
-    expect(screen.getByText(/Purchase · Debit/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /Confirmar/ })).toBeNull()
-    expect(screen.getByText(/Nenhuma informação financeira foi gravada/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Arquivo PDF'), { target: { files: [new File(['%PDF'], 'fatura.pdf', { type: 'application/pdf' })] } })
+    fireEvent.click(screen.getByRole('button', { name: '1. Analisar PDF' }))
+    await screen.findByText('Prévia do documento')
+    expect(screen.getByText(/Conferência interna: Reconciled/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '2. Comparar com Saldo360' }))
+    await screen.findByText('Pré-conciliação')
+    expect(screen.getByText('Parcelas futuras e informações')).toBeTruthy()
+    expect((screen.getByRole('button', { name: '3. Confirmar importação' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Categoria de COMPRA'), { target: { value: 'cat-1' } })
+    fireEvent.click(screen.getByRole('button', { name: '3. Confirmar importação' }))
+    await screen.findByText('Importação concluída')
+    expect(screen.getAllByText(/0,00/).length).toBeGreaterThan(0)
+    expect(forms[0].get('documentId')).toBe('pdf-sha256:abc')
+    expect(forms[0].get('categories')).toBe('[{"componentId":"c1","categoryId":"cat-1"}]')
+    expect(forms[0].get('confirm')).toBe('true')
+  })
+
+  it('mantém a análise e oferece reanálise após conflito de confirmação', async () => {
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/auth/csrf') return json({ token: 'csrf' })
+      if (url.endsWith('/installments/') && !init?.method) return json([])
+      if (url.endsWith('/categories?includeInactive=true')) return json([])
+      if (url.endsWith('/pdf/preview')) return json({ fileName: 'f.pdf', pageCount: 1, parser: 'ItauMastercard', security: { status: 'Unlocked' }, statement: { issuer: 'Itaú', cardLastDigits: '1234', competence: '2026-10', closingDate: null, dueDate: null, totalAmount: '0.00' }, summary: { recognized: 0, warnings: 0, invalid: 0, unknown: 0 }, reconciliation: { status: 'Reconciled', officialTotal: '0.00', componentsTotal: '0.00', difference: '0.00', hasUnknownCurrentItems: false }, items: [], warnings: [] })
+      if (url.endsWith('/pdf/pre-reconcile')) return json({ documentKey: 'pdf-sha256:abc', parser: 'ItauMastercard', statement: { issuer: 'Itaú', cardLastDigits: '1234', competence: '2026-10', closingDate: null, dueDate: null, totalAmount: '0.00' }, reconciliation: { status: 'Reconciled', officialTotal: '0.00', componentsTotal: '0.00', difference: '0.00', hasUnknownCurrentItems: false }, destination: { familyId: 'family-1', creditCardId: 'card-1', family: 'Família', creditCard: 'Platinum', holder: 'Validated', maskedCard: 'Validated', invoice: 'Validated', invoiceId: 'i1', notes: [] }, counts: { create: 0, alreadyExists: 1, needsReview: 0, conflict: 0, unsupported: 0, informational: 0 }, items: [{ componentId: 'c1', rowNumber: 1, page: 1, type: 'Purchase', nature: 'Debit', transactionDate: '2026-10-01', description: 'EXISTENTE', amount: '0.00', installmentNumber: null, installmentCount: null, includedInCurrentTotal: true, classification: 'AlreadyExists', matchedEntityType: 'Purchase', matchedEntityId: 'p1', reasons: [] }], estimatedImpact: [], limitations: [] })
+      if (url.endsWith('/pdf/confirm')) return json({ message: 'Documento alterado.' }, 409)
+      return json([])
+    }))
+    render(<FinancialCreditCardImports familyId="family-1" cards={[card]} selectedCardId="card-1" />)
+    fireEvent.change(screen.getByLabelText('Formato'), { target: { value: 'pdf' } })
+    fireEvent.change(screen.getByLabelText('Arquivo PDF'), { target: { files: [new File(['pdf'], 'f.pdf')] } })
+    fireEvent.click(screen.getByRole('button', { name: '1. Analisar PDF' })); await screen.findByText('Prévia do documento')
+    fireEvent.click(screen.getByRole('button', { name: '2. Comparar com Saldo360' })); await screen.findByText('Pré-conciliação')
+    fireEvent.click(screen.getByRole('button', { name: '3. Confirmar importação' }))
+    expect(await screen.findByRole('button', { name: 'Reanalisar documento' })).toBeTruthy()
+    expect(screen.getByText('Pré-conciliação')).toBeTruthy()
   })
 
   it('mantém o mesmo importId após perda da resposta de confirmação', async () => {

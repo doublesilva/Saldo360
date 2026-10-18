@@ -5,7 +5,7 @@ using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
-internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFinancialCreditCardRepository, ICreditCardPdfContextRepository
+internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFinancialCreditCardRepository, ICreditCardPdfContextRepository, ICreditCardStatementResolutionRepository
 {
     public async Task AddAsync(FinancialCreditCard card, CancellationToken cancellationToken)
     {
@@ -38,11 +38,17 @@ internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFin
         (from card in db.FinancialCreditCards
          where card.FamilyId == familyId && card.Id == cardId && !card.IsArchived
              && db.FamilyMembers.Any(member => member.FamilyId == familyId && member.UserId == userId)
-         select new CreditCardPdfContext(card.Issuer, card.HolderUserId))
+         select new CreditCardPdfContext(card.Issuer, card.HolderUserId, card.LastFourDigits))
         .SingleOrDefaultAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid familyId, CancellationToken cancellationToken) =>
+        await db.FinancialCreditCards.AsNoTracking()
+            .Where(card => card.FamilyId == familyId && !card.IsArchived && card.LastFourDigits != null)
+            .Select(card => new CreditCardStatementCandidate(card.Id, card.Issuer, card.LastFourDigits!, card.HolderUserId))
+            .ToListAsync(cancellationToken);
+
     private static FinancialCreditCardDto ToDto(FinancialCreditCard card) => new(
-        card.Id, card.FamilyId, card.Name, card.Issuer, card.HolderUserId,
+        card.Id, card.FamilyId, card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId,
         Domain.Common.Money.Format(card.CreditLimit), card.ClosingDay, card.DueDay, card.DefaultPaymentAccountId,
         card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt);
 }

@@ -108,6 +108,68 @@ O objeto `reconciliation` retorna `officialTotal`, `componentsTotal`, `differenc
 
 Na prova local, a amostra real foi classificada como `Reconciled`, com diferença `0.00`. Os testes versionados usam somente uma representação posicional sintética e anonimizada do layout.
 
+### Parser Nubank (T15.3.8)
+
+O parser `Nubank` foi construído a partir de uma fatura textual real de seis páginas, analisada somente no ambiente local e nunca adicionada ao repositório. A seleção é determinística pelos marcadores `NU PAGAMENTOS S.A`, `RESUMO DA FATURA ATUAL` e `PRÓXIMAS FATURAS`; o resolvedor tenta os parsers especializados Itaú e Nubank antes do fallback genérico.
+
+O layout observado contém capa, instruções, resumo da fatura atual, lançamentos detalhados e próximas faturas. O parser usa as coordenadas das palavras para reconstruir linhas visuais e extrai competência, emissão/fechamento, vencimento, total oficial, saldo anterior, pagamento recebido, compras nacionais e internacionais, parcelas e IOF. Saldo anterior e pagamento são preservados como informações históricas e não voltam a compor o total atual; compras e encargos correntes compõem a conferência. Parcela intermediária mantém apenas seu valor e numeração, sem multiplicação ou reconstrução da compra original.
+
+Na prova local, os componentes correntes somaram exatamente `785.33`, iguais ao total oficial, com diferença `0.00` e estado `Reconciled`. A amostra reúne lançamentos de dois finais de cartão: por isso `cardLastDigits` permanece nulo, um aviso explícito é retornado e a escolha do cartão continua obrigatória. Um layout alterado, total ausente ou linha financeira corrente desconhecida produz `NeedsReview`/`Divergent`, nunca conciliação silenciosa. Os três testes versionados usam fixture posicional sintética e anonimizada e também protegem a precedência do Itaú e o fallback genérico.
+
+### Pré-conciliação PDF (T15.3.3)
+
+`POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/pre-reconcile` aceita o mesmo `multipart/form-data` da prévia e executa uma comparação somente leitura com o cartão explicitamente selecionado. O endpoint exige autenticação, participação na família, cartão ativo e CSRF. O conteúdo do PDF, a senha e o nome do titular não são persistidos nem devolvidos pelo relatório.
+
+O relatório mantém `reconciliation` como a conferência interna do documento e usa uma classificação independente para cada componente: `Create`, `AlreadyExists`, `NeedsReview`, `Conflict`, `Unsupported` ou `Informational`. Saldo anterior, saldo financiado, pagamentos e parcelas futuras são informativos. Encargos, créditos e estornos são reconhecidos como ajustes de fatura suportados pelo domínio, mas ainda não podem ser confirmados a partir do PDF; eles nunca são convertidos em compras positivas. Uma parcela intermediária isolada permanece em revisão e não gera a compra original nem parcelas futuras.
+
+A identidade do documento é `pdf-sha256:{hash}`, calculada sobre os bytes integrais, e a identidade de componente é `pdf:{hash}:p{page}:r{row}`. Nesta etapa essas chaves são apenas apresentadas em memória. Se uma identidade externa igual já estiver nos registros de importação CSV ou de parcela histórica, conteúdo idêntico resulta em `AlreadyExists` e conteúdo divergente em `Conflict`. Comparações por data, valor, descrição, parcela ou competência produzem somente candidatos `NeedsReview`; não constituem deduplicação.
+
+A validação de destino confronta família, cartão, titular configurado, competência, fechamento, vencimento e, quando unívoco, os quatro últimos dígitos. Ausência ou múltiplos finais permanecem `NeedsReview`; divergência é `Conflict`. Não se associa fatura apenas por emissor ou coincidência de total. Compras integrais suportadas, sem identidade nem candidata e em ciclo não conflitante, podem ser marcadas `Create`. O impacto estimado é separado como débito, crédito e líquido na categoria `Uncategorized`: nenhuma categoria, conta ou compra original é inventada.
+
+A leitura do banco ocorre em snapshot `REPEATABLE READ`, em consultas em lote sobre compras/parcelas, importações, obrigações históricas, ajustes, faturas e pagamentos. Nenhuma entidade é adicionada ou modificada; a importação definitiva de PDF continua fora do escopo.
+
+### Ajustes financeiros de fatura (T15.3.4)
+
+`FinancialCreditCardInvoiceAdjustment` representa componentes que alteram a fatura sem constituir compra ou pagamento. Os tipos iniciais são `Fee`, `Credit` e `Refund`. O valor persistido é sempre positivo; `Debit` soma ao total e `Credit` subtrai. A combinação é explícita e validada: taxas são débito, enquanto crédito e reembolso são crédito.
+
+O total passa a ser:
+
+```text
+parcelas ativas + parcelas históricas ativas + ajustes Debit ativos - ajustes Credit ativos
+```
+
+O total bruto não é limitado a zero. Apenas o saldo devido continua como `max(0, total - pagamentos ativos)`. Ajustes integram o limite utilizado e as projeções de fatura/conta pela mesma composição, mas não criam `FinancialTransaction` e não são pagamentos.
+
+`ExternalId`, como `pdf:{documentHash}:p{page}:r{row}`, é único permanentemente por família e cartão. Reenvio com conteúdo idêntico é idempotente; conteúdo divergente é conflito. O cancelamento é lógico e mantém a identidade. Um débito não pode ser cancelado se o novo total ficar abaixo do valor já pago.
+
+`CategoryId` é opcional e, quando informado, deve apontar para categoria ativa da mesma família. Ajustes não entram no orçamento nesta etapa, mesmo categorizados: a semântica de estorno/crédito por competência exige decisão funcional própria e não foi inferida. Não foi criado endpoint público de criação manual; ajustes são persistidos somente pelo fluxo confirmado de importação PDF descrito a seguir.
+
+### Confirmação definitiva de PDF (T15.3.5)
+
+`POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/confirm` recebe `multipart/form-data` com `file`, `confirm=true`, `documentId`, `categories` em JSON e os mesmos campos opcionais da prévia, inclusive `password`. `categories` contém somente pares `componentId`/`categoryId`; valores, descrições, datas, sinais e parcelas são sempre reconstruídos pelo backend a partir do PDF reenviado.
+
+O backend recalcula o SHA-256, desbloqueia e interpreta novamente o documento, exige um parser especializado (`ItauMastercard` ou `Nubank`), `reconciliation.status = Reconciled`, fatura de destino validada e igualdade com o `documentId` revisado. Componentes financeiros `NeedsReview`, `Conflict` ou `Unsupported` bloqueiam o lote. `Informational` é apenas registrado na rastreabilidade; pagamentos exibidos pelo emissor nunca criam pagamento ou transação bancária.
+
+Compras integrais `Create` exigem categoria de despesa ativa da mesma família e reutilizam `FinancialCreditCardPurchase`, distribuição e calendário existentes. Parcelas intermediárias continuam bloqueadas enquanto não houver decisão explícita pelo fluxo próprio. `Fee`, `Credit` e `Refund` criam `FinancialCreditCardInvoiceAdjustment`, com identidade `pdf:{hash}:p{page}:r{row}`. `AlreadyExists` não cria nova entidade.
+
+A infraestrutura existente de `FinancialCreditCardImportBatch` foi ampliada com origem `Csv`/`Pdf`, hash do documento, parser, competência, hash das decisões e total oficial. Os itens registram componente, resultado e entidade vinculada. O lote inteiro usa transação `SERIALIZABLE`; após gravar, o backend recalcula o saldo devido persistido e exige diferença `0.00` contra o total oficial antes do commit.
+
+O mesmo documento e decisões retorna o resultado anterior. Decisões diferentes retornam conflito. O PDF, senha, CPF e nome completo do titular não são armazenados. SHA-256 identifica bytes exatos: uma fatura regenerada pelo emissor pode ter outro hash e continuará exigindo nova pré-conciliação; não existe deduplicação heurística por emissor, competência ou valor.
+
+### Fluxo da interface PDF
+
+Em **Cartões > Importações**, selecione PDF e siga as três ações explícitas: analisar o documento, comparar seus componentes com o Saldo360 e confirmar a importação. A tela mantém separados os componentes da fatura atual e as parcelas futuras/informativas, mostra as seis classificações da pré-conciliação e exige categoria de despesa apenas para compras `Create`.
+
+A confirmação fica bloqueada quando a conferência interna não é `Reconciled`, quando há componente financeiro atual `NeedsReview`, `Conflict` ou `Unsupported`, ou quando falta categoria de uma compra nova. O navegador reenvia o arquivo original, `documentId` e somente as decisões `componentId`/`categoryId`; valores, descrições e datas não são enviados como decisões do cliente.
+
+A senha opcional existe apenas no estado em memória da tela e é apagada ao trocar o arquivo, abandonar a análise ou concluir a confirmação. Um `409 Conflict` preserva a análise visível e oferece reanálise explícita. Reenvios idempotentes são apresentados como documento já importado, sem duplicidade.
+
+### Identificação do cartão da fatura
+
+O parser fornece emissor e últimos quatro dígitos ao resolvedor determinístico. A resolução exige ambos, normaliza grafia e acentuação do emissor e retorna `Matched`, `NotFound`, `Ambiguous` ou `InsufficientEvidence`. Quando existe associação segura de titular, `HolderUserId` restringe os candidatos. Cartões arquivados não são candidatos automáticos; total, competência e descrições nunca participam do matching.
+
+As rotas continuam exigindo o `cardId` escolhido. Se o cartão selecionado possui `lastFourDigits` e o documento informa outro final, a prévia é rejeitada; pré-conciliação e confirmação reutilizam a mesma validação. Se o cadastro antigo não possui o campo, a tela sinaliza que a identidade não foi validada e nunca atualiza o cartão automaticamente.
+
 `Valid`, `Warning` e `Invalid` descrevem somente a prévia. Não significam compras importadas.
 
 ## Limites e segurança

@@ -9,11 +9,11 @@ export type InvoicePaymentStatus = 'Unpaid' | 'PartiallyPaid' | 'Paid'
 export type PaymentStatus = 'Active' | 'Cancelled'
 
 export interface FinancialCreditCard {
-  id: string; name: string; issuer: string; holderUserId: string | null; creditLimit: string
+  id: string; name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string
   closingDay: number; dueDay: number; defaultPaymentAccountId: string | null; isArchived: boolean
   createdAt: string; updatedAt: string; archivedAt: string | null
 }
-export interface CreditCardInput { name: string; issuer: string; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null }
+export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null }
 export interface Installment { id: string; number: number; amount: string; status: InstallmentStatus }
 export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[] }
 export interface InvoiceInstallment { installmentId: string; purchaseId: string; purchaseDescription: string; installmentNumber: number; installmentCount: number; amount: string }

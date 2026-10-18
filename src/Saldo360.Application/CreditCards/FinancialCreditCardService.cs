@@ -53,7 +53,7 @@ public sealed class FinancialCreditCardService(
 
     private async Task<(CreditCardDetails? Details, Dictionary<string, string[]> Errors)> ValidateAsync(Guid familyId, CreditCardInput input, CancellationToken cancellationToken)
     {
-        var details = CreditCardDetails.TryCreate(input.Name, input.Issuer, input.HolderUserId, input.CreditLimit, input.ClosingDay, input.DueDay, input.DefaultPaymentAccountId, out var errors);
+        var details = CreditCardDetails.TryCreate(input.Name, input.Issuer, input.LastFourDigits, input.HolderUserId, input.CreditLimit, input.ClosingDay, input.DueDay, input.DefaultPaymentAccountId, out var errors);
         if (input.HolderUserId is { } holder && !await cards.IsHolderOfFamilyAsync(familyId, holder, cancellationToken)) errors["holderUserId"] = ["O titular não pertence à família."];
         if (input.DefaultPaymentAccountId is { } account && !await cards.IsActiveAccountOfFamilyAsync(familyId, account, cancellationToken)) errors["defaultPaymentAccountId"] = ["A conta de pagamento não pertence à família ou está inativa."];
         return (errors.Count == 0 ? details : null, errors);

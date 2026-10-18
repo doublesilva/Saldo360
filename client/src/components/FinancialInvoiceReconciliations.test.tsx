@@ -4,7 +4,7 @@ import { FinancialInvoiceReconciliations } from './FinancialInvoiceReconciliatio
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', holderUserId: null, creditLimit: '10000.00', closingDay: 10, dueDay: 20, defaultPaymentAccountId: 'account-1', isArchived: false, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', archivedAt: null }
+const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', lastFourDigits: null, holderUserId: null, creditLimit: '10000.00', closingDay: 10, dueDay: 20, defaultPaymentAccountId: 'account-1', isArchived: false, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', archivedAt: null }
 const account = { id: 'account-1', name: 'Conta principal', institution: 'Banco', type: 'Checking', financialScope: 'PF', responsible: null, openingBalance: '5000.00', openingBalanceDate: '2026-01-01', isActive: true, currency: 'BRL', createdAt: '2026-01-01T00:00:00Z' }
 const planned = { id: 'planned-1', type: 'Expense', amount: '1000.00', dueDate: '2026-10-20', description: 'Fatura prevista', account: { id: 'account-1', name: 'Conta principal', isActive: true }, category: { id: 'category-1', name: 'Compras', isActive: true }, status: 'Pending', realization: null, isCancelled: false, currency: 'BRL', createdAt: '2026-01-01T00:00:00Z', updatedAt: null, cancelledAt: null }
 const invoice = { id: 'invoice-1', creditCardId: 'card-1', competence: '2026-10', cycleStartDate: '2026-09-11', closingDate: '2026-10-10', dueDate: '2026-10-20', status: 'Closed', totalAmount: '1050.00', paidAmount: '0.00', remainingAmount: '1050.00', paymentStatus: 'Unpaid', installments: [], installmentCount: 0 }

@@ -15,6 +15,7 @@ internal sealed class FinancialCreditCardConfiguration : IEntityTypeConfiguratio
         {
             table.HasCheckConstraint("ck_financial_credit_cards_name_not_blank", "btrim(name) <> ''");
             table.HasCheckConstraint("ck_financial_credit_cards_issuer_not_blank", "btrim(issuer) <> ''");
+            table.HasCheckConstraint("ck_financial_credit_cards_last_four_digits", "last_four_digits IS NULL OR last_four_digits ~ '^[0-9]{4}$'");
             table.HasCheckConstraint("ck_financial_credit_cards_credit_limit_non_negative", "credit_limit >= 0");
             table.HasCheckConstraint("ck_financial_credit_cards_credit_limit_scale", "scale(credit_limit) <= 2");
             table.HasCheckConstraint("ck_financial_credit_cards_closing_day", "closing_day BETWEEN 1 AND 31");
@@ -25,6 +26,7 @@ internal sealed class FinancialCreditCardConfiguration : IEntityTypeConfiguratio
         builder.Property(card => card.Id).ValueGeneratedNever();
         builder.Property(card => card.Name).HasMaxLength(FinancialCreditCard.NameMaxLength).IsRequired();
         builder.Property(card => card.Issuer).HasMaxLength(FinancialCreditCard.IssuerMaxLength).IsRequired();
+        builder.Property(card => card.LastFourDigits).HasMaxLength(FinancialCreditCard.LastFourDigitsLength);
         builder.Property(card => card.CreditLimit).HasColumnType("numeric");
         builder.HasIndex(card => new { card.FamilyId, card.IsArchived });
         builder.HasAlternateKey(card => new { card.FamilyId, card.Id });
