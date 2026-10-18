@@ -21,12 +21,12 @@ public sealed class CreditCardStatementAgentPreviewTests
         var result = await PreviewAsync(service);
 
         Assert.Equal(CreditCardPdfPreviewAccess.Allowed, result.Access);
-        Assert.Equal("Reconciled", result.Preview!.Reconciliation.Status);
-        Assert.Equal(total, result.Preview.Reconciliation.OfficialTotal);
-        Assert.Equal(total, result.Preview.Reconciliation.ComponentsTotal);
-        Assert.Equal("0.00", result.Preview.Reconciliation.Difference);
-        Assert.DoesNotContain(result.Preview.Items, item => item.Section == "FutureInstallments" && item.IncludedInCurrentTotal);
-        Assert.DoesNotContain(result.Preview.Items, item => item.Type == "Payment" && item.IncludedInCurrentTotal);
+        Assert.Equal("Reconciled", result.Preview!.Primary!.Reconciliation.Status);
+        Assert.Equal(total, result.Preview.Primary.Reconciliation.OfficialTotal);
+        Assert.Equal(total, result.Preview.Primary.Reconciliation.ComponentsTotal);
+        Assert.Equal("0.00", result.Preview.Primary.Reconciliation.Difference);
+        Assert.DoesNotContain(result.Preview.Primary.Items, item => item.Section == "FutureInstallments" && item.IncludedInCurrentTotal);
+        Assert.DoesNotContain(result.Preview.Primary.Items, item => item.Type == "Payment" && item.IncludedInCurrentTotal);
     }
 
     [Fact]
@@ -39,9 +39,9 @@ public sealed class CreditCardStatementAgentPreviewTests
 
         var result = await PreviewAsync(Create(JsonSerializer.Serialize(document, CreditCardStatementAgentSchema.Json)));
 
-        Assert.Equal("Reconciled", result.Preview!.Reconciliation.Status);
-        Assert.Equal("726.94", result.Preview.Reconciliation.ComponentsTotal);
-        var installment = Assert.Single(result.Preview.Items, item => item.Type == "Installment");
+        Assert.Equal("Reconciled", result.Preview!.Primary!.Reconciliation.Status);
+        Assert.Equal("726.94", result.Preview.Primary.Reconciliation.ComponentsTotal);
+        var installment = Assert.Single(result.Preview.Primary.Items, item => item.Type == "Installment");
         Assert.Equal("150.00", installment.Amount);
         Assert.Equal(2, installment.InstallmentNumber);
         Assert.Equal(6, installment.InstallmentCount);
@@ -54,9 +54,9 @@ public sealed class CreditCardStatementAgentPreviewTests
 
         var result = await PreviewAsync(Create(JsonSerializer.Serialize(document, CreditCardStatementAgentSchema.Json)));
 
-        Assert.Equal("Unknown", Assert.Single(result.Preview!.Items).Type);
-        Assert.Equal("NeedsReview", result.Preview.Reconciliation.Status);
-        Assert.True(result.Preview.Reconciliation.HasUnknownCurrentItems);
+        Assert.Equal("Unknown", Assert.Single(result.Preview!.Primary!.Items).Type);
+        Assert.Equal("NeedsReview", result.Preview.Primary.Reconciliation.Status);
+        Assert.True(result.Preview.Primary.Reconciliation.HasUnknownCurrentItems);
     }
 
     [Theory]
@@ -67,25 +67,26 @@ public sealed class CreditCardStatementAgentPreviewTests
     {
         var result = await PreviewAsync(Create(response));
 
-        Assert.Equal(CreditCardPdfPreviewAccess.Invalid, result.Access);
-        Assert.Null(result.Preview);
-        Assert.Contains("schema", result.Errors!["agent"].Single(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(CreditCardPdfPreviewAccess.Allowed, result.Access);
+        Assert.Null(result.Preview!.Primary);
+        Assert.Equal(AgentExtractionAssessment.Rejected, result.Preview.Assessment);
+        Assert.Contains("schema", result.Preview.AgentError!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task AgentPreviewNeverWritesFinancialData()
     {
-        var agent = new RecordingAgent(JsonSerializer.Serialize(Document("Banco", "0.00"), CreditCardStatementAgentSchema.Json));
-        var service = new CreditCardStatementAgentPreviewService(new FakeContext(), new FakePdfExtractor(), new FakePasswords(), agent);
+        var orchestrator = new RecordingOrchestrator(JsonSerializer.Serialize(Document("Banco", "0.00"), CreditCardStatementAgentSchema.Json));
+        var service = new CreditCardStatementAgentPreviewService(new FakeContext(), new FakePdfExtractor(), new FakePasswords(), orchestrator);
 
         var result = await PreviewAsync(service);
 
         Assert.Equal(CreditCardPdfPreviewAccess.Allowed, result.Access);
-        Assert.Equal(1, agent.Calls);
+        Assert.Equal(1, orchestrator.Calls);
     }
 
     private static CreditCardStatementAgentPreviewService Create(string response) =>
-        new(new FakeContext(), new FakePdfExtractor(), new FakePasswords(), new RecordingAgent(response));
+        new(new FakeContext(), new FakePdfExtractor(), new FakePasswords(), new RecordingOrchestrator(response));
 
     private static Task<CreditCardStatementAgentPreviewResult> PreviewAsync(CreditCardStatementAgentPreviewService service)
     {
@@ -102,11 +103,16 @@ public sealed class CreditCardStatementAgentPreviewTests
         new(description, amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), nature, type,
             installment, count, section, included, page, description, confidence);
 
-    private sealed class RecordingAgent(string response) : ICreditCardStatementExtractorAgent
+    private sealed class RecordingOrchestrator(string response) : ICreditCardStatementExtractionOrchestrator
     {
         public int Calls { get; private set; }
-        public Task<string> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
-        { Calls++; return Task.FromResult(response); }
+        public Task<CreditCardStatementExtractionResult> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            if (!CreditCardStatementAgentEvaluator.TryEvaluate(response, request.FileName, request.Document.Pages.Count, out var preview, out var error))
+                return Task.FromResult(new CreditCardStatementExtractionResult("AgentPrimary", "Agent", null, AgentExtractionAssessment.Rejected, false, null, null, null, error));
+            return Task.FromResult(new CreditCardStatementExtractionResult("AgentPrimary", "Agent", preview, CreditCardStatementAgentEvaluator.Assess(preview), false, null, null, null, null));
+        }
     }
     private sealed class FakeContext : ICreditCardPdfContextRepository
     {

@@ -18,9 +18,19 @@ Parcelas intermediárias permanecem parcelas pelo valor informado. Pagamentos s�
 
 `ICreditCardStatementExtractorAgent` isola o mecanismo semântico e `ICreditCardStatementAgentProvider` isola o fornecedor. A implementação real usa a OpenAI Responses API via HTTP e Structured Outputs com JSON Schema estrito; nenhum SDK específico alcança a camada Application. O prompt versionado em `CreditCardStatementAgentPrompt` proíbe invenção de dados, associação a cadastros, multiplicação de parcelas intermediárias e inclusão de pagamentos ou parcelas futuras no total corrente.
 
-O provider é desabilitado por padrão. A configuração `CreditCardStatementAgent` aceita `Enabled`, `Provider`, `Model`, `Endpoint`, `ApiKeyFile` e `TimeoutSeconds`. Em produção, a chave deve vir de arquivo secreto; indisponibilidade do provider não participa do readiness nem afeta os endpoints financeiros existentes.
+O provider é desabilitado por padrão. A configuração `CreditCardStatementAgent` aceita `Enabled`, `Mode`, `Provider`, `Model`, `Endpoint`, `ApiKeyFile` e `TimeoutSeconds`. Em produção, a chave deve vir de arquivo secreto; indisponibilidade do provider não participa do readiness nem afeta os endpoints financeiros existentes.
+
+`CreditCardStatementExtractionOrchestrator` aplica três estratégias:
+
+- `Disabled`: somente o parser produz o resultado principal; o provider não é chamado.
+- `Shadow`: o parser continua principal e o agente é apenas comparado.
+- `AgentPrimary`: o agente é sempre a fonte principal e o parser é somente diagnóstico. Falha, timeout, recusa, schema inválido ou documento insuficiente resultam em `Rejected`; o parser shadow nunca vira fallback silencioso.
+
+O assessment global é calculado em C#: `Reliable` exige total oficial, reconciliação exata e ausência de `Unknown`; resultados estruturalmente válidos mas divergentes ou ambíguos são `NeedsReview`; falhas de provider/schema ou documentos fora do domínio são `Rejected`.
 
 `POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/agent-shadow-preview` executa em paralelo lógico o adaptador dos parsers e o agente real sobre o mesmo texto extraído. Retorna ambos os previews e diferenças exatas de cabeçalho, total oficial, totais reconstruídos, reconciliação, itens, classificação e `includedInCurrentTotal`. Não existe seleção automática de vencedor nem correspondência por similaridade textual.
+
+O endpoint `agent-preview` usa o orquestrador e retorna `primary`, `assessment`, indicação de shadow, comparação completa e o resumo `matches`, `hasFinancialDifference`, `hasClassificationDifference` e `hasCurrentTotalDifference`. Métricas sanitizadas registram duração por fonte, modo, páginas, quantidade de itens, assessment, reconciliação e presença de divergências, sem conteúdo documental.
 
 Itaú Mastercard e Nubank permanecem inalterados, e a rota histórica continua usando seu comportamento original. O agente recebe somente texto paginado e competência opcional; IDs de família/cartão, saldos, orçamento e histórico financeiro não são enviados.
 

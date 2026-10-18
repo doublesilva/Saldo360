@@ -7,17 +7,6 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
-public sealed class CreditCardStatementAgentOptions
-{
-    public bool Enabled { get; set; }
-    public string Provider { get; set; } = "OpenAI";
-    public string Model { get; set; } = "gpt-4o-mini";
-    public string Endpoint { get; set; } = "https://api.openai.com/v1/";
-    public string ApiKey { get; set; } = string.Empty;
-    public string ApiKeyFile { get; set; } = string.Empty;
-    public int TimeoutSeconds { get; set; } = 60;
-}
-
 internal sealed class OpenAiCreditCardStatementAgentProvider(
     IHttpClientFactory clients,
     CreditCardStatementAgentOptions options,
@@ -53,7 +42,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
 
     public async Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken cancellationToken)
     {
-        if (!options.Enabled || !string.Equals(options.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase))
+        if (!options.Enabled || options.Mode == CreditCardStatementAgentMode.Disabled || !string.Equals(options.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase))
             throw new CreditCardStatementAgentUnavailableException("Provider desabilitado.");
         var key = ReadSecret(options.ApiKeyFile, options.ApiKey);
         var client = clients.CreateClient("CreditCardStatementAgent");

@@ -16,6 +16,19 @@ public interface ICreditCardStatementExtractorAgent
 }
 public interface IParserBackedCreditCardStatementExtractorAgent : ICreditCardStatementExtractorAgent;
 
+public enum CreditCardStatementAgentMode { Disabled, Shadow, AgentPrimary }
+public sealed class CreditCardStatementAgentOptions
+{
+    public bool Enabled { get; set; }
+    public CreditCardStatementAgentMode Mode { get; set; } = CreditCardStatementAgentMode.Disabled;
+    public string Provider { get; set; } = "OpenAI";
+    public string Model { get; set; } = "gpt-4o-mini";
+    public string Endpoint { get; set; } = "https://api.openai.com/v1/";
+    public string ApiKey { get; set; } = string.Empty;
+    public string ApiKeyFile { get; set; } = string.Empty;
+    public int TimeoutSeconds { get; set; } = 60;
+}
+
 public sealed record CreditCardStatementAgentProviderRequest(string SystemPrompt, string DocumentText);
 
 public interface ICreditCardStatementAgentProvider
@@ -87,7 +100,7 @@ public sealed record CreditCardStatementAgentPreview(
 
 public sealed record CreditCardStatementAgentPreviewResult(
     CreditCardPdfPreviewAccess Access,
-    CreditCardStatementAgentPreview? Preview,
+    CreditCardStatementExtractionResult? Preview,
     IDictionary<string, string[]>? Errors);
 
 public interface ICreditCardStatementAgentPreviewService

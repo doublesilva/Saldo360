@@ -15,7 +15,7 @@ public sealed class OpenAiCreditCardStatementAgentProviderTests
         var apiResponse = System.Text.Json.JsonSerializer.Serialize(new { output = new[] { new { content = new[] { new { type = "output_text", text = statement } } } } });
         var handler = new RecordingHandler(_ => new(HttpStatusCode.OK)
         { Content = new StringContent(apiResponse, Encoding.UTF8, "application/json") });
-        var provider = Create(handler, new() { Enabled = true, ApiKey = "secret", Model = "test-model" });
+        var provider = Create(handler, new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary, ApiKey = "secret", Model = "test-model" });
 
         var result = await provider.CompleteAsync(new(CreditCardStatementAgentPrompt.System, "--- PAGE 1 ---\ntext"), CancellationToken.None);
 
@@ -41,11 +41,11 @@ public sealed class OpenAiCreditCardStatementAgentProviderTests
     [Fact]
     public async Task HttpFailureAndTimeoutAreSanitized()
     {
-        var failed = Create(new RecordingHandler(_ => new(HttpStatusCode.BadGateway)), new() { Enabled = true, ApiKey = "secret" });
+        var failed = Create(new RecordingHandler(_ => new(HttpStatusCode.BadGateway)), new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary, ApiKey = "secret" });
         var httpError = await Assert.ThrowsAsync<CreditCardStatementAgentUnavailableException>(() => failed.CompleteAsync(new("prompt", "document"), CancellationToken.None));
         Assert.DoesNotContain("secret", httpError.ToString(), StringComparison.Ordinal);
 
-        var timeout = Create(new RecordingHandler(_ => throw new TaskCanceledException()), new() { Enabled = true, ApiKey = "secret" });
+        var timeout = Create(new RecordingHandler(_ => throw new TaskCanceledException()), new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary, ApiKey = "secret" });
         var timeoutError = await Assert.ThrowsAsync<CreditCardStatementAgentUnavailableException>(() => timeout.CompleteAsync(new("prompt", "document"), CancellationToken.None));
         Assert.Contains("Timeout", timeoutError.Message, StringComparison.OrdinalIgnoreCase);
     }

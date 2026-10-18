@@ -4,7 +4,7 @@ public sealed class CreditCardStatementAgentPreviewService(
     ICreditCardPdfContextRepository context,
     ICreditCardPdfTextExtractor pdfExtractor,
     ICreditCardPdfPasswordProvider passwords,
-    ICreditCardStatementExtractorAgent agent) : ICreditCardStatementAgentPreviewService
+    ICreditCardStatementExtractionOrchestrator orchestrator) : ICreditCardStatementAgentPreviewService
 {
     public async Task<CreditCardStatementAgentPreviewResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf,
         long length, string fileName, string? competence, string? password, CancellationToken cancellationToken)
@@ -40,15 +40,14 @@ public sealed class CreditCardStatementAgentPreviewService(
         if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text)))
             return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.");
 
-        string response;
-        try { response = await agent.ExtractAsync(new(fileName, extracted, competence), cancellationToken); }
+        CreditCardStatementExtractionResult result;
+        try { result = await orchestrator.ExtractAsync(new(fileName, extracted, competence), cancellationToken); }
         catch (Exception exception) when (exception is not OperationCanceledException)
         { return Invalid("agent", "O agente não conseguiu interpretar a fatura com segurança."); }
-        if (!CreditCardStatementAgentEvaluator.TryEvaluate(response, fileName, extracted.Pages.Count, out var preview, out var schemaError))
-            return Invalid("agent", schemaError);
-        if (preview!.Header.CardLastDigits is { } digits && card.LastFourDigits is { } selected && digits != selected)
+        if (result.Primary is null) return new(CreditCardPdfPreviewAccess.Allowed, result, null);
+        if (result.Primary.Header.CardLastDigits is { } digits && card.LastFourDigits is { } selected && digits != selected)
             return Invalid("cardId", $"A fatura pertence ao cartão •••• {digits}, diferente do cartão selecionado •••• {selected}.");
-        return new(CreditCardPdfPreviewAccess.Allowed, preview, null);
+        return new(CreditCardPdfPreviewAccess.Allowed, result, null);
     }
 
     private static CreditCardStatementAgentPreviewResult Invalid(string field, string message) =>

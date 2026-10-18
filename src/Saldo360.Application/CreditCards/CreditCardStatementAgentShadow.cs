@@ -6,6 +6,9 @@ using Saldo360.Domain.Common;
 namespace Saldo360.Application.CreditCards;
 
 public sealed record CreditCardStatementAgentItemDifference(string Key, string ParserValue, string AgentValue);
+public enum AgentExtractionAssessment { Reliable, NeedsReview, Rejected }
+public sealed record CreditCardStatementShadowSummary(bool Matches, bool HasFinancialDifference,
+    bool HasClassificationDifference, bool HasCurrentTotalDifference, int DifferenceCount);
 public sealed record CreditCardStatementAgentShadowComparison(
     bool HeaderMatch, bool OfficialTotalMatch, int ParserItemCount, int AgentItemCount,
     string ParserComponentsTotal, string AgentComponentsTotal,
@@ -14,6 +17,20 @@ public sealed record CreditCardStatementAgentShadowComparison(
     IReadOnlyList<string> ItemsOnlyInParser, IReadOnlyList<string> ItemsOnlyInAgent,
     IReadOnlyList<CreditCardStatementAgentItemDifference> ClassificationDifferences,
     IReadOnlyList<CreditCardStatementAgentItemDifference> IncludedInCurrentTotalDifferences);
+public sealed record CreditCardStatementExtractionResult(
+    string Mode,
+    string PrimarySource,
+    CreditCardStatementAgentPreview? Primary,
+    AgentExtractionAssessment Assessment,
+    bool ParserShadowExecuted,
+    CreditCardStatementAgentPreview? ParserShadow,
+    CreditCardStatementAgentShadowComparison? Comparison,
+    CreditCardStatementShadowSummary? ShadowSummary,
+    string? AgentError);
+public interface ICreditCardStatementExtractionOrchestrator
+{
+    Task<CreditCardStatementExtractionResult> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken);
+}
 public sealed record CreditCardStatementAgentShadowPreview(CreditCardStatementAgentPreview Parser, CreditCardStatementAgentPreview Agent,
     CreditCardStatementAgentShadowComparison Comparison);
 public sealed record CreditCardStatementAgentShadowResult(CreditCardPdfPreviewAccess Access,
@@ -62,6 +79,25 @@ public static partial class CreditCardStatementAgentEvaluator
             parser.Items.Count, agent.Items.Count, parser.Reconciliation.ComponentsTotal!, agent.Reconciliation.ComponentsTotal!,
             parser.Reconciliation.Status, agent.Reconciliation.Status, parser.Reconciliation.Difference, agent.Reconciliation.Difference,
             parserFull.Except(agentFull).Order().ToList(), agentFull.Except(parserFull).Order().ToList(), classifications, included);
+    }
+
+    public static AgentExtractionAssessment Assess(CreditCardStatementAgentPreview? preview) => preview switch
+    {
+        null => AgentExtractionAssessment.Rejected,
+        { Reconciliation.Status: "Reconciled", Header.OfficialTotal: not null }
+            when !preview.Items.Any(item => item.Type == "Unknown") => AgentExtractionAssessment.Reliable,
+        _ => AgentExtractionAssessment.NeedsReview,
+    };
+
+    public static CreditCardStatementShadowSummary Summarize(CreditCardStatementAgentShadowComparison value)
+    {
+        var financial = !value.OfficialTotalMatch || value.ParserComponentsTotal != value.AgentComponentsTotal
+            || value.ParserDifference != value.AgentDifference || value.ParserReconciliationStatus != value.AgentReconciliationStatus;
+        var classification = value.ClassificationDifferences.Count > 0 || value.ItemsOnlyInParser.Count > 0 || value.ItemsOnlyInAgent.Count > 0;
+        var current = value.IncludedInCurrentTotalDifferences.Count > 0;
+        var count = value.ItemsOnlyInParser.Count + value.ItemsOnlyInAgent.Count + value.ClassificationDifferences.Count
+            + value.IncludedInCurrentTotalDifferences.Count + (financial ? 1 : 0) + (!value.HeaderMatch ? 1 : 0);
+        return new(!financial && !classification && !current && value.HeaderMatch, financial, classification, current, count);
     }
 
     private static string HeaderKey(CreditCardStatementAgentHeader value) => string.Join('|', value.Issuer, value.CardLastDigits, value.Competence, value.ClosingDate, value.DueDate);

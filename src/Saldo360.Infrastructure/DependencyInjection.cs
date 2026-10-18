@@ -132,9 +132,6 @@ public static class DependencyInjection
         services.AddSingleton<LlmCreditCardStatementExtractorAgent>();
         services.AddSingleton<ParserBackedCreditCardStatementExtractorAgent>();
         services.AddSingleton<IParserBackedCreditCardStatementExtractorAgent>(provider => provider.GetRequiredService<ParserBackedCreditCardStatementExtractorAgent>());
-        services.AddSingleton<ICreditCardStatementExtractorAgent>(provider => statementAgent.Enabled
-            ? provider.GetRequiredService<LlmCreditCardStatementExtractorAgent>()
-            : provider.GetRequiredService<ParserBackedCreditCardStatementExtractorAgent>());
         services.AddSingleton<ICreditCardPdfPasswordProvider>(serviceProvider =>
             new LocalCreditCardPdfPasswordProvider(configuration, serviceProvider.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>()));
 
