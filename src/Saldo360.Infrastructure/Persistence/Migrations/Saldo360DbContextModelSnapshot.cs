@@ -1218,6 +1218,25 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("ClassificationConfidence")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("classification_confidence");
+
+                    b.Property<string>("ClassificationFailureCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("classification_failure_code");
+
+                    b.Property<string>("ClassificationSource")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("classification_source");
+
+                    b.Property<DateTimeOffset?>("ClassifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("classified_at");
+
                     b.Property<string>("Competence")
                         .HasMaxLength(7)
                         .HasColumnType("character varying(7)")
@@ -1242,6 +1261,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("CreditCardId")
                         .HasColumnType("uuid")
                         .HasColumnName("credit_card_id");
+
+                    b.Property<string>("DocumentType")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("document_type");
 
                     b.Property<string>("ExternalSourceId")
                         .HasMaxLength(300)

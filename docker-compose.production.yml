@@ -62,7 +62,7 @@ services:
 
       FinancialEmailImport__Sources__3__Name: Ceee
       FinancialEmailImport__Sources__3__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
-      FinancialEmailImport__Sources__3__Query: 'has:attachment subject:"fatura ceee"'
+      FinancialEmailImport__Sources__3__Query: 'has:attachment subject:"fatura ceee" -subject:"738.283.010-94"'
       FinancialEmailImport__Sources__3__Enabled: "true"
       FinancialEmailImport__Sources__3__CollectionMode: Attachments
 

@@ -18,6 +18,10 @@ internal sealed class FinancialDocumentInboxItemConfiguration : IEntityTypeConfi
         builder.Property(item => item.Parser).HasMaxLength(80);
         builder.Property(item => item.Competence).HasMaxLength(7);
         builder.Property(item => item.FailureCode).HasMaxLength(80);
+        builder.Property(item => item.DocumentType).HasMaxLength(40);
+        builder.Property(item => item.ClassificationConfidence).HasMaxLength(20);
+        builder.Property(item => item.ClassificationSource).HasMaxLength(20);
+        builder.Property(item => item.ClassificationFailureCode).HasMaxLength(80);
         builder.Property(item => item.Source).HasConversion<string>().HasMaxLength(20);
         builder.Property(item => item.Status).HasConversion<string>().HasMaxLength(30);
         builder.HasIndex(item => new { item.FamilyId, item.ContentHash }).IsUnique();

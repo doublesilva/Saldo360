@@ -136,7 +136,8 @@ public sealed class FinancialEmailCollectorTests
     {
         var inboxRepository = new FakeInboxRepository(); var storage = new FakeStorage();
         var extractor = new FakeExtractor(preview, failure); var resolver = new CreditCardStatementResolver(new EmptyResolutionRepository());
-        var inbox = new FinancialDocumentInboxService(inboxRepository, storage, extractor, new UnusedPreview(), resolver, TimeProvider.System);
+        var inbox = new FinancialDocumentInboxService(inboxRepository, storage, extractor, new UnusedPreview(), resolver,
+            new FinancialDocumentClassificationOptions(), new FakeDocumentClassifier(), new FinancialDocumentAnalysisRouter(), TimeProvider.System);
         var options = new FinancialEmailImportOptions { Enabled = schedulerEnabled, LookbackDays = 7, MaxMessages = 20,
             Sources = [new() { Name = "Bills", FamilyId = FamilyId, Query = "has:attachment filename:pdf", Enabled = true, CollectionMode = mode, AllowedLinkHosts = ["dmae.example"], AllowedLinkPathPrefixes = ["/contas/"] }] };
         var checkpoints = new FakeCheckpoints();
@@ -195,6 +196,7 @@ public sealed class FinancialEmailCollectorTests
         public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat) => preview!;
     }
     private sealed class EmptyResolutionRepository : ICreditCardStatementResolutionRepository { public Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid familyId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CreditCardStatementCandidate>>([]); }
+    private sealed class FakeDocumentClassifier : IFinancialDocumentClassifier { public Task<FinancialDocumentClassificationResult> ClassifyAsync(FinancialDocumentClassificationRequest request, CancellationToken cancellationToken) => Task.FromResult(new FinancialDocumentClassificationResult("Unknown", "Low", [], "Unknown")); }
     private sealed class UnusedPreview : ICreditCardPdfPreviewService { public Task<CreditCardPdfPreviewResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) => throw new NotSupportedException(); }
     private sealed class FakeCheckpoints : IFinancialEmailCollectorCheckpointRepository
     {

@@ -3,9 +3,12 @@ import type { PdfCategoryDecision, PdfConfirmationResult, PdfPreReconciliation }
 
 export type FinancialDocumentStatus = 'Received' | 'Analyzing' | 'ReadyForReview' | 'ReadyToConfirm' | 'NeedsReview' | 'Conflict' | 'Imported' | 'Failed' | 'Ignored'
 export type FinancialDocumentSource = 'Manual' | 'Email'
+export type FinancialDocumentType = 'CreditCardStatement' | 'ElectricityBill' | 'WaterBill' | 'BillingDocument' | 'Unknown'
 export type FinancialDocument = {
   id: string; source: FinancialDocumentSource; originalFileName: string; receivedAt: string; status: FinancialDocumentStatus
   parser: string | null; competence: string | null; creditCardId: string | null; failureCode: string | null; updatedAt: string
+  documentType: FinancialDocumentType | null; classificationConfidence: 'High' | 'Medium' | 'Low' | null; classificationSource: 'Deterministic' | 'Agent' | 'Unknown' | null
+  classificationFailureCode: string | null; classifiedAt: string | null
 }
 export type InboxMutation<T> = { ok: true; value: T } | { ok: false; errors: Record<string, string[]>; status: number }
 

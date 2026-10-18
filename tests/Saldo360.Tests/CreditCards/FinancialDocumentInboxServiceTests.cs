@@ -60,11 +60,44 @@ public sealed class FinancialDocumentInboxServiceTests
         Assert.Equal("StorageObjectMissing", result.FailureCode);
     }
 
-    private static (FinancialDocumentInboxService Service, FakeRepository Repository, FakeStorage Storage) Fixture(CreditCardPdfPreview preview)
+    [Theory]
+    [InlineData("ElectricityBill")]
+    [InlineData("WaterBill")]
+    [InlineData("BillingDocument")]
+    [InlineData("Unknown")]
+    public async Task ClassificationIsPersistedAndNonCardDocumentsNeverReachCardParser(string documentType)
     {
-        var repository = new FakeRepository(); var storage = new FakeStorage();
+        var classification = new FinancialDocumentClassificationResult(documentType, documentType == "Unknown" ? "Low" : "High", [], documentType == "Unknown" ? "Unknown" : "Deterministic", documentType == "Unknown" ? "InsufficientEvidence" : null);
+        var fixture = Fixture(Preview("Nubank", "Reconciled", "1234"), true, classification);
+
+        var result = await Receive(fixture.Service, [1, 3, 5], null);
+
+        Assert.Equal(documentType, result.Item!.DocumentType);
+        Assert.NotNull(result.Item.ClassifiedAt);
+        Assert.Equal("NeedsReview", result.Item.Status);
+        Assert.Equal(documentType == "Unknown" ? "InsufficientEvidence" : "RecognizedDocumentWithoutExtractor", result.Item.FailureCode);
+        Assert.Equal(0, fixture.Extractor.ParseCalls);
+        Assert.Null(result.Item.CreditCardId);
+    }
+
+    [Fact]
+    public async Task CreditCardClassificationContinuesExistingCardPipeline()
+    {
+        var fixture = Fixture(Preview("Nubank", "Reconciled", "1234"), true,
+            new("CreditCardStatement", "High", [], "Deterministic"));
+        var result = await Receive(fixture.Service, [2, 4, 6], null);
+        Assert.Equal("CreditCardStatement", result.Item!.DocumentType);
+        Assert.Equal("ReadyToConfirm", result.Item.Status);
+        Assert.Equal(1, fixture.Extractor.ParseCalls);
+    }
+
+    private static (FinancialDocumentInboxService Service, FakeRepository Repository, FakeStorage Storage, FakeExtractor Extractor) Fixture(CreditCardPdfPreview preview,
+        bool classificationEnabled = false, FinancialDocumentClassificationResult? classification = null)
+    {
+        var repository = new FakeRepository(); var storage = new FakeStorage(); var extractor = new FakeExtractor(preview);
         var resolver = new CreditCardStatementResolver(new FakeResolutionRepository());
-        return (new(repository, storage, new FakeExtractor(preview), new FakePreviewService(preview), resolver, TimeProvider.System), repository, storage);
+        return (new(repository, storage, extractor, new FakePreviewService(preview), resolver,
+            new FinancialDocumentClassificationOptions { Enabled = classificationEnabled }, new FakeClassifier(classification), new FinancialDocumentAnalysisRouter(), TimeProvider.System), repository, storage, extractor);
     }
     private static Task<FinancialDocumentInboxReceiveResult> Receive(FinancialDocumentInboxService service, byte[] bytes, string? externalId) =>
         service.ReceiveAsync(FamilyId, UserId, new MemoryStream(bytes), bytes.Length, "fatura.pdf", "application/pdf",
@@ -94,8 +127,9 @@ public sealed class FinancialDocumentInboxServiceTests
     }
     private sealed class FakeExtractor(CreditCardPdfPreview preview) : ICreditCardPdfTextExtractor
     {
+        public int ParseCalls { get; private set; }
         public Task<CreditCardPdfExtractedDocument> ExtractAsync(Stream pdf, int maxPages, IReadOnlyList<string> passwords, CancellationToken cancellationToken) => Task.FromResult(new CreditCardPdfExtractedDocument([new(1, "text")]));
-        public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat) => preview;
+        public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat) { ParseCalls++; return preview; }
     }
     private sealed class FakePreviewService(CreditCardPdfPreview preview) : ICreditCardPdfPreviewService
     {
@@ -105,4 +139,5 @@ public sealed class FinancialDocumentInboxServiceTests
     {
         public Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid familyId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CreditCardStatementCandidate>>([new(CardId, "Nubank", "1234", UserId)]);
     }
+    private sealed class FakeClassifier(FinancialDocumentClassificationResult? value = null) : IFinancialDocumentClassifier { public Task<FinancialDocumentClassificationResult> ClassifyAsync(FinancialDocumentClassificationRequest request, CancellationToken cancellationToken) => Task.FromResult(value ?? new FinancialDocumentClassificationResult("CreditCardStatement", "High", [], "Deterministic")); }
 }

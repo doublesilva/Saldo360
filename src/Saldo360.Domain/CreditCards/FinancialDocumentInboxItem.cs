@@ -21,6 +21,11 @@ public sealed class FinancialDocumentInboxItem : Entity
     public string? Competence { get; private set; }
     public Guid? CreditCardId { get; private set; }
     public string? FailureCode { get; private set; }
+    public string? DocumentType { get; private set; }
+    public string? ClassificationConfidence { get; private set; }
+    public string? ClassificationSource { get; private set; }
+    public string? ClassificationFailureCode { get; private set; }
+    public DateTimeOffset? ClassifiedAt { get; private set; }
     public DateTimeOffset CreatedAt { get; private init; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -40,6 +45,12 @@ public sealed class FinancialDocumentInboxItem : Entity
     }
     public void Fail(string code, DateTimeOffset now) { Status = FinancialDocumentInboxStatus.Failed; FailureCode = code; UpdatedAt = now; }
     public void RequireReview(string code, DateTimeOffset now) { Status = FinancialDocumentInboxStatus.NeedsReview; FailureCode = code; UpdatedAt = now; }
+    public void ApplyClassification(string documentType, string confidence, string source, string? failureCode, DateTimeOffset now)
+    {
+        DocumentType = documentType; ClassificationConfidence = confidence; ClassificationSource = source;
+        ClassificationFailureCode = failureCode; ClassifiedAt = now; UpdatedAt = now;
+        if (documentType != "CreditCardStatement") { Parser = null; Competence = null; CreditCardId = null; }
+    }
     public void MarkImported(Guid cardId, DateTimeOffset now) { CreditCardId = cardId; Status = FinancialDocumentInboxStatus.Imported; FailureCode = null; UpdatedAt = now; }
     public void Ignore(DateTimeOffset now) { EnsureMutable(); Status = FinancialDocumentInboxStatus.Ignored; UpdatedAt = now; }
     private void EnsureMutable() { if (Status == FinancialDocumentInboxStatus.Imported) throw new InvalidOperationException("Documento já importado."); }

@@ -24,7 +24,8 @@ public interface IFinancialDocumentInboxRepository
 
 public sealed record FinancialDocumentInboxDto(Guid Id, string Source, string? ExternalSourceId, string OriginalFileName,
     string ContentHash, string ContentType, string ReceivedAt, string Status, string? Parser, string? Competence,
-    Guid? CreditCardId, string? FailureCode, string UpdatedAt);
+    Guid? CreditCardId, string? FailureCode, string UpdatedAt, string? DocumentType = null, string? ClassificationConfidence = null,
+    string? ClassificationSource = null, string? ClassificationFailureCode = null, string? ClassifiedAt = null);
 public sealed record FinancialDocumentInboxReceiveResult(string Result, FinancialDocumentInboxDto? Item, IDictionary<string, string[]>? Errors = null);
 
 public sealed class FinancialDocumentInboxService(
@@ -33,6 +34,9 @@ public sealed class FinancialDocumentInboxService(
     ICreditCardPdfTextExtractor extractor,
     ICreditCardPdfPreviewService previewService,
     CreditCardStatementResolver resolver,
+    FinancialDocumentClassificationOptions classificationOptions,
+    IFinancialDocumentClassifier classifier,
+    IFinancialDocumentAnalysisRouter analysisRouter,
     TimeProvider clock)
 {
     public async Task<FinancialDocumentInboxReceiveResult> ReceiveAsync(Guid familyId, Guid userId, Stream content, long length,
@@ -98,7 +102,27 @@ public sealed class FinancialDocumentInboxService(
         try
         {
             var document = await extractor.ExtractAsync(stored, CreditCardPdfPreviewService.MaxPages, [], cancellationToken);
-            if (document.Pages.Count == 0 || document.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) { item.Fail("TextUnavailable", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
+            if (document.Pages.Count == 0 || document.Pages.All(page => string.IsNullOrWhiteSpace(page.Text)))
+            {
+                if (classificationOptions.Enabled)
+                {
+                    item.ApplyClassification("Unknown", "Low", "Unknown", "InsufficientEvidence", clock.GetUtcNow());
+                    item.RequireReview("InsufficientEvidence", clock.GetUtcNow());
+                }
+                else item.Fail("TextUnavailable", clock.GetUtcNow());
+                await repository.SaveAsync(cancellationToken); return;
+            }
+            if (classificationOptions.Enabled)
+            {
+                var classification = await classifier.ClassifyAsync(new(item.OriginalFileName, document), cancellationToken);
+                item.ApplyClassification(classification.DocumentType, classification.Confidence, classification.ClassificationSource, classification.FailureCode, clock.GetUtcNow());
+                var route = analysisRouter.Route(classification);
+                if (route != FinancialDocumentAnalysisPipeline.CreditCard)
+                {
+                    item.RequireReview(route == FinancialDocumentAnalysisPipeline.AwaitingExtractor ? "RecognizedDocumentWithoutExtractor" : classification.FailureCode ?? "InsufficientEvidence", clock.GetUtcNow());
+                    await repository.SaveAsync(cancellationToken); return;
+                }
+            }
             var preview = extractor.Parse(document, item.OriginalFileName, null, null);
             var resolution = await resolver.ResolveAsync(item.FamilyId, preview.Statement.Issuer, preview.Statement.CardLastDigits, null, cancellationToken);
             var cardId = resolution.Status == CreditCardStatementResolutionStatus.Matched ? resolution.CardId : null;
@@ -109,6 +133,7 @@ public sealed class FinancialDocumentInboxService(
         }
         catch (CreditCardPdfReadException exception)
         {
+            if (classificationOptions.Enabled) item.ApplyClassification("Unknown", "Low", "Unknown", exception.Failure.ToString(), clock.GetUtcNow());
             if (exception.Failure is CreditCardPdfReadFailure.PasswordRequired or CreditCardPdfReadFailure.PasswordRejected)
                 item.RequireReview(exception.Failure.ToString(), clock.GetUtcNow());
             else item.Fail(exception.Failure.ToString(), clock.GetUtcNow());
@@ -147,6 +172,23 @@ public sealed class FinancialDocumentInboxService(
         if (stored is null) { item.Fail("StorageObjectMissing", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
         try
         {
+            CreditCardPdfExtractedDocument? classifiedDocument = null;
+            if (classificationOptions.Enabled)
+            {
+                var passwords = string.IsNullOrEmpty(password) ? Array.Empty<string>() : [password];
+                classifiedDocument = await extractor.ExtractAsync(stored, CreditCardPdfPreviewService.MaxPages, passwords, cancellationToken);
+                var classification = classifiedDocument.Pages.Count == 0 || classifiedDocument.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))
+                    ? new FinancialDocumentClassificationResult("Unknown", "Low", [], "Unknown", "InsufficientEvidence")
+                    : await classifier.ClassifyAsync(new(item.OriginalFileName, classifiedDocument), cancellationToken);
+                item.ApplyClassification(classification.DocumentType, classification.Confidence, classification.ClassificationSource, classification.FailureCode, clock.GetUtcNow());
+                var route = analysisRouter.Route(classification);
+                if (route != FinancialDocumentAnalysisPipeline.CreditCard)
+                {
+                    item.RequireReview(route == FinancialDocumentAnalysisPipeline.AwaitingExtractor ? "RecognizedDocumentWithoutExtractor" : classification.FailureCode ?? "InsufficientEvidence", clock.GetUtcNow());
+                    await repository.SaveAsync(cancellationToken); return;
+                }
+                if (stored.CanSeek) stored.Position = 0;
+            }
             CreditCardPdfPreview preview;
             if (selectedCardId is { } cardId)
             {
@@ -158,7 +200,7 @@ public sealed class FinancialDocumentInboxService(
             else
             {
                 var passwords = string.IsNullOrEmpty(password) ? Array.Empty<string>() : [password];
-                var document = await extractor.ExtractAsync(stored, CreditCardPdfPreviewService.MaxPages, passwords, cancellationToken);
+                var document = classifiedDocument ?? await extractor.ExtractAsync(stored, CreditCardPdfPreviewService.MaxPages, passwords, cancellationToken);
                 if (document.Pages.Count == 0 || document.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) { item.Fail("TextUnavailable", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
                 preview = extractor.Parse(document, item.OriginalFileName, null, null);
                 var resolution = await resolver.ResolveAsync(item.FamilyId, preview.Statement.Issuer, preview.Statement.CardLastDigits, userId, cancellationToken);
@@ -171,6 +213,7 @@ public sealed class FinancialDocumentInboxService(
         }
         catch (CreditCardPdfReadException exception)
         {
+            if (classificationOptions.Enabled) item.ApplyClassification("Unknown", "Low", "Unknown", exception.Failure.ToString(), clock.GetUtcNow());
             if (exception.Failure is CreditCardPdfReadFailure.PasswordRequired or CreditCardPdfReadFailure.PasswordRejected)
                 item.RequireReview(exception.Failure.ToString(), clock.GetUtcNow());
             else item.Fail(exception.Failure.ToString(), clock.GetUtcNow());
@@ -185,7 +228,8 @@ public sealed class FinancialDocumentInboxService(
     private static FinancialDocumentInboxReceiveResult Invalid(string field, string message) => new("Invalid", null, new Dictionary<string, string[]> { [field] = [message] });
     private static FinancialDocumentInboxDto Map(FinancialDocumentInboxItem item) => new(item.Id, item.Source.ToString(), item.ExternalSourceId,
         item.OriginalFileName, item.ContentHash, item.ContentType, item.ReceivedAt.ToString("O"), item.Status.ToString(), item.Parser,
-        item.Competence, item.CreditCardId, item.FailureCode, item.UpdatedAt.ToString("O"));
+        item.Competence, item.CreditCardId, item.FailureCode, item.UpdatedAt.ToString("O"), item.DocumentType, item.ClassificationConfidence,
+        item.ClassificationSource, item.ClassificationFailureCode, item.ClassifiedAt?.ToString("O"));
 }
 
 public sealed class FinancialDocumentInboxReviewService(

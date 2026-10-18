@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialDocumentInboxConfirmationService>();
         services.AddScoped<FinancialDocumentClassificationPreviewService>();
         services.AddScoped<IFinancialDocumentClassifier, CompositeFinancialDocumentClassifier>();
+        services.AddSingleton<IFinancialDocumentAnalysisRouter, FinancialDocumentAnalysisRouter>();
         services.AddScoped<FinancialEmailCollector>();
         services.AddScoped<IFinancialEmailCollector>(provider => provider.GetRequiredService<FinancialEmailCollector>());
         services.AddScoped<FinancialEmailCollectorRunner>();
