@@ -10,7 +10,7 @@ namespace Saldo360.Infrastructure.CreditCards;
 /// pela validação não confiável e pela reconciliação determinística da camada Application.
 /// </summary>
 internal sealed class ParserBackedCreditCardStatementExtractorAgent(ICreditCardPdfTextExtractor extractor)
-    : ICreditCardStatementExtractorAgent
+    : IParserBackedCreditCardStatementExtractorAgent
 {
     public Task<string> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
     {

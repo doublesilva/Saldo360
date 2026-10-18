@@ -14,6 +14,43 @@ public interface ICreditCardStatementExtractorAgent
 {
     Task<string> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken);
 }
+public interface IParserBackedCreditCardStatementExtractorAgent : ICreditCardStatementExtractorAgent;
+
+public sealed record CreditCardStatementAgentProviderRequest(string SystemPrompt, string DocumentText);
+
+public interface ICreditCardStatementAgentProvider
+{
+    Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken cancellationToken);
+}
+
+public sealed class CreditCardStatementAgentUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
+
+public static class CreditCardStatementAgentPrompt
+{
+    public const string Version = "2026-10-18.1";
+    public const string System = """
+        Você extrai faturas de cartão de crédito para JSON estritamente aderente ao schema fornecido.
+        Extraia somente fatos evidenciados no documento. Nunca invente dados ausentes, emissor, produto comercial ou cartão cadastrado.
+        Distinga fatura atual, parcelas futuras, pagamentos, créditos, estornos, taxas, saldo anterior e saldo financiado.
+        Payment é informacional e deve usar includedInCurrentTotal=false e section=Payments.
+        FutureInstallments sempre usa includedInCurrentTotal=false. Componentes correntes usam true somente quando compõem o total oficial.
+        Uma parcela intermediária permanece apenas a parcela exibida: nunca multiplique seu valor nem reconstrua a compra completa.
+        Dinheiro deve ser string decimal positiva canônica com duas casas; Nature Debit/Credit determina o sinal financeiro.
+        Na dúvida, use Type=Unknown e Confidence=Low. Não tente associar o documento a dados externos.
+        Para documento que não seja fatura de cartão ou não tenha evidência suficiente, retorne header nulo, items vazio e nunca fabrique uma fatura.
+        A saída deve conter somente JSON compatível com o schema.
+        """;
+}
+
+public sealed class LlmCreditCardStatementExtractorAgent(ICreditCardStatementAgentProvider provider) : ICreditCardStatementExtractorAgent
+{
+    public Task<string> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
+    {
+        var pages = string.Join("\n\n", request.Document.Pages.Select(page => $"--- PAGE {page.Number} ---\n{page.Text}"));
+        var competence = string.IsNullOrWhiteSpace(request.ConfiguredCompetence) ? string.Empty : $"\nCompetência configurada pelo usuário: {request.ConfiguredCompetence}";
+        return provider.CompleteAsync(new(CreditCardStatementAgentPrompt.System, pages + competence), cancellationToken);
+    }
+}
 
 public sealed record CreditCardStatementAgentHeader(
     string? Issuer,

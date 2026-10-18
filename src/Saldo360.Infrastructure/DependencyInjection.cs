@@ -121,7 +121,20 @@ public static class DependencyInjection
         services.AddScoped<IFinancialGoalRepository, FinancialGoalRepository>();
         services.AddScoped<IFinancialGoalAllocationRepository, FinancialGoalAllocationRepository>();
         services.AddSingleton<ICreditCardPdfTextExtractor, CreditCardPdfTextExtractor>();
-        services.AddSingleton<ICreditCardStatementExtractorAgent, ParserBackedCreditCardStatementExtractorAgent>();
+        var statementAgent = configuration.GetSection("CreditCardStatementAgent").Get<CreditCardStatementAgentOptions>() ?? new CreditCardStatementAgentOptions();
+        services.AddSingleton(statementAgent);
+        services.AddHttpClient("CreditCardStatementAgent", client =>
+        {
+            client.BaseAddress = new Uri(statementAgent.Endpoint);
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(statementAgent.TimeoutSeconds, 5, 180));
+        });
+        services.AddSingleton<ICreditCardStatementAgentProvider, OpenAiCreditCardStatementAgentProvider>();
+        services.AddSingleton<LlmCreditCardStatementExtractorAgent>();
+        services.AddSingleton<ParserBackedCreditCardStatementExtractorAgent>();
+        services.AddSingleton<IParserBackedCreditCardStatementExtractorAgent>(provider => provider.GetRequiredService<ParserBackedCreditCardStatementExtractorAgent>());
+        services.AddSingleton<ICreditCardStatementExtractorAgent>(provider => statementAgent.Enabled
+            ? provider.GetRequiredService<LlmCreditCardStatementExtractorAgent>()
+            : provider.GetRequiredService<ParserBackedCreditCardStatementExtractorAgent>());
         services.AddSingleton<ICreditCardPdfPasswordProvider>(serviceProvider =>
             new LocalCreditCardPdfPasswordProvider(configuration, serviceProvider.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>()));
 

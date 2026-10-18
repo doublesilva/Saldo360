@@ -1,6 +1,3 @@
-using System.Globalization;
-using Saldo360.Domain.Common;
-
 namespace Saldo360.Application.CreditCards;
 
 public sealed class CreditCardStatementAgentPreviewService(
@@ -47,21 +44,11 @@ public sealed class CreditCardStatementAgentPreviewService(
         try { response = await agent.ExtractAsync(new(fileName, extracted, competence), cancellationToken); }
         catch (Exception exception) when (exception is not OperationCanceledException)
         { return Invalid("agent", "O agente não conseguiu interpretar a fatura com segurança."); }
-        if (!CreditCardStatementAgentSchema.TryValidate(response, extracted.Pages.Count, out var document, out var schemaError))
+        if (!CreditCardStatementAgentEvaluator.TryEvaluate(response, fileName, extracted.Pages.Count, out var preview, out var schemaError))
             return Invalid("agent", schemaError);
-        if (document!.Header.CardLastDigits is { } digits && card.LastFourDigits is { } selected && digits != selected)
+        if (preview!.Header.CardLastDigits is { } digits && card.LastFourDigits is { } selected && digits != selected)
             return Invalid("cardId", $"A fatura pertence ao cartão •••• {digits}, diferente do cartão selecionado •••• {selected}.");
-
-        var components = document.Items.Where(item => item.IncludedInCurrentTotal)
-            .Sum(item => decimal.Parse(item.Amount, CultureInfo.InvariantCulture) * (item.Nature == "Credit" ? -1m : 1m));
-        decimal? official = document.Header.OfficialTotal is null ? null : decimal.Parse(document.Header.OfficialTotal, CultureInfo.InvariantCulture);
-        decimal? difference = official is null ? null : official.Value - components;
-        var hasUnknown = document.Items.Any(item => item.IncludedInCurrentTotal && item.Type == "Unknown");
-        var status = official is null || hasUnknown ? "NeedsReview" : difference == 0m ? "Reconciled" : "Divergent";
-        var reconciliation = new CreditCardPdfReconciliation(status, document.Header.OfficialTotal, Money.Format(components),
-            difference is null ? null : Money.Format(difference.Value), hasUnknown);
-        return new(CreditCardPdfPreviewAccess.Allowed,
-            new(fileName, extracted.Pages.Count, document.Header, document.Items, reconciliation), null);
+        return new(CreditCardPdfPreviewAccess.Allowed, preview, null);
     }
 
     private static CreditCardStatementAgentPreviewResult Invalid(string field, string message) =>

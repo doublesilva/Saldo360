@@ -14,6 +14,18 @@ O C# calcula `componentsTotal` apenas com `includedInCurrentTotal=true`: débito
 
 Parcelas intermediárias permanecem parcelas pelo valor informado. Pagamentos são informativos e parcelas futuras não alteram a composição atual. O agente não cria compras, ajustes, pagamentos, previsões ou qualquer outra entidade financeira.
 
-## Implementação inicial e limitações
+## Provider real e modo shadow
 
-`ICreditCardStatementExtractorAgent` isola o mecanismo semântico. Como o projeto ainda não possui provedor/modelo de IA configurado, a implementação inicial adapta os parsers locais validados para o contrato do agente. Itaú Mastercard e Nubank permanecem inalterados, e a rota histórica continua usando seu comportamento original. A fronteira permite substituir o adaptador por um agente externo sem deslocar validação financeira, autorização ou reconciliação para o modelo.
+`ICreditCardStatementExtractorAgent` isola o mecanismo semântico e `ICreditCardStatementAgentProvider` isola o fornecedor. A implementação real usa a OpenAI Responses API via HTTP e Structured Outputs com JSON Schema estrito; nenhum SDK específico alcança a camada Application. O prompt versionado em `CreditCardStatementAgentPrompt` proíbe invenção de dados, associação a cadastros, multiplicação de parcelas intermediárias e inclusão de pagamentos ou parcelas futuras no total corrente.
+
+O provider é desabilitado por padrão. A configuração `CreditCardStatementAgent` aceita `Enabled`, `Provider`, `Model`, `Endpoint`, `ApiKeyFile` e `TimeoutSeconds`. Em produção, a chave deve vir de arquivo secreto; indisponibilidade do provider não participa do readiness nem afeta os endpoints financeiros existentes.
+
+`POST /api/families/{familyId}/credit-cards/{cardId}/imports/pdf/agent-shadow-preview` executa em paralelo lógico o adaptador dos parsers e o agente real sobre o mesmo texto extraído. Retorna ambos os previews e diferenças exatas de cabeçalho, total oficial, totais reconstruídos, reconciliação, itens, classificação e `includedInCurrentTotal`. Não existe seleção automática de vencedor nem correspondência por similaridade textual.
+
+Itaú Mastercard e Nubank permanecem inalterados, e a rota histórica continua usando seu comportamento original. O agente recebe somente texto paginado e competência opcional; IDs de família/cartão, saldos, orçamento e histórico financeiro não são enviados.
+
+## Limitações
+
+- A versão atual envia texto extraído, não imagens das páginas; PDFs sem camada textual falham com segurança.
+- A comparação usa descrição normalizada e fatos financeiros exatos. O contrato T15.4.1 não possui data por item, portanto esse campo ainda não participa da chave comparativa.
+- O provider não foi habilitado nem chamado com documentos reais nesta entrega porque nenhuma credencial foi fornecida. As amostras reais permaneceram fora do repositório.
