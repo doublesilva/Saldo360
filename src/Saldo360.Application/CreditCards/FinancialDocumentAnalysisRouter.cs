@@ -10,7 +10,7 @@ public sealed class FinancialDocumentAnalysisRouter : IFinancialDocumentAnalysis
     public FinancialDocumentAnalysisPipeline Route(FinancialDocumentClassificationResult classification) => classification.DocumentType switch
     {
         "CreditCardStatement" => FinancialDocumentAnalysisPipeline.CreditCard,
-        "ElectricityBill" or "WaterBill" or "BillingDocument" => FinancialDocumentAnalysisPipeline.AwaitingExtractor,
+        "ElectricityBill" or "WaterBill" or "TelecomBill" or "BillingDocument" => FinancialDocumentAnalysisPipeline.AwaitingExtractor,
         _ => FinancialDocumentAnalysisPipeline.Unknown,
     };
 }

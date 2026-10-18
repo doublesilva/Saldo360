@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 
 namespace Saldo360.Application.CreditCards;
 
-public enum FinancialDocumentType { CreditCardStatement, ElectricityBill, WaterBill, BillingDocument, Unknown }
+public enum FinancialDocumentType { CreditCardStatement, ElectricityBill, WaterBill, TelecomBill, BillingDocument, Unknown }
 public enum FinancialDocumentConfidence { High, Medium, Low }
 public enum FinancialDocumentClassificationSource { Deterministic, Agent, Unknown }
 
@@ -89,6 +89,9 @@ public sealed class CompositeFinancialDocumentClassifier(
         { evidence.Add("Consumo em kWh"); evidence.Add("Medição ou tarifa de energia"); return Result(FinancialDocumentType.ElectricityBill, evidence); }
         if ((Has(text, "m³") || Has(text, "m3")) && (Has(text, "hidrometro") || Has(text, "agua e esgoto") || Has(text, "consumo de agua")))
         { evidence.Add("Consumo de água em m³"); evidence.Add("Hidrômetro ou água/esgoto"); return Result(FinancialDocumentType.WaterBill, evidence); }
+        if ((Has(text, "telefone") || Has(text, "internet") || Has(text, "servicos moveis") || Has(text, "servicos fixos"))
+            && (Has(text, "plano") || Has(text, "linha") || Has(text, "franquia")) && Has(text, "vencimento"))
+        { evidence.Add("Serviço de telefonia ou internet"); evidence.Add("Plano ou linha e vencimento"); return Result(FinancialDocumentType.TelecomBill, evidence); }
         if (Has(text, "fatura") && (Has(text, "limite") || Has(text, "cartao de credito")) && (Has(text, "pagamento minimo") || Has(text, "melhor dia de compra") || Has(text, "lancamentos")))
         { evidence.Add("Fatura e limite do cartão"); evidence.Add("Pagamento mínimo ou lançamentos"); return Result(FinancialDocumentType.CreditCardStatement, evidence); }
         if (Has(text, "vencimento") && (Has(text, "valor a pagar") || Has(text, "total a pagar")) && (Has(text, "codigo de barras") || Has(text, "linha digitavel") || Has(text, "cobranca")))
@@ -116,7 +119,7 @@ public static class FinancialDocumentClassificationSchema
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     public static readonly JsonElement OutputSchema = JsonDocument.Parse("""
       {"type":"object","additionalProperties":false,"required":["documentType","confidence","evidence"],"properties":{
-       "documentType":{"type":"string","enum":["CreditCardStatement","ElectricityBill","WaterBill","BillingDocument","Unknown"]},
+       "documentType":{"type":"string","enum":["CreditCardStatement","ElectricityBill","WaterBill","TelecomBill","BillingDocument","Unknown"]},
        "confidence":{"type":"string","enum":["High","Medium","Low"]},
        "evidence":{"type":"array","maxItems":5,"items":{"type":"string","maxLength":120}}}}
       """).RootElement.Clone();

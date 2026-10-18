@@ -137,6 +137,9 @@ public static class DependencyInjection
         var documentClassification = configuration.GetSection("FinancialDocumentClassification").Get<FinancialDocumentClassificationOptions>() ?? new FinancialDocumentClassificationOptions();
         services.AddSingleton(documentClassification);
         services.AddSingleton<IFinancialDocumentClassificationAgent, FinancialDocumentClassificationAgent>();
+        var serviceBillExtraction = configuration.GetSection("ServiceBillExtraction").Get<ServiceBillExtractionOptions>() ?? new ServiceBillExtractionOptions();
+        services.AddSingleton(serviceBillExtraction);
+        services.AddSingleton<IServiceBillExtractionAgent, ServiceBillExtractionAgent>();
         services.AddSingleton<LlmCreditCardStatementExtractorAgent>();
         services.AddSingleton<ParserBackedCreditCardStatementExtractorAgent>();
         services.AddSingleton<IParserBackedCreditCardStatementExtractorAgent>(provider => provider.GetRequiredService<ParserBackedCreditCardStatementExtractorAgent>());

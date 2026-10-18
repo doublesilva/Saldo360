@@ -7,6 +7,7 @@ public sealed class FinancialDocumentClassificationTests
     [Theory]
     [InlineData("Consumo de energia elétrica 123 kWh Unidade consumidora Medição atual Tarifa de energia", "ElectricityBill")]
     [InlineData("Consumo de água 18 m³ hidrômetro água e esgoto referência mensal", "WaterBill")]
+    [InlineData("Conta de telefone e internet plano mensal linha móvel vencimento da conta", "TelecomBill")]
     [InlineData("Fatura do cartão de crédito Limite disponível Pagamento mínimo Lançamentos do cartão", "CreditCardStatement")]
     [InlineData("Documento de cobrança Vencimento Valor a pagar Código de barras linha digitável", "BillingDocument")]
     public async Task StrongSignalsAreClassifiedDeterministically(string text, string expected)

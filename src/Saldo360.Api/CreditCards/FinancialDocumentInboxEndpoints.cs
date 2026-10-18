@@ -14,10 +14,21 @@ public static class FinancialDocumentInboxEndpoints
         group.MapPost("/", Receive).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/reanalyze", Reanalyze).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/classify-preview", ClassifyPreview).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/{id:guid}/service-bill-preview", ServiceBillPreview).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/pre-reconcile", PreReconcile).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/ignore", Ignore).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/confirm", Confirm).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
+    }
+
+    private static async Task<IResult> ServiceBillPreview(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
+        ServiceBillPreviewService service, CancellationToken cancellationToken)
+    {
+        if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        IFormCollection? form = request.HasFormContentType ? await request.ReadFormAsync(cancellationToken) : null;
+        var result = await service.PreviewAsync(familyId, id, userId, form?["password"], cancellationToken);
+        return result.Access switch { FinancialDocumentClassificationAccess.NotFound => Results.NotFound(),
+            FinancialDocumentClassificationAccess.Invalid => Results.ValidationProblem(result.Errors!), _ => Results.Ok(result.Preview) };
     }
 
     private static async Task<IResult> ClassifyPreview(Guid familyId, Guid id, HttpRequest request, CurrentUser user,

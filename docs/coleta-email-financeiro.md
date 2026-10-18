@@ -57,6 +57,12 @@ Os tipos genéricos são `CreditCardStatement`, `ElectricityBill`, `WaterBill`, 
 
 Quando `FinancialDocumentClassification.Enabled=true`, a Inbox persiste tipo, confiança, origem, código de falha e instante da classificação, sem armazenar evidências. A classificação ocorre antes do roteamento: somente `CreditCardStatement` segue para o pipeline de cartão. Energia, água e cobrança permanecem em `NeedsReview` com `RecognizedDocumentWithoutExtractor`; `Unknown` preserva o motivo seguro. A reanálise substitui integralmente a classificação e remove associação, parser e competência de cartão quando o novo tipo não é cartão. Documentos históricos continuam com campos nulos até serem reanalisados.
 
+## Preview de contas de serviço
+
+`TelecomBill` complementa os tipos de energia e água, sempre identificado por sinais combinados do conteúdo — nome de operadora isolado não é suficiente. Com `ServiceBillExtraction.Enabled=true`, o endpoint `POST /api/families/{familyId}/financial-documents/inbox/{id}/service-bill-preview` aceita somente esses três tipos e devolve emissor, competência, vencimento, valor decimal canônico e referências opcionais, acompanhados de `Reliable`, `NeedsReview` ou `Rejected`.
+
+A extração textual determinística procura rótulos explícitos como valor a pagar, referência, vencimento, unidade consumidora, matrícula, contrato, hidrômetro ou linha. Se incompleta e `AgentEnabled=true`, reutiliza o provider OpenAI e Structured Outputs existentes, enviando somente tipo classificado e texto paginado. O preview e a senha são efêmeros: não alteram Inbox, recorrências, transações ou pagamentos. CEEE, DMAE e Vivo não possuem parsers por fornecedor nesta etapa.
+
 Os perfis iniciais de exemplo são `ItauCards`, com `has:attachment subject:"fatura do seu cartão"`, e `NuEmpresas`, com `has:attachment subject:"fatura do seu cartão Nu Empresas"`. Ambos permanecem desabilitados até receberem família, mailbox e credenciais válidas. Nenhum final de cartão, nome, competência ou valor faz parte das queries.
 
 ## Execução manual e dry-run

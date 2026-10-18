@@ -51,10 +51,13 @@ describe('FinancialDocumentInbox', () => {
   })
 
   it('exibe tipo conhecido sem tratar ausência de extractor como falha técnica', async () => {
-    vi.stubGlobal('fetch', common([document({ originalFileName: 'energia.pdf', documentType: 'ElectricityBill', classificationConfidence: 'High', classificationSource: 'Deterministic', failureCode: 'RecognizedDocumentWithoutExtractor' })]))
+    const item = document({ originalFileName: 'energia.pdf', documentType: 'ElectricityBill', classificationConfidence: 'High', classificationSource: 'Deterministic', failureCode: 'RecognizedDocumentWithoutExtractor' })
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => { const url = String(input); if (url === '/auth/csrf') return json({ token: 'csrf' }); if (url.endsWith('/financial-documents/inbox') && !init?.method) return json([item]); if (url.includes('/credit-cards?')) return json([card]); if (url.endsWith('/categories')) return json([]); if (url.endsWith('/service-bill-preview')) return json({ assessment: 'Reliable', result: { documentType: 'ElectricityBill', issuer: 'Distribuidora', competence: '2026-10', dueDate: '2026-10-20', totalAmount: '187.43', accountReference: 'ABC1234', serviceReference: null, confidence: 'High', extractionSource: 'Deterministic', failureCode: null } }); throw new Error(url) }))
     render(<FinancialDocumentInbox familyId="family-1" />)
     expect(await screen.findByText(/Conta de energia · Recebido por e-mail/)).toBeTruthy()
     expect(screen.getByText('Reconhecido · Extração financeira ainda não disponível')).toBeTruthy()
     expect(screen.getAllByText('Requer revisão').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByText('energia.pdf')); fireEvent.click(screen.getByRole('button', { name: 'Analisar conta' }))
+    expect(await screen.findByText('Reliable')).toBeTruthy(); expect(screen.getByText('•••1234')).toBeTruthy()
   })
 })
