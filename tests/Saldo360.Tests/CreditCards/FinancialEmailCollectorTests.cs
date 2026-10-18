@@ -23,7 +23,7 @@ public sealed class FinancialEmailCollectorTests
         Assert.Equal(3, result.AttachmentsScanned);
         Assert.Equal(2, fixture.Inbox.Items.Count);
         Assert.All(fixture.Inbox.Items, item => Assert.Equal(FinancialDocumentSource.Email, item.Source));
-        Assert.All(fixture.Inbox.Items, item => { Assert.Contains(":sha256:", item.ExternalSourceId, StringComparison.Ordinal); Assert.DoesNotContain(":a1", item.ExternalSourceId, StringComparison.Ordinal); Assert.DoesNotContain(":a3", item.ExternalSourceId, StringComparison.Ordinal); });
+        Assert.All(fixture.Inbox.Items, item => { Assert.Contains(":part:", item.ExternalSourceId, StringComparison.Ordinal); Assert.DoesNotContain(":a1", item.ExternalSourceId, StringComparison.Ordinal); Assert.DoesNotContain(":a3", item.ExternalSourceId, StringComparison.Ordinal); });
         Assert.Equal(2, source.Downloads);
         Assert.Equal(["a1", "a3"], source.OpenedAttachmentIds);
         Assert.Equal(0, source.Mutations);
@@ -35,7 +35,7 @@ public sealed class FinancialEmailCollectorTests
         var source = new FakeEmailSource(); source.Add("message", DateTimeOffset.UtcNow, ("attachment", "bill.pdf", "application/pdf", Pdf(1)));
         var fixture = Create(source, Preview("Nubank", "Reconciled", null));
         var result = await fixture.Collector.RunAsync("Bills", UserId, true, CancellationToken.None);
-        Assert.Equal([GmailAttachmentIdentity.Create("message", "attachment")], result!.CandidateExternalIds);
+        Assert.Equal([GmailAttachmentIdentity.Create("message", "part-1")], result!.CandidateExternalIds);
         Assert.DoesNotContain("attachment", result.CandidateExternalIds[0], StringComparison.Ordinal);
         Assert.Empty(fixture.Inbox.Items); Assert.Equal(0, source.Downloads);
     }
@@ -46,13 +46,27 @@ public sealed class FinancialEmailCollectorTests
         var first = GmailAttachmentIdentity.Create("message", "attachment-a");
         var repeated = GmailAttachmentIdentity.Create("message", "attachment-a");
         var different = GmailAttachmentIdentity.Create("message", "attachment-b");
-        var longAttachment = GmailAttachmentIdentity.Create("message", new string('x', 10_000));
 
         Assert.Equal(first, repeated);
         Assert.NotEqual(first, different);
-        Assert.StartsWith("gmail:message:sha256:", first, StringComparison.Ordinal);
-        Assert.DoesNotContain("attachment-a", first, StringComparison.Ordinal);
-        Assert.True(longAttachment.Length < 300);
+        Assert.Equal("gmail:message:part:attachment-a", first);
+        Assert.True(first.Length < 300);
+        Assert.Throws<InvalidOperationException>(() => GmailAttachmentIdentity.Create("message", new string('x', 300)));
+    }
+
+    [Fact]
+    public async Task DryRunIdentityDoesNotChangeWhenGmailRotatesAttachmentIdForSameMimePart()
+    {
+        var source = new FakeEmailSource(); source.Add("message", DateTimeOffset.UtcNow, ("attachment-v1", "bill.pdf", "application/pdf", Pdf(1)));
+        var fixture = Create(source, Preview("Nubank", "Reconciled", null));
+
+        var first = await fixture.Collector.RunAsync("Bills", UserId, true, CancellationToken.None);
+        source.ChangeAttachmentId("message", "attachment-v2");
+        var repeated = await fixture.Collector.RunAsync("Bills", UserId, true, CancellationToken.None);
+
+        Assert.Equal(first!.CandidateExternalIds, repeated!.CandidateExternalIds);
+        Assert.Equal(["gmail:message:part:part-1"], first.CandidateExternalIds);
+        Assert.DoesNotContain("attachment-v2", repeated.CandidateExternalIds[0], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -122,7 +136,11 @@ public sealed class FinancialEmailCollectorTests
     {
         private readonly List<FinancialEmailMessage> messages = []; private readonly Dictionary<string, List<(FinancialEmailAttachment Meta, byte[] Bytes)>> attachments = [];
         public string? FailAttachmentId { get; set; } public int Downloads { get; private set; } public List<string> OpenedAttachmentIds { get; } = []; public int Mutations => 0;
-        public void Add(string id, DateTimeOffset at, params (string Id, string Name, string Type, byte[] Bytes)[] values) { messages.Add(new(id, at)); attachments[id] = values.Select(v => (new FinancialEmailAttachment(v.Id, v.Name, v.Type, v.Bytes.Length), v.Bytes)).ToList(); }
+        public void Add(string id, DateTimeOffset at, params (string Id, string Name, string Type, byte[] Bytes)[] values) { messages.Add(new(id, at)); attachments[id] = values.Select((v, index) => (new FinancialEmailAttachment(v.Id, $"part-{index + 1}", v.Name, v.Type, v.Bytes.Length), v.Bytes)).ToList(); }
+        public void ChangeAttachmentId(string messageId, string attachmentId)
+        {
+            attachments[messageId] = attachments[messageId].Select(item => (item.Meta with { Id = attachmentId }, item.Bytes)).ToList();
+        }
         public Task<IReadOnlyList<FinancialEmailMessage>> SearchAsync(string query, DateTimeOffset after, int maxMessages, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailMessage>>(messages.Take(maxMessages).ToList());
         public Task<IReadOnlyList<FinancialEmailAttachment>> ListAttachmentsAsync(string messageId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailAttachment>>(attachments[messageId].Select(item => item.Meta).ToList());
         public Task<Stream> OpenAttachmentAsync(string messageId, string attachmentId, CancellationToken cancellationToken) { Downloads++; OpenedAttachmentIds.Add(attachmentId); if (attachmentId == FailAttachmentId) throw new IOException("synthetic"); return Task.FromResult<Stream>(new MemoryStream(attachments[messageId].Single(item => item.Meta.Id == attachmentId).Bytes)); }

@@ -26,7 +26,7 @@ public sealed class GmailOptions
 }
 
 public sealed record FinancialEmailMessage(string Id, DateTimeOffset ReceivedAt);
-public sealed record FinancialEmailAttachment(string Id, string FileName, string ContentType, long Size);
+public sealed record FinancialEmailAttachment(string Id, string PartId, string FileName, string ContentType, long Size);
 public interface IFinancialEmailSource
 {
     Task<IReadOnlyList<FinancialEmailMessage>> SearchAsync(string query, DateTimeOffset after, int maxMessages, CancellationToken cancellationToken);
@@ -96,7 +96,7 @@ public sealed class FinancialEmailCollector(
                 attachmentsScanned++;
                 if (!IsPdf(attachment) || attachment.Size <= 0 || attachment.Size > CreditCardPdfPreviewService.MaxFileBytes) continue;
                 hasCandidate = true; candidates++;
-                var externalId = GmailAttachmentIdentity.Create(message.Id, attachment.Id); ids.Add(externalId);
+                var externalId = GmailAttachmentIdentity.Create(message.Id, attachment.PartId); ids.Add(externalId);
                 if (dryRun) continue;
                 try
                 {
@@ -140,12 +140,11 @@ public sealed class FinancialEmailCollector(
 
 public static class GmailAttachmentIdentity
 {
-    public static string Create(string messageId, string attachmentId)
+    public static string Create(string messageId, string partId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(attachmentId);
-        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(attachmentId)));
-        var identity = $"gmail:{messageId}:sha256:{hash}";
+        ArgumentException.ThrowIfNullOrWhiteSpace(partId);
+        var identity = $"gmail:{messageId}:part:{partId}";
         if (identity.Length >= 300) throw new InvalidOperationException("A identidade externa Gmail excede o limite permitido.");
         return identity;
     }
