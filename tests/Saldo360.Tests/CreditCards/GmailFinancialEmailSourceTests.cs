@@ -34,6 +34,21 @@ public sealed class GmailFinancialEmailSourceTests
     }
 
     [Fact]
+    public async Task ReadsInlineHtmlAndPlainTextBodies()
+    {
+        static string Encoded(string value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var payload = $"{{\"internalDate\":\"1792238400000\",\"payload\":{{\"parts\":[{{\"partId\":\"1\",\"mimeType\":\"text/plain\",\"body\":{{\"data\":\"{Encoded("Texto") }\"}}}},{{\"partId\":\"2\",\"mimeType\":\"text/html\",\"body\":{{\"data\":\"{Encoded("<a href=\\\"https://dmae.example/conta.pdf\\\">PDF</a>")}\"}}}}]}}}}";
+        var gmail = new RecordingHandler(_ => payload);
+        var source = new GmailFinancialEmailSource(new FakeHttpClientFactory(gmail, new RecordingHandler(_ => "{\"access_token\":\"token\",\"expires_in\":3600}")),
+            new FinancialEmailImportOptions { Gmail = new() { Mailbox = "mailbox@example.invalid", ClientId = "client", ClientSecret = "secret", RefreshToken = "refresh" } });
+
+        var body = await source.GetBodyAsync("m1", CancellationToken.None);
+
+        Assert.Equal("Texto", body.PlainText);
+        Assert.Contains("https://dmae.example/conta.pdf", body.Html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SecretFilesTakePrecedenceAndOnlyTrimTrailingLineBreaks()
     {
         var path = Path.GetTempFileName();

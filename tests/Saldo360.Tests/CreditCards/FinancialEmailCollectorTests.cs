@@ -117,33 +117,58 @@ public sealed class FinancialEmailCollectorTests
         Assert.Equal(1, result!.Failures); Assert.Contains(result.Errors, error => error.Code == "InvalidPdfContent"); Assert.Empty(fixture.Inbox.Items);
     }
 
-    private static Fixture Create(FakeEmailSource source, CreditCardPdfPreview? preview, CreditCardPdfReadFailure? failure = null, bool schedulerEnabled = true)
+    [Fact]
+    public async Task LinkDryRunIsStableAndDoesNotDownloadOrPersist()
+    {
+        var source = new FakeEmailSource(); source.Add("message", DateTimeOffset.UtcNow); source.SetBody("message", "<a href=\"https://dmae.example/contas/segunda-via.pdf?token=secret\">PDF</a>");
+        var fixture = Create(source, Preview("Generic", "NeedsReview", null), mode: FinancialEmailCollectionMode.Links);
+
+        var first = await fixture.Collector.RunAsync("Bills", UserId, true, CancellationToken.None);
+        var repeated = await fixture.Collector.RunAsync("Bills", UserId, true, CancellationToken.None);
+
+        Assert.Equal(["gmail:message:link:1"], first!.CandidateExternalIds);
+        Assert.Equal(first.CandidateExternalIds, repeated!.CandidateExternalIds);
+        Assert.Equal(1, first.CandidateLinks); Assert.Equal(1, first.LinksScanned);
+        Assert.Equal(0, fixture.Downloader.Downloads); Assert.Empty(fixture.Inbox.Items);
+    }
+
+    private static Fixture Create(FakeEmailSource source, CreditCardPdfPreview? preview, CreditCardPdfReadFailure? failure = null, bool schedulerEnabled = true, FinancialEmailCollectionMode mode = FinancialEmailCollectionMode.Attachments)
     {
         var inboxRepository = new FakeInboxRepository(); var storage = new FakeStorage();
         var extractor = new FakeExtractor(preview, failure); var resolver = new CreditCardStatementResolver(new EmptyResolutionRepository());
         var inbox = new FinancialDocumentInboxService(inboxRepository, storage, extractor, new UnusedPreview(), resolver, TimeProvider.System);
         var options = new FinancialEmailImportOptions { Enabled = schedulerEnabled, LookbackDays = 7, MaxMessages = 20,
-            Sources = [new() { Name = "Bills", FamilyId = FamilyId, Query = "has:attachment filename:pdf", Enabled = true }] };
+            Sources = [new() { Name = "Bills", FamilyId = FamilyId, Query = "has:attachment filename:pdf", Enabled = true, CollectionMode = mode, AllowedLinkHosts = ["dmae.example"], AllowedLinkPathPrefixes = ["/contas/"] }] };
         var checkpoints = new FakeCheckpoints();
-        return new(new(options, source, checkpoints, inboxRepository, inbox, TimeProvider.System), inboxRepository);
+        var downloader = new FakeLinkedDownloader();
+        return new(new(options, source, new FinancialEmailLinkExtractor(), downloader, checkpoints, inboxRepository, inbox, TimeProvider.System), inboxRepository, downloader);
     }
     private static CreditCardPdfPreview Preview(string parser, string status, string? digits) => new("x.pdf", 1, parser,
         new("Nubank", digits, "2026-10", null, null, "1.00"), new(0, 0, 0, 0), [], []) { Reconciliation = new(status, "1.00", "1.00", "0.00", false) };
     private static byte[] Pdf(byte marker) => [(byte)'%', (byte)'P', (byte)'D', (byte)'F', (byte)'-', marker];
-    private sealed record Fixture(FinancialEmailCollector Collector, FakeInboxRepository Inbox);
+    private sealed record Fixture(FinancialEmailCollector Collector, FakeInboxRepository Inbox, FakeLinkedDownloader Downloader);
 
     private sealed class FakeEmailSource : IFinancialEmailSource
     {
-        private readonly List<FinancialEmailMessage> messages = []; private readonly Dictionary<string, List<(FinancialEmailAttachment Meta, byte[] Bytes)>> attachments = [];
+        private readonly List<FinancialEmailMessage> messages = []; private readonly Dictionary<string, List<(FinancialEmailAttachment Meta, byte[] Bytes)>> attachments = []; private readonly Dictionary<string, FinancialEmailBody> bodies = [];
         public string? FailAttachmentId { get; set; } public int Downloads { get; private set; } public List<string> OpenedAttachmentIds { get; } = []; public int Mutations => 0;
         public void Add(string id, DateTimeOffset at, params (string Id, string Name, string Type, byte[] Bytes)[] values) { messages.Add(new(id, at)); attachments[id] = values.Select((v, index) => (new FinancialEmailAttachment(v.Id, $"part-{index + 1}", v.Name, v.Type, v.Bytes.Length), v.Bytes)).ToList(); }
         public void ChangeAttachmentId(string messageId, string attachmentId)
         {
             attachments[messageId] = attachments[messageId].Select(item => (item.Meta with { Id = attachmentId }, item.Bytes)).ToList();
         }
+        public void SetBody(string messageId, string html) => bodies[messageId] = new(html, null);
         public Task<IReadOnlyList<FinancialEmailMessage>> SearchAsync(string query, DateTimeOffset after, int maxMessages, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailMessage>>(messages.Take(maxMessages).ToList());
         public Task<IReadOnlyList<FinancialEmailAttachment>> ListAttachmentsAsync(string messageId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailAttachment>>(attachments[messageId].Select(item => item.Meta).ToList());
         public Task<Stream> OpenAttachmentAsync(string messageId, string attachmentId, CancellationToken cancellationToken) { Downloads++; OpenedAttachmentIds.Add(attachmentId); if (attachmentId == FailAttachmentId) throw new IOException("synthetic"); return Task.FromResult<Stream>(new MemoryStream(attachments[messageId].Single(item => item.Meta.Id == attachmentId).Bytes)); }
+        public Task<FinancialEmailBody> GetBodyAsync(string messageId, CancellationToken cancellationToken) => Task.FromResult(bodies.GetValueOrDefault(messageId) ?? new FinancialEmailBody(null, null));
+    }
+    private sealed class FakeLinkedDownloader : IFinancialLinkedDocumentDownloader
+    {
+        public int Downloads { get; private set; }
+        public Task<FinancialLinkedDocument> DownloadAsync(FinancialEmailImportProfile profile, Uri url, CancellationToken cancellationToken) =>
+            Task.FromResult(Download());
+        private FinancialLinkedDocument Download() { Downloads++; return new(Pdf(9), "linked.pdf", "application/pdf"); }
     }
     private sealed class FakeInboxRepository : IFinancialDocumentInboxRepository
     {

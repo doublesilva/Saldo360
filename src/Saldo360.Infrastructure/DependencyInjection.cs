@@ -105,7 +105,12 @@ public static class DependencyInjection
         services.AddHostedService<FinancialEmailCollectorHostedService>();
         services.AddHttpClient("GmailFinancialEmail", client => client.BaseAddress = new Uri("https://gmail.googleapis.com/"));
         services.AddHttpClient("GmailFinancialEmailToken", client => client.BaseAddress = new Uri("https://oauth2.googleapis.com/"));
+        services.AddHttpClient("FinancialLinkedDocument", client => client.Timeout = TimeSpan.FromSeconds(20))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
         services.AddSingleton<IFinancialEmailSource, GmailFinancialEmailSource>();
+        services.AddSingleton<IFinancialEmailLinkExtractor, FinancialEmailLinkExtractor>();
+        services.AddSingleton<IFinancialHostAddressResolver, FinancialHostAddressResolver>();
+        services.AddSingleton<IFinancialLinkedDocumentDownloader, FinancialLinkedDocumentDownloader>();
         services.AddScoped<IFinancialCreditCardPurchaseRepository, FinancialCreditCardPurchaseRepository>();
         services.AddScoped<IFinancialCreditCardInvoicePaymentRepository, FinancialCreditCardInvoicePaymentRepository>();
         services.AddScoped<IFinancialCreditCardInvoiceAdjustmentRepository, FinancialCreditCardInvoiceAdjustmentRepository>();

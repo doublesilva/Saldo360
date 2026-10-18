@@ -30,7 +30,14 @@ FinancialEmailImport__Sources__0__Name=Bills
 FinancialEmailImport__Sources__0__FamilyId=<uuid-da-familia>
 FinancialEmailImport__Sources__0__Query=has:attachment filename:pdf
 FinancialEmailImport__Sources__0__Enabled=true
+FinancialEmailImport__Sources__0__CollectionMode=Attachments
 ```
+
+`CollectionMode` aceita `Attachments` (padrão retrocompatível), `Links` ou `AttachmentsAndLinks`. Para links, cada perfil deve declarar `AllowedLinkHosts` e, opcionalmente, `AllowedLinkPathPrefixes`. Exemplo DMAE: host `dmaeagvrt.procempa.com.br` e prefixo `/gsan/`.
+
+Links são extraídos do corpo HTML/texto sem executar conteúdo. Somente HTTPS absoluto é aceito; esquemas inseguros, credenciais na URL, localhost, IP literal e caminhos fora da allowlist são rejeitados. O download usa GET sem OAuth/cookies, redirects manuais, limite de tamanho, timeout, validação `%PDF-` e bloqueio DNS de endereços privados, loopback, link-local e metadata. Cada redirect é revalidado.
+
+A identidade persistida de um documento vinculado é `gmail:{messageId}:link:{ordinal}`. URL, query string e tokens nunca compõem a identidade nem os erros. O `attachmentId` Gmail continua restrito ao download de anexos em memória. O hash do conteúdo permanece como segunda barreira de deduplicação na Inbox.
 
 Nenhuma credencial real é versionada. Service accounts só são apropriadas quando o domínio Google Workspace permite delegação em todo o domínio; a configuração atual usa OAuth de usuário com refresh token.
 
@@ -49,7 +56,7 @@ POST /api/financial-email-import/{profile}/run?dryRun=true
 POST /api/financial-email-import/{profile}/run?dryRun=false
 ```
 
-O endpoint exige autenticação, CSRF e participação na família configurada. Ele permanece disponível quando `FinancialEmailImport.Enabled=false`; essa chave controla exclusivamente o hosted service. O perfil solicitado ainda precisa estar habilitado. Assim, o bootstrap pode ser validado manualmente sem ativar o scheduler. `dryRun=true` pesquisa e lista apenas IDs técnicos dos candidatos; não baixa anexos, não grava Inbox e não avança checkpoint. A execução efetiva retorna contadores de mensagens, anexos, aceitos, duplicados, itens em revisão e falhas sanitizadas.
+O endpoint exige autenticação, CSRF e participação na família configurada. Ele permanece disponível quando `FinancialEmailImport.Enabled=false`; essa chave controla exclusivamente o hosted service. O perfil solicitado ainda precisa estar habilitado. Assim, o bootstrap pode ser validado manualmente sem ativar o scheduler. `dryRun=true` pesquisa e lista apenas IDs técnicos dos candidatos; para links ele lê o corpo da mensagem, mas não acessa a URL externa, não grava Inbox e não avança checkpoint. A execução efetiva também retorna `linksScanned`, `candidateLinks`, `rejectedLinks` e `linkedDocumentsDownloaded`, além dos contadores anteriores.
 
 Uma falha não interrompe os demais anexos. PDF protegido é preservado na Inbox como `NeedsReview` com código sanitizado, sem CPF ou senha. O Gmail não é marcado como lido, movido, rotulado, respondido ou excluído.
 

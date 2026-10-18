@@ -46,26 +46,33 @@ services:
       FinancialEmailImport__Sources__0__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
       FinancialEmailImport__Sources__0__Query: 'has:attachment subject:"fatura do seu cartão" -subject:"Nu Empresas"'
       FinancialEmailImport__Sources__0__Enabled: "true"
+      FinancialEmailImport__Sources__0__CollectionMode: Attachments
 
       FinancialEmailImport__Sources__1__Name: NuEmpresas
       FinancialEmailImport__Sources__1__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
       FinancialEmailImport__Sources__1__Query: 'has:attachment subject:"fatura do seu cartão Nu Empresas"'
       FinancialEmailImport__Sources__1__Enabled: "true"
+      FinancialEmailImport__Sources__1__CollectionMode: Attachments
 
       FinancialEmailImport__Sources__2__Name: ZaffariBourbon
       FinancialEmailImport__Sources__2__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
       FinancialEmailImport__Sources__2__Query: 'Fatura Bourbon has:attachment'
       FinancialEmailImport__Sources__2__Enabled: "true"
+      FinancialEmailImport__Sources__2__CollectionMode: Attachments
 
       FinancialEmailImport__Sources__3__Name: Ceee
       FinancialEmailImport__Sources__3__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
       FinancialEmailImport__Sources__3__Query: 'has:attachment subject:"fatura ceee"'
       FinancialEmailImport__Sources__3__Enabled: "true"
+      FinancialEmailImport__Sources__3__CollectionMode: Attachments
 
       FinancialEmailImport__Sources__4__Name: Dmae
       FinancialEmailImport__Sources__4__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
       FinancialEmailImport__Sources__4__Query: 'dmae conta'
       FinancialEmailImport__Sources__4__Enabled: "true"
+      FinancialEmailImport__Sources__4__CollectionMode: Links
+      FinancialEmailImport__Sources__4__AllowedLinkHosts__0: dmaeagvrt.procempa.com.br
+      FinancialEmailImport__Sources__4__AllowedLinkPathPrefixes__0: /gsan/
 
       FinancialDocuments__StoragePath: /var/lib/saldo360/financial-documents
       ReverseProxy__KnownNetworks__0: 172.16.0.0/12
