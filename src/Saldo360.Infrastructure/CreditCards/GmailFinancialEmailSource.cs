@@ -78,7 +78,7 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
     private static void Visit(GmailPart? part, List<FinancialEmailAttachment> result)
     {
         if (part is null) return;
-        if (!string.IsNullOrWhiteSpace(part.Body?.AttachmentId)) result.Add(new(part.Body.AttachmentId, part.FileName ?? string.Empty, part.MimeType ?? "application/octet-stream", part.Body.Size));
+        if (!string.IsNullOrWhiteSpace(part.Body?.AttachmentId)) result.Add(new(part.Body.AttachmentId, part.PartId, part.FileName ?? string.Empty, part.MimeType ?? "application/octet-stream", part.Body.Size));
         foreach (var child in part.Parts ?? []) Visit(child, result);
     }
     private static byte[] DecodeBase64Url(string value) { var normalized = value.Replace('-', '+').Replace('_', '/'); normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4) % 4, '='); return Convert.FromBase64String(normalized); }
@@ -86,7 +86,7 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
     private sealed class GmailMessageList { [JsonPropertyName("messages")] public List<GmailMessageRef> Messages { get; set; } = []; }
     private sealed class GmailMessageRef { [JsonPropertyName("id")] public string Id { get; set; } = string.Empty; }
     private sealed class GmailMessage { [JsonPropertyName("internalDate")] public string InternalDate { get; set; } = string.Empty; [JsonPropertyName("payload")] public GmailPart? Payload { get; set; } }
-    private sealed class GmailPart { [JsonPropertyName("filename")] public string? FileName { get; set; } [JsonPropertyName("mimeType")] public string? MimeType { get; set; } [JsonPropertyName("body")] public GmailAttachmentBody? Body { get; set; } [JsonPropertyName("parts")] public List<GmailPart>? Parts { get; set; } }
+    private sealed class GmailPart { [JsonPropertyName("partId")] public string PartId { get; set; } = string.Empty; [JsonPropertyName("filename")] public string? FileName { get; set; } [JsonPropertyName("mimeType")] public string? MimeType { get; set; } [JsonPropertyName("body")] public GmailAttachmentBody? Body { get; set; } [JsonPropertyName("parts")] public List<GmailPart>? Parts { get; set; } }
     private sealed class GmailAttachmentBody { [JsonPropertyName("attachmentId")] public string AttachmentId { get; set; } = string.Empty; [JsonPropertyName("size")] public long Size { get; set; } [JsonPropertyName("data")] public string Data { get; set; } = string.Empty; }
     private sealed class GmailTokenResponse { [JsonPropertyName("access_token")] public string AccessToken { get; set; } = string.Empty; [JsonPropertyName("expires_in")] public int ExpiresIn { get; set; } }
 }

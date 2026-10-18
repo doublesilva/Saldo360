@@ -6,7 +6,7 @@ O `FinancialEmailCollector` é um adaptador de transporte entre Gmail e a Inbox.
 
 `IFinancialEmailSource` separa a Application da API Gmail e oferece pesquisa, metadados de anexos e download. `GmailFinancialEmailSource` usa somente endpoints GET da Gmail API. Cada PDF é encaminhado individualmente para `FinancialDocumentInboxService.ReceiveAutomationAsync`, que calcula hash, deduplica, grava no storage privado e executa os parsers existentes.
 
-O identificador externo é `gmail:{messageId}:sha256:{sha256Hex(attachmentId)}`. O `attachmentId` bruto existe apenas em memória durante a chamada de download e não é persistido nem retornado pelo dry-run. Assunto e nome do arquivo não são usados como identidade. Uma constraint da Inbox protege o identificador e outra protege o hash por família, inclusive sob concorrência.
+O identificador externo é `gmail:{messageId}:part:{partId}`. O `partId` vem da estrutura MIME estável da mensagem. O `attachmentId` bruto existe apenas em memória durante a chamada de download e não participa da identidade, não é persistido nem retornado pelo dry-run. Assunto e nome do arquivo não são usados como identidade. Uma constraint da Inbox protege o identificador e outra protege o hash do conteúdo por família, inclusive sob concorrência.
 
 ## Autenticação
 

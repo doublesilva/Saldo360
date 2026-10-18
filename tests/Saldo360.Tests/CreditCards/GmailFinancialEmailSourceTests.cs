@@ -13,7 +13,7 @@ public sealed class GmailFinancialEmailSourceTests
         var gmail = new RecordingHandler(request => request.RequestUri!.AbsolutePath switch
         {
             "/gmail/v1/users/mailbox%40example.invalid/messages" => "{\"messages\":[{\"id\":\"m1\"}]}",
-            "/gmail/v1/users/mailbox%40example.invalid/messages/m1" => "{\"internalDate\":\"1792238400000\",\"payload\":{\"parts\":[{\"filename\":\"bill.pdf\",\"mimeType\":\"application/pdf\",\"body\":{\"attachmentId\":\"a1\",\"size\":3}}]}}",
+            "/gmail/v1/users/mailbox%40example.invalid/messages/m1" => "{\"internalDate\":\"1792238400000\",\"payload\":{\"parts\":[{\"partId\":\"1.2\",\"filename\":\"bill.pdf\",\"mimeType\":\"application/pdf\",\"body\":{\"attachmentId\":\"a1\",\"size\":3}}]}}",
             "/gmail/v1/users/mailbox%40example.invalid/messages/m1/attachments/a1" => "{\"data\":\"AQID\",\"size\":3}",
             _ => throw new InvalidOperationException(request.RequestUri.ToString()),
         });
@@ -27,7 +27,7 @@ public sealed class GmailFinancialEmailSourceTests
         await using var stream = await source.OpenAttachmentAsync("m1", "a1", CancellationToken.None);
         using var output = new MemoryStream(); await stream.CopyToAsync(output);
 
-        Assert.Single(messages); Assert.Equal("a1", Assert.Single(attachments).Id); Assert.Equal([1, 2, 3], output.ToArray());
+        Assert.Single(messages); var attachment = Assert.Single(attachments); Assert.Equal("a1", attachment.Id); Assert.Equal("1.2", attachment.PartId); Assert.Equal([1, 2, 3], output.ToArray());
         Assert.All(gmail.Requests, request => Assert.Equal(HttpMethod.Get, request.Method));
         Assert.Contains(gmail.Requests, request => request.Uri.Query.Contains("after%3A1", StringComparison.Ordinal));
         Assert.All(gmail.Requests, request => Assert.Equal("Bearer", request.AuthorizationScheme));
