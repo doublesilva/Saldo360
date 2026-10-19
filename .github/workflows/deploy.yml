@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
   id-token: write
 
 concurrency:
@@ -23,6 +24,7 @@ jobs:
       DEPLOY_USER: ${{ vars.SALDO360_DEPLOY_USER }}
       EXPECTED_FINGERPRINT: ${{ vars.SALDO360_SSH_HOST_FINGERPRINT }}
       TAILSCALE_TAG: ${{ vars.SALDO360_TAILSCALE_TAG }}
+      DEPLOY_SHA: ${{ github.sha }}
 
     steps:
       - name: Validate ref and configuration
@@ -33,8 +35,8 @@ jobs:
             echo "::error::Produção só pode ser publicada a partir de main."
             exit 1
           fi
-          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::GITHUB_SHA não é um SHA Git completo e minúsculo."
+          if [[ ! "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::DEPLOY_SHA não é um SHA Git completo e minúsculo."
             exit 1
           fi
 
@@ -48,8 +50,55 @@ jobs:
           done
           exit "$missing"
 
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Verify ci-success for deploy SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          response="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/commits/$DEPLOY_SHA/check-runs?per_page=100")"
+
+          check="$(printf '%s' "$response" | jq -c '
+            [
+              .check_runs[]
+              | select(.name == "ci-success")
+              | select(.app.slug == "github-actions")
+            ]
+            | sort_by(.id)
+            | last // empty
+          ')"
+
+          if [ -z "$check" ]; then
+            echo "::error::Nenhum check ci-success encontrado para o SHA $DEPLOY_SHA."
+            exit 1
+          fi
+
+          status="$(printf '%s' "$check" | jq -r '.status')"
+          conclusion="$(printf '%s' "$check" | jq -r '.conclusion // ""')"
+          details_url="$(printf '%s' "$check" | jq -r '.details_url // ""')"
+
+          echo "ci-success: status=$status conclusion=${conclusion:-none}"
+          if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
+            echo "::error::O SHA $DEPLOY_SHA não possui ci-success concluído com sucesso."
+            [ -n "$details_url" ] && echo "Check: $details_url"
+            exit 1
+          fi
+
+          {
+            echo "### Deploy gate"
+            echo "- SHA: \`$DEPLOY_SHA\`"
+            echo "- ci-success: **success**"
+            [ -n "$details_url" ] && echo "- Check: $details_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout deploy SHA
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          fetch-depth: 1
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
@@ -130,13 +179,29 @@ jobs:
             echo "::error::Script ausente ou não executável: /usr/local/sbin/deploy-saldo360"
             failed=1
           fi
-          protocol="$(sudo -n /usr/local/sbin/deploy-saldo360 --protocol-version 2>/dev/null || true)"
-          if test "$protocol" = "1"; then
-            echo "OK protocolo privilegiado: $protocol"
+          protocol_output="$(mktemp)"
+          if sudo -n /usr/local/sbin/deploy-saldo360 --protocol-version >"$protocol_output" 2>&1; then
+            protocol="$(cat "$protocol_output")"
+            if test "$protocol" = "1"; then
+              echo "OK protocolo privilegiado: $protocol"
+            else
+              echo "::error::Wrapper privilegiado incompatível (esperado protocolo 1, recebido: $protocol)."
+              failed=1
+            fi
           else
-            echo "::error::Wrapper privilegiado ausente, incompatível ou sem regra sudo (esperado protocolo 1)."
+            rc=$?
+            output="$(cat "$protocol_output")"
+            if printf '%s' "$output" | grep -qiE '(password is required|a password is required|no tty present|not allowed to execute|not in the sudoers)'; then
+              echo "::error::Bootstrap privilegiado incompleto: sudo não interativo para deploy-saldo360 não está disponível."
+            elif printf '%s' "$output" | grep -Fq 'Uso: deploy-saldo360 <commit-sha>'; then
+              echo "::error::Wrapper privilegiado antigo detectado em /usr/local/sbin/deploy-saldo360. Instale deploy/server/deploy-saldo360-wrapper no servidor antes de executar o deploy assinado."
+            else
+              echo "::error::Falha ao validar o wrapper privilegiado (rc=$rc)."
+              [ -n "$output" ] && printf '%s\n' "$output"
+            fi
             failed=1
           fi
+          rm -f "$protocol_output"
           exit "$failed"
           REMOTE
 
@@ -146,7 +211,7 @@ jobs:
           DEPLOY_RELEASE_SIGNING_KEY: ${{ secrets.DEPLOY_RELEASE_SIGNING_KEY }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
           if [ -z "$DEPLOY_RELEASE_SIGNING_KEY" ]; then
             echo "::error::Secret DEPLOY_RELEASE_SIGNING_KEY vazio ou não disponível no environment."
             exit 1
@@ -164,7 +229,7 @@ jobs:
           release_hash="$(sha256sum /tmp/saldo360-release.tar.gz | awk '{print $1}')"
           script_hash="$(sha256sum deploy/server/deploy-saldo360 | awk '{print $1}')"
           printf 'protocol=1\ncommit=%s\nrelease_sha256=%s\nscript_sha256=%s\n' \
-            "$GITHUB_SHA" "$release_hash" "$script_hash" \
+            "$DEPLOY_SHA" "$release_hash" "$script_hash" \
             > /tmp/saldo360-release-manifest.txt
           openssl dgst -sha256 -sign "$signing_key" \
             -out /tmp/saldo360-release-manifest.sig \
@@ -197,13 +262,13 @@ jobs:
       - name: Deploy
         shell: bash
         run: |
-          ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             "sudo -n /usr/local/sbin/deploy-saldo360 '$GITHUB_SHA'"
+          ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             "sudo -n /usr/local/sbin/deploy-saldo360 '$DEPLOY_SHA'"
 
       - name: Summary
         run: |
           {
             echo "### Saldo360 production"
-            echo "- Commit: `$GITHUB_SHA`"
+            echo "- Commit: `$DEPLOY_SHA`"
             echo "- Host: `$DEPLOY_HOST`"
             echo "- Status: deploy concluído"
           } >> "$GITHUB_STEP_SUMMARY"
