@@ -11,51 +11,242 @@ permissions:
   contents: read
 
 concurrency:
-  group: saldo360-ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Build, tests and production images
+  changes:
+    name: changes
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+      infra: ${{ steps.detect.outputs.infra }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Validate change classifier
+        run: bash scripts/ci/test-classify-changes.sh
+      - name: Detect changed components
+        id: detect
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          changed="$RUNNER_TEMP/changed-files.txt"
+          all=false
+          base=''
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            all=true
+            echo 'workflow_dispatch: validating every component'
+          else
+            if [ "$EVENT_NAME" = pull_request ]; then base="$PR_BASE_SHA"; else base="$PUSH_BEFORE_SHA"; fi
+            if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ] \
+              || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+              all=true
+              echo "No usable base commit for $EVENT_NAME: validating every component"
+            elif ! git diff --name-only --no-renames "$base" "$HEAD_SHA" > "$changed"; then
+              all=true
+              echo 'git diff failed: validating every component'
+            fi
+          fi
+          if [ "$all" = true ]; then
+            backend=true; frontend=true; infra=true
+          else
+            cat "$changed"
+            eval "$(bash scripts/ci/classify-changes.sh < "$changed")"
+          fi
+          printf 'backend=%s\nfrontend=%s\ninfra=%s\n' "$backend" "$frontend" "$infra" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Incremental CI'; echo
+            echo "- event: \`$EVENT_NAME\`"
+            echo "- base: \`${base:-all}\`"
+            echo "- head: \`$HEAD_SHA\`"; echo
+            echo '| component | runs |'; echo '|---|---|'
+            echo "| backend | $backend |"
+            echo "| frontend | $frontend |"
+            echo "| infra | $infra |"
+            if [ -s "$changed" ]; then
+              echo; echo '<details><summary>Changed files</summary>'; echo
+              sed 's/^/- `/' "$changed" | sed 's/$/`/'
+              echo '</details>'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: .NET 10
+  backend:
+    name: backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE: saldo360-api:ci
+      CONTAINER: saldo360-api-ci
+      POSTGRES_CONTAINER: saldo360-postgres-ci
+      NETWORK: saldo360-backend-ci
+      CONNECTION: Host=postgres;Port=5432;Database=saldo360_ci;Username=saldo360;Password=ci-only-not-a-secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore Saldo360.slnx
+      - name: Build backend (Release)
+        run: dotnet build Saldo360.slnx --configuration Release --no-restore
+      - name: Test backend with PostgreSQL diagnostics
+        run: dotnet test Saldo360.slnx --configuration Release --no-build --logger "console;verbosity=normal"
+      - name: Build API image
+        run: docker build --file Dockerfile.api --tag "$IMAGE" .
+      - name: Smoke API image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create "$NETWORK"
+          docker run -d --name "$POSTGRES_CONTAINER" --network "$NETWORK" --network-alias postgres \
+            -e POSTGRES_DB=saldo360_ci -e POSTGRES_USER=saldo360 -e POSTGRES_PASSWORD=ci-only-not-a-secret \
+            --health-cmd='pg_isready -U saldo360 -d saldo360_ci' --health-interval=2s --health-timeout=2s --health-retries=30 \
+            postgres:17-alpine
+          for i in $(seq 1 60); do
+            [ "$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")" = healthy ] && break
+            sleep 1
+          done
+          [ "$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")" = healthy ]
+          docker run --rm --network "$NETWORK" -e ASPNETCORE_ENVIRONMENT=Production \
+            -e "ConnectionStrings__Saldo360=$CONNECTION" -e Authentication__Oidc__Authority=https://example.invalid \
+            -e Authentication__Oidc__ClientId=saldo360 -e Authentication__Oidc__ClientSecret=ci-only \
+            --entrypoint /app/efbundle "$IMAGE"
+          docker run -d --name "$CONTAINER" --network "$NETWORK" -p 127.0.0.1:18080:8080 \
+            -e ASPNETCORE_ENVIRONMENT=Production -e "ConnectionStrings__Saldo360=$CONNECTION" \
+            -e Authentication__Oidc__Authority=https://example.invalid -e Authentication__Oidc__ClientId=saldo360 \
+            -e Authentication__Oidc__ClientSecret=ci-only "$IMAGE"
+          for i in $(seq 1 90); do
+            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER")"
+            [ "$health" = healthy ] && break
+            [ "$(docker inspect --format '{{.State.Status}}' "$CONTAINER")" = running ] || exit 1
+            sleep 2
+          done
+          [ "$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER")" = healthy ]
+          curl --fail --silent --show-error --max-time 10 http://127.0.0.1:18080/health/ready >/dev/null
+          [ "$(docker exec "$CONTAINER" id -u)" != 0 ]
+      - name: API container diagnostics
+        if: failure()
+        run: |
+          docker logs "$CONTAINER" || true
+          docker inspect "$CONTAINER" || true
+          docker logs "$POSTGRES_CONTAINER" || true
+      - name: Remove API smoke containers
+        if: always()
+        run: |
+          docker rm -f "$CONTAINER" "$POSTGRES_CONTAINER" 2>/dev/null || true
+          docker network rm "$NETWORK" 2>/dev/null || true
 
-      - name: Node 24
+  frontend:
+    name: frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      IMAGE: saldo360-web:ci
+      CONTAINER: saldo360-web-ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Node 24
         uses: actions/setup-node@v7
         with:
           node-version: 24.15.0
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            client/package-lock.json
-
-      - name: Install root dependencies
-        run: npm ci
-
+          cache-dependency-path: client/package-lock.json
       - name: Install frontend dependencies
-        run: npm --prefix client ci
+        working-directory: client
+        run: npm ci
+      - name: Build frontend
+        working-directory: client
+        run: npm run build
+      - name: Test frontend
+        working-directory: client
+        run: npm test
+      - name: Lint frontend
+        working-directory: client
+        run: npm run lint
+      - name: Build web image
+        run: docker build --file Dockerfile.web --tag "$IMAGE" .
+      - name: Smoke web image
+        shell: bash
+        run: |
+          set -euo pipefail
+          # O nginx resolve o upstream na inicialização. O host local apenas satisfaz o DNS;
+          # o smoke acessa exclusivamente /web-health e não simula uma API.
+          docker run -d --name "$CONTAINER" --add-host api:127.0.0.1 -p 127.0.0.1:18081:8080 "$IMAGE"
+          for i in $(seq 1 60); do
+            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER")"
+            [ "$health" = healthy ] && break
+            [ "$(docker inspect --format '{{.State.Status}}' "$CONTAINER")" = running ] || exit 1
+            sleep 1
+          done
+          [ "$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER")" = healthy ]
+          curl --fail --silent --show-error --max-time 10 http://127.0.0.1:18081/web-health >/dev/null
+          [ "$(docker exec "$CONTAINER" id -u)" != 0 ]
+      - name: Web container diagnostics
+        if: failure()
+        run: |
+          docker logs "$CONTAINER" || true
+          docker inspect "$CONTAINER" || true
+      - name: Remove web smoke container
+        if: always()
+        run: docker rm -f "$CONTAINER" 2>/dev/null || true
 
-      - name: Check
-        run: npm run check
-
+  infra:
+    name: infra
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
       - name: Validate production compose
         shell: bash
         run: |
-          cp .env.production.example .env.production
-          sed -i 's/troque-esta-senha-forte/ci-only-not-a-secret/' .env.production
-          docker compose             --env-file .env.production             -f docker-compose.production.yml             config --quiet
+          cp .env.production.example "$RUNNER_TEMP/saldo360.env"
+          sed -i 's/troque-esta-senha-forte/ci-only-not-a-secret/' "$RUNNER_TEMP/saldo360.env"
+          docker compose --env-file "$RUNNER_TEMP/saldo360.env" -f docker-compose.production.yml config --quiet
+      - name: Validate Linux scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do
+            head -n 1 "$script" | grep -Eq '^#!/usr/bin/env bash$|^#!/bin/bash$'
+            if grep -q $'\r' "$script"; then echo "::error file=$script::CRLF is not allowed"; exit 1; fi
+            bash -n "$script"
+          done < <(find deploy scripts -type f -name '*.sh' -print0)
 
-      - name: Build production API image
-        run: docker build -f Dockerfile.api -t saldo360-api:ci .
-
-      - name: Build production web image
-        run: docker build -f Dockerfile.web -t saldo360-web:ci .
+  ci-success:
+    name: ci-success
+    needs: [changes, backend, frontend, infra]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every relevant job succeeded or was skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          [ "$(echo "$NEEDS" | jq -r '.changes.result')" = success ]
+          failed="$(echo "$NEEDS" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"')"
+          if [ -n "$failed" ]; then
+            echo "::error::Jobs not successful: $failed"
+            exit 1
+          fi
