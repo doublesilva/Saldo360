@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.AspNetCore.Diagnostics;
 using Saldo360.Api.Errors;
 
 namespace Saldo360.Api.Observability;
@@ -12,7 +13,8 @@ public sealed class RequestObservabilityMiddleware(
         var started = Stopwatch.GetTimestamp();
         await next(context);
 
-        var endpoint = context.GetEndpoint();
+        // ExceptionHandler clears the current endpoint but preserves the original in its feature.
+        var endpoint = context.GetEndpoint() ?? context.Features.Get<IExceptionHandlerFeature>()?.Endpoint;
         var route = endpoint is RouteEndpoint routeEndpoint
             ? routeEndpoint.RoutePattern.RawText
             : "unmatched";

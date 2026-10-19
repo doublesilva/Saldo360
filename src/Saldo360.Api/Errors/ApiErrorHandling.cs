@@ -86,8 +86,8 @@ public sealed class ApiExceptionHandler(
         var code = dependencyUnavailable ? "DEPENDENCY_UNAVAILABLE" : "INTERNAL_ERROR";
         var dependency = dependencyUnavailable ? "PostgreSQL" : "None";
         logger.LogError(
-            "Unhandled API failure. ExceptionType: {ExceptionType}; ErrorCode: {ErrorCode}; Dependency: {Dependency}; TraceId: {TraceId}; Path: {Path}",
-            exception.GetType().FullName,
+            exception,
+            "Unhandled API failure. ErrorCode: {ErrorCode}; Dependency: {Dependency}; TraceId: {TraceId}; Path: {Path}",
             code,
             dependency,
             traceId,

@@ -20,7 +20,13 @@ public sealed class ApiExceptionHandlerTests
         context.Request.Path = "/api/private-operation";
         using var activity = new Activity("problem-test").Start();
 
-        var handled = await handler.TryHandleAsync(context, new InvalidOperationException("Host=secret; SELECT password"), CancellationToken.None);
+        context.Request.Headers.Authorization = "Bearer request-token";
+        context.Request.Headers.Cookie = "session=request-cookie";
+        context.Request.QueryString = new QueryString("?secret=request-query");
+        Exception exception;
+        try { throw new InvalidOperationException("Host=secret; SELECT password"); }
+        catch (InvalidOperationException caught) { exception = caught; }
+        var handled = await handler.TryHandleAsync(context, exception, CancellationToken.None);
 
         Assert.True(handled);
         var problem = writer.Problem!;
@@ -31,10 +37,17 @@ public sealed class ApiExceptionHandlerTests
         Assert.DoesNotContain("SELECT", problem.Detail, StringComparison.OrdinalIgnoreCase);
         var log = Assert.Single(logs.StructuredEntries, entry => entry.Level == LogLevel.Error);
         Assert.Equal(activity.TraceId.ToString(), log.Properties["TraceId"]);
-        Assert.Equal(typeof(InvalidOperationException).FullName, log.Properties["ExceptionType"]);
         Assert.Equal("INTERNAL_ERROR", log.Properties["ErrorCode"]);
         Assert.Equal("None", log.Properties["Dependency"]);
-        Assert.Null(log.Exception);
+        Assert.Same(exception, log.Exception);
+        Assert.NotEmpty(log.Exception!.StackTrace!);
+        var publicJson = System.Text.Json.JsonSerializer.Serialize(problem);
+        Assert.DoesNotContain("secret", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("InvalidOperationException", publicJson);
+        Assert.DoesNotContain("StackTrace", publicJson);
+        Assert.DoesNotContain("request-token", log.Message);
+        Assert.DoesNotContain("request-cookie", log.Message);
+        Assert.DoesNotContain("request-query", log.Message);
         Assert.DoesNotContain("secret", log.Message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("SELECT", log.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -49,9 +62,10 @@ public sealed class ApiExceptionHandlerTests
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/financial-write";
 
+        var exception = new Npgsql.ObservabilityTestException("Host=private;Password=secret; command with amount 999.99");
         var handled = await handler.TryHandleAsync(
             context,
-            new Npgsql.ObservabilityTestException("Host=private;Password=secret; command with amount 999.99"),
+            exception,
             CancellationToken.None);
 
         Assert.True(handled);
@@ -62,7 +76,7 @@ public sealed class ApiExceptionHandlerTests
         var log = Assert.Single(logs.StructuredEntries, entry => entry.Level == LogLevel.Error);
         Assert.Equal("PostgreSQL", log.Properties["Dependency"]);
         Assert.Equal("DEPENDENCY_UNAVAILABLE", log.Properties["ErrorCode"]);
-        Assert.Null(log.Exception);
+        Assert.Same(exception, log.Exception);
         Assert.DoesNotContain("secret", log.Message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("999.99", log.Message, StringComparison.OrdinalIgnoreCase);
     }
