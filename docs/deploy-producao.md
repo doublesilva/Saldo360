@@ -182,9 +182,11 @@ O secret de assinatura e `DEPLOY_SSH_KEY` são raízes de confiança equivalente
 executá-lo com acesso ao environment poderá publicar uma release válida. Na verificação de 2026-10-19, o environment
 `saldo360-production` não tinha reviewers nem política de branch, e a API informou que branch protection para o
 repositório privado exige mudança de plano. Até que esses controles estejam disponíveis, restrinja rigorosamente
-quem possui escrita/administração no repositório e revise manualmente cada execução. Quando possível, configure
-reviewers obrigatórios no environment e limite deployments à `main`; mantenha também `ci-success` como check
-obrigatório. A checagem `GITHUB_REF=refs/heads/main` do workflow é defesa adicional, não substitui esses controles.
+quem possui escrita/administração no repositório e revise manualmente cada execução. O workflow de deploy também
+valida o `ci-success` do SHA exato antes de qualquer acesso ao servidor; isso reduz o risco de publicar um commit
+não validado, mas não substitui proteção de branch ou aprovação independente do environment. Quando possível,
+configure reviewers obrigatórios no environment e limite deployments à `main`. A checagem
+`GITHUB_REF=refs/heads/main` do workflow é defesa adicional, não substitui esses controles.
 
 ### Repository variables
 
@@ -199,22 +201,26 @@ SALDO360_TAILSCALE_TAG=tag:homeautomation-ci
 
 ## Pipeline
 
-`.github/workflows/ci.yml` roda em PR, push em `main` e manualmente:
+`.github/workflows/ci.yml` roda em PR, push em `main` e manualmente. O job `changes` classifica o impacto em
+`backend`, `frontend` e `infra`; somente os jobs relevantes são executados. O check estável
+`ci-success` passa apenas quando `changes` e todos os jobs executados terminam com sucesso (jobs não impactados
+podem ficar `skipped`). `workflow_dispatch` força a validação completa.
 
-1. instala dependências;
-2. executa `npm run check`;
-3. valida o compose de produção;
-4. constrói as imagens de produção da API e do frontend.
+`.github/workflows/deploy.yml` é manual e aceita somente `main`. Antes de abrir Tailscale ou acessar o servidor,
+o workflow consulta os check-runs do SHA exato a publicar e exige `ci-success` com
+`status=completed` e `conclusion=success`. Check ausente, pendente, cancelado ou vermelho bloqueia o deploy no
+próprio runner.
 
-`.github/workflows/deploy.yml` é manual e aceita somente `main`:
+Depois desse gate:
 
-1. entra na Tailnet;
-2. valida a chave SSH do servidor por fingerprint;
-3. cria um manifesto com protocolo, SHA, hash do pacote e hash do script versionado, e o assina;
-4. envia os arquivos versionados mais o manifesto e sua assinatura;
-5. coloca pacote, manifesto e assinatura no staging `/srv/saldo360-deploy`;
-6. confirma que o wrapper instalado oferece o protocolo esperado;
-7. chama `sudo /usr/local/sbin/deploy-saldo360 <sha>`.
+1. faz checkout explícito do SHA aprovado;
+2. entra na Tailnet;
+3. valida a chave SSH do servidor por fingerprint;
+4. confirma o bootstrap usando `sudo -n /usr/local/sbin/deploy-saldo360 --protocol-version`, sem permitir prompt interativo;
+5. cria um manifesto com protocolo, SHA, hash do pacote e hash do script versionado, e o assina;
+6. envia os arquivos versionados mais o manifesto e sua assinatura;
+7. coloca pacote, manifesto e assinatura no staging `/srv/saldo360-deploy`;
+8. chama `sudo -n /usr/local/sbin/deploy-saldo360 <sha>`.
 
 No servidor, o wrapper autentica a release e chama o script versionado. Esse script:
 
