@@ -179,15 +179,29 @@ jobs:
             echo "::error::Script ausente ou não executável: /usr/local/sbin/deploy-saldo360"
             failed=1
           fi
-          if ! protocol="$(sudo -n /usr/local/sbin/deploy-saldo360 --protocol-version)"; then
-            echo "::error::Bootstrap privilegiado incompleto: sudo não interativo para deploy-saldo360 não está disponível."
-            failed=1
-          elif test "$protocol" = "1"; then
-            echo "OK protocolo privilegiado: $protocol"
+          protocol_output="$(mktemp)"
+          if sudo -n /usr/local/sbin/deploy-saldo360 --protocol-version >"$protocol_output" 2>&1; then
+            protocol="$(cat "$protocol_output")"
+            if test "$protocol" = "1"; then
+              echo "OK protocolo privilegiado: $protocol"
+            else
+              echo "::error::Wrapper privilegiado incompatível (esperado protocolo 1, recebido: $protocol)."
+              failed=1
+            fi
           else
-            echo "::error::Wrapper privilegiado incompatível (esperado protocolo 1, recebido: $protocol)."
+            rc=$?
+            output="$(cat "$protocol_output")"
+            if printf '%s' "$output" | grep -qiE '(password is required|a password is required|no tty present|not allowed to execute|not in the sudoers)'; then
+              echo "::error::Bootstrap privilegiado incompleto: sudo não interativo para deploy-saldo360 não está disponível."
+            elif printf '%s' "$output" | grep -Fq 'Uso: deploy-saldo360 <commit-sha>'; then
+              echo "::error::Wrapper privilegiado antigo detectado em /usr/local/sbin/deploy-saldo360. Instale deploy/server/deploy-saldo360-wrapper no servidor antes de executar o deploy assinado."
+            else
+              echo "::error::Falha ao validar o wrapper privilegiado (rc=$rc)."
+              [ -n "$output" ] && printf '%s\n' "$output"
+            fi
             failed=1
           fi
+          rm -f "$protocol_output"
           exit "$failed"
           REMOTE
 
