@@ -144,6 +144,7 @@ public static class DependencyInjection
         services.AddSingleton(serviceBillReconciliation);
         services.AddScoped<IServiceBillRecurringCandidateRepository, ServiceBillRecurringCandidateRepository>();
         services.AddScoped<IServiceBillConfirmationRepository, ServiceBillConfirmationRepository>();
+        services.AddScoped<IServiceAccountBindingRepository, ServiceAccountBindingRepository>();
         services.AddSingleton<LlmCreditCardStatementExtractorAgent>();
         services.AddSingleton<ParserBackedCreditCardStatementExtractorAgent>();
         services.AddSingleton<IParserBackedCreditCardStatementExtractorAgent>(provider => provider.GetRequiredService<ParserBackedCreditCardStatementExtractorAgent>());

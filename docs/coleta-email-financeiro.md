@@ -79,6 +79,18 @@ Uma confirmação válida grava no próprio item da Inbox o vínculo com a previ
 
 O documento e a ocorrência são únicos para esse tipo de confirmação. Reenvio do mesmo documento, ocorrência e valor retorna `AlreadyConfirmed`; outro vínculo ou segunda via conflitante não substitui a confirmação. O PostgreSQL reforça a regra com FK composta, índice único e constraints de completude e precisão. Valores zero/negativos, extração não confiável, associação ambígua, previsão cancelada ou realizada falham sem escrita.
 
+### Identidade persistente da conta de serviço
+
+Com `ServiceBillReconciliation.BindingEnabled=true`, após confirmar o valor o usuário pode chamar explicitamente `POST /api/families/{familyId}/financial-documents/inbox/{id}/service-account-binding`. O servidor reabre e reextrai o documento; recorrência, emissor e referências não são aceitos do navegador. Nenhum binding é aprendido no preview ou criado automaticamente.
+
+`ServiceAccountBinding` guarda família, recorrência, tipo documental, emissor normalizado, origem `ConfirmedServiceBill`, timestamps e, quando presentes, hashes SHA-256 das referências de conta/serviço. A normalização aplica trim, caixa invariável e remove separadores, mantendo letras e dígitos. O texto integral não é persistido: a UI recebe somente uma máscara com os quatro últimos caracteres. Hashes nunca são expostos pela API nem enviados ao provider de extração.
+
+`GET /api/families/{familyId}/financial-documents/inbox/{id}/service-account-binding` permite à Inbox recuperar um vínculo já existente após recarregar a página. O retorno contém apenas estado, ID técnico e máscaras; ausência retorna 404.
+
+Índices únicos parciais por família, tipo documental e hash impedem que a mesma identidade confirme silenciosamente recorrências diferentes. Repetir exatamente o binding retorna `AlreadyExists`; reutilizá-lo em outra recorrência retorna `Conflict`. Não há remoção ou reatribuição nesta etapa.
+
+No matching, `AccountReferenceBindingMatch` e `ServiceReferenceBindingMatch` são evidências fortes e superiores à semelhança textual. Ainda são obrigatórios família, competência, tipo documental e uma ocorrência recorrente pendente. Valor nunca participa da identidade. Recorrências sem binding mantêm integralmente as regras anteriores baseadas em emissor/descrição.
+
 Os perfis iniciais de exemplo são `ItauCards`, com `has:attachment subject:"fatura do seu cartão"`, e `NuEmpresas`, com `has:attachment subject:"fatura do seu cartão Nu Empresas"`. Ambos permanecem desabilitados até receberem família, mailbox e credenciais válidas. Nenhum final de cartão, nome, competência ou valor faz parte das queries.
 
 ## Execução manual e dry-run

@@ -52,12 +52,38 @@ public sealed class ServiceBillRecurringMatchTests
         Assert.Equal("Rejected", result.MatchStatus);
     }
 
+    [Fact]
+    public async Task ExplicitReferenceBindingIsStrongEvidenceWithoutDescriptionSimilarity()
+    {
+        var candidate = new ServiceBillRecurringCandidateData(Guid.NewGuid(), Guid.NewGuid(), "Despesa mensal", "Serviços",
+            new DateOnly(2026, 10, 20), 200m, AccountBindingMatch: true);
+        var result = await Service(candidate).MatchAsync(Guid.NewGuid(), DocumentId,
+            Extraction("ElectricityBill", null, "187.43", accountReference: "UC-123456"), CancellationToken.None);
+        Assert.Equal("Matched", result.MatchStatus);
+        Assert.Contains("AccountReferenceBindingMatch", Assert.Single(result.Candidates).Evidence);
+    }
+
+    [Theory]
+    [InlineData(" uc-123.456 ", "UC123456")]
+    [InlineData("linha (51) 9999-0000", "LINHA5199990000")]
+    public void ReferenceIdentityIsStableAndMasked(string left, string right)
+    {
+        Assert.Equal(ServiceReferenceIdentity.Hash(left), ServiceReferenceIdentity.Hash(right));
+        Assert.DoesNotContain("123456", ServiceReferenceIdentity.Mask(left)!);
+        Assert.EndsWith(ServiceReferenceIdentity.Normalize(left)![^4..], ServiceReferenceIdentity.Mask(left));
+    }
+
+    [Theory]
+    [InlineData("1234")]
+    [InlineData("A")]
+    public void ShortReferencesAreNeverReturnedInFull(string value) => Assert.NotEqual(value, ServiceReferenceIdentity.Mask(value));
+
     private static ServiceBillRecurringMatchService Service(params ServiceBillRecurringCandidateData[] values) => new(new Repository(values));
     private static ServiceBillRecurringCandidateData Candidate(string description, string amount, DateOnly due) => new(Guid.NewGuid(), Guid.NewGuid(), description, description, due, decimal.Parse(amount, System.Globalization.CultureInfo.InvariantCulture));
-    private static ServiceBillExtractionOutput Extraction(string type, string? issuer, string amount, string assessment = "Reliable") => new(new(type, issuer, "2026-10", "2026-10-20", amount, null, null, "High", "Deterministic", null), assessment);
+    private static ServiceBillExtractionOutput Extraction(string type, string? issuer, string amount, string assessment = "Reliable", string? accountReference = null, string? serviceReference = null) => new(new(type, issuer, "2026-10", "2026-10-20", amount, accountReference, serviceReference, "High", "Deterministic", null), assessment);
     private sealed class Repository(IEnumerable<ServiceBillRecurringCandidateData> values, bool enforceCompetence = false) : IServiceBillRecurringCandidateRepository
     {
-        public Task<IReadOnlyList<ServiceBillRecurringCandidateData>> ListAsync(Guid familyId, string competence, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<ServiceBillRecurringCandidateData>> ListAsync(Guid familyId, string competence, string documentType, string? accountReferenceHash, string? serviceReferenceHash, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ServiceBillRecurringCandidateData>>(values.Where(value => !enforceCompetence || value.DueDate.ToString("yyyy-MM") == competence).ToList());
     }
 }

@@ -4,7 +4,7 @@ namespace Saldo360.Application.CreditCards;
 
 public sealed record ServiceBillConfirmationResult(string Status, Guid DocumentId, Guid? OccurrenceId, Guid? RecurrenceId,
     string? Competence, string? ProjectedAmount, string? ConfirmedAmount, string? Difference, string? ConfirmedAt,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings, string? AccountReferenceMasked = null, string? ServiceReferenceMasked = null);
 
 public enum ServiceBillConfirmationStoreStatus { Confirmed, AlreadyConfirmed, Conflict, Invalid }
 public sealed record ServiceBillConfirmationStoreResult(ServiceBillConfirmationStoreStatus Status, Guid? OccurrenceId = null,
@@ -41,7 +41,8 @@ public sealed class ServiceBillConfirmationService(IServiceBillRecurringMatchPre
             amount, clock.GetUtcNow(), cancellationToken);
         if (stored.Status == ServiceBillConfirmationStoreStatus.Invalid)
             return Invalid("document", "A ocorrência deixou de ser elegível para confirmação.");
-        var result = Map(documentId, stored);
+        var result = Map(documentId, stored) with { AccountReferenceMasked = ServiceReferenceIdentity.Mask(extraction.Result.AccountReference),
+            ServiceReferenceMasked = ServiceReferenceIdentity.Mask(extraction.Result.ServiceReference) };
         return (FinancialDocumentClassificationAccess.Allowed, result, null);
     }
 

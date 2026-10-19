@@ -119,6 +119,46 @@ public sealed class ServiceBillConfirmationPersistenceTests(PostgresFixture post
         Assert.Equal("200.00", confirmation.GetProperty("projectedAmount").GetString());
         Assert.Equal("187.43", confirmation.GetProperty("confirmedAmount").GetString());
         Assert.Equal("-12.57", confirmation.GetProperty("difference").GetString());
+        var accountHash = ServiceReferenceIdentity.Hash("UC-123456")!;
+        await using (var db = Db())
+        {
+            var bindings = new ServiceAccountBindingRepository(db);
+            var created = await bindings.CreateAsync(family.Id, documentId, userId, "ElectricityBill", "CEEE",
+                accountHash, "**3456", null, null, DateTimeOffset.UtcNow, CancellationToken.None);
+            Assert.Equal(ServiceAccountBindingStoreStatus.Created, created.Status);
+        }
+        await using (var db = Db())
+        {
+            var bindings = new ServiceAccountBindingRepository(db);
+            var repeated = await bindings.CreateAsync(family.Id, documentId, userId, "ElectricityBill", "CEEE",
+                accountHash, "**3456", null, null, DateTimeOffset.UtcNow, CancellationToken.None);
+            Assert.Equal(ServiceAccountBindingStoreStatus.AlreadyExists, repeated.Status);
+            var stored = await db.ServiceAccountBindings.SingleAsync();
+            Assert.Equal(accountHash, stored.AccountReferenceHash); Assert.Equal("**3456", stored.AccountReferenceMasked);
+            Assert.DoesNotContain("123456", stored.AccountReferenceMasked!);
+            var candidates = await new ServiceBillRecurringCandidateRepository(db).ListAsync(family.Id, "2026-11",
+                "ElectricityBill", accountHash, null, CancellationToken.None);
+            Assert.True(Assert.Single(candidates).AccountBindingMatch);
+        }
+        var otherRecurrence = await CreateAsync(owner, $"/api/families/{family.Id}/recurrences", new { accountId = account, categoryId = category, type = "Expense", description = "Energia garagem", amount = "80.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-10-25", dayOfMonth = 25 });
+        var otherMaterialized = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/recurrences/{otherRecurrence}/materialize", owner, new { from = "2026-10-01", through = "2026-10-31" });
+        using var otherBody = JsonDocument.Parse(await otherMaterialized.Content.ReadAsStringAsync());
+        var otherOccurrence = otherBody.RootElement.GetProperty("items")[0].GetProperty("plannedTransactionId").GetGuid();
+        var otherDocument = Guid.NewGuid();
+        await using (var db = Db())
+        {
+            db.FinancialDocumentInboxItems.Add(FinancialDocumentInboxItem.Create(otherDocument, family.Id, FinancialDocumentSource.Manual,
+                null, "outra-conta.pdf", new string('c', 64), "application/pdf", "test/service-bill-3", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+            await db.SaveChangesAsync();
+            Assert.Equal(ServiceBillConfirmationStoreStatus.Confirmed, (await new ServiceBillConfirmationRepository(db).ConfirmAsync(
+                family.Id, otherDocument, userId, otherOccurrence, otherRecurrence, "2026-10", 75m, DateTimeOffset.UtcNow, CancellationToken.None)).Status);
+        }
+        await using (var db = Db())
+        {
+            var conflict = await new ServiceAccountBindingRepository(db).CreateAsync(family.Id, otherDocument, userId,
+                "ElectricityBill", "CEEE", accountHash, "**3456", null, null, DateTimeOffset.UtcNow, CancellationToken.None);
+            Assert.Equal(ServiceAccountBindingStoreStatus.Conflict, conflict.Status);
+        }
     }
 
     private async Task<Guid> CreateAsync(string session, string url, object value)

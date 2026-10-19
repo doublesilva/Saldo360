@@ -17,10 +17,30 @@ public static class FinancialDocumentInboxEndpoints
         group.MapPost("/{id:guid}/service-bill-preview", ServiceBillPreview).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/service-bill-match-preview", ServiceBillMatchPreview).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/service-bill-confirm", ServiceBillConfirm).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/{id:guid}/service-account-binding", ServiceAccountBinding).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapGet("/{id:guid}/service-account-binding", GetServiceAccountBinding);
         group.MapPost("/{id:guid}/pre-reconcile", PreReconcile).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/ignore", Ignore).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/confirm", Confirm).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
+    }
+    private static async Task<IResult> GetServiceAccountBinding(Guid familyId, Guid id, CurrentUser user,
+        ServiceAccountBindingService service, CancellationToken cancellationToken)
+    {
+        if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        return await service.GetAsync(familyId, id, userId, cancellationToken) is { } result ? Results.Ok(result) : Results.NotFound();
+    }
+    private static async Task<IResult> ServiceAccountBinding(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
+        ServiceAccountBindingService service, CancellationToken cancellationToken)
+    {
+        if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        IFormCollection? form = request.HasFormContentType ? await request.ReadFormAsync(cancellationToken) : null;
+        var result = await service.CreateAsync(familyId, id, userId, form?["password"], cancellationToken);
+        if (result.Access == FinancialDocumentClassificationAccess.NotFound) return Results.NotFound();
+        if (result.Access == FinancialDocumentClassificationAccess.Invalid) return Results.ValidationProblem(result.Errors!);
+        return result.Result?.Status == "Conflict"
+            ? Results.Conflict(new { message = "A referência já está vinculada a outra recorrência.", result = result.Result })
+            : Results.Ok(result.Result);
     }
     private static async Task<IResult> ServiceBillConfirm(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
         ServiceBillConfirmationService service, CancellationToken cancellationToken)

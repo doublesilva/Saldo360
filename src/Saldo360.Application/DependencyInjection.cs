@@ -57,6 +57,7 @@ public static class DependencyInjection
         services.AddScoped<ServiceBillRecurringMatchPreviewService>();
         services.AddScoped<IServiceBillRecurringMatchPreviewService>(provider => provider.GetRequiredService<ServiceBillRecurringMatchPreviewService>());
         services.AddScoped<ServiceBillConfirmationService>();
+        services.AddScoped<ServiceAccountBindingService>();
         services.AddScoped<FinancialEmailCollector>();
         services.AddScoped<IFinancialEmailCollector>(provider => provider.GetRequiredService<FinancialEmailCollector>());
         services.AddScoped<FinancialEmailCollectorRunner>();

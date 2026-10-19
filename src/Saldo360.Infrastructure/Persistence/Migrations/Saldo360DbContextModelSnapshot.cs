@@ -1514,6 +1514,90 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.ServiceAccountBinding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccountReferenceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("account_reference_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("AccountReferenceMasked")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("account_reference_masked");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("document_type");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<string>("IssuerNormalized")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("issuer_normalized");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("origin");
+
+                    b.Property<Guid>("RecurringTemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recurring_template_id");
+
+                    b.Property<string>("ServiceReferenceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("service_reference_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("ServiceReferenceMasked")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("service_reference_masked");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_service_account_bindings");
+
+                    b.HasIndex("FamilyId", "RecurringTemplateId")
+                        .HasDatabaseName("ix_service_account_bindings_family_id_recurring_template_id");
+
+                    b.HasIndex("FamilyId", "DocumentType", "AccountReferenceHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_service_account_bindings_family_id_document_type_account_re")
+                        .HasFilter("account_reference_hash IS NOT NULL");
+
+                    b.HasIndex("FamilyId", "DocumentType", "ServiceReferenceHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_service_account_bindings_family_id_document_type_service_re")
+                        .HasFilter("service_reference_hash IS NOT NULL");
+
+                    b.ToTable("service_account_bindings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_service_account_bindings_reference", "account_reference_hash IS NOT NULL OR service_reference_hash IS NOT NULL");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebt", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3377,6 +3461,24 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_reconciliations_planned_same_family");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.ServiceAccountBinding", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Families.Family", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_service_account_bindings_families_family_id");
+
+                    b.HasOne("Saldo360.Domain.Recurrences.FinancialRecurrence", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "RecurringTemplateId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_service_account_bindings_financial_recurrences_family_id_re");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Debts.FinancialDebt", b =>

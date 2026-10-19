@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Security.Cryptography;
 using Saldo360.Domain.Common;
 
 namespace Saldo360.Application.CreditCards;
@@ -12,16 +13,35 @@ public sealed record ServiceBillRecurringMatchResult(Guid DocumentId, string Doc
     IReadOnlyList<string> Reasons, string Confidence);
 public sealed record ServiceBillRecurringMatchPreview(ServiceBillExtractionOutput Extraction, ServiceBillRecurringMatchResult Match);
 public sealed record ServiceBillRecurringCandidateData(Guid OccurrenceId, Guid RecurrenceId, string Description, string CategoryName,
-    DateOnly DueDate, decimal ProjectedAmount);
+    DateOnly DueDate, decimal ProjectedAmount, bool AccountBindingMatch = false, bool ServiceBindingMatch = false);
 public interface IServiceBillRecurringCandidateRepository
 {
-    Task<IReadOnlyList<ServiceBillRecurringCandidateData>> ListAsync(Guid familyId, string competence, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ServiceBillRecurringCandidateData>> ListAsync(Guid familyId, string competence, string documentType,
+        string? accountReferenceHash, string? serviceReferenceHash, CancellationToken cancellationToken);
 }
 public interface IServiceBillRecurringMatchService
 {
     Task<ServiceBillRecurringMatchResult> MatchAsync(Guid familyId, Guid documentId, ServiceBillExtractionOutput extraction, CancellationToken cancellationToken);
 }
-public sealed class ServiceBillReconciliationOptions { public bool Enabled { get; set; } public bool ConfirmationEnabled { get; set; } }
+public sealed class ServiceBillReconciliationOptions { public bool Enabled { get; set; } public bool ConfirmationEnabled { get; set; } public bool BindingEnabled { get; set; } }
+
+public static class ServiceReferenceIdentity
+{
+    public static string? Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var normalized = new string(value.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
+        return normalized.Length == 0 ? null : normalized;
+    }
+    public static string? Hash(string? value) => Normalize(value) is { } normalized
+        ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))) : null;
+    public static string? Mask(string? value)
+    {
+        if (Normalize(value) is not { } normalized) return null;
+        var visible = normalized.Length > 4 ? 4 : normalized.Length > 1 ? 1 : 0;
+        return $"{new string('*', normalized.Length - visible)}{(visible == 0 ? string.Empty : normalized[^visible..])}";
+    }
+}
 
 public sealed class ServiceBillRecurringMatchService(IServiceBillRecurringCandidateRepository repository) : IServiceBillRecurringMatchService
 {
@@ -31,14 +51,18 @@ public sealed class ServiceBillRecurringMatchService(IServiceBillRecurringCandid
         if (extraction.Assessment != "Reliable" || bill.DocumentType is not ("ElectricityBill" or "WaterBill" or "TelecomBill")
             || bill.Competence is null || bill.TotalAmount is null)
             return Result(ServiceBillRecurringMatchStatus.Rejected, [], ["ExtractionNotReliable"]);
-        var data = await repository.ListAsync(familyId, bill.Competence, cancellationToken);
+        var data = await repository.ListAsync(familyId, bill.Competence, bill.DocumentType,
+            ServiceReferenceIdentity.Hash(bill.AccountReference), ServiceReferenceIdentity.Hash(bill.ServiceReference), cancellationToken);
         var plausible = new List<ServiceBillRecurringCandidate>(); var strong = new List<ServiceBillRecurringCandidate>();
         foreach (var candidate in data)
         {
             var evidence = new List<string> { "SameCompetence", "ExpenseOccurrence", "RecurringOccurrence" };
             var combined = Normalize(candidate.Description + " " + candidate.CategoryName);
-            if (!Compatible(bill.DocumentType, combined)) continue;
+            var bindingMatch = candidate.AccountBindingMatch || candidate.ServiceBindingMatch;
+            if (!bindingMatch && !Compatible(bill.DocumentType, combined)) continue;
             evidence.Add("DocumentTypeCompatible");
+            if (candidate.AccountBindingMatch) evidence.Add("AccountReferenceBindingMatch");
+            if (candidate.ServiceBindingMatch) evidence.Add("ServiceReferenceBindingMatch");
             var issuer = Normalize(bill.Issuer);
             if (issuer.Length >= 3 && (Normalize(candidate.Description) == issuer || ContainsToken(combined, issuer))) evidence.Add("IssuerExactNormalizedMatch");
             if (bill.DueDate is { } due && DateOnly.TryParseExact(due, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var actual)
@@ -46,7 +70,7 @@ public sealed class ServiceBillRecurringMatchService(IServiceBillRecurringCandid
             var item = new ServiceBillRecurringCandidate(candidate.OccurrenceId, candidate.RecurrenceId, candidate.Description,
                 bill.Competence, Money.Format(candidate.ProjectedAmount), candidate.DueDate.ToString("yyyy-MM-dd"), evidence);
             plausible.Add(item);
-            if (evidence.Contains("IssuerExactNormalizedMatch")) strong.Add(item);
+            if (bindingMatch || evidence.Contains("IssuerExactNormalizedMatch")) strong.Add(item);
         }
         if (strong.Count == 1) return Result(ServiceBillRecurringMatchStatus.Matched, plausible, [], strong[0]);
         if (strong.Count > 1) return Result(ServiceBillRecurringMatchStatus.Ambiguous, plausible, ["MultipleStrongCandidates"]);
