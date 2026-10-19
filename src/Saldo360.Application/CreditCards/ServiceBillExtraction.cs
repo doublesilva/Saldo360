@@ -58,6 +58,7 @@ public sealed class CompositeServiceBillExtractor(ServiceBillExtractionOptions o
 
     private static ServiceBillExtractionResult ExtractDeterministic(ServiceBillExtractionRequest request)
     {
+        if (DeterministicServiceBillLayouts.TryExtract(request) is { } layout) return layout;
         var text = string.Join("\n", request.Document.Pages.Select(page => page.Text));
         var amount = Match(text, @"(?im)(?:valor\s+(?:total\s+)?a\s+pagar|total\s+a\s+pagar)\s*[:\-]?\s*R?\$?\s*([0-9.]+,[0-9]{2}|[0-9]+\.[0-9]{2})");
         var competence = Match(text, @"(?im)(?:m[eê]s\s+de\s+refer[eê]ncia|refer[eê]ncia|compet[eê]ncia)\s*[:\-]?\s*(\d{2}/\d{4}|\d{4}-\d{2})");
@@ -70,6 +71,9 @@ public sealed class CompositeServiceBillExtractor(ServiceBillExtractionOptions o
     public static ServiceBillExtractionAssessment Assess(ServiceBillExtractionResult result)
     {
         if (result.FailureCode == "LowConfidence") return ServiceBillExtractionAssessment.NeedsReview;
+        if (result.ExtractionSource == "Deterministic" && result.FailureCode is { } code &&
+            (code.EndsWith("NotFound", StringComparison.Ordinal) || code.StartsWith("Ambiguous", StringComparison.Ordinal) || code.StartsWith("Invalid", StringComparison.Ordinal)))
+            return ServiceBillExtractionAssessment.NeedsReview;
         if (!Supported.Contains(result.DocumentType) || result.FailureCode is not null) return ServiceBillExtractionAssessment.Rejected;
         if (result.Confidence == "Low" || result.TotalAmount is null || result.Competence is null || result.DueDate is null) return ServiceBillExtractionAssessment.NeedsReview;
         return ServiceBillExtractionAssessment.Reliable;
