@@ -114,16 +114,17 @@ O arquivo instalado em `/usr/local/sbin` é o wrapper pequeno e estável. A lóg
 `deploy/server/deploy-saldo360`, dentro do artefato de cada release. Não instale esse segundo arquivo como comando
 privilegiado.
 
-Gere uma chave RSA de assinatura numa estação administrativa, sem gravá-la no repositório:
+Gere a chave RSA 3072 dedicada numa estação administrativa com PowerShell 7 e `gh` autenticado:
 
-```bash
-umask 077
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out deploy-release-signing-key.pem
-openssl pkey -in deploy-release-signing-key.pem -pubout -out deploy-release-public.pem
+```powershell
+pwsh -NoProfile -File scripts/new-deploy-signing-key.ps1 `
+  -PublicKeyPath dev/certs/deploy-release-public.pem
 ```
 
-Cadastre o conteúdo de `deploy-release-signing-key.pem` como secret protegido do environment de produção,
-`DEPLOY_RELEASE_SIGNING_KEY`. Instale somente a chave pública e o wrapper no servidor:
+O script envia a chave privada diretamente da memória para `DEPLOY_RELEASE_SIGNING_KEY` no environment
+`saldo360-production`, sem arquivo privado ou saída sensível. Somente a chave pública é salva, em diretório
+ignorado pelo Git. O script recusa sobrescrever material existente; não utilizá-lo para rotação implícita.
+Instale somente a chave pública e o wrapper no servidor:
 
 ```bash
 sudo install -o root -g root -m 0644 \
@@ -134,8 +135,9 @@ sudo install -o root -g root -m 0755 \
   /usr/local/sbin/deploy-saldo360
 ```
 
-Apague a cópia local da chave privada depois de cadastrá-la no GitHub, ou mova-a para o cofre administrativo.
-Ela nunca deve existir no servidor. O usuário `deploy` não precisa pertencer ao grupo `docker`: toda operação
+Alternativamente, use `deploy/server/bootstrap-signed-deploy` com os hashes revisados conforme o
+[relatório T15.6.8](T15.6.8-bootstrap-deploy-assinado.md). Ele preserva backup administrativo e valida sudoers.
+A chave privada nunca deve existir no servidor. O usuário `deploy` não precisa pertencer ao grupo `docker`: toda operação
 Docker continua ocorrendo depois da fronteira `sudo`.
 
 O wrapper aceita somente `--protocol-version` ou um SHA minúsculo de exatamente 40 caracteres. Em versões atuais

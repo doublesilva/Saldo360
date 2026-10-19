@@ -78,6 +78,14 @@ trap cleanup EXIT HUP INT TERM
 readonly ARCHIVE_SHA="$(/usr/bin/sha256sum -- "$trusted_dir/release.tar.gz" | /usr/bin/awk '{print $1}')"
 readonly MANIFEST_PREFIX="$(/usr/bin/printf 'protocol=%s\ncommit=%s\nrelease_sha256=%s' \
   "$PROTOCOL_VERSION" "$RELEASE_SHA" "$ARCHIVE_SHA")"
+readonly ACTUAL_MANIFEST="$(/usr/bin/cat -- "$trusted_dir/manifest")"
+readonly ACTUAL_PREFIX="$(/usr/bin/head -n 3 -- "$trusted_dir/manifest")"
+[ "$ACTUAL_PREFIX" = "$MANIFEST_PREFIX" ] || die 'manifesto não corresponde ao protocolo, commit ou pacote solicitado'
+readonly SCRIPT_HASH_FIELD="$(/usr/bin/tail -n 1 -- "$trusted_dir/manifest")"
+[[ "$SCRIPT_HASH_FIELD" =~ ^script_sha256=[0-9a-f]{64}$ ]] || die 'hash do script inválido no manifesto'
+
+# O pacote precisa corresponder à assinatura ANTES de ser interpretado pelo tar.
+printf 'Release autenticada: protocolo=%s commit=%s\n' "$PROTOCOL_VERSION" "$RELEASE_SHA"
 
 /usr/bin/mkdir -m 0700 "$trusted_dir/release"
 /usr/bin/tar -xzf "$trusted_dir/release.tar.gz" \
@@ -94,7 +102,6 @@ require_regular_file "$RELEASE_SCRIPT"
 readonly SCRIPT_SHA="$(/usr/bin/sha256sum -- "$RELEASE_SCRIPT" | /usr/bin/awk '{print $1}')"
 readonly EXPECTED_MANIFEST="$MANIFEST_PREFIX
 script_sha256=$SCRIPT_SHA"
-readonly ACTUAL_MANIFEST="$(/usr/bin/cat -- "$trusted_dir/manifest")"
 [ "$ACTUAL_MANIFEST" = "$EXPECTED_MANIFEST" ] || die 'manifesto não corresponde ao protocolo, commit ou artefato solicitado'
 
 # O script autenticado recebe a release root-only; ambiente e argumentos do

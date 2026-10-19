@@ -15,7 +15,15 @@ public_key="$tmp/etc/saldo360/deploy-release-public.pem"
 private_key="$tmp/signing-key.pem"
 wrapper="$tmp/deploy-saldo360"
 invoked="$tmp/invoked"
+extracted="$tmp/extracted"
 mkdir -p "$staging" "$source_release/deploy/server" "$(dirname "$public_key")" "$tmp/run"
+
+cat > "$tmp/observed-tar" <<SCRIPT
+#!/usr/bin/env bash
+printf 'extracted' > '$extracted'
+exec /usr/bin/tar "\$@"
+SCRIPT
+chmod 0755 "$tmp/observed-tar"
 
 # O wrapper não possui overrides em runtime. O teste altera uma cópia para usar
 # uma árvore descartável, mantendo o mesmo fluxo e as mesmas validações.
@@ -24,6 +32,7 @@ sed \
   -e "s|^readonly PUBLIC_KEY=.*|readonly PUBLIC_KEY='$public_key'|" \
   -e "s|^readonly TRUSTED_RUNTIME_ROOT=.*|readonly TRUSTED_RUNTIME_ROOT='$tmp/run'|" \
   -e "s|require_real_directory '/srv'|require_real_directory '$tmp/srv'|" \
+  -e "s|/usr/bin/tar -xzf|$tmp/observed-tar -xzf|" \
   "$SOURCE_WRAPPER" > "$wrapper"
 chmod 0755 "$wrapper"
 
@@ -54,7 +63,7 @@ sign_release() {
 }
 
 reset_release() {
-  rm -rf "$source_release" "$archive" "$manifest" "$signature" "$invoked"
+  rm -rf "$source_release" "$archive" "$manifest" "$signature" "$invoked" "$extracted"
   mkdir -p "$source_release/deploy/server"
   write_release_script
   sign_release
@@ -101,6 +110,19 @@ reset_release
 printf '\n# adulterado\n' >> "$archive"
 expect_failure "$wrapper" "$VALID_SHA"
 [ ! -e "$invoked" ]
+[ ! -e "$extracted" ]
+
+reset_release
+sed -i 's/^commit=.*/commit=ffffffffffffffffffffffffffffffffffffffff/' "$manifest"
+expect_failure "$wrapper" "$VALID_SHA"
+[ ! -e "$invoked" ]
+[ ! -e "$extracted" ]
+
+reset_release
+printf 'invalid-signature' > "$signature"
+expect_failure "$wrapper" "$VALID_SHA"
+[ ! -e "$invoked" ]
+[ ! -e "$extracted" ]
 
 reset_release
 printf 'protocol=2\ncommit=%s\nrelease_sha256=%s\nscript_sha256=%s\n' \
@@ -109,11 +131,13 @@ printf 'protocol=2\ncommit=%s\nrelease_sha256=%s\nscript_sha256=%s\n' \
 openssl dgst -sha256 -sign "$private_key" -out "$signature" "$manifest"
 expect_failure "$wrapper" "$VALID_SHA"
 [ ! -e "$invoked" ]
+[ ! -e "$extracted" ]
 
 reset_release
 sign_release 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 expect_failure "$wrapper" "$VALID_SHA"
 [ ! -e "$invoked" ]
+[ ! -e "$extracted" ]
 
 reset_release
 STAGING_ROOT="$tmp/attacker" PUBLIC_KEY="$tmp/attacker.pem" "$wrapper" "$VALID_SHA"

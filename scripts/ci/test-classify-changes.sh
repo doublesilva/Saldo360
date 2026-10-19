@@ -6,7 +6,7 @@ classifier="$root/scripts/ci/classify-changes.sh"
 
 assert_case() {
   local paths=$1 expected=$2 actual
-  actual="$(printf '%s\n' "$paths" | "$classifier" | tr '\n' ' ' | sed 's/ $//')"
+  actual="$(printf '%s\n' "$paths" | bash "$classifier" | tr '\n' ' ' | sed 's/ $//')"
   if [ "$actual" != "$expected" ]; then
     echo "classification mismatch: paths=[$paths] expected=[$expected] actual=[$actual]" >&2
     exit 1

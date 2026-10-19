@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+umask 077
+
+die() { printf 'bootstrap: %s\n' "$*" >&2; exit 1; }
+
+[ "$(id -u)" -eq 0 ] || die 'execute com sudo em uma sessão administrativa'
+[ "$#" -eq 4 ] || die 'uso: bootstrap-signed-deploy <public.pem> <wrapper> <sha256-public.pem> <sha256-wrapper>'
+readonly SOURCE_PUBLIC_KEY="$1" SOURCE_WRAPPER="$2"
+readonly EXPECTED_PUBLIC_HASH="$3" EXPECTED_WRAPPER_HASH="$4"
+[[ "$EXPECTED_PUBLIC_HASH" =~ ^[0-9a-f]{64}$ ]] || die 'hash público inválido'
+[[ "$EXPECTED_WRAPPER_HASH" =~ ^[0-9a-f]{64}$ ]] || die 'hash do wrapper inválido'
+id deploy >/dev/null 2>&1 || die 'usuário deploy ausente'
+if id -nG deploy | tr ' ' '\n' | grep -Fxq docker; then
+  die 'deploy pertence ao grupo docker; revisar a permissão administrativa antes de continuar'
+fi
+
+for directory in /etc /etc/sudoers.d /usr /usr/local /usr/local/sbin /run; do
+  [ -d "$directory" ] && [ ! -L "$directory" ] || die "diretório não confiável: $directory"
+  [ "$(stat -c '%u' "$directory")" = 0 ] || die "diretório não pertence ao root: $directory"
+  mode="$(stat -c '%a' "$directory")"
+  (( (8#$mode & 0022) == 0 )) || die "diretório gravável por terceiros: $directory"
+done
+
+work="$(mktemp -d /run/saldo360-bootstrap.XXXXXX)"
+trap 'rm -rf -- "$work"' EXIT
+install -m 0400 -- "$SOURCE_PUBLIC_KEY" "$work/public.pem"
+install -m 0500 -- "$SOURCE_WRAPPER" "$work/wrapper"
+[ "$(sha256sum "$work/public.pem" | awk '{print $1}')" = "$EXPECTED_PUBLIC_HASH" ] || die 'chave pública diverge da revisão'
+[ "$(sha256sum "$work/wrapper" | awk '{print $1}')" = "$EXPECTED_WRAPPER_HASH" ] || die 'wrapper diverge da revisão'
+openssl pkey -pubin -in "$work/public.pem" -noout >/dev/null 2>&1 || die 'chave pública inválida'
+bash -n "$work/wrapper"
+[ "$(bash "$work/wrapper" --protocol-version)" = 1 ] || die 'protocolo diferente de 1'
+
+if [ -e /etc/saldo360 ] || [ -L /etc/saldo360 ]; then
+  [ -d /etc/saldo360 ] && [ ! -L /etc/saldo360 ] || die '/etc/saldo360 não é diretório real'
+  [ "$(stat -c '%u' /etc/saldo360)" = 0 ] || die '/etc/saldo360 não pertence ao root'
+  mode="$(stat -c '%a' /etc/saldo360)"
+  (( (8#$mode & 0022) == 0 )) || die '/etc/saldo360 gravável por terceiros'
+else
+  install -d -o root -g root -m 0755 /etc/saldo360
+fi
+
+readonly PUBLIC_KEY='/etc/saldo360/deploy-release-public.pem'
+readonly WRAPPER='/usr/local/sbin/deploy-saldo360'
+readonly SUDOERS='/etc/sudoers.d/deploy-saldo360'
+for target in "$PUBLIC_KEY" "$WRAPPER" "$SUDOERS"; do
+  [ ! -L "$target" ] || die "destino é link simbólico: $target"
+done
+if [ -f "$PUBLIC_KEY" ] && ! cmp -s "$PUBLIC_KEY" "$work/public.pem"; then
+  die 'já existe outra chave pública; rotação exige procedimento separado'
+fi
+
+printf '%s\n' \
+  'deploy ALL=(root) NOPASSWD: /usr/local/sbin/deploy-saldo360 --protocol-version' \
+  'deploy ALL=(root) NOPASSWD: /usr/local/sbin/deploy-saldo360 ^[0-9a-f]{40}$' \
+  > "$work/sudoers"
+chmod 0440 "$work/sudoers"
+visudo -cf "$work/sudoers"
+visudo -c
+
+install -d -o root -g root -m 0700 /etc/saldo360/deploy-bootstrap-backups
+backup="$(mktemp -d /etc/saldo360/deploy-bootstrap-backups/bootstrap.XXXXXX)"
+for target in "$PUBLIC_KEY" "$WRAPPER" "$SUDOERS"; do
+  if [ -f "$target" ]; then cp -p -- "$target" "$backup/$(basename "$target")"; fi
+done
+install -o root -g root -m 0644 "$work/public.pem" "$PUBLIC_KEY"
+install -o root -g root -m 0755 "$work/wrapper" "$WRAPPER"
+install -o root -g root -m 0440 "$work/sudoers" "$SUDOERS"
+visudo -c
+sudo -u deploy -- test ! -w "$PUBLIC_KEY"
+sudo -u deploy -- test ! -w "$WRAPPER"
+[ "$(sudo -u deploy -- sudo -n "$WRAPPER" --protocol-version)" = 1 ] || die 'validação do protocolo via sudo falhou'
+stat -c '%U:%G %a %n' "$PUBLIC_KEY" "$WRAPPER" "$SUDOERS"
+printf 'Bootstrap instalado; protocolo=1; backup administrativo=%s\n' "$backup"
+printf 'Nenhum container, migration ou dado financeiro foi alterado.\n'
