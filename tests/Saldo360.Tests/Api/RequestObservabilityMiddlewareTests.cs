@@ -19,6 +19,10 @@ public sealed class RequestObservabilityMiddlewareTests
         using var provider = new CapturingLoggerProvider();
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddProvider(provider));
+        // A standalone pipeline has no web host to register framework diagnostics.
+        services.AddSingleton<DiagnosticListener>(_ => new DiagnosticListener("Microsoft.AspNetCore"));
+        services.AddSingleton<DiagnosticSource>(sp => sp.GetRequiredService<DiagnosticListener>());
+        services.AddMetrics();
         services.AddApiErrorHandling();
         await using var serviceProvider = services.BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = serviceProvider };
