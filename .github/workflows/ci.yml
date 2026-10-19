@@ -231,6 +231,8 @@ jobs:
             if grep -q $'\r' "$script"; then echo "::error file=$script::CRLF is not allowed"; exit 1; fi
             bash -n "$script"
           done < <(find deploy scripts -type f -name '*.sh' -print0)
+      - name: Test privileged deploy wrapper
+        run: bash deploy/server/test-deploy-saldo360-wrapper.sh
 
   ci-success:
     name: ci-success

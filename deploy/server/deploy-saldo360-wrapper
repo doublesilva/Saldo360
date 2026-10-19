@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly PROTOCOL_VERSION='1'
+readonly STAGING_ROOT='/srv/saldo360-deploy'
+readonly PUBLIC_KEY='/etc/saldo360/deploy-release-public.pem'
+readonly ARCHIVE="$STAGING_ROOT/saldo360-release.tar.gz"
+readonly MANIFEST="$STAGING_ROOT/saldo360-release-manifest.txt"
+readonly SIGNATURE="$STAGING_ROOT/saldo360-release-manifest.sig"
+readonly SAFE_PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+readonly TRUSTED_RUNTIME_ROOT='/run'
+
+die() {
+  printf 'deploy-saldo360: %s\n' "$*" >&2
+  exit 1
+}
+
+require_regular_file() {
+  local path="$1"
+  [ -f "$path" ] || die "arquivo obrigatório ausente: $path"
+  [ ! -L "$path" ] || die "links simbólicos não são aceitos: $path"
+}
+
+require_real_directory() {
+  local path="$1"
+  [ -d "$path" ] || die "diretório obrigatório ausente: $path"
+  [ ! -L "$path" ] || die "links simbólicos não são aceitos: $path"
+  [ "$(/usr/bin/readlink -f -- "$path")" = "$path" ] || die "diretório fora do caminho fixo: $path"
+}
+
+if [ "$#" -eq 1 ] && [ "$1" = '--protocol-version' ]; then
+  printf '%s\n' "$PROTOCOL_VERSION"
+  exit 0
+fi
+
+[ "$#" -eq 1 ] || die 'uso: deploy-saldo360 <sha-git-de-40-caracteres>'
+readonly RELEASE_SHA="$1"
+[[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || die 'SHA inválido'
+
+require_real_directory '/srv'
+require_real_directory "$STAGING_ROOT"
+require_regular_file "$PUBLIC_KEY"
+require_regular_file "$ARCHIVE"
+require_regular_file "$MANIFEST"
+require_regular_file "$SIGNATURE"
+
+[ "$(/usr/bin/stat -c '%s' -- "$MANIFEST")" -le 512 ] || die 'manifesto excede o limite permitido'
+[ "$(/usr/bin/stat -c '%s' -- "$SIGNATURE")" -le 8192 ] || die 'assinatura excede o limite permitido'
+[ "$(/usr/bin/stat -c '%s' -- "$ARCHIVE")" -le 1073741824 ] || die 'arquivo de release excede o limite permitido'
+[ "$(/usr/bin/wc -l < "$MANIFEST")" -eq 4 ] || die 'formato de manifesto inválido'
+
+# A âncora de confiança pertence ao usuário efetivo do wrapper (root em
+# produção) e nunca pode ser gravável por grupo ou outros.
+[ "$(/usr/bin/stat -c '%u' -- "$PUBLIC_KEY")" = "$(/usr/bin/id -u)" ] || die 'chave pública não pertence ao root'
+key_mode="$(/usr/bin/stat -c '%a' -- "$PUBLIC_KEY")"
+(( (8#$key_mode & 0022) == 0 )) || die 'chave pública permite escrita por grupo ou outros'
+
+old_umask="$(umask)"
+umask 077
+trusted_dir="$(/usr/bin/mktemp -d "$TRUSTED_RUNTIME_ROOT/saldo360-deploy.XXXXXX")"
+umask "$old_umask"
+cleanup() {
+  /usr/bin/rm -rf -- "$trusted_dir"
+}
+trap cleanup EXIT HUP INT TERM
+
+# Copiar o pacote completo antes de validar fecha a janela TOCTOU. Nenhum
+# conteúdo do staging gravável por deploy volta a ser lido depois deste ponto.
+/usr/bin/install -m 0400 -- "$MANIFEST" "$trusted_dir/manifest"
+/usr/bin/install -m 0400 -- "$SIGNATURE" "$trusted_dir/signature"
+/usr/bin/install -m 0400 -- "$ARCHIVE" "$trusted_dir/release.tar.gz"
+
+[ "$(/usr/bin/wc -l < "$trusted_dir/manifest")" -eq 4 ] || die 'formato de manifesto inválido'
+
+/usr/bin/openssl dgst -sha256 -verify "$PUBLIC_KEY" -signature "$trusted_dir/signature" "$trusted_dir/manifest" >/dev/null 2>&1 \
+  || die 'assinatura da release inválida'
+
+readonly ARCHIVE_SHA="$(/usr/bin/sha256sum -- "$trusted_dir/release.tar.gz" | /usr/bin/awk '{print $1}')"
+readonly MANIFEST_PREFIX="$(/usr/bin/printf 'protocol=%s\ncommit=%s\nrelease_sha256=%s' \
+  "$PROTOCOL_VERSION" "$RELEASE_SHA" "$ARCHIVE_SHA")"
+
+/usr/bin/mkdir -m 0700 "$trusted_dir/release"
+/usr/bin/tar -xzf "$trusted_dir/release.tar.gz" \
+  --directory "$trusted_dir/release" \
+  --no-same-owner \
+  --no-same-permissions
+
+if /usr/bin/find "$trusted_dir/release" -type l -print -quit | /usr/bin/grep -q .; then
+  die 'links simbólicos não são aceitos na release'
+fi
+readonly RELEASE_SCRIPT="$trusted_dir/release/deploy/server/deploy-saldo360"
+require_regular_file "$RELEASE_SCRIPT"
+[ "$(/usr/bin/stat -c '%s' -- "$RELEASE_SCRIPT")" -le 1048576 ] || die 'script de release excede o limite permitido'
+readonly SCRIPT_SHA="$(/usr/bin/sha256sum -- "$RELEASE_SCRIPT" | /usr/bin/awk '{print $1}')"
+readonly EXPECTED_MANIFEST="$MANIFEST_PREFIX
+script_sha256=$SCRIPT_SHA"
+readonly ACTUAL_MANIFEST="$(/usr/bin/cat -- "$trusted_dir/manifest")"
+[ "$ACTUAL_MANIFEST" = "$EXPECTED_MANIFEST" ] || die 'manifesto não corresponde ao protocolo, commit ou artefato solicitado'
+
+# O script autenticado recebe a release root-only; ambiente e argumentos do
+# chamador não atravessam a fronteira privilegiada.
+status=0
+/usr/bin/env -i \
+  PATH="$SAFE_PATH" \
+  HOME='/root' \
+  USER='root' \
+  LOGNAME='root' \
+  SALDO360_RELEASE_DIR="$trusted_dir/release" \
+  /bin/bash "$RELEASE_SCRIPT" "$RELEASE_SHA" || status=$?
+exit "$status"

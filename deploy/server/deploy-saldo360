@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=/srv/saldo360-deploy
-RELEASE="$ROOT/release"
+RELEASE="${SALDO360_RELEASE_DIR:-$ROOT/release}"
 ENV_FILE="$ROOT/.env"
 BACKUP_DIR="$ROOT/backups"
 

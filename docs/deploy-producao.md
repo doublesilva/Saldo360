@@ -38,7 +38,7 @@ permissões nem instalar o próprio comando privilegiado.
 
 ```bash
 sudo install -d -o deploy -g deploy -m 0750 /srv/saldo360-deploy
-sudo install -d -o deploy -g deploy -m 0750 /srv/saldo360-deploy/release
+sudo install -d -o root   -g root   -m 0755 /etc/saldo360
 sudo install -d -o root   -g root   -m 0700 /etc/saldo360/secrets
 ```
 
@@ -108,22 +108,62 @@ saldo360.home.doublesilva.com {
 
 O DNS interno deve resolver `saldo360.home.doublesilva.com` para o `home-server`.
 
-### 5. Comando privilegiado de deploy
+### 5. Wrapper privilegiado estável
 
-Copie `deploy/server/deploy-saldo360` para um caminho controlado por root:
+O arquivo instalado em `/usr/local/sbin` é o wrapper pequeno e estável. A lógica evolutiva continua em
+`deploy/server/deploy-saldo360`, dentro do artefato de cada release. Não instale esse segundo arquivo como comando
+privilegiado.
+
+Gere uma chave RSA de assinatura numa estação administrativa, sem gravá-la no repositório:
 
 ```bash
-sudo install -o root -g root -m 0755   /caminho/do/repo/deploy/server/deploy-saldo360   /usr/local/sbin/deploy-saldo360
+umask 077
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out deploy-release-signing-key.pem
+openssl pkey -in deploy-release-signing-key.pem -pubout -out deploy-release-public.pem
 ```
 
-O usuário `deploy` precisa poder executar somente esse comando via sudo. Exemplo de entrada dedicada em
-`/etc/sudoers.d/deploy-saldo360`:
+Cadastre o conteúdo de `deploy-release-signing-key.pem` como secret protegido do environment de produção,
+`DEPLOY_RELEASE_SIGNING_KEY`. Instale somente a chave pública e o wrapper no servidor:
+
+```bash
+sudo install -o root -g root -m 0644 \
+  deploy-release-public.pem \
+  /etc/saldo360/deploy-release-public.pem
+sudo install -o root -g root -m 0755 \
+  /caminho/do/repo/deploy/server/deploy-saldo360-wrapper \
+  /usr/local/sbin/deploy-saldo360
+```
+
+Apague a cópia local da chave privada depois de cadastrá-la no GitHub, ou mova-a para o cofre administrativo.
+Ela nunca deve existir no servidor. O usuário `deploy` não precisa pertencer ao grupo `docker`: toda operação
+Docker continua ocorrendo depois da fronteira `sudo`.
+
+O wrapper aceita somente `--protocol-version` ou um SHA minúsculo de exatamente 40 caracteres. Em versões atuais
+do sudo, limite também os argumentos em `/etc/sudoers.d/deploy-saldo360`:
 
 ```text
-deploy ALL=(root) NOPASSWD: /usr/local/sbin/deploy-saldo360 *
+deploy ALL=(root) NOPASSWD: /usr/local/sbin/deploy-saldo360 --protocol-version
+deploy ALL=(root) NOPASSWD: /usr/local/sbin/deploy-saldo360 ^[0-9a-f]{40}$
 ```
 
-O script aceita exclusivamente um SHA Git de 40 caracteres.
+Valide com `sudo visudo -cf /etc/sudoers.d/deploy-saldo360`. Se a versão local do sudo não aceitar expressões
+regulares para argumentos, mantenha temporariamente `... deploy-saldo360 *`; a validação estrita do wrapper ainda
+bloqueia argumentos adicionais, mas atualizar o sudo é a opção recomendada.
+
+O wrapper verifica o protocolo, rejeita links simbólicos, valida a propriedade e as permissões da chave pública,
+confere a assinatura do manifesto e exige que o manifesto corresponda ao SHA solicitado, ao hash do arquivo da
+release e ao hash real do script. Antes de validar, copia o pacote completo para um diretório temporário root-only;
+depois da cópia, não volta a ler o staging gravável por `deploy`. O script autenticado usa exclusivamente a release
+extraída nessa área e recebe ambiente limpo. Isso elimina a janela entre verificação e uso também para Dockerfiles,
+compose e código-fonte: alterar arquivos no staging não permite escolher outro executável, trocar conteúdo depois
+da conferência nem produzir uma release autenticada.
+
+Cheque o bootstrap sem publicar nada:
+
+```bash
+sudo /usr/local/sbin/deploy-saldo360 --protocol-version
+# saída esperada: 1
+```
 
 ## GitHub Actions
 
@@ -134,6 +174,15 @@ O repositório precisa dos mesmos valores de conexão usados pelos pipelines exi
 - `TS_OAUTH_CLIENT_ID`
 - `TS_AUDIENCE`
 - `DEPLOY_SSH_KEY`
+- `DEPLOY_RELEASE_SIGNING_KEY` (chave privada PEM; protegida pelo environment `saldo360-production`)
+
+O secret de assinatura e `DEPLOY_SSH_KEY` são raízes de confiança equivalentes: quem puder alterar o workflow e
+executá-lo com acesso ao environment poderá publicar uma release válida. Na verificação de 2026-10-19, o environment
+`saldo360-production` não tinha reviewers nem política de branch, e a API informou que branch protection para o
+repositório privado exige mudança de plano. Até que esses controles estejam disponíveis, restrinja rigorosamente
+quem possui escrita/administração no repositório e revise manualmente cada execução. Quando possível, configure
+reviewers obrigatórios no environment e limite deployments à `main`; mantenha também `ci-success` como check
+obrigatório. A checagem `GITHUB_REF=refs/heads/main` do workflow é defesa adicional, não substitui esses controles.
 
 ### Repository variables
 
@@ -159,11 +208,13 @@ SALDO360_TAILSCALE_TAG=tag:homeautomation-ci
 
 1. entra na Tailnet;
 2. valida a chave SSH do servidor por fingerprint;
-3. envia somente os arquivos versionados do commit;
-4. prepara `/srv/saldo360-deploy/release`;
-5. chama `sudo /usr/local/sbin/deploy-saldo360 <sha>`.
+3. cria um manifesto com protocolo, SHA, hash do pacote e hash do script versionado, e o assina;
+4. envia os arquivos versionados mais o manifesto e sua assinatura;
+5. coloca pacote, manifesto e assinatura no staging `/srv/saldo360-deploy`;
+6. confirma que o wrapper instalado oferece o protocolo esperado;
+7. chama `sudo /usr/local/sbin/deploy-saldo360 <sha>`.
 
-No servidor, o comando:
+No servidor, o wrapper autentica a release e chama o script versionado. Esse script:
 
 1. valida e constrói as imagens;
 2. cria backup `pg_dump` antes de migrations quando já existir banco;
@@ -175,6 +226,16 @@ No servidor, o comando:
 
 O compose de produção exige `SALDO360_IMAGE_TAG`: não existe fallback para `local`. O comando de deploy sempre
 exporta o SHA Git completo antes de validar, construir, migrar ou publicar as imagens.
+
+Atualizações normais em `deploy/server/deploy-saldo360` entram na release assinada e não exigem reinstalar o
+wrapper. Reinstale o wrapper apenas quando seu protocolo ou sua própria fronteira de segurança mudar. Rotação da
+chave exige trocar o secret do GitHub e a chave pública root-owned de maneira coordenada; releases assinadas pela
+chave antiga deixam de ser aceitas depois da troca.
+
+Falha de protocolo, assinatura, SHA, hash, caminho ou permissão ocorre antes de Docker, backup ou migration. Corrija
+o bootstrap ou gere novamente a release e repita o workflow; nunca contorne a falha copiando o script evolutivo para
+`/usr/local/sbin`. Se a chave privada for perdida ou exposta, gere um novo par, substitua primeiro o secret e a chave
+pública numa janela coordenada e invalide o material antigo.
 
 Durante a pré-validação, a API candidata entra na rede de backend apenas para alcançar o PostgreSQL. Ela não recebe
 o alias DNS `api`; o script verifica essa condição e aborta antes do cutover se o alias aparecer. Portanto, o web
@@ -216,7 +277,7 @@ https://saldo360.home.doublesilva.com/signin-oidc
 
 ## Recuperação
 
-Os dados ficam no volume Docker `saldo360-pgdata`; substituir o conteúdo de `release` não remove o volume.
+Os dados ficam no volume Docker `saldo360-pgdata`; substituir o pacote assinado no staging não remove o volume.
 
 Antes de cada deploy que já possui banco, é gerado um dump em `/srv/saldo360-deploy/backups`. Uma migration pode
 não ser reversível para uma versão anterior da aplicação, por isso rollback de código não é tratado como

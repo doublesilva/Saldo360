@@ -33,6 +33,10 @@ jobs:
             echo "::error::Produção só pode ser publicada a partir de main."
             exit 1
           fi
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::GITHUB_SHA não é um SHA Git completo e minúsculo."
+            exit 1
+          fi
 
           missing=0
           for pair in             SALDO360_DEPLOY_HOST:DEPLOY_HOST             SALDO360_DEPLOY_USER:DEPLOY_USER             SALDO360_SSH_HOST_FINGERPRINT:EXPECTED_FINGERPRINT             SALDO360_TAILSCALE_TAG:TAILSCALE_TAG; do
@@ -103,7 +107,7 @@ jobs:
           set -euo pipefail
           echo "SSH autenticado como: $(id -un)"
           failed=0
-          for path in /srv/saldo360-deploy/release; do
+          for path in /srv/saldo360-deploy; do
             if test -d "$path"; then
               echo "OK diretório: $path"
             else
@@ -126,56 +130,74 @@ jobs:
             echo "::error::Script ausente ou não executável: /usr/local/sbin/deploy-saldo360"
             failed=1
           fi
+          protocol="$(sudo -n /usr/local/sbin/deploy-saldo360 --protocol-version 2>/dev/null || true)"
+          if test "$protocol" = "1"; then
+            echo "OK protocolo privilegiado: $protocol"
+          else
+            echo "::error::Wrapper privilegiado ausente, incompatível ou sem regra sudo (esperado protocolo 1)."
+            failed=1
+          fi
           exit "$failed"
           REMOTE
 
       - name: Create release
         shell: bash
+        env:
+          DEPLOY_RELEASE_SIGNING_KEY: ${{ secrets.DEPLOY_RELEASE_SIGNING_KEY }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          if [ -z "$DEPLOY_RELEASE_SIGNING_KEY" ]; then
+            echo "::error::Secret DEPLOY_RELEASE_SIGNING_KEY vazio ou não disponível no environment."
+            exit 1
+          fi
+
+          signing_key="$RUNNER_TEMP/deploy-release-signing-key.pem"
+          trap 'rm -f "$signing_key"' EXIT
+          (umask 077 && printf '%s\n' "$DEPLOY_RELEASE_SIGNING_KEY" | sed 's/\r$//' > "$signing_key")
+          if ! openssl pkey -in "$signing_key" -check -noout >/dev/null 2>&1; then
+            echo "::error::DEPLOY_RELEASE_SIGNING_KEY não contém uma chave privada PEM válida."
+            exit 1
+          fi
+
           git archive --format=tar.gz --output=/tmp/saldo360-release.tar.gz HEAD
+          release_hash="$(sha256sum /tmp/saldo360-release.tar.gz | awk '{print $1}')"
+          script_hash="$(sha256sum deploy/server/deploy-saldo360 | awk '{print $1}')"
+          printf 'protocol=1\ncommit=%s\nrelease_sha256=%s\nscript_sha256=%s\n' \
+            "$GITHUB_SHA" "$release_hash" "$script_hash" \
+            > /tmp/saldo360-release-manifest.txt
+          openssl dgst -sha256 -sign "$signing_key" \
+            -out /tmp/saldo360-release-manifest.sig \
+            /tmp/saldo360-release-manifest.txt
+          rm -f "$signing_key"
+          trap - EXIT
 
       - name: Upload release
         shell: bash
         run: |
-          scp             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             /tmp/saldo360-release.tar.gz             "$DEPLOY_USER@$DEPLOY_HOST:/srv/saldo360-deploy/saldo360-release.tar.gz"
+          scp \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            /tmp/saldo360-release.tar.gz \
+            /tmp/saldo360-release-manifest.txt \
+            /tmp/saldo360-release-manifest.sig \
+            "$DEPLOY_USER@$DEPLOY_HOST:/srv/saldo360-deploy/"
 
       - name: Prepare staging
         shell: bash
         run: |
           ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             'bash -s' <<'REMOTE'
           set -euo pipefail
-          test -d /srv/saldo360-deploy/release
           test -f /srv/saldo360-deploy/saldo360-release.tar.gz
-          find /srv/saldo360-deploy/release -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-          tar -xzf /srv/saldo360-deploy/saldo360-release.tar.gz -C /srv/saldo360-deploy/release
-          rm -f /srv/saldo360-deploy/saldo360-release.tar.gz
-          REMOTE
-
-      - name: Verify privileged deploy script version
-        shell: bash
-        run: |
-          ssh \
-            -i ~/.ssh/id_ed25519 \
-            -o BatchMode=yes \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
-          set -euo pipefail
-          expected="$(sha256sum /srv/saldo360-deploy/release/deploy/server/deploy-saldo360 | awk '{print $1}')"
-          installed="$(sha256sum /usr/local/sbin/deploy-saldo360 | awk '{print $1}')"
-          if test "$installed" != "$expected"; then
-            echo "::error::Script privilegiado desatualizado. Instale deploy/server/deploy-saldo360 antes do cutover."
-            exit 1
-          fi
-          echo "OK script privilegiado corresponde ao release"
+          test -f /srv/saldo360-deploy/saldo360-release-manifest.txt
+          test -f /srv/saldo360-deploy/saldo360-release-manifest.sig
           REMOTE
 
       - name: Deploy
         shell: bash
         run: |
-          ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             "sudo /usr/local/sbin/deploy-saldo360 '$GITHUB_SHA'"
+          ssh             -i ~/.ssh/id_ed25519             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$DEPLOY_USER@$DEPLOY_HOST"             "sudo -n /usr/local/sbin/deploy-saldo360 '$GITHUB_SHA'"
 
       - name: Summary
         run: |
@@ -188,4 +210,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -f ~/.ssh/id_ed25519 /tmp/saldo360-release.tar.gz
+        run: rm -f ~/.ssh/id_ed25519 /tmp/saldo360-release.tar.gz /tmp/saldo360-release-manifest.txt /tmp/saldo360-release-manifest.sig
