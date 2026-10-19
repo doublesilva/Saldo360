@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Saldo360.Domain.Common;
 using Saldo360.Domain.CreditCards;
 
 namespace Saldo360.Application.CreditCards;
@@ -25,7 +26,10 @@ public interface IFinancialDocumentInboxRepository
 public sealed record FinancialDocumentInboxDto(Guid Id, string Source, string? ExternalSourceId, string OriginalFileName,
     string ContentHash, string ContentType, string ReceivedAt, string Status, string? Parser, string? Competence,
     Guid? CreditCardId, string? FailureCode, string UpdatedAt, string? DocumentType = null, string? ClassificationConfidence = null,
-    string? ClassificationSource = null, string? ClassificationFailureCode = null, string? ClassifiedAt = null);
+    string? ClassificationSource = null, string? ClassificationFailureCode = null, string? ClassifiedAt = null,
+    ServiceBillConfirmationDto? ServiceBillConfirmation = null);
+public sealed record ServiceBillConfirmationDto(Guid OccurrenceId, string Competence, string ProjectedAmount,
+    string ConfirmedAmount, string Difference, string ConfirmedAt);
 public sealed record FinancialDocumentInboxReceiveResult(string Result, FinancialDocumentInboxDto? Item, IDictionary<string, string[]>? Errors = null);
 
 public sealed class FinancialDocumentInboxService(
@@ -229,7 +233,11 @@ public sealed class FinancialDocumentInboxService(
     private static FinancialDocumentInboxDto Map(FinancialDocumentInboxItem item) => new(item.Id, item.Source.ToString(), item.ExternalSourceId,
         item.OriginalFileName, item.ContentHash, item.ContentType, item.ReceivedAt.ToString("O"), item.Status.ToString(), item.Parser,
         item.Competence, item.CreditCardId, item.FailureCode, item.UpdatedAt.ToString("O"), item.DocumentType, item.ClassificationConfidence,
-        item.ClassificationSource, item.ClassificationFailureCode, item.ClassifiedAt?.ToString("O"));
+        item.ClassificationSource, item.ClassificationFailureCode, item.ClassifiedAt?.ToString("O"),
+        item.ServiceBillOccurrenceId is { } occurrenceId && item.ServiceBillCompetence is { } competence
+            && item.ServiceBillProjectedAmount is { } projected && item.ServiceBillConfirmedAmount is { } confirmed
+            && item.ServiceBillConfirmedAt is { } confirmedAt
+            ? new(occurrenceId, competence, Money.Format(projected), Money.Format(confirmed), Money.Format(confirmed - projected), confirmedAt.ToString("O")) : null);
 }
 
 public sealed class FinancialDocumentInboxReviewService(

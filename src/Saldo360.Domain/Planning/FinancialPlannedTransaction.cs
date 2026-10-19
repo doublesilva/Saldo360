@@ -104,6 +104,17 @@ public sealed class FinancialPlannedTransaction : Entity
         return true;
     }
 
+    /// <summary>Confirma o valor oficial desta obrigação pendente sem realizá-la ou alterar sua data/referências.</summary>
+    public void ConfirmAmount(decimal amount, Guid userId, DateTimeOffset now)
+    {
+        if (IsCancelled) throw new InvalidOperationException("Previsão cancelada não pode ter valor confirmado.");
+        if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount), "O valor confirmado deve ser maior que zero.");
+        if (Money.Validate(amount, "O valor confirmado") is { } error) throw new ArgumentOutOfRangeException(nameof(amount), error);
+        Amount = amount;
+        UpdatedAt = now;
+        UpdatedByUserId = userId;
+    }
+
     private void Apply(PlannedTransactionDetails details)
     {
         AccountId = details.AccountId;

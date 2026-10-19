@@ -1292,6 +1292,31 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("received_at");
 
+                    b.Property<string>("ServiceBillCompetence")
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("service_bill_competence");
+
+                    b.Property<decimal?>("ServiceBillConfirmedAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("service_bill_confirmed_amount");
+
+                    b.Property<DateTimeOffset?>("ServiceBillConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("service_bill_confirmed_at");
+
+                    b.Property<Guid?>("ServiceBillOccurrenceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("service_bill_occurrence_id");
+
+                    b.Property<decimal?>("ServiceBillProjectedAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("service_bill_projected_amount");
+
+                    b.Property<Guid?>("ServiceBillRecurrenceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("service_bill_recurrence_id");
+
                     b.Property<string>("Source")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -1328,6 +1353,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("FamilyId", "CreditCardId")
                         .HasDatabaseName("ix_financial_document_inbox_items_family_id_credit_card_id");
 
+                    b.HasIndex("FamilyId", "ServiceBillOccurrenceId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_document_inbox_items_family_id_service_bill_occur")
+                        .HasFilter("service_bill_occurrence_id IS NOT NULL");
+
+                    b.HasIndex("FamilyId", "ServiceBillRecurrenceId")
+                        .HasDatabaseName("ix_financial_document_inbox_items_family_id_service_bill_recur");
+
                     b.HasIndex("FamilyId", "Source", "ExternalSourceId")
                         .IsUnique()
                         .HasDatabaseName("ix_financial_document_inbox_items_family_id_source_external_so")
@@ -1336,7 +1369,12 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("FamilyId", "Status", "ReceivedAt")
                         .HasDatabaseName("ix_financial_document_inbox_items_family_id_status_received_at");
 
-                    b.ToTable("financial_document_inbox_items", (string)null);
+                    b.ToTable("financial_document_inbox_items", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_document_inbox_service_bill_amount_scale", "service_bill_projected_amount IS NULL OR (scale(service_bill_projected_amount) <= 2 AND scale(service_bill_confirmed_amount) <= 2)");
+
+                            t.HasCheckConstraint("ck_financial_document_inbox_service_bill_confirmation_complete", "(service_bill_occurrence_id IS NULL AND service_bill_recurrence_id IS NULL AND service_bill_competence IS NULL AND service_bill_projected_amount IS NULL AND service_bill_confirmed_amount IS NULL AND service_bill_confirmed_at IS NULL) OR (service_bill_occurrence_id IS NOT NULL AND service_bill_recurrence_id IS NOT NULL AND service_bill_competence IS NOT NULL AND service_bill_projected_amount > 0 AND service_bill_confirmed_amount > 0 AND service_bill_confirmed_at IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialEmailCollectorCheckpoint", b =>
@@ -3276,6 +3314,20 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("FamilyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_financial_document_inbox_items_financial_credit_cards_famil");
+
+                    b.HasOne("Saldo360.Domain.Planning.FinancialPlannedTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "ServiceBillOccurrenceId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_document_inbox_items_financial_planned_transactio");
+
+                    b.HasOne("Saldo360.Domain.Recurrences.FinancialRecurrence", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId", "ServiceBillRecurrenceId")
+                        .HasPrincipalKey("FamilyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_document_inbox_items_financial_recurrences_family");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialEmailCollectorCheckpoint", b =>

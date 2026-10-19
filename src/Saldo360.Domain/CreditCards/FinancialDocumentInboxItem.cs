@@ -26,6 +26,12 @@ public sealed class FinancialDocumentInboxItem : Entity
     public string? ClassificationSource { get; private set; }
     public string? ClassificationFailureCode { get; private set; }
     public DateTimeOffset? ClassifiedAt { get; private set; }
+    public Guid? ServiceBillOccurrenceId { get; private set; }
+    public Guid? ServiceBillRecurrenceId { get; private set; }
+    public string? ServiceBillCompetence { get; private set; }
+    public decimal? ServiceBillProjectedAmount { get; private set; }
+    public decimal? ServiceBillConfirmedAmount { get; private set; }
+    public DateTimeOffset? ServiceBillConfirmedAt { get; private set; }
     public DateTimeOffset CreatedAt { get; private init; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -52,6 +58,13 @@ public sealed class FinancialDocumentInboxItem : Entity
         if (documentType != "CreditCardStatement") { Parser = null; Competence = null; CreditCardId = null; }
     }
     public void MarkImported(Guid cardId, DateTimeOffset now) { CreditCardId = cardId; Status = FinancialDocumentInboxStatus.Imported; FailureCode = null; UpdatedAt = now; }
+    public void ConfirmServiceBill(Guid occurrenceId, Guid recurrenceId, string competence, decimal projectedAmount, decimal confirmedAmount, DateTimeOffset now)
+    {
+        if (ServiceBillOccurrenceId is not null) throw new InvalidOperationException("Documento já confirmou uma conta de serviço.");
+        ServiceBillOccurrenceId = occurrenceId; ServiceBillRecurrenceId = recurrenceId; ServiceBillCompetence = competence;
+        ServiceBillProjectedAmount = projectedAmount; ServiceBillConfirmedAmount = confirmedAmount; ServiceBillConfirmedAt = now;
+        Status = FinancialDocumentInboxStatus.Imported; FailureCode = null; UpdatedAt = now;
+    }
     public void Ignore(DateTimeOffset now) { EnsureMutable(); Status = FinancialDocumentInboxStatus.Ignored; UpdatedAt = now; }
     private void EnsureMutable() { if (Status == FinancialDocumentInboxStatus.Imported) throw new InvalidOperationException("Documento já importado."); }
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

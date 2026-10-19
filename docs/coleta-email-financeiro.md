@@ -71,6 +71,14 @@ O resultado é `Matched`, `NotFound`, `Ambiguous`, `NeedsReview` ou `Rejected` e
 
 Ocorrências realizadas ou canceladas, competências distintas, tipos incompatíveis e documentos cuja extração não seja `Reliable` não são vinculados. Havendo mais de uma candidata forte, o resultado é `Ambiguous`; candidata apenas plausível produz `NeedsReview`. A consulta não altera previsão, recorrência, Inbox, orçamento, lançamento ou saldo e não usa agente/LLM para decidir o vínculo. Referências de unidade/contrato ainda não podem ser confrontadas porque o modelo atual de recorrência não possui campo correspondente.
 
+### Confirmação do valor faturado
+
+`POST /api/families/{familyId}/financial-documents/inbox/{id}/service-bill-confirm` exige CSRF e ação explícita. Além de `ServiceBillReconciliation.Enabled`, `ConfirmationEnabled` precisa estar habilitado; ambos iniciam em `false`. O navegador envia somente a intenção e uma senha efêmera opcional. O servidor reabre o PDF, repete extração e matching e não aceita valor, competência, emissor ou ocorrência informados pelo cliente.
+
+Uma confirmação válida grava no próprio item da Inbox o vínculo com a previsão mensal e sua recorrência, competência, valor originalmente projetado, valor confirmado e instante. A previsão pendente daquela competência passa a usar o valor confirmado; o template e as demais competências permanecem intactos. Não é criada transação, despesa ou recorrência, e `Imported` significa documento processado, nunca pago. A diferença informativa é `confirmedAmount - projectedAmount`.
+
+O documento e a ocorrência são únicos para esse tipo de confirmação. Reenvio do mesmo documento, ocorrência e valor retorna `AlreadyConfirmed`; outro vínculo ou segunda via conflitante não substitui a confirmação. O PostgreSQL reforça a regra com FK composta, índice único e constraints de completude e precisão. Valores zero/negativos, extração não confiável, associação ambígua, previsão cancelada ou realizada falham sem escrita.
+
 Os perfis iniciais de exemplo são `ItauCards`, com `has:attachment subject:"fatura do seu cartão"`, e `NuEmpresas`, com `has:attachment subject:"fatura do seu cartão Nu Empresas"`. Ambos permanecem desabilitados até receberem família, mailbox e credenciais válidas. Nenhum final de cartão, nome, competência ou valor faz parte das queries.
 
 ## Execução manual e dry-run

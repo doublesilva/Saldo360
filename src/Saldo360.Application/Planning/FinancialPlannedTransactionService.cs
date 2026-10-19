@@ -131,6 +131,11 @@ public sealed class FinancialPlannedTransactionService(
                 return PlannedTransactionResult.Conflict(PlannedTransactionResult.ReconciledMessage);
             }
 
+            if (await planned.HasServiceBillConfirmationAsync(familyId, plannedId, cancellationToken))
+            {
+                return PlannedTransactionResult.Conflict("A previsão possui valor confirmado por documento e não pode ser editada.");
+            }
+
             var (details, errors) = await ValidateAsync(familyId, input, locked.Planned, cancellationToken);
             if (details is null)
             {

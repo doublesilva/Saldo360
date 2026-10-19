@@ -21,7 +21,7 @@ public interface IServiceBillRecurringMatchService
 {
     Task<ServiceBillRecurringMatchResult> MatchAsync(Guid familyId, Guid documentId, ServiceBillExtractionOutput extraction, CancellationToken cancellationToken);
 }
-public sealed class ServiceBillReconciliationOptions { public bool Enabled { get; set; } }
+public sealed class ServiceBillReconciliationOptions { public bool Enabled { get; set; } public bool ConfirmationEnabled { get; set; } }
 
 public sealed class ServiceBillRecurringMatchService(IServiceBillRecurringCandidateRepository repository) : IServiceBillRecurringMatchService
 {
@@ -75,8 +75,14 @@ public sealed class ServiceBillRecurringMatchService(IServiceBillRecurringCandid
     }
 }
 
+public interface IServiceBillRecurringMatchPreviewService
+{
+    Task<(FinancialDocumentClassificationAccess Access, ServiceBillRecurringMatchPreview? Preview, IDictionary<string, string[]>? Errors)> PreviewAsync(
+        Guid familyId, Guid id, Guid userId, string? password, CancellationToken cancellationToken);
+}
 public sealed class ServiceBillRecurringMatchPreviewService(ServiceBillPreviewService extraction, IServiceBillRecurringMatchService matching,
     ServiceBillReconciliationOptions options)
+    : IServiceBillRecurringMatchPreviewService
 {
     public async Task<(FinancialDocumentClassificationAccess Access, ServiceBillRecurringMatchPreview? Preview, IDictionary<string, string[]>? Errors)> PreviewAsync(
         Guid familyId, Guid id, Guid userId, string? password, CancellationToken cancellationToken)
