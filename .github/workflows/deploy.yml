@@ -153,6 +153,25 @@ jobs:
           rm -f /srv/saldo360-deploy/saldo360-release.tar.gz
           REMOTE
 
+      - name: Verify privileged deploy script version
+        shell: bash
+        run: |
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          expected="$(sha256sum /srv/saldo360-deploy/release/deploy/server/deploy-saldo360 | awk '{print $1}')"
+          installed="$(sha256sum /usr/local/sbin/deploy-saldo360 | awk '{print $1}')"
+          if test "$installed" != "$expected"; then
+            echo "::error::Script privilegiado desatualizado. Instale deploy/server/deploy-saldo360 antes do cutover."
+            exit 1
+          fi
+          echo "OK script privilegiado corresponde ao release"
+          REMOTE
+
       - name: Deploy
         shell: bash
         run: |

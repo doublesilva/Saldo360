@@ -57,6 +57,43 @@ public sealed class ServiceBillConfirmationServiceTests
 public sealed class ServiceBillConfirmationPersistenceTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]
+    public async Task ConcurrentDoubleSubmitConfirmsOnceAndReturnsIdempotentResult()
+    {
+        var owner = await SignInAsync("service-bill-double-submit-owner");
+        var family = await CreateFamilyAsync(owner, "Família Double Submit");
+        var account = await CreateAsync(owner, $"/api/families/{family.Id}/accounts", new { name = "Conta", type = "Checking", financialScope = "PF", openingBalance = "5000.00", openingBalanceDate = "2026-09-01" });
+        var category = await CreateAsync(owner, $"/api/families/{family.Id}/categories", new { name = "Água", type = "Expense" });
+        var recurrence = await CreateAsync(owner, $"/api/families/{family.Id}/recurrences", new { accountId = account, categoryId = category, type = "Expense", description = "DMAE", amount = "150.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-10-20", dayOfMonth = 20 });
+        var materialized = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/recurrences/{recurrence}/materialize", owner, new { from = "2026-10-01", through = "2026-10-31" });
+        using var body = JsonDocument.Parse(await materialized.Content.ReadAsStringAsync());
+        var occurrence = body.RootElement.GetProperty("items")[0].GetProperty("plannedTransactionId").GetGuid();
+        Guid userId; var documentId = Guid.NewGuid();
+        await using (var setup = Db())
+        {
+            userId = await setup.FamilyMembers.Where(x => x.FamilyId == family.Id).Select(x => x.UserId).SingleAsync();
+            setup.FinancialDocumentInboxItems.Add(FinancialDocumentInboxItem.Create(documentId, family.Id,
+                FinancialDocumentSource.Manual, null, "agua.pdf", new string('d', 64), "application/pdf",
+                "test/service-bill-double-submit", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+            await setup.SaveChangesAsync();
+        }
+
+        await using var firstDb = Db();
+        await using var secondDb = Db();
+        var first = new ServiceBillConfirmationRepository(firstDb).ConfirmAsync(family.Id, documentId, userId,
+            occurrence, recurrence, "2026-10", 147.25m, DateTimeOffset.UtcNow, CancellationToken.None);
+        var second = new ServiceBillConfirmationRepository(secondDb).ConfirmAsync(family.Id, documentId, userId,
+            occurrence, recurrence, "2026-10", 147.25m, DateTimeOffset.UtcNow, CancellationToken.None);
+        var results = await Task.WhenAll(first, second);
+
+        Assert.Single(results, result => result.Status == ServiceBillConfirmationStoreStatus.Confirmed);
+        Assert.Single(results, result => result.Status == ServiceBillConfirmationStoreStatus.AlreadyConfirmed);
+        await using var verification = Db();
+        Assert.Equal(147.25m, (await verification.FinancialPlannedTransactions.FindAsync(occurrence))!.Amount);
+        Assert.Single(await verification.FinancialDocumentInboxItems.Where(x => x.ServiceBillOccurrenceId == occurrence).ToListAsync());
+        Assert.Empty(await verification.FinancialTransactions.ToListAsync());
+    }
+
+    [Fact]
     public async Task ConfirmationChangesOnlyMonthlyOccurrenceAndIsIdempotent()
     {
         var owner = await SignInAsync("service-bill-confirm-owner");

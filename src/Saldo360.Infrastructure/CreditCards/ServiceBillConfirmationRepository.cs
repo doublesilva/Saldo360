@@ -12,9 +12,16 @@ internal sealed class ServiceBillConfirmationRepository(Saldo360DbContext db) : 
         Guid occurrenceId, Guid recurrenceId, string competence, decimal confirmedAmount, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var item = await db.FinancialDocumentInboxItems.SingleOrDefaultAsync(x => x.FamilyId == familyId && x.Id == documentId
-            && db.FamilyMembers.Any(member => member.FamilyId == familyId && member.UserId == userId), cancellationToken);
+        var authorized = await db.FamilyMembers.AsNoTracking()
+            .AnyAsync(member => member.FamilyId == familyId && member.UserId == userId, cancellationToken);
+        if (!authorized) return new(ServiceBillConfirmationStoreStatus.Invalid);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        // Serializa double-submit do mesmo documento. A segunda chamada lê o estado já confirmado
+        // depois que a primeira libera o lock e retorna o resultado idempotente.
+        var item = await db.FinancialDocumentInboxItems
+            .FromSqlInterpolated($"SELECT * FROM financial_document_inbox_items WHERE family_id = {familyId} AND id = {documentId} FOR UPDATE")
+            .SingleOrDefaultAsync(cancellationToken);
         if (item is null) return new(ServiceBillConfirmationStoreStatus.Invalid);
         if (item.ServiceBillOccurrenceId is { } existing)
         {

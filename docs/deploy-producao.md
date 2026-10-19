@@ -50,7 +50,7 @@ POSTGRES_USER=saldo360
 POSTGRES_PASSWORD=<senha-forte>
 SALDO360_WEB_PORT=5600
 SALDO360_PUBLIC_HOST=saldo360.home.doublesilva.com
-SALDO360_IMAGE_TAG=local
+SALDO360_IMAGE_TAG=0000000000000000000000000000000000000000
 ```
 
 O arquivo deve pertencer ao usuário de deploy e não ser legível por outros usuários:
@@ -172,6 +172,31 @@ No servidor, o comando:
 5. pré-valida containers candidatos da API e do web;
 6. troca para as novas imagens e exige healthcheck saudável;
 7. grava o SHA publicado em `/srv/saldo360-deploy/deployed-sha`.
+
+O compose de produção exige `SALDO360_IMAGE_TAG`: não existe fallback para `local`. O comando de deploy sempre
+exporta o SHA Git completo antes de validar, construir, migrar ou publicar as imagens.
+
+Durante a pré-validação, a API candidata entra na rede de backend apenas para alcançar o PostgreSQL. Ela não recebe
+o alias DNS `api`; o script verifica essa condição e aborta antes do cutover se o alias aparecer. Portanto, o web
+ativo continua resolvendo exclusivamente a API primária até `compose up -d api web` concluir a troca.
+
+## Liberação controlada de contas de serviço
+
+As chaves abaixo ficam `false` por padrão no arquivo de ambiente. Para uma janela supervisionada, habilite apenas
+as necessárias e preserve `FinancialEmailImport__Enabled=false`, mantendo o scheduler desligado:
+
+```dotenv
+FINANCIAL_DOCUMENT_CLASSIFICATION_ENABLED=true
+FINANCIAL_DOCUMENT_CLASSIFICATION_AGENT_ENABLED=false
+SERVICE_BILL_EXTRACTION_ENABLED=true
+SERVICE_BILL_EXTRACTION_AGENT_ENABLED=false
+SERVICE_BILL_RECONCILIATION_ENABLED=true
+SERVICE_BILL_CONFIRMATION_ENABLED=true
+SERVICE_BILL_BINDING_ENABLED=true
+```
+
+Classificação, extração e matching continuam sem efeito financeiro. Confirmação e binding exigem autenticação,
+CSRF e ação explícita. Concluir a validação manual não autoriza ligar o coletor periódico.
 
 ## Primeiro deploy
 

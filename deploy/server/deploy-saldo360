@@ -84,13 +84,20 @@ compose --profile migration run --rm migrate
 
 echo "==> Pré-validando nova API sem trocar a versão ativa"
 docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
-# Permite que o nginx candidato resolva api:8080 durante o primeiro deploy.
-compose run -d --no-deps --use-aliases --name saldo360-api-candidate api >/dev/null
+# O candidato participa da rede backend para alcançar o PostgreSQL, mas deliberadamente
+# não recebe o alias de serviço `api`. Assim o web ativo nunca pode resolver o candidato.
+compose run -d --no-deps --name saldo360-api-candidate api >/dev/null
 if ! wait_healthy saldo360-api-candidate "api candidate"; then
   docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
   exit 1
 fi
-# Manter a API candidata ativa enquanto o Nginx candidato valida a resolução de api:8080.
+candidate_aliases="$(docker inspect --format '{{range $network := .NetworkSettings.Networks}}{{range .Aliases}}{{println .}}{{end}}{{end}}' saldo360-api-candidate)"
+if printf '%s\n' "$candidate_aliases" | grep -Fxq api; then
+  echo "A API candidata recebeu indevidamente o alias produtivo api." >&2
+  docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
+  exit 1
+fi
+
 echo "==> Pré-validando nova imagem web"
 docker rm -f saldo360-web-candidate >/dev/null 2>&1 || true
 compose run -d --no-deps --name saldo360-web-candidate web >/dev/null

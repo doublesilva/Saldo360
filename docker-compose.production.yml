@@ -22,7 +22,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    image: saldo360-api:${SALDO360_IMAGE_TAG:-local}
+    image: saldo360-api:${SALDO360_IMAGE_TAG:?Defina SALDO360_IMAGE_TAG com o SHA imutavel do release}
     restart: unless-stopped
     group_add:
       - "1654"
@@ -41,6 +41,13 @@ services:
       FinancialEmailImport__Provider: Gmail
       FinancialEmailImport__TimeZone: America/Sao_Paulo
       FinancialEmailImport__Gmail__Mailbox: silva.pucrs@gmail.com
+      FinancialDocumentClassification__Enabled: ${FINANCIAL_DOCUMENT_CLASSIFICATION_ENABLED:-false}
+      FinancialDocumentClassification__AgentEnabled: ${FINANCIAL_DOCUMENT_CLASSIFICATION_AGENT_ENABLED:-false}
+      ServiceBillExtraction__Enabled: ${SERVICE_BILL_EXTRACTION_ENABLED:-false}
+      ServiceBillExtraction__AgentEnabled: ${SERVICE_BILL_EXTRACTION_AGENT_ENABLED:-false}
+      ServiceBillReconciliation__Enabled: ${SERVICE_BILL_RECONCILIATION_ENABLED:-false}
+      ServiceBillReconciliation__ConfirmationEnabled: ${SERVICE_BILL_CONFIRMATION_ENABLED:-false}
+      ServiceBillReconciliation__BindingEnabled: ${SERVICE_BILL_BINDING_ENABLED:-false}
 
       FinancialEmailImport__Sources__0__Name: ItauCards
       FinancialEmailImport__Sources__0__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
@@ -74,6 +81,12 @@ services:
       FinancialEmailImport__Sources__4__AllowedLinkHosts__0: dmaeagvrt.procempa.com.br
       FinancialEmailImport__Sources__4__AllowedLinkPathPrefixes__0: /gsan/
 
+      FinancialEmailImport__Sources__5__Name: Vivo
+      FinancialEmailImport__Sources__5__FamilyId: 01a14a7d-0614-73f5-911c-ec59a507c436
+      FinancialEmailImport__Sources__5__Query: 'has:attachment (subject:"sua conta vivo" OR subject:"fatura vivo")'
+      FinancialEmailImport__Sources__5__Enabled: "true"
+      FinancialEmailImport__Sources__5__CollectionMode: Attachments
+
       FinancialDocuments__StoragePath: /var/lib/saldo360/financial-documents
       ReverseProxy__KnownNetworks__0: 172.16.0.0/12
       ReverseProxy__AllowedHosts__0: ${SALDO360_PUBLIC_HOST:?Defina SALDO360_PUBLIC_HOST no .env}
@@ -92,7 +105,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
-    image: saldo360-web:${SALDO360_IMAGE_TAG:-local}
+    image: saldo360-web:${SALDO360_IMAGE_TAG:?Defina SALDO360_IMAGE_TAG com o SHA imutavel do release}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${SALDO360_WEB_PORT:-5600}:8080"
@@ -103,7 +116,7 @@ services:
       - backend
 
   migrate:
-    image: saldo360-api:${SALDO360_IMAGE_TAG:-local}
+    image: saldo360-api:${SALDO360_IMAGE_TAG:?Defina SALDO360_IMAGE_TAG com o SHA imutavel do release}
     profiles: ["migration"]
     entrypoint: ["/app/efbundle"]
     group_add:
