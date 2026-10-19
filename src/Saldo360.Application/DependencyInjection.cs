@@ -53,6 +53,8 @@ public static class DependencyInjection
         services.AddSingleton<IFinancialDocumentAnalysisRouter, FinancialDocumentAnalysisRouter>();
         services.AddScoped<IServiceBillExtractor, CompositeServiceBillExtractor>();
         services.AddScoped<ServiceBillPreviewService>();
+        services.AddScoped<IServiceBillRecurringMatchService, ServiceBillRecurringMatchService>();
+        services.AddScoped<ServiceBillRecurringMatchPreviewService>();
         services.AddScoped<FinancialEmailCollector>();
         services.AddScoped<IFinancialEmailCollector>(provider => provider.GetRequiredService<FinancialEmailCollector>());
         services.AddScoped<FinancialEmailCollectorRunner>();

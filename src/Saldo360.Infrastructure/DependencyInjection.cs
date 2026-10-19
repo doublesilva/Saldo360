@@ -140,6 +140,9 @@ public static class DependencyInjection
         var serviceBillExtraction = configuration.GetSection("ServiceBillExtraction").Get<ServiceBillExtractionOptions>() ?? new ServiceBillExtractionOptions();
         services.AddSingleton(serviceBillExtraction);
         services.AddSingleton<IServiceBillExtractionAgent, ServiceBillExtractionAgent>();
+        var serviceBillReconciliation = configuration.GetSection("ServiceBillReconciliation").Get<ServiceBillReconciliationOptions>() ?? new ServiceBillReconciliationOptions();
+        services.AddSingleton(serviceBillReconciliation);
+        services.AddScoped<IServiceBillRecurringCandidateRepository, ServiceBillRecurringCandidateRepository>();
         services.AddSingleton<LlmCreditCardStatementExtractorAgent>();
         services.AddSingleton<ParserBackedCreditCardStatementExtractorAgent>();
         services.AddSingleton<IParserBackedCreditCardStatementExtractorAgent>(provider => provider.GetRequiredService<ParserBackedCreditCardStatementExtractorAgent>());

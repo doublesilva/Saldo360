@@ -63,6 +63,14 @@ Quando `FinancialDocumentClassification.Enabled=true`, a Inbox persiste tipo, co
 
 A extração textual determinística procura rótulos explícitos como valor a pagar, referência, vencimento, unidade consumidora, matrícula, contrato, hidrômetro ou linha. Se incompleta e `AgentEnabled=true`, reutiliza o provider OpenAI e Structured Outputs existentes, enviando somente tipo classificado e texto paginado. O preview e a senha são efêmeros: não alteram Inbox, recorrências, transações ou pagamentos. CEEE, DMAE e Vivo não possuem parsers por fornecedor nesta etapa.
 
+## Pré-associação com despesas recorrentes
+
+Com `ServiceBillReconciliation.Enabled=true`, `POST /api/families/{familyId}/financial-documents/inbox/{id}/service-bill-match-preview` reaproveita a extração de conta e procura, em modo somente leitura, previsões pendentes materializadas por recorrências de despesa na mesma família e competência. O recurso inicia desabilitado.
+
+O resultado é `Matched`, `NotFound`, `Ambiguous`, `NeedsReview` ou `Rejected` e inclui os IDs explícitos da ocorrência e da recorrência, valores previsto e faturado como strings decimais, datas e evidências determinísticas. Competência, natureza de despesa, origem recorrente e compatibilidade do tipo documental são obrigatórias. Um vínculo automático exige ainda uma única evidência forte de identidade do emissor na descrição/categoria; vencimento próximo é apenas evidência auxiliar. O valor nunca funciona como identidade e diferenças de valor são apresentadas para revisão.
+
+Ocorrências realizadas ou canceladas, competências distintas, tipos incompatíveis e documentos cuja extração não seja `Reliable` não são vinculados. Havendo mais de uma candidata forte, o resultado é `Ambiguous`; candidata apenas plausível produz `NeedsReview`. A consulta não altera previsão, recorrência, Inbox, orçamento, lançamento ou saldo e não usa agente/LLM para decidir o vínculo. Referências de unidade/contrato ainda não podem ser confrontadas porque o modelo atual de recorrência não possui campo correspondente.
+
 Os perfis iniciais de exemplo são `ItauCards`, com `has:attachment subject:"fatura do seu cartão"`, e `NuEmpresas`, com `has:attachment subject:"fatura do seu cartão Nu Empresas"`. Ambos permanecem desabilitados até receberem família, mailbox e credenciais válidas. Nenhum final de cartão, nome, competência ou valor faz parte das queries.
 
 ## Execução manual e dry-run

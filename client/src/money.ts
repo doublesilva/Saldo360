@@ -84,6 +84,21 @@ export function isNegativeDecimal(text: string): boolean {
   return text.startsWith('-') && /[1-9]/.test(text)
 }
 
+/** Subtrai dois valores monetários canônicos da API sem ponto flutuante. */
+export function subtractMoneyDecimal(left: string, right: string): string {
+  const toCents = (text: string) => {
+    const match = DECIMAL_TEXT.exec(text)
+    if (!match) throw new Error(`Valor monetário inválido: ${text}`)
+    const [, sign, integer, cents] = match
+    const value = BigInt(integer) * 100n + BigInt(cents)
+    return sign === '-' ? -value : value
+  }
+  const value = toCents(left) - toCents(right)
+  const sign = value < 0n ? '-' : ''
+  const absolute = value < 0n ? -value : value
+  return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, '0')}`
+}
+
 /** "2026-10-01" → "01/10/2026", sem passar por Date (evita deslocamento de fuso). */
 export function formatDate(isoDate: string): string {
   const [year, month, day] = isoDate.split('-')

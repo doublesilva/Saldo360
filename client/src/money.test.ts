@@ -6,6 +6,7 @@ import {
   isNegativeDecimal,
   isZeroDecimal,
   parseAmount,
+  subtractMoneyDecimal,
 } from './money'
 
 describe('parseAmount', () => {
@@ -83,6 +84,12 @@ describe('formatBrlDecimal (texto exato da API, sem number)', () => {
 })
 
 describe('formatação', () => {
+  it('subtrai valores monetários exatos sem converter para number', () => {
+    expect(subtractMoneyDecimal('187.43', '180.00')).toBe('7.43')
+    expect(subtractMoneyDecimal('180.00', '187.43')).toBe('-7.43')
+    expect(subtractMoneyDecimal('9999999999999.99', '0.01')).toBe('9999999999999.98')
+  })
+
   it('formata a data sem fuso', () => {
     expect(formatDate('2026-10-01')).toBe('01/10/2026')
   })

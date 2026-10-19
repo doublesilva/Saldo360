@@ -48,6 +48,14 @@ public sealed class ServiceBillExtractionTests
         Assert.Equal("ExtractionProviderUnavailable", result.Result.FailureCode);
     }
 
+    [Fact]
+    public async Task LowConfidenceAgentResultNeedsReview()
+    {
+        const string json = "{\"documentType\":\"WaterBill\",\"issuer\":null,\"competence\":\"2026-10\",\"dueDate\":\"2026-10-20\",\"totalAmount\":\"10.00\",\"accountReference\":null,\"serviceReference\":null,\"confidence\":\"Low\"}";
+        var result = await new CompositeServiceBillExtractor(new() { AgentEnabled = true }, new Agent(json)).ExtractAsync(Request("WaterBill", "texto insuficiente para extração local"), CancellationToken.None);
+        Assert.Equal("NeedsReview", result.Assessment); Assert.Equal("LowConfidence", result.Result.FailureCode);
+    }
+
     private static CompositeServiceBillExtractor Extractor() => new(new(), new Agent(""));
     private static ServiceBillExtractionRequest Request(string type, string text) => new("sanitized.pdf", new([new(1, text)]), type);
     private sealed class Agent(string response = "", bool error = false) : IServiceBillExtractionAgent
