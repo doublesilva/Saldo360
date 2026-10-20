@@ -187,6 +187,7 @@ function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNav
       )}
       {view === 'month' && opened && (
         <FinancialCalendarDetails
+          key={`${familyId}:${opened.item.source}:${opened.item.id}`}
           familyId={familyId}
           item={opened.item}
           returnFocus={opened.trigger}
@@ -716,7 +717,7 @@ export function FinancialCalendarEvents({
               </div>
               <div className="calendar-event__meta">
                 <span>{typeLabels[item.type]}</span>
-                <span>{item.account.name}{item.account.isActive ? '' : ' (inativa)'}</span>
+                <span>{item.account?.name ?? 'Sem conta atribuída'}{item.account && !item.account.isActive ? ' (inativa)' : ''}</span>
                 {item.category && <span>{item.category.name}{item.category.isActive ? '' : ' (inativa)'}</span>}
               </div>
               <span className={`badge badge--calendar-${item.status.toLowerCase()}`}>{statusLabels[item.status]}</span>

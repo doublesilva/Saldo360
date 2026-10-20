@@ -41,7 +41,18 @@ public sealed record FinancialCalendarItemDto(
     FinancialTransactionOrigin Origin = FinancialTransactionOrigin.Manual,
     Guid? RecurrenceId = null,
     int? OccurrenceNumber = null,
-    DateOnly? ScheduledDate = null);
+    DateOnly? ScheduledDate = null)
+{
+    // Advisory capabilities only. Existing commands revalidate state under their own locks.
+    public IReadOnlyList<string> AllowedActions => Source switch
+    {
+        FinancialCalendarSource.PlannedTransaction when Status is FinancialCalendarStatus.Pending or FinancialCalendarStatus.Overdue
+            => ["Realize", "Edit", "Cancel"],
+        FinancialCalendarSource.Transaction when Origin is FinancialTransactionOrigin.Manual or FinancialTransactionOrigin.PlannedRealization
+            => PlannedTransactionId is null ? ["Edit", "Cancel"] : ["UndoRealization", "ViewOrigin"],
+        _ => [],
+    };
+}
 
 public sealed record FinancialCalendarFilter(
     DateOnly From,

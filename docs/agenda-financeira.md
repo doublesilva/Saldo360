@@ -210,3 +210,33 @@ Previsões conciliadas explicitamente com faturas deixam de aparecer como pendê
 ### Parcelas de dívidas
 
 Parcelas cadastradas são obrigações distintas dos pagamentos efetivos. A Agenda exibe somente o `remainingAmount` de parcelas não canceladas, respeitando vencimento e filtros. O lançamento bancário do pagamento continua sendo o único evento realizado; não há duplicação.
+
+## Ações nos compromissos (T07.4)
+
+O GET da Agenda acrescenta `allowedActions` aos campos existentes `source`, `id`, `status`, `origin`,
+`plannedTransactionId`, `recurrenceId`, `occurrenceNumber` e `scheduledDate`. Não há endpoint genérico de comando.
+Previsões pendentes/vencidas oferecem `Realize`, `Edit`, `Cancel`; lançamentos avulsos oferecem `Edit`, `Cancel`;
+realizações vinculadas oferecem `UndoRealization`, `ViewOrigin`. Cancelados não aparecem na Agenda; o detalhe
+reconsulta o registro e bloqueia ações se ele já foi cancelado/realizado em outra sessão. A ausência de capacidades
+no contrato não autoriza ações por inferência do React.
+
+As capacidades são consultivas, não uma autorização para gravar: os comandos existentes revalidam participação,
+referências e estado. A realização usa `POST /planned-transactions/{id}/realize`, edição usa os PUT existentes,
+cancelamento usa `POST /planned-transactions/{id}/cancel`; desfazer realização usa
+`POST /transactions/{id}/cancel`. Todos sob `/api/families/{familyId}` e com CSRF nas mutações.
+O botão de origem consulta `GET /planned-transactions/{id}` no painel, separando valor/data previstos dos efetivos.
+
+O formulário de realização permite valor e data efetivos (hoje em São Paulo por padrão). Exemplo: previsão
+`200.00`, realização `187.45`: a previsão continua `200.00`, a movimentação efetiva é `187.45`. Desfazer preserva
+o lançamento cancelado e reabre a previsão original. Repetição com mesmos dados é idempotente; realização
+concorrente com dados diferentes retorna conflito. Edição/cancelamento da previsão são serializados com a realização.
+
+Ocorrências materializadas reutilizam o mesmo comando individual, preservando identidade e template; a interface
+mostra a origem recorrente e avisa que a alteração afeta apenas aquela ocorrência. Não há edição de série.
+Transferências continuam em seu fluxo próprio e não recebem realização de receita/despesa. Pagamentos de fatura
+e de dívida não recebem comandos genéricos pela Agenda; parcelas de dívida são consultivas e não são buscadas
+como lançamentos bancários. Previsões conciliadas continuam excluídas pela consulta existente.
+
+Após sucesso, Agenda/resumo/evolução diária são reconsultados; nenhum saldo é calculado ou persistido pela UI.
+Conflitos e falhas preservam o painel e os valores anteriores. Cancelar/desfazer exige confirmação. Nenhum fluxo
+de documento, Gmail, matching, binding ou confirmação documental foi incluído.

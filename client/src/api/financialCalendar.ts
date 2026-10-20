@@ -2,7 +2,7 @@ import type { BalanceUnavailableReason, FinancialAccount } from './accounts'
 import type { CategoryType } from './categories'
 import type { TransactionReference } from './transactions'
 
-export type FinancialCalendarSource = 'Transaction' | 'PlannedTransaction'
+export type FinancialCalendarSource = 'Transaction' | 'PlannedTransaction' | 'DebtInstallment'
 export type FinancialCalendarStatus = 'Realized' | 'Pending' | 'Overdue'
 
 export interface FinancialCalendarItem {
@@ -15,10 +15,15 @@ export interface FinancialCalendarItem {
   /** Data efetiva para Transaction e prevista para PlannedTransaction. */
   date: string
   description: string
-  account: TransactionReference
+  account: TransactionReference | null
   category: TransactionReference | null
   currency: string
   plannedTransactionId: string | null
+  allowedActions?: ('Realize' | 'Edit' | 'Cancel' | 'UndoRealization' | 'ViewOrigin')[]
+  origin?: string
+  recurrenceId?: string | null
+  occurrenceNumber?: number | null
+  scheduledDate?: string | null
 }
 
 /** Totais calculados pela API. A UI apenas os formata. */

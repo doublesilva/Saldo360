@@ -80,6 +80,9 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
             Item(calendar, realization));
         Assert.DoesNotContain(calendar.Items, item => item.Id == realizedPlanned || item.Id == cancelledEffective || item.Id == cancelledPlanned);
         Assert.Equal(new SummaryDto("0.00", "41.75", "20.00", "21.25", "20.00", "21.25"), calendar.Summary);
+        Assert.Equal(["Edit", "Cancel"], calendar.Items.Single(x => x.Id == effective).AllowedActions);
+        Assert.Equal(["Realize", "Edit", "Cancel"], calendar.Items.Single(x => x.Id == overdue).AllowedActions);
+        Assert.Equal(["UndoRealization", "ViewOrigin"], calendar.Items.Single(x => x.Id == realization).AllowedActions);
     }
 
     [Fact]
@@ -245,7 +248,8 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
         ReferenceDto Account,
         ReferenceDto Category,
         string Currency,
-        Guid? PlannedTransactionId);
+        Guid? PlannedTransactionId,
+        string[] AllowedActions);
     private sealed record SummaryDto(
         string RealizedIncome,
         string RealizedExpense,

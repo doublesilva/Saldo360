@@ -6,6 +6,7 @@ import type { FinancialCalendarBalanceResponse, FinancialCalendarItem, Financial
 import type { PlannedTransaction } from '../api/planned'
 import type { FinancialTransaction } from '../api/transactions'
 import { FinancialCalendarPage } from './FinancialCalendar'
+import { FinancialCalendarDetails } from './FinancialCalendarDetails'
 
 type Call = { url: string; init?: RequestInit }
 
@@ -96,6 +97,7 @@ function calendarItem(value: FinancialTransaction | PlannedTransaction, status?:
     category: value.category,
     currency: value.currency,
     plannedTransactionId: planned ? null : value.plannedTransactionId,
+    allowedActions: planned ? ['Realize', 'Edit', 'Cancel'] : value.plannedTransactionId ? ['UndoRealization', 'ViewOrigin'] : ['Edit', 'Cancel'],
   }
 }
 
@@ -141,7 +143,7 @@ function calendar(items: FinancialCalendarItem[], changed: boolean): FinancialCa
 
 function mockApi() {
   const calls: Call[] = []
-  const state = { changed: false, linkedCancelled: false, failNextAction: false }
+  const state = { changed: false, linkedCancelled: false, failNextAction: false, conflict: false, noActions: false, cancelledDetail: false }
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
@@ -156,14 +158,16 @@ function mockApi() {
       const currentItems = state.linkedCancelled
         ? [calendarItem(standalone), calendarItem({ ...overdue, id: 'planned-linked', dueDate: '2026-12-15', description: 'Aluguel reaberto', amount: '800.00' }), calendarItem(overdue, 'Overdue'), calendarItem(pending)]
         : [calendarItem(standalone), calendarItem(linked), calendarItem(overdue, 'Overdue'), calendarItem(pending)]
-      return Response.json(calendar(currentItems, state.changed))
+      return Response.json(calendar(state.noActions ? currentItems.map(item => ({ ...item, allowedActions: [] })) : currentItems, state.changed))
     }
 
     if (method === 'GET' && url.endsWith('/transactions/tx-standalone')) return Response.json(standalone)
     if (method === 'GET' && url.endsWith('/transactions/tx-linked')) return Response.json(linked)
-    if (method === 'GET' && url.endsWith('/planned-transactions/planned-overdue')) return Response.json(overdue)
+    if (method === 'GET' && url.endsWith('/planned-transactions/planned-linked')) return Response.json({ ...overdue, id: 'planned-linked', status: 'Realized' })
+    if (method === 'GET' && url.endsWith('/planned-transactions/planned-overdue')) return Response.json(state.cancelledDetail ? { ...overdue, status: 'Cancelled', isCancelled: true } : overdue)
     if (method === 'GET' && url.endsWith('/planned-transactions/planned-pending')) return Response.json(pending)
 
+    if (method === 'POST' && url.endsWith('/planned-overdue/cancel') && state.conflict) return Response.json({ title: 'Previsão já realizada em outra sessão.' }, { status: 409 })
     if (method !== 'GET' && state.failNextAction) {
       state.failNextAction = false
       return new Response(null, { status: 503 })
@@ -213,6 +217,67 @@ afterEach(() => {
 })
 
 describe('FinancialCalendarDetails', () => {
+  it('parcela de dívida sem conta é consultiva, nunca consultada como lançamento', async () => {
+    const { calls } = mockApi()
+    render(<FinancialCalendarDetails familyId="family-1" item={{ ...calendarItem(overdue), source: 'DebtInstallment', account: null, allowedActions: [] }} returnFocus={null} onClose={vi.fn()} onChanged={vi.fn()} />)
+    expect(screen.getByText('Sem conta atribuída')).toBeTruthy()
+    expect(screen.getByText(/consulte e altere pelo fluxo de Dívidas/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Realizar' })).toBeNull()
+    expect(calls).toHaveLength(0)
+  })
+
+  it('não inventa ações quando o backend devolve lista vazia', async () => {
+    const { state } = mockApi()
+    state.noActions = true
+    render(<FinancialCalendarPage familyId="family-1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver detalhes de Salário recebido' }))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).queryByRole('status')).toBeNull())
+    expect(within(dialog).queryByRole('button', { name: 'Editar' })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Cancelar lançamento' })).toBeNull()
+  })
+
+  it('estado cancelado consultado no detalhe prevalece sobre Pending da agenda antiga', async () => {
+    const { state } = mockApi()
+    state.cancelledDetail = true
+    render(<FinancialCalendarPage familyId="family-1" />)
+    await screen.findByText('Salário recebido')
+    fireEvent.click(screen.getByRole('gridcell', { name: /10\/12\/2026/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Conta vencida' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('Cancelado')).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: 'Realizar' })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Cancelar previsão' })).toBeNull()
+  })
+
+  it('preserva detalhe e valores após conflito, sem anunciar sucesso nem recalcular saldos', async () => {
+    const { state, calls } = mockApi()
+    state.conflict = true
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<FinancialCalendarPage familyId="family-1" />)
+    await screen.findByText('Salário recebido')
+    fireEvent.click(screen.getByRole('gridcell', { name: /10\/12\/2026/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Conta vencida' }))
+    const dialog = await screen.findByRole('dialog')
+    const cancel = await within(dialog).findByRole('button', { name: 'Cancelar previsão' })
+    const before = callsFor(calls, '/financial-calendar?').length
+    fireEvent.click(cancel)
+    expect(await within(dialog).findByRole('alert')).toHaveProperty('textContent', 'Previsão já realizada em outra sessão.')
+    expect(callsFor(calls, '/financial-calendar?')).toHaveLength(before)
+    expect(within(dialog).getByText('Conta vencida')).toBeTruthy()
+  })
+
+  it('consulta previsão de origem sem mutação e distingue data/valor previstos dos efetivos', async () => {
+    const { calls } = mockApi()
+    render(<FinancialCalendarPage familyId="family-1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver detalhes de Aluguel realizado' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Ver previsão de origem' }))
+    expect(await within(dialog).findByRole('region', { name: 'Previsão de origem' })).toHaveProperty('textContent', expect.stringContaining('10/12/2026'))
+    expect(calls.some(call => call.init?.method === 'POST')).toBe(false)
+    expect(within(dialog).getByText('Data efetiva')).toBeTruthy()
+  })
+
   it('abre, exibe as propriedades disponíveis, gerencia foco e fecha por teclado', async () => {
     mockApi()
     render(<FinancialCalendarPage familyId="family-1" />)
@@ -345,7 +410,7 @@ describe('FinancialCalendarDetails', () => {
     fireEvent.click(await screen.findByRole('gridcell', { name: /15\/12\/2026/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Aluguel realizado' }))
     dialog = await screen.findByRole('dialog')
-    fireEvent.click(await within(dialog).findByRole('button', { name: 'Cancelar lançamento' }))
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Desfazer realização' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(confirm.mock.calls.at(-1)?.[0]).toMatch(/Aluguel realizado.*R\$ 800,00.*voltará a ficar pendente/)

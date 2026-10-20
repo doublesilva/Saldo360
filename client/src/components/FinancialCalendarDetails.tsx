@@ -43,6 +43,8 @@ export function FinancialCalendarDetails({
   const [busy, setBusy] = useState(false)
   const dialogRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  const cancelling = useRef(false)
+  const [origin, setOrigin] = useState<PlannedTransaction | null>(null)
 
   useEffect(() => {
     closeRef.current?.focus()
@@ -50,12 +52,13 @@ export function FinancialCalendarDetails({
   }, [returnFocus])
 
   useEffect(() => {
+    if (item.source === 'DebtInstallment') return
     const controller = new AbortController()
     const request = item.source === 'PlannedTransaction'
       ? getPlanned(familyId, item.id, controller.signal).then<Detail>((value) => ({ source: 'PlannedTransaction', value }))
       : getTransaction(familyId, item.id, controller.signal).then<Detail>((value) => ({ source: 'Transaction', value }))
     request
-      .then((data) => setDetail({ kind: 'loaded', data }))
+      .then((data) => { if (!controller.signal.aborted) setDetail({ kind: 'loaded', data }) })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setDetail({ kind: 'error', message: errorMessage(error) })
       })
@@ -66,7 +69,7 @@ export function FinancialCalendarDetails({
     if (mode !== 'edit') return
     const controller = new AbortController()
     Promise.all([listAccounts(familyId, true, controller.signal), listCategories(familyId, true, controller.signal)])
-      .then(([accounts, categories]) => setReferences({ kind: 'loaded', data: { accounts, categories } }))
+      .then(([accounts, categories]) => { if (!controller.signal.aborted) setReferences({ kind: 'loaded', data: { accounts, categories } }) })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setReferences({ kind: 'error', message: errorMessage(error) })
       })
@@ -108,6 +111,7 @@ export function FinancialCalendarDetails({
   }
 
   const handleCancel = async (data: Detail) => {
+    if (cancelling.current) return
     const isPlanned = data.source === 'PlannedTransaction'
     const date = data.source === 'PlannedTransaction' ? data.value.dueDate : data.value.transactionDate
     const consequence = data.source === 'PlannedTransaction'
@@ -120,6 +124,7 @@ export function FinancialCalendarDetails({
       `Cancelar ${label} "${data.value.description}" de ${formatBrlDecimal(data.value.amount)} em ${formatDate(date)}? ${consequence}`,
     )) return
 
+    cancelling.current = true
     setBusy(true)
     setActionError(null)
     try {
@@ -131,6 +136,7 @@ export function FinancialCalendarDetails({
     } catch (error: unknown) {
       setActionError(errorMessage(error))
     } finally {
+      cancelling.current = false
       setBusy(false)
     }
   }
@@ -140,6 +146,15 @@ export function FinancialCalendarDetails({
   const canAct = loaded && (
     loaded.source === 'PlannedTransaction' ? loaded.value.status === 'Pending' : !loaded.value.isCancelled
   )
+  const actions = canAct ? item.allowedActions ?? [] : []
+
+  const viewOrigin = async () => {
+    if (!loaded || loaded.source !== 'Transaction' || !loaded.value.plannedTransactionId) return
+    setBusy(true)
+    try { setOrigin(await getPlanned(familyId, loaded.value.plannedTransactionId)) }
+    catch (error: unknown) { setActionError(errorMessage(error)) }
+    finally { setBusy(false) }
+  }
 
   return (
     <div className="calendar-detail-backdrop">
@@ -163,26 +178,32 @@ export function FinancialCalendarDetails({
 
         {mode === 'details' && (
           <>
-            <DetailFields item={displayedItem} />
-            {detail.kind === 'loading' && <p className="status status--pending" role="status">Carregando detalhes…</p>}
+            <DetailFields item={displayedItem} status={loaded?.value.isCancelled ? 'Cancelado' : loaded?.source === 'PlannedTransaction' && loaded.value.status === 'Realized' ? 'Realizado' : undefined} />
+            {detail.kind === 'loading' && item.source !== 'DebtInstallment' && <p className="status status--pending" role="status">Carregando detalhes…</p>}
+            {item.source === 'DebtInstallment' && <p className="notice">Parcela de dívida: consulte e altere pelo fluxo de Dívidas.</p>}
+            {item.origin === 'CreditCardInvoicePayment' && <p className="notice">Pagamento de fatura: correções pertencem ao fluxo de Cartões, não ao cancelamento de lançamento avulso.</p>}
+            {item.origin === 'DebtInstallmentPayment' && item.source === 'Transaction' && <p className="notice">Pagamento de dívida: correções pertencem ao fluxo de Dívidas.</p>}
             {detail.kind === 'error' && <p className="status status--down" role="alert">{detail.message}</p>}
             {loaded?.source === 'Transaction' && loaded.value.plannedTransactionId && (
               <p className="notice">Este lançamento realiza uma previsão. Cancelá-lo fará a previsão voltar a ficar pendente.</p>
             )}
             {actionError && <p className="field-error" role="alert">{actionError}</p>}
+            {item.recurrenceId && <p className="notice">Origem: recorrência {item.recurrenceId}, ocorrência {item.occurrenceNumber}. Alterações afetam somente esta ocorrência, nunca a definição recorrente.</p>}
+            {origin && <section aria-label="Previsão de origem"><h3>Previsão de origem</h3><p>{origin.description} — {formatBrlDecimal(origin.amount)} — {formatDate(origin.dueDate)} — {origin.status}</p></section>}
             {canAct && (
               <div className="form__actions calendar-detail-panel__actions">
-                {loaded.source === 'PlannedTransaction' && (
+                {actions.includes('Realize') && loaded.source === 'PlannedTransaction' && (
                   <button type="button" className="button--primary" onClick={() => setMode('realize')} disabled={busy}>
                     Realizar
                   </button>
                 )}
-                {(loaded.source === 'PlannedTransaction' || !loaded.value.plannedTransactionId) && (
+                {actions.includes('Edit') && (
                   <button type="button" onClick={startEditing} disabled={busy}>Editar</button>
                 )}
-                <button type="button" onClick={() => void handleCancel(loaded)} disabled={busy}>
-                  {busy ? 'Cancelando…' : loaded.source === 'PlannedTransaction' ? 'Cancelar previsão' : 'Cancelar lançamento'}
-                </button>
+                {actions.includes('ViewOrigin') && <button type="button" onClick={() => void viewOrigin()} disabled={busy}>Ver previsão de origem</button>}
+                {(actions.includes('Cancel') || actions.includes('UndoRealization')) && <button type="button" onClick={() => void handleCancel(loaded)} disabled={busy}>
+                  {busy ? 'Cancelando…' : actions.includes('UndoRealization') ? 'Desfazer realização' : loaded.source === 'PlannedTransaction' ? 'Cancelar previsão' : 'Cancelar lançamento'}
+                </button>}
               </div>
             )}
           </>
@@ -255,17 +276,17 @@ function itemFromDetail(original: FinancialCalendarItem, detail: Detail): Financ
   }
 }
 
-function DetailFields({ item }: { item: FinancialCalendarItem }) {
+function DetailFields({ item, status }: { item: FinancialCalendarItem; status?: string }) {
   return (
     <dl className="calendar-detail-list">
       <div><dt>Descrição</dt><dd>{item.description}</dd></div>
       <div><dt>Valor</dt><dd className={item.type === 'Income' ? 'amount amount--income' : 'amount amount--negative'}>{formatBrlDecimal(item.amount)}</dd></div>
       <div><dt>Tipo</dt><dd>{typeLabels[item.type]}</dd></div>
-      <div><dt>Data</dt><dd>{formatDate(item.date)}</dd></div>
-      <div><dt>Conta financeira</dt><dd>{item.account.name}{item.account.isActive ? '' : ' (inativa)'}</dd></div>
+      <div><dt>{item.source === 'Transaction' ? 'Data efetiva' : 'Data prevista'}</dt><dd>{formatDate(item.date)}</dd></div>
+      <div><dt>Conta financeira</dt><dd>{item.account?.name ?? 'Sem conta atribuída'}{item.account && !item.account.isActive ? ' (inativa)' : ''}</dd></div>
       {item.category && <div><dt>Categoria</dt><dd>{item.category.name}{item.category.isActive ? '' : ' (inativa)'}</dd></div>}
-      <div><dt>Origem</dt><dd>{item.source === 'Transaction' ? 'Lançamento' : 'Previsão'}</dd></div>
-      <div><dt>Situação</dt><dd>{statusLabels[item.status]}</dd></div>
+      <div><dt>Origem</dt><dd>{item.source === 'DebtInstallment' ? 'Parcela de dívida' : item.source === 'Transaction' ? 'Lançamento' : 'Previsão'}</dd></div>
+      <div><dt>Situação</dt><dd>{status ?? statusLabels[item.status]}</dd></div>
     </dl>
   )
 }
