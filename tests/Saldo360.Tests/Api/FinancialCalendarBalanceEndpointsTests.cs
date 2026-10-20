@@ -101,6 +101,28 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
     }
 
     [Fact]
+    public async Task ConsolidatedMatchesIndividualBalancesWhenOpeningReferencesDiffer()
+    {
+        await ArrangeAsync();
+        // The source reference already includes its older outgoing transfer; destination does not.
+        var source = await CreateAccountAsync("Origem", "700.00", Today.AddDays(-2));
+        var destination = await CreateAccountAsync("Destino", "100.00", Today.AddDays(-10));
+        await CreateTransferAsync(source, destination, "300.00", Today.AddDays(-5));
+        var sourceBalance = await BalancesAsync(source, Today, Today.AddDays(1));
+        var destinationBalance = await BalancesAsync(destination, Today, Today.AddDays(1));
+        var consolidated = await BalancesAsync(null, Today, Today.AddDays(1));
+        Assert.Equal("700.00", sourceBalance.Days[^1].ClosingBalance);
+        Assert.Equal("400.00", destinationBalance.Days[^1].ClosingBalance);
+        Assert.Equal("1100.00", consolidated.OpeningBalance);
+        Assert.Equal("1100.00", consolidated.Days[^1].ClosingBalance);
+        Assert.All(consolidated.Days, day => Assert.Equal(("0.00", "0.00", "0.00", "0.00"), (day.Income, day.Expense, day.TransferIn, day.TransferOut)));
+        using var sourceProjection = await ProjectionAsync(source, Today.AddDays(1));
+        using var destinationProjection = await ProjectionAsync(destination, Today.AddDays(1));
+        Assert.Equal("700.00", sourceProjection.RootElement.GetProperty("projectedBalance").GetString());
+        Assert.Equal("400.00", destinationProjection.RootElement.GetProperty("projectedBalance").GetString());
+    }
+
+    [Fact]
     public async Task MissingOrFutureOpeningBalance_ReturnsNullMoneyWithExistingReasons()
     {
         await ArrangeAsync();

@@ -74,30 +74,24 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             .Select(row => new FinancialCalendarDailyTotals(row.Date, row.Income, row.Expense, 0m, 0m))
             .ToList();
 
-        IReadOnlyList<FinancialCalendarDailyTotals> transferTotals = [];
-        if (accountId is { } selectedAccountId
-            && accounts.Single().OpeningBalanceDate is { } openingDate)
-        {
-            var transferRows = await db.FinancialTransfers
-                .AsNoTracking()
-                .Where(item => item.FamilyId == familyId
-                    && !item.IsCancelled
-                    && item.TransferDate >= openingDate
-                    && item.TransferDate <= lastRealizedDate
-                    && (item.SourceAccountId == selectedAccountId
-                        || item.DestinationAccountId == selectedAccountId))
-                .GroupBy(item => item.TransferDate)
-                .Select(daily => new
-                {
-                    Date = daily.Key,
-                    In = daily.Sum(item => item.DestinationAccountId == selectedAccountId ? item.Amount : 0m),
-                    Out = daily.Sum(item => item.SourceAccountId == selectedAccountId ? item.Amount : 0m),
-                })
-                .ToListAsync(cancellationToken);
-            transferTotals = transferRows
-                .Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, 0m, row.In, row.Out))
-                .ToList();
-        }
+        // Respect each account's own reference date, as T06.3 does. With different opening dates,
+        // one side of an older transfer can already be included in its account's opening balance.
+        var transfers = db.FinancialTransfers.AsNoTracking().Where(item => item.FamilyId == familyId
+            && !item.IsCancelled && item.TransferDate <= lastRealizedDate);
+        var incoming = from item in transfers
+                       join account in selectedAccounts on new { item.FamilyId, Id = item.DestinationAccountId } equals new { account.FamilyId, account.Id }
+                       where account.OpeningBalanceDate != null && item.TransferDate >= account.OpeningBalanceDate.Value
+                       select new { Date = item.TransferDate, In = item.Amount, Out = 0m };
+        var outgoing = from item in transfers
+                       join account in selectedAccounts on new { item.FamilyId, Id = item.SourceAccountId } equals new { account.FamilyId, account.Id }
+                       where account.OpeningBalanceDate != null && item.TransferDate >= account.OpeningBalanceDate.Value
+                       select new { Date = item.TransferDate, In = 0m, Out = item.Amount };
+        var transferRows = await incoming.Concat(outgoing).GroupBy(row => row.Date)
+            .Select(daily => new { Date = daily.Key, In = daily.Sum(row => row.In), Out = daily.Sum(row => row.Out) })
+            .ToListAsync(cancellationToken);
+        var transferTotals = transferRows.Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, 0m,
+            accountId is null ? Math.Max(0m, row.In - row.Out) : row.In,
+            accountId is null ? Math.Max(0m, row.Out - row.In) : row.Out)).ToList();
 
         var realized = transactionTotals
             .Concat(transferTotals)

@@ -37,7 +37,13 @@ function errorMessage(error: unknown): string {
 }
 
 /** Visão mensal da Agenda Financeira, com detalhes e operações financeiras existentes. */
-export function FinancialCalendarPage({ familyId, onChanged, initialMonth, onNavigateToBudgets }: { familyId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void }) {
+type FinancialCalendarPageProps = { familyId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void }
+
+export function FinancialCalendarPage(props: FinancialCalendarPageProps) {
+  return <FinancialCalendarPageContent key={props.familyId} {...props} />
+}
+
+function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNavigateToBudgets }: FinancialCalendarPageProps) {
   const today = todayInSaoPaulo()
   const [month, setMonth] = useState(() => initialMonth ? startOfMonth(initialMonth) : startOfMonth(today))
   const [selectedDate, setSelectedDate] = useState(today)
@@ -62,7 +68,7 @@ export function FinancialCalendarPage({ familyId, onChanged, initialMonth, onNav
   useEffect(() => {
     const controller = new AbortController()
     listAccounts(familyId, true, controller.signal)
-      .then((items) => setAccounts({ kind: 'loaded', data: items }))
+      .then((items) => { if (!controller.signal.aborted) setAccounts({ kind: 'loaded', data: items }) })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setAccounts({ kind: 'error', message: errorMessage(error) })
       })
@@ -164,6 +170,7 @@ export function FinancialCalendarPage({ familyId, onChanged, initialMonth, onNav
           through={through}
           accountId={accountId}
           selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
           refreshKey={refreshKey}
         />
       ) : (
@@ -302,6 +309,7 @@ export function FinancialCalendarBalanceEvolution({
   through,
   accountId,
   selectedDate,
+  onSelectDate,
   refreshKey = 0,
 }: {
   familyId: string
@@ -309,6 +317,7 @@ export function FinancialCalendarBalanceEvolution({
   through: string
   accountId: string
   selectedDate: string
+  onSelectDate?: (date: string) => void
   refreshKey?: number
 }) {
   const requestVersion = useRef(0)
@@ -346,13 +355,13 @@ export function FinancialCalendarBalanceEvolution({
           <span><i className="balance-line-sample" /> Histórico realizado</span>
           <span><i className="balance-line-sample balance-line-sample--projected" /> Projeção</span>
           <span><i className="balance-point-sample balance-point-sample--negative" /> Saldo negativo</span>
-          <span><i className="balance-point-sample balance-point-sample--overdue">!</i> Inclui vencidas</span>
+          <span><i className="balance-point-sample balance-point-sample--overdue">!</i> Pendências vencidas</span>
         </div>
       </div>
 
       {balance.kind === 'loading' && <p className="status status--pending">Calculando evolução do saldo…</p>}
       {balance.kind === 'error' && <p className="status status--down" role="alert">{balance.message}</p>}
-      {balance.kind === 'loaded' && <FinancialCalendarBalanceContent balance={balance.data} selectedDate={selectedDate} />}
+      {balance.kind === 'loaded' && <FinancialCalendarBalanceContent balance={balance.data} selectedDate={selectedDate} onSelectDate={onSelectDate} />}
     </section>
   )
 }
@@ -360,9 +369,11 @@ export function FinancialCalendarBalanceEvolution({
 function FinancialCalendarBalanceContent({
   balance,
   selectedDate,
+  onSelectDate,
 }: {
   balance: FinancialCalendarBalanceResponse
   selectedDate: string
+  onSelectDate?: (date: string) => void
 }) {
   if (balance.unavailableReason) {
     return (
@@ -402,7 +413,7 @@ function FinancialCalendarBalanceContent({
           className="balance-chart"
           viewBox="0 0 1000 240"
           preserveAspectRatio="none"
-          role="img"
+          role={onSelectDate ? 'group' : 'img'}
           aria-label="Gráfico da evolução diária do saldo; os valores completos estão na tabela seguinte"
         >
           {realized.length > 1 && <polyline className="balance-chart__line" points={pointText(realized)} />}
@@ -413,6 +424,17 @@ function FinancialCalendarBalanceContent({
               cx={x}
               cy={y}
               r={day.date === selectedDate ? 10 : 6}
+              role={onSelectDate ? 'button' : undefined}
+              tabIndex={onSelectDate ? 0 : undefined}
+              aria-label={onSelectDate ? `Selecionar ${formatDate(day.date)}: ${day.kind === 'Realized' ? 'Realizado' : 'Projetado'}, ${formatBrlDecimal(day.closingBalance!)}${day.hasOverduePending ? ', com pendências vencidas' : ''}` : undefined}
+              aria-pressed={onSelectDate ? day.date === selectedDate : undefined}
+              onClick={() => onSelectDate?.(day.date)}
+              onKeyDown={(event) => {
+                if (onSelectDate && (event.key === 'Enter' || event.key === ' ')) {
+                  event.preventDefault()
+                  onSelectDate(day.date)
+                }
+              }}
               className={`balance-chart__point balance-chart__point--${day.kind.toLowerCase()}${day.isNegative ? ' balance-chart__point--negative' : ''}${day.hasOverduePending ? ' balance-chart__point--overdue' : ''}${day.date === selectedDate ? ' balance-chart__point--selected' : ''}`}
             >
               <title>{`${formatDate(day.date)}: ${formatBrlDecimal(day.closingBalance!)}`}</title>
@@ -452,7 +474,9 @@ function BalanceDayRow({ day, selected }: { day: FinancialCalendarBalanceDay; se
   return (
     <tr className={`${selected ? 'balance-table__selected ' : ''}${day.isNegative ? 'balance-table__negative' : ''}`}>
       <th scope="row">{formatDate(day.date)}{selected ? ' (selecionado)' : ''}</th>
-      <td>{day.kind === 'Realized' ? 'Realizado' : 'Projetado'}{day.hasOverduePending ? ' · inclui pendências vencidas' : ''}</td>
+      <td>{day.kind === 'Realized' ? 'Realizado' : 'Projetado'}{day.hasOverduePending
+        ? day.kind === 'Realized' ? ' · pendências vencidas não incluídas no saldo' : ' · inclui pendências vencidas'
+        : ''}</td>
       <td>{day.income === null ? '—' : formatBrlDecimal(day.income)}</td>
       <td>{day.expense === null ? '—' : formatBrlDecimal(day.expense)}</td>
       <td>{transferText}</td>

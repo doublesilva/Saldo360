@@ -1560,6 +1560,8 @@ button.calendar-day--selected {
 .balance-chart__point--negative { fill: var(--fail); stroke: var(--fail); }
 .balance-chart__point--overdue { stroke-dasharray: 3 2; }
 .balance-chart__point--selected { stroke-width: 7; }
+.balance-chart__point[role="button"] { cursor: pointer; }
+.balance-chart__point:focus-visible { stroke: var(--accent); stroke-width: 8; outline: none; }
 
 .balance-table-wrap {
   margin-top: 0.8rem;

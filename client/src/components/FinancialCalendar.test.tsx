@@ -450,11 +450,69 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
 })
 
 describe('FinancialCalendarPage — evolução diária do saldo', () => {
+  it('seleciona dia pelo gráfico com clique e teclado, sincroniza calendário e não escreve nem recalcula dinheiro', async () => {
+    const calls = mockApi()
+    const changed = vi.fn()
+    render(<FinancialCalendarPage familyId="family-1" onChanged={changed} />)
+    const future = await screen.findByRole('button', { name: /^Selecionar 20\/12\/2026:/ })
+    const reads = balanceCalls(calls).length
+    fireEvent.click(future)
+    expect(future.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('gridcell', { name: /20\/12\/2026/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('heading', { name: 'Compromissos de 20/12/2026' })).toBeTruthy()
+    const past = screen.getByRole('button', { name: /^Selecionar 14\/12\/2026:/ })
+    fireEvent.keyDown(past, { key: ' ' })
+    expect(past.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.keyDown(future, { key: 'Enter' })
+    expect(future.getAttribute('aria-pressed')).toBe('true')
+    expect(balanceCalls(calls)).toHaveLength(reads)
+    expect(calls.every(call => !call.init?.method || call.init.method === 'GET')).toBe(true)
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('explica que pendência histórica não compõe o saldo realizado', async () => {
+    mockApi(undefined, () => Response.json(balanceResponse({ days: balanceResponse().days.map((day, index) => index === 0 ? { ...day, hasOverduePending: true } : day) })))
+    render(<FinancialCalendarPage familyId="family-1" />)
+    expect(await screen.findByText('Realizado · pendências vencidas não incluídas no saldo')).toBeTruthy()
+    const row = screen.getByText('14/12/2026').closest('tr')!
+    expect(within(row).getByText(/R\$\s1.000,00/)).toBeTruthy()
+  })
+
+  it('consulta o mês e conta selecionados e restaura a opção consolidada', async () => {
+    const calls = mockApi()
+    render(<FinancialCalendarPage familyId="family-1" />)
+    await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
+    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
+    await waitFor(() => expect(balanceCalls(calls).at(-1)?.url).toContain(`accountId=${itau.id}`))
+    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }))
+    await waitFor(() => expect(balanceCalls(calls).at(-1)?.url).toContain('from=2027-01-01&through=2027-01-31'))
+    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: '' } })
+    await waitFor(() => expect(balanceCalls(calls).at(-1)?.url).not.toContain('accountId='))
+    expect(await screen.findByText('Consolidado familiar')).toBeTruthy()
+  })
+
+  it('descarta saldo antigo e limpa conta ao trocar a família diretamente', async () => {
+    let resolveOld!: (response: Response) => void
+    const old = new Promise<Response>(resolve => { resolveOld = resolve })
+    const calls = mockApi(undefined, url => url.includes('family-1') && url.includes('accountId=') ? old : Response.json(balanceResponse({ openingBalance: '222.22' })))
+    const rendered = render(<FinancialCalendarPage familyId="family-1" />)
+    await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
+    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
+    rendered.rerender(<FinancialCalendarPage familyId="family-2" />)
+    await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
+    expect((screen.getByLabelText('Conta') as HTMLSelectElement).value).toBe('')
+    expect(balanceCalls(calls).at(-1)?.url).toContain('family-2')
+    expect(balanceCalls(calls).at(-1)?.url).not.toContain('accountId=')
+    resolveOld(Response.json(balanceResponse({ openingBalance: '111.11' })))
+    await Promise.resolve()
+    expect(screen.queryByText(/R\$\s111,11/)).toBeNull()
+  })
+
   it('exibe gráfico, indicadores e tabela acessível distinguindo realizado, projetado, negativo e vencidas', async () => {
     mockApi()
     const rendered = render(<FinancialCalendarPage familyId="family-1" />)
 
-    expect(await screen.findByRole('img', { name: /Gráfico da evolução diária/ })).toBeTruthy()
+    expect(await screen.findByRole('group', { name: /Gráfico da evolução diária/ })).toBeTruthy()
     expect(screen.getByText('Histórico realizado')).toBeTruthy()
     expect(screen.getAllByText(/Projetado/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/inclui pendências vencidas/).length).toBeGreaterThan(0)
@@ -467,7 +525,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
   it('destaca na evolução o dia selecionado no calendário', async () => {
     mockApi()
     const rendered = render(<FinancialCalendarPage familyId="family-1" />)
-    await screen.findByRole('img', { name: /Gráfico da evolução diária/ })
+    await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
 
     fireEvent.click(screen.getByRole('gridcell', { name: /20\/12\/2026/ }))
 
@@ -512,7 +570,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
 
     expect(await screen.findByText(/existe conta sem saldo inicial configurado/)).toBeTruthy()
     expect(screen.getByText(/Nenhum total parcial/)).toBeTruthy()
-    expect(screen.queryByRole('img', { name: /Gráfico da evolução diária/ })).toBeNull()
+    expect(screen.queryByRole('group', { name: /Gráfico da evolução diária/ })).toBeNull()
   })
 
   it('descarta resposta obsoleta ao trocar rapidamente a conta', async () => {
@@ -524,7 +582,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
         ? balanceResponse({ openingBalance: '222.00' })
         : balanceResponse()))
     render(<FinancialCalendarPage familyId="family-1" />)
-    await screen.findByRole('img', { name: /Gráfico da evolução diária/ })
+    await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
 
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: nubank.id } })

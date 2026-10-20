@@ -66,10 +66,7 @@ public sealed class FinancialCalendarBalanceService(
                     : BalanceUnavailableReason.BeforeOpeningBalanceDate);
         }
 
-        var allPending = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).Concat(snapshot.DebtObligations ?? [])
-            .GroupBy(row => row.Date)
-            .Select(group => new FinancialCalendarDailyTotals(group.Key, group.Sum(row => row.Income), group.Sum(row => row.Expense), group.Sum(row => row.TransferIn), group.Sum(row => row.TransferOut)))
-            .ToList();
+        var allPending = AggregatePending(snapshot);
         var realizedByDate = snapshot.Realized.ToDictionary(row => row.Date);
         var pendingByDate = allPending.ToDictionary(row => row.Date);
         var openingTotal = snapshot.Accounts.Sum(account => account.OpeningBalance ?? 0m);
@@ -184,7 +181,7 @@ public sealed class FinancialCalendarBalanceService(
         FinancialCalendarBalanceSnapshot snapshot,
         BalanceUnavailableReason reason)
     {
-        var allPending = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).Concat(snapshot.DebtObligations ?? []).ToList();
+        var allPending = AggregatePending(snapshot);
         var pendingByDate = allPending.ToDictionary(row => row.Date);
         var hasOverdue = allPending.Any(row => row.Date < today && (row.Income != 0m || row.Expense != 0m));
         var days = new List<FinancialCalendarBalanceDay>();
@@ -224,6 +221,13 @@ public sealed class FinancialCalendarBalanceService(
             !snapshot.HasUnallocatedDebtObligations,
             (snapshot.DebtObligations ?? []).Sum(row => row.Expense));
     }
+
+    private static List<FinancialCalendarDailyTotals> AggregatePending(FinancialCalendarBalanceSnapshot snapshot) =>
+        (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).Concat(snapshot.DebtObligations ?? [])
+            .GroupBy(row => row.Date)
+            .Select(group => new FinancialCalendarDailyTotals(group.Key, group.Sum(row => row.Income),
+                group.Sum(row => row.Expense), group.Sum(row => row.TransferIn), group.Sum(row => row.TransferOut)))
+            .ToList();
 
     private static FinancialCalendarBalanceDay AvailableDay(
         DateOnly date,

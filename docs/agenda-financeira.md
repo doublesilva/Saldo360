@@ -119,6 +119,11 @@ Sem `accountId`, a resposta consolida todas as contas da família. Transferênci
 uma conta selecionada, entradas e saídas de transferências aparecem separadas e participam do fechamento da conta;
 elas nunca são classificadas como receita ou despesa operacional.
 
+Cada ponta respeita sua própria data de saldo inicial, como na T06.3. Com referências diferentes,
+uma transferência antiga pode já estar incorporada no saldo inicial de uma conta e ainda precisar
+ser acumulada na outra. Esse ajuste reconcilia o saldo de abertura; transferências do período em que
+ambas as contas já possuem referência continuam com efeito consolidado zero.
+
 `openingBalance` é o saldo no início de `from`, antes dos acontecimentos desse dia. Cada item de `days` contém `date`,
 `kind` (`Realized` ou `Projected`), `income`, `expense`, `transferIn`, `transferOut`, `closingBalance`,
 `hasOverduePending`, `isNegative`, `chartPosition` e `unavailableReason`. Valores monetários são strings decimais
@@ -136,6 +141,15 @@ A virada de regra ocorre no dia civil atual de `America/Sao_Paulo`:
 O bloco `risk` é calculado pela API e traz `minimumProjectedBalance`, `firstNegativeProjectedDate` e
 `endingProjectedBalance`. O React apenas formata esses valores. O gráfico usa traço contínuo no histórico e tracejado
 na projeção, destaca pontos negativos e o dia selecionado, e é acompanhado por uma tabela com todos os valores.
+
+Os pontos do gráfico permitem selecionar o dia por clique, Enter ou Espaço, com foco visível e estado
+acessível de seleção. Calendário, gráfico, tabela e lista de compromissos compartilham o mesmo dia.
+Selecionar não realiza nem edita compromissos e não dispara nova consulta de saldos. A troca de família
+reinicia o estado local e descarta respostas pendentes do contexto anterior.
+
+No histórico, o aviso explicita que pendências vencidas **não estão incluídas no saldo realizado**.
+Na projeção, o aviso indica que elas já participaram da base projetada. Sem saldo calculável, fontes
+de pendências na mesma data são agregadas sem produzir erro ou liberar um total parcial.
 
 Se uma conta necessária não tiver saldo inicial, ou se a base realizada estiver antes da referência, os campos
 monetários afetados vêm `null` com `OpeningBalanceNotConfigured` ou `BeforeOpeningBalanceDate`. No consolidado, nenhum
