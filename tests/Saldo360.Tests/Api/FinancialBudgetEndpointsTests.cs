@@ -9,23 +9,23 @@ namespace Saldo360.Tests.Api;
 public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
-    private string _member = null!;
+    private string _ownerSecondSession = null!;
     private string _outsider = null!;
-    private FamilyDto _family = null!;
-    private FamilyDto _otherFamily = null!;
+    private WorkspaceDto _family = null!;
+    private WorkspaceDto _otherFamily = null!;
     private Guid _expense;
     private Guid _income;
     private Guid _otherExpense;
-    private string BudgetsUrl => $"/api/families/{_family.Id}/budgets";
+    private string BudgetsUrl => $"/api/financial-workspaces/{_family.Id}/budgets";
 
     private async Task ArrangeAsync()
     {
         _owner = await SignInAsync("budget-owner");
-        _member = await SignInAsync("budget-member");
+        _ownerSecondSession = _owner;
         _outsider = await SignInAsync("budget-outsider");
-        var created = await CreateFamilyAsync(_owner);
-        _family = await JoinByInvitationAsync(_owner, created.Id, _member);
-        _otherFamily = await CreateFamilyAsync(_outsider, "Outra família");
+        var created = await CreateWorkspaceAsync(_owner);
+        _family = created;
+        _otherFamily = await CreateWorkspaceAsync(_outsider, "Outra família");
         _expense = await CreateCategoryAsync(_family.Id, _owner, "Moradia", "Expense");
         _income = await CreateCategoryAsync(_family.Id, _owner, "Salário", "Income");
         _otherExpense = await CreateCategoryAsync(_otherFamily.Id, _outsider, "Alheia", "Expense");
@@ -43,12 +43,12 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         Assert.Equal(2, (await ListAsync()).Count);
         Assert.Equal(created.Id, (await ListAsync("2026-10")).Single().Id);
 
-        var updatedResponse = await SendWithCsrfAsync(HttpMethod.Put, $"{BudgetsUrl}/{created.Id}", _member,
+        var updatedResponse = await SendWithCsrfAsync(HttpMethod.Put, $"{BudgetsUrl}/{created.Id}", _ownerSecondSession,
             new { description = "Casa e família" });
         Assert.Equal(HttpStatusCode.OK, updatedResponse.StatusCode);
         Assert.Equal("Casa e família", (await ReadAsync<BudgetDto>(updatedResponse)).Description);
         Assert.Equal(november.Id, (await ReadAsync<BudgetDto>(await SendAsync(HttpMethod.Get,
-            $"{BudgetsUrl}/{november.Id}", _member))).Id);
+            $"{BudgetsUrl}/{november.Id}", _ownerSecondSession))).Id);
     }
 
     [Fact]
@@ -82,16 +82,16 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         Assert.Equal("9999999999999.99", created.TotalPlannedAmount);
 
         var update = await SendWithCsrfAsync(HttpMethod.Put,
-            $"{BudgetsUrl}/{budget.Id}/targets/{target.Id}", _member,
+            $"{BudgetsUrl}/{budget.Id}/targets/{target.Id}", _ownerSecondSession,
             new { name = "Habitação", plannedAmount = "1234.56" });
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
         Assert.Equal("1234.56", (await ReadAsync<BudgetDto>(update)).TotalPlannedAmount);
 
         var deactivate = await SendWithCsrfAsync(HttpMethod.Put,
-            $"/api/families/{_family.Id}/categories/{_expense}", _owner,
+            $"/api/financial-workspaces/{_family.Id}/categories/{_expense}", _owner,
             new { name = "Moradia", isActive = false });
         Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
-        var historical = await ReadAsync<BudgetDto>(await SendAsync(HttpMethod.Get, $"{BudgetsUrl}/{budget.Id}", _member));
+        var historical = await ReadAsync<BudgetDto>(await SendAsync(HttpMethod.Get, $"{BudgetsUrl}/{budget.Id}", _ownerSecondSession));
         Assert.False(historical.Targets.Single().Category.IsActive);
 
         var archive = await SendWithCsrfAsync(HttpMethod.Delete,
@@ -142,13 +142,13 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         var budget = await CreateBudgetAsync("2026-10", null);
         await AddTargetAsync(budget.Id, _expense, "Moradia", "10.00");
         Assert.Equal(HttpStatusCode.Conflict,
-            (await SendWithCsrfAsync(HttpMethod.Post, $"{BudgetsUrl}/{budget.Id}/targets", _member,
+            (await SendWithCsrfAsync(HttpMethod.Post, $"{BudgetsUrl}/{budget.Id}/targets", _ownerSecondSession,
                 TargetBody(_expense, "Mesmo agrupamento", "20.00"))).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, BudgetsUrl, _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
-            (await SendAsync(HttpMethod.Get, $"/api/families/{_otherFamily.Id}/budgets/{budget.Id}", _outsider)).StatusCode);
+            (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_otherFamily.Id}/budgets/{budget.Id}", _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,
-            (await Client.GetAsync($"/api/families/{_family.Id}/budgets")).StatusCode);
+            (await Client.GetAsync($"/api/financial-workspaces/{_family.Id}/budgets")).StatusCode);
     }
 
     [Fact]
@@ -158,18 +158,18 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         var today = BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var account = await CreateAccountAsync("1000.00", today.AddDays(-5));
         await CreatePlannedAsync(account, "100.00", today.AddDays(1));
-        var balanceUrl = $"/api/families/{_family.Id}/accounts/{account}/balance?asOf={today:yyyy-MM-dd}";
-        var projectionUrl = $"/api/families/{_family.Id}/accounts/{account}/projection?through={today.AddDays(2):yyyy-MM-dd}";
-        var beforeBalance = await (await SendAsync(HttpMethod.Get, balanceUrl, _member)).Content.ReadAsStringAsync();
-        var beforeProjection = await (await SendAsync(HttpMethod.Get, projectionUrl, _member)).Content.ReadAsStringAsync();
+        var balanceUrl = $"/api/financial-workspaces/{_family.Id}/accounts/{account}/balance?asOf={today:yyyy-MM-dd}";
+        var projectionUrl = $"/api/financial-workspaces/{_family.Id}/accounts/{account}/projection?through={today.AddDays(2):yyyy-MM-dd}";
+        var beforeBalance = await (await SendAsync(HttpMethod.Get, balanceUrl, _ownerSecondSession)).Content.ReadAsStringAsync();
+        var beforeProjection = await (await SendAsync(HttpMethod.Get, projectionUrl, _ownerSecondSession)).Content.ReadAsStringAsync();
 
         var budget = await CreateBudgetAsync($"{today:yyyy-MM}", null);
         var withTarget = await AddTargetAsync(budget.Id, _expense, "Moradia", "5000.00");
         await SendWithCsrfAsync(HttpMethod.Put, $"{BudgetsUrl}/{budget.Id}/targets/{withTarget.Targets.Single().Id}", _owner,
             new { name = "Moradia", plannedAmount = "7000.00" });
 
-        Assert.Equal(beforeBalance, await (await SendAsync(HttpMethod.Get, balanceUrl, _member)).Content.ReadAsStringAsync());
-        Assert.Equal(beforeProjection, await (await SendAsync(HttpMethod.Get, projectionUrl, _member)).Content.ReadAsStringAsync());
+        Assert.Equal(beforeBalance, await (await SendAsync(HttpMethod.Get, balanceUrl, _ownerSecondSession)).Content.ReadAsStringAsync());
+        Assert.Equal(beforeProjection, await (await SendAsync(HttpMethod.Get, projectionUrl, _ownerSecondSession)).Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
                 new { competence = "2026-10", description = "Sem CSRF" })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,
             (await SendWithCsrfAsync(HttpMethod.Post, BudgetsUrl, _owner,
-                new { competence = "2026-10", description = "Inválido", familyId = _otherFamily.Id })).StatusCode);
+                new { competence = "2026-10", description = "Inválido", workspaceId = _otherFamily.Id })).StatusCode);
     }
 
     [Fact]
@@ -255,14 +255,14 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         Assert.Equal(("1000.00", "300.00", "0.00", "300.00", "700.00", "0.00", "30.00"),
             Values((await GetExecutionAsync(budget.Id)).Targets.Single()));
         await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/transactions/{realizedAtPlannedValue}/cancel", _owner, null);
+            $"/api/financial-workspaces/{_family.Id}/transactions/{realizedAtPlannedValue}/cancel", _owner, null);
 
         var realized = await RealizeAsync(planned, "320.00", new DateOnly(2026, 10, 11));
         Assert.Equal(("1000.00", "320.00", "0.00", "320.00", "680.00", "0.00", "32.00"),
             Values((await GetExecutionAsync(budget.Id)).Targets.Single()));
 
         var cancel = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/transactions/{realized}/cancel", _owner, null);
+            $"/api/financial-workspaces/{_family.Id}/transactions/{realized}/cancel", _owner, null);
         Assert.Equal(HttpStatusCode.OK, cancel.StatusCode);
         Assert.Equal(("1000.00", "0.00", "300.00", "300.00", "700.00", "0.00", "30.00"),
             Values((await GetExecutionAsync(budget.Id)).Targets.Single()));
@@ -295,8 +295,8 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         var targetId = withTarget.Targets.Single().Id;
         var transaction = await CreateTransactionAsync(account, _expense, "20.00", new DateOnly(2026, 10, 2));
         var planned = await CreatePlannedAsync(account, _expense, "30.00", new DateOnly(2026, 10, 3));
-        await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions/{transaction}/cancel", _owner, null);
-        await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/planned-transactions/{planned}/cancel", _owner, null);
+        await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions/{transaction}/cancel", _owner, null);
+        await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/planned-transactions/{planned}/cancel", _owner, null);
         Assert.Equal(("100.00", "0.00", "0.00", "0.00", "100.00", "0.00", "0.00"),
             Values((await GetExecutionAsync(budget.Id)).Targets.Single()));
 
@@ -304,7 +304,7 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         Assert.Empty((await GetExecutionAsync(budget.Id)).Targets);
         await SendWithCsrfAsync(HttpMethod.Delete, $"{BudgetsUrl}/{budget.Id}", _owner, null);
         Assert.Equal(HttpStatusCode.NotFound,
-            (await SendAsync(HttpMethod.Get, $"{BudgetsUrl}/{budget.Id}/execution", _member)).StatusCode);
+            (await SendAsync(HttpMethod.Get, $"{BudgetsUrl}/{budget.Id}/execution", _ownerSecondSession)).StatusCode);
     }
 
     [Fact]
@@ -313,14 +313,14 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         await ArrangeAsync();
         var budget = await CreateBudgetAsync("2026-10", null);
         await AddTargetAsync(budget.Id, _expense, "Moradia", "100.00");
-        await SendWithCsrfAsync(HttpMethod.Put, $"/api/families/{_family.Id}/categories/{_expense}", _owner,
+        await SendWithCsrfAsync(HttpMethod.Put, $"/api/financial-workspaces/{_family.Id}/categories/{_expense}", _owner,
             new { name = "Moradia", isActive = false });
 
         Assert.Single((await GetExecutionAsync(budget.Id)).Targets);
         Assert.Equal(HttpStatusCode.NotFound,
             (await SendAsync(HttpMethod.Get, $"{BudgetsUrl}/{budget.Id}/execution", _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
-            (await SendAsync(HttpMethod.Get, $"/api/families/{_otherFamily.Id}/budgets/{budget.Id}/execution", _outsider)).StatusCode);
+            (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_otherFamily.Id}/budgets/{budget.Id}/execution", _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await Client.GetAsync($"{BudgetsUrl}/{budget.Id}/execution")).StatusCode);
     }
@@ -348,20 +348,20 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         var query = new List<string>();
         if (competence is not null) query.Add($"competence={competence}");
         if (includeArchived) query.Add("includeArchived=true");
-        var response = await SendAsync(HttpMethod.Get, BudgetsUrl + (query.Count == 0 ? "" : $"?{string.Join('&', query)}"), _member);
+        var response = await SendAsync(HttpMethod.Get, BudgetsUrl + (query.Count == 0 ? "" : $"?{string.Join('&', query)}"), _ownerSecondSession);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await ReadAsync<List<BudgetDto>>(response);
     }
 
-    private async Task<Guid> CreateCategoryAsync(Guid familyId, string session, string name, string type)
+    private async Task<Guid> CreateCategoryAsync(Guid workspaceId, string session, string name, string type)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/categories", session, new { name, type });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/categories", session, new { name, type });
         return (await ReadAsync<IdDto>(response)).Id;
     }
 
     private async Task<Guid> CreateAccountAsync(string balance, DateOnly date, string name = "Conta")
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/accounts", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/accounts", _owner,
             new { name, type = "Checking", financialScope = "PF", openingBalance = balance, openingBalanceDate = date });
         return (await ReadAsync<IdDto>(response)).Id;
     }
@@ -371,7 +371,7 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
 
     private async Task<Guid> CreatePlannedAsync(Guid accountId, Guid categoryId, string amount, DateOnly date)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/planned-transactions", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/planned-transactions", _owner,
             new { accountId, categoryId, type = "Expense", description = "Prevista", amount, dueDate = date });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -379,7 +379,7 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
 
     private async Task<Guid> CreateTransactionAsync(Guid accountId, Guid categoryId, string amount, DateOnly date)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions", _owner,
             new { accountId, categoryId, type = "Expense", description = "Efetiva", amount, transactionDate = date });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -388,7 +388,7 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
     private async Task<Guid> RealizeAsync(Guid plannedId, string amount, DateOnly date)
     {
         var response = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/planned-transactions/{plannedId}/realize", _owner,
+            $"/api/financial-workspaces/{_family.Id}/planned-transactions/{plannedId}/realize", _owner,
             new { amount, transactionDate = date });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -396,14 +396,14 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
 
     private async Task CreateTransferAsync(Guid source, Guid destination, string amount, DateOnly date)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transfers", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transfers", _owner,
             new { sourceAccountId = source, destinationAccountId = destination, amount, transferDate = date, description = "Interna" });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     private async Task<ExecutionDto> GetExecutionAsync(Guid budgetId)
     {
-        var response = await SendAsync(HttpMethod.Get, $"{BudgetsUrl}/{budgetId}/execution", _member);
+        var response = await SendAsync(HttpMethod.Get, $"{BudgetsUrl}/{budgetId}/execution", _ownerSecondSession);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await ReadAsync<ExecutionDto>(response);
     }

@@ -31,11 +31,11 @@ export type TransactionReferences = { accounts: FinancialAccount[]; categories: 
  * `onChanged` avisa quem exibe saldos que um lançamento foi criado, editado ou cancelado.
  */
 export function Transactions({
-  familyId,
+  workspaceId,
   onChanged,
   refreshKey = 0,
 }: {
-  familyId: string
+  workspaceId: string
   onChanged?: () => void
   /** Muda quando outra seção altera lançamentos (ex.: realizar previsão): a lista é recarregada. */
   refreshKey?: number
@@ -53,25 +53,25 @@ export function Transactions({
   useEffect(() => {
     const controller = new AbortController()
     Promise.all([
-      listAccounts(familyId, true, controller.signal),
-      listCategories(familyId, true, controller.signal),
+      listAccounts(workspaceId, true, controller.signal),
+      listCategories(workspaceId, true, controller.signal),
     ])
       .then(([accounts, categories]) => setRefs({ kind: 'loaded', data: { accounts, categories } }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setRefs({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, reloadKey, editing])
+  }, [workspaceId, reloadKey, editing])
 
   useEffect(() => {
     const controller = new AbortController()
-    listTransactions(familyId, filters, pageNumber, controller.signal)
+    listTransactions(workspaceId, filters, pageNumber, controller.signal)
       .then((data) => setPage({ kind: 'loaded', data }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setPage({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, filters, pageNumber, reloadKey, refreshKey])
+  }, [workspaceId, filters, pageNumber, reloadKey, refreshKey])
 
   const reload = () => setReloadKey((n) => n + 1)
 
@@ -92,7 +92,7 @@ export function Transactions({
     setCancellingId(transaction.id)
     setActionError(null)
     try {
-      const result = await cancelTransaction(familyId, transaction.id)
+      const result = await cancelTransaction(workspaceId, transaction.id)
       if (!result.ok) setActionError(Object.values(result.errors).flat()[0] ?? 'Não foi possível cancelar.')
       reload()
       onChanged?.()
@@ -109,7 +109,7 @@ export function Transactions({
     }
     return (
       <TransactionForm
-        familyId={familyId}
+        workspaceId={workspaceId}
         references={refs.data}
         transaction={editing === 'new' ? null : editing}
         onSaved={() => {
@@ -292,13 +292,13 @@ type FormState = {
 }
 
 export function TransactionForm({
-  familyId,
+  workspaceId,
   references,
   transaction,
   onSaved,
   onCancel,
 }: {
-  familyId: string
+  workspaceId: string
   references: TransactionReferences
   transaction: FinancialTransaction | null
   onSaved: () => void
@@ -376,8 +376,8 @@ export function TransactionForm({
         transactionDate: form.transactionDate,
       }
       const result = transaction
-        ? await updateTransaction(familyId, transaction.id, input)
-        : await createTransaction(familyId, input)
+        ? await updateTransaction(workspaceId, transaction.id, input)
+        : await createTransaction(workspaceId, input)
       if (result.ok) onSaved()
       else setErrors(result.errors)
     } catch (error: unknown) {

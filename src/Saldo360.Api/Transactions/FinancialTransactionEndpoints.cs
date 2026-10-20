@@ -11,7 +11,7 @@ public static class FinancialTransactionEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialTransactionEndpoints(this IEndpointRouteBuilder app)
     {
-        var transactions = app.MapGroup("/api/families/{familyId:guid}/transactions").RequireAuthorization();
+        var transactions = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/transactions").RequireAuthorization();
         transactions.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         transactions.MapGet("/", List);
         transactions.MapGet("/{transactionId:guid}", Get);
@@ -21,7 +21,7 @@ public static class FinancialTransactionEndpoints
     }
 
     private static async Task<IResult> Create(
-        Guid familyId, TransactionRequest? request, CurrentUser currentUser, FinancialTransactionService transactions,
+        Guid workspaceId, TransactionRequest? request, CurrentUser currentUser, FinancialTransactionService transactions,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -29,8 +29,8 @@ public static class FinancialTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await transactions.CreateAsync(familyId, userId, ToInput(request), cancellationToken);
-        return ToResponse(result, t => Results.Created($"/api/families/{familyId}/transactions/{t.Id}", TransactionResponse.From(t)));
+        var result = await transactions.CreateAsync(workspaceId, userId, ToInput(request), cancellationToken);
+        return ToResponse(result, t => Results.Created($"/api/financial-workspaces/{workspaceId}/transactions/{t.Id}", TransactionResponse.From(t)));
     }
 
     /// <summary>
@@ -38,7 +38,7 @@ public static class FinancialTransactionEndpoints
     /// accountId, categoryId, type (Income/Expense). Cancelados só com includeCancelled=true. pageSize até 100.
     /// </summary>
     private static async Task<IResult> List(
-        Guid familyId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
+        Guid workspaceId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
         bool? includeCancelled, int? page, int? pageSize, CurrentUser currentUser,
         FinancialTransactionService transactions, CancellationToken cancellationToken)
     {
@@ -56,7 +56,7 @@ public static class FinancialTransactionEndpoints
         }
 
         var query = new TransactionQuery(fromDate, toDate, accountId, categoryId, type, includeCancelled ?? false, page, pageSize);
-        var result = await transactions.ListAsync(familyId, userId, query, cancellationToken);
+        var result = await transactions.ListAsync(workspaceId, userId, query, cancellationToken);
         return result switch
         {
             { NotFound: true } => Results.NotFound(),
@@ -66,7 +66,7 @@ public static class FinancialTransactionEndpoints
     }
 
     private static async Task<IResult> Get(
-        Guid familyId, Guid transactionId, CurrentUser currentUser, FinancialTransactionService transactions,
+        Guid workspaceId, Guid transactionId, CurrentUser currentUser, FinancialTransactionService transactions,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -74,14 +74,14 @@ public static class FinancialTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        return await transactions.GetAsync(familyId, transactionId, userId, cancellationToken) is { } transaction
+        return await transactions.GetAsync(workspaceId, transactionId, userId, cancellationToken) is { } transaction
             ? Results.Ok(TransactionResponse.From(transaction))
             : Results.NotFound();
     }
 
     /// <summary>Substitui conta, categoria, tipo, descrição, valor e data. Cancelado não pode ser editado (409).</summary>
     private static async Task<IResult> Update(
-        Guid familyId, Guid transactionId, TransactionRequest? request, CurrentUser currentUser,
+        Guid workspaceId, Guid transactionId, TransactionRequest? request, CurrentUser currentUser,
         FinancialTransactionService transactions, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -89,13 +89,13 @@ public static class FinancialTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await transactions.UpdateAsync(familyId, transactionId, userId, ToInput(request), cancellationToken);
+        var result = await transactions.UpdateAsync(workspaceId, transactionId, userId, ToInput(request), cancellationToken);
         return ToResponse(result, t => Results.Ok(TransactionResponse.From(t)));
     }
 
     /// <summary>Cancela sem excluir. Idempotente: cancelar de novo devolve 200 com o mesmo estado.</summary>
     private static async Task<IResult> Cancel(
-        Guid familyId, Guid transactionId, CurrentUser currentUser, FinancialTransactionService transactions,
+        Guid workspaceId, Guid transactionId, CurrentUser currentUser, FinancialTransactionService transactions,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -104,7 +104,7 @@ public static class FinancialTransactionEndpoints
         }
 
         return ToResponse(
-            await transactions.CancelAsync(familyId, transactionId, userId, cancellationToken),
+            await transactions.CancelAsync(workspaceId, transactionId, userId, cancellationToken),
             t => Results.Ok(TransactionResponse.From(t)));
     }
 

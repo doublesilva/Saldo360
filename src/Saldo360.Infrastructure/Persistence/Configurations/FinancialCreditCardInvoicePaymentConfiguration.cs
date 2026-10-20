@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.CreditCards;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Transactions;
 
 namespace Saldo360.Infrastructure.Persistence.Configurations;
@@ -19,11 +19,11 @@ internal sealed class FinancialCreditCardInvoicePaymentConfiguration : IEntityTy
         builder.Property(p => p.Amount).HasColumnType("numeric");
         builder.Property(p => p.PaymentDate).HasColumnType("date");
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
-        builder.HasIndex(p => new { p.FamilyId, p.InvoiceId, p.PaymentDate });
-        builder.HasIndex(p => new { p.FamilyId, p.OperationId }).IsUnique();
-        builder.HasIndex(p => new { p.FamilyId, p.TransactionId }).IsUnique();
-        builder.HasOne<Family>().WithMany().HasForeignKey(p => p.FamilyId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialCreditCardInvoice>().WithMany().HasForeignKey(p => new { p.FamilyId, p.InvoiceId }).HasPrincipalKey(i => new { i.FamilyId, i.Id }).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialTransaction>().WithMany().HasForeignKey(p => new { p.FamilyId, p.TransactionId }).HasPrincipalKey(t => new { t.FamilyId, t.Id }).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(p => new { p.WorkspaceId, p.InvoiceId, p.PaymentDate });
+        builder.HasIndex(p => new { p.WorkspaceId, p.OperationId }).IsUnique();
+        builder.HasIndex(p => new { p.WorkspaceId, p.TransactionId }).IsUnique();
+        builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(p => p.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialCreditCardInvoice>().WithMany().HasForeignKey(p => new { p.WorkspaceId, p.InvoiceId }).HasPrincipalKey(i => new { i.WorkspaceId, i.Id }).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialTransaction>().WithMany().HasForeignKey(p => new { p.WorkspaceId, p.TransactionId }).HasPrincipalKey(t => new { t.WorkspaceId, t.Id }).OnDelete(DeleteBehavior.Restrict);
     }
 }

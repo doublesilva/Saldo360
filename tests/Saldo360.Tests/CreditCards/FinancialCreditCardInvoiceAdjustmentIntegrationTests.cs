@@ -18,12 +18,12 @@ public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(Postgre
         await CreateAdjustmentAsync(context, "Credit", "Credit", "20.02", "pdf:credit");
         await CreateAdjustmentAsync(context, "Refund", "Credit", "5.03", "pdf:refund");
 
-        var invoice = await GetJsonAsync(context.Session, $"/api/families/{context.FamilyId}/credit-cards/{context.CardId}/invoices/{context.InvoiceId}");
+        var invoice = await GetJsonAsync(context.Session, $"/api/financial-workspaces/{context.WorkspaceId}/credit-cards/{context.CardId}/invoices/{context.InvoiceId}");
         Assert.Equal("84.96", Money(invoice, "totalAmount"));
         Assert.Equal("84.96", Money(invoice, "remainingAmount"));
-        var limit = await GetJsonAsync(context.Session, $"/api/families/{context.FamilyId}/credit-cards/{context.CardId}/limit");
+        var limit = await GetJsonAsync(context.Session, $"/api/financial-workspaces/{context.WorkspaceId}/credit-cards/{context.CardId}/limit");
         Assert.Equal("84.96", Money(limit, "usedLimit"));
-        var projection = await GetJsonAsync(context.Session, $"/api/families/{context.FamilyId}/accounts/{context.AccountId}/projection?through=2026-12-31");
+        var projection = await GetJsonAsync(context.Session, $"/api/financial-workspaces/{context.WorkspaceId}/accounts/{context.AccountId}/projection?through=2026-12-31");
         Assert.Equal("84.96", Money(projection, "creditCardOutstanding"));
 
         await using var db = Db();
@@ -44,20 +44,20 @@ public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(Postgre
         await using (var scope = Factory.Services.CreateAsyncScope())
         {
             var service = scope.ServiceProvider.GetRequiredService<FinancialCreditCardInvoiceAdjustmentService>();
-            var conflict = await service.CreateAsync(context.FamilyId, context.CardId, context.InvoiceId, context.UserId,
+            var conflict = await service.CreateAsync(context.WorkspaceId, context.CardId, context.InvoiceId, context.UserId,
                 Input("Fee", "Debit", "20.01", "pdf:same"), CancellationToken.None);
             Assert.Equal(InvoiceAdjustmentAccess.Conflict, conflict.Access);
         }
 
         var payment = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{context.FamilyId}/credit-cards/{context.CardId}/invoices/{context.InvoiceId}/payments", context.Session,
+            $"/api/financial-workspaces/{context.WorkspaceId}/credit-cards/{context.CardId}/invoices/{context.InvoiceId}/payments", context.Session,
             new { operationId = Guid.NewGuid(), financialAccountId = context.AccountId, paymentDate = "2026-10-17", amount = "110.00" });
         Assert.Equal(HttpStatusCode.Created, payment.StatusCode);
 
         await using (var scope = Factory.Services.CreateAsyncScope())
         {
             var service = scope.ServiceProvider.GetRequiredService<FinancialCreditCardInvoiceAdjustmentService>();
-            var blocked = await service.CancelAsync(context.FamilyId, context.CardId, context.InvoiceId, created.Id, context.UserId, CancellationToken.None);
+            var blocked = await service.CancelAsync(context.WorkspaceId, context.CardId, context.InvoiceId, created.Id, context.UserId, CancellationToken.None);
             Assert.Equal(InvoiceAdjustmentAccess.PaidTotalConflict, blocked.Access);
         }
         await using var db = Db();
@@ -77,37 +77,37 @@ public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(Postgre
             var foreign = await service.CreateAsync(Guid.NewGuid(), context.CardId, context.InvoiceId, context.UserId,
                 Input("Fee", "Debit", "1.00", "pdf:foreign"), CancellationToken.None);
             Assert.Equal(InvoiceAdjustmentAccess.NotFound, foreign.Access);
-            var cancelled = await service.CancelAsync(context.FamilyId, context.CardId, context.InvoiceId, fee.Id, context.UserId, CancellationToken.None);
+            var cancelled = await service.CancelAsync(context.WorkspaceId, context.CardId, context.InvoiceId, fee.Id, context.UserId, CancellationToken.None);
             Assert.Equal(InvoiceAdjustmentAccess.Allowed, cancelled.Access);
             Assert.Equal("Cancelled", cancelled.Adjustment!.Status);
-            var repeated = await service.CancelAsync(context.FamilyId, context.CardId, context.InvoiceId, fee.Id, context.UserId, CancellationToken.None);
+            var repeated = await service.CancelAsync(context.WorkspaceId, context.CardId, context.InvoiceId, fee.Id, context.UserId, CancellationToken.None);
             Assert.Equal("Cancelled", repeated.Adjustment!.Status);
         }
-        var invoice = await GetJsonAsync(context.Session, $"/api/families/{context.FamilyId}/credit-cards/{context.CardId}/invoices/{context.InvoiceId}");
+        var invoice = await GetJsonAsync(context.Session, $"/api/financial-workspaces/{context.WorkspaceId}/credit-cards/{context.CardId}/invoices/{context.InvoiceId}");
         Assert.Equal("100.00", Money(invoice, "totalAmount"));
-        Assert.Equal("100.00", Money(await GetJsonAsync(context.Session, $"/api/families/{context.FamilyId}/credit-cards/{context.CardId}/limit"), "usedLimit"));
+        Assert.Equal("100.00", Money(await GetJsonAsync(context.Session, $"/api/financial-workspaces/{context.WorkspaceId}/credit-cards/{context.CardId}/limit"), "usedLimit"));
     }
 
     private async Task<TestContext> ArrangeAsync(string subject)
     {
         var session = await SignInAsync(subject);
         var me = await GetMeAsync(session);
-        var family = await CreateFamilyAsync(session, "Família ajustes");
+        var family = await CreateWorkspaceAsync(session, "Família ajustes");
         await using var identityDb = Db();
         var userId = await identityDb.Users.Where(user => user.Issuer == me.Issuer && user.Subject == me.Subject).Select(user => user.Id).SingleAsync();
-        var accountResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/accounts", session,
+        var accountResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/accounts", session,
             new { name = "Conta", type = "Checking", financialScope = "PF", openingBalance = "5000.00", openingBalanceDate = "2026-01-01" });
         var accountId = (await ReadAsync<JsonElement>(accountResponse)).GetProperty("id").GetGuid();
-        var categoryResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/categories", session,
+        var categoryResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/categories", session,
             new { name = "Compras", type = "Expense" });
         var categoryId = (await ReadAsync<JsonElement>(categoryResponse)).GetProperty("id").GetGuid();
-        var cardResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/credit-cards", session,
+        var cardResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/credit-cards", session,
             new { name = "Cartão", issuer = "Banco", holderUserId = userId, creditLimit = "1000.00", closingDay = 10, dueDay = 20, defaultPaymentAccountId = accountId });
         var cardId = (await ReadAsync<JsonElement>(cardResponse)).GetProperty("id").GetGuid();
-        var purchase = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/credit-cards/{cardId}/purchases", session,
+        var purchase = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/credit-cards/{cardId}/purchases", session,
             new { description = "Compra base", purchaseDate = "2026-09-01", totalAmount = "100.00", installmentCount = 1, categoryId });
         Assert.Equal(HttpStatusCode.Created, purchase.StatusCode);
-        var invoices = await GetJsonAsync(session, $"/api/families/{family.Id}/credit-cards/{cardId}/invoices?from=2026-09&through=2026-12");
+        var invoices = await GetJsonAsync(session, $"/api/financial-workspaces/{family.Id}/credit-cards/{cardId}/invoices?from=2026-09&through=2026-12");
         var invoiceId = invoices[0].GetProperty("id").GetGuid();
         return new(session, family.Id, userId, accountId, cardId, invoiceId);
     }
@@ -116,7 +116,7 @@ public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(Postgre
     {
         await using var scope = Factory.Services.CreateAsyncScope();
         var service = scope.ServiceProvider.GetRequiredService<FinancialCreditCardInvoiceAdjustmentService>();
-        var result = await service.CreateAsync(context.FamilyId, context.CardId, context.InvoiceId, context.UserId,
+        var result = await service.CreateAsync(context.WorkspaceId, context.CardId, context.InvoiceId, context.UserId,
             Input(type, nature, amount, externalId), CancellationToken.None);
         Assert.Equal(InvoiceAdjustmentAccess.Allowed, result.Access);
         return result.Adjustment!;
@@ -133,5 +133,5 @@ public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(Postgre
     }
 
     private static string Money(JsonElement element, string property) => element.GetProperty(property).GetString()!;
-    private sealed record TestContext(string Session, Guid FamilyId, Guid UserId, Guid AccountId, Guid CardId, Guid InvoiceId);
+    private sealed record TestContext(string Session, Guid WorkspaceId, Guid UserId, Guid AccountId, Guid CardId, Guid InvoiceId);
 }

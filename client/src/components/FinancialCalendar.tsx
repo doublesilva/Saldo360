@@ -37,13 +37,13 @@ function errorMessage(error: unknown): string {
 }
 
 /** Visão mensal da Agenda Financeira, com detalhes e operações financeiras existentes. */
-type FinancialCalendarPageProps = { familyId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void }
+type FinancialCalendarPageProps = { workspaceId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void }
 
 export function FinancialCalendarPage(props: FinancialCalendarPageProps) {
-  return <FinancialCalendarPageContent key={props.familyId} {...props} />
+  return <FinancialCalendarPageContent key={props.workspaceId} {...props} />
 }
 
-function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNavigateToBudgets }: FinancialCalendarPageProps) {
+function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, onNavigateToBudgets }: FinancialCalendarPageProps) {
   const today = todayInSaoPaulo()
   const [month, setMonth] = useState(() => initialMonth ? startOfMonth(initialMonth) : startOfMonth(today))
   const [selectedDate, setSelectedDate] = useState(today)
@@ -56,7 +56,7 @@ function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNav
   const requestVersion = useRef(0)
   const from = month
   const through = endOfMonth(month)
-  const requestKey = `${familyId}|${from}|${through}|${accountId}|${type}|${refreshKey}`
+  const requestKey = `${workspaceId}|${from}|${through}|${accountId}|${type}|${refreshKey}`
   const [calendarState, setCalendar] = useState<RequestLoad<FinancialCalendarResponse>>({
     kind: 'loading',
     requestKey,
@@ -67,19 +67,19 @@ function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNav
 
   useEffect(() => {
     const controller = new AbortController()
-    listAccounts(familyId, true, controller.signal)
+    listAccounts(workspaceId, true, controller.signal)
       .then((items) => { if (!controller.signal.aborted) setAccounts({ kind: 'loaded', data: items }) })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setAccounts({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId])
+  }, [workspaceId])
 
   useEffect(() => {
     const controller = new AbortController()
     const version = ++requestVersion.current
     getFinancialCalendar(
-      familyId,
+      workspaceId,
       from,
       through,
       { accountId: accountId || undefined, type: type || undefined },
@@ -94,7 +94,7 @@ function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNav
         }
       })
     return () => controller.abort()
-  }, [familyId, from, through, accountId, type, requestKey, refreshKey])
+  }, [workspaceId, from, through, accountId, type, requestKey, refreshKey])
 
   const handleFinancialChange = () => {
     setRefreshKey((current) => current + 1)
@@ -142,7 +142,7 @@ function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNav
         <>
           <FinancialCalendarSummary summary={calendar.data.summary} />
           <FinancialCalendarBudgetSummary
-            familyId={familyId}
+            workspaceId={workspaceId}
             competence={month}
             refreshKey={refreshKey}
             onNavigateToBudgets={(competence) => onNavigateToBudgets?.(competence)}
@@ -165,7 +165,7 @@ function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNav
       )}
       {view === 'month' ? (
         <FinancialCalendarBalanceEvolution
-          familyId={familyId}
+          workspaceId={workspaceId}
           from={from}
           through={through}
           accountId={accountId}
@@ -175,7 +175,7 @@ function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNav
         />
       ) : (
         <FinancialCalendarMonthlyPlanning
-          familyId={familyId}
+          workspaceId={workspaceId}
           from={startOfMonth(today).slice(0, 7)}
           accountId={accountId}
           refreshKey={refreshKey}
@@ -187,8 +187,8 @@ function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNav
       )}
       {view === 'month' && opened && (
         <FinancialCalendarDetails
-          key={`${familyId}:${opened.item.source}:${opened.item.id}`}
-          familyId={familyId}
+          key={`${workspaceId}:${opened.item.source}:${opened.item.id}`}
+          workspaceId={workspaceId}
           item={opened.item}
           returnFocus={opened.trigger}
           onClose={() => setOpened(null)}
@@ -200,20 +200,20 @@ function FinancialCalendarPageContent({ familyId, onChanged, initialMonth, onNav
 }
 
 export function FinancialCalendarMonthlyPlanning({
-  familyId,
+  workspaceId,
   from,
   accountId,
   refreshKey = 0,
   onSelectMonth,
 }: {
-  familyId: string
+  workspaceId: string
   from: string
   accountId: string
   refreshKey?: number
   onSelectMonth: (month: string) => void
 }) {
   const requestVersion = useRef(0)
-  const requestKey = `${familyId}|${from}|${accountId}|${refreshKey}`
+  const requestKey = `${workspaceId}|${from}|${accountId}|${refreshKey}`
   const [projectionState, setProjectionState] = useState<RequestLoad<FinancialCalendarMonthlyProjectionResponse>>({
     kind: 'loading',
     requestKey,
@@ -225,7 +225,7 @@ export function FinancialCalendarMonthlyPlanning({
   useEffect(() => {
     const controller = new AbortController()
     const version = ++requestVersion.current
-    getSixMonthPlanning(familyId, from, accountId || undefined, controller.signal)
+    getSixMonthPlanning(workspaceId, from, accountId || undefined, controller.signal)
       .then((data) => {
         if (version === requestVersion.current) setProjectionState({ kind: 'loaded', requestKey, data })
       })
@@ -235,14 +235,14 @@ export function FinancialCalendarMonthlyPlanning({
         }
       })
     return () => controller.abort()
-  }, [familyId, from, accountId, refreshKey, requestKey])
+  }, [workspaceId, from, accountId, refreshKey, requestKey])
 
   return (
     <section className="monthly-planning" aria-labelledby="monthly-planning-title">
       <div className="monthly-planning__heading">
         <div>
           <h3 id="monthly-planning-title">Planejamento dos próximos seis meses</h3>
-          <p className="meta">{accountId ? 'Conta selecionada' : 'Consolidado familiar'}</p>
+          <p className="meta">{accountId ? 'Conta selecionada' : 'Consolidado do orçamento'}</p>
         </div>
       </div>
       {projection.kind === 'loading' && <p className="status status--pending">Calculando planejamento financeiro…</p>}
@@ -276,7 +276,7 @@ export function FinancialCalendarMonthlyPlanning({
                   <MonthlyValue label="Cartões pagos (incluídos nas despesas)" value={item.cardPayments ?? null} />
                   <MonthlyValue label="Cartões ainda devidos (incluídos nas pendências)" value={item.creditCardOutstanding ?? null} />
                   <MonthlyValue label="Despesas fixas — classificação não disponível" value={item.fixedExpenses ?? null} />
-                  <MonthlyValue label="Meta familiar por categorias" value={item.budgetTarget ?? null} />
+                  <MonthlyValue label="Meta por categorias" value={item.budgetTarget ?? null} />
                   <MonthlyValue label="Consumo nas categorias com meta" value={item.budgetConsumption ?? null} />
                   <MonthlyValue label="Saldo de fechamento" value={item.closingBalance} negative={negative} />
                   <MonthlyValue label="Menor saldo projetado" value={item.minimumProjectedBalance} negative={item.minimumProjectedBalance?.startsWith('-')} />
@@ -323,7 +323,7 @@ function MonthlyValue({ label, value, negative = false }: { label: string; value
 }
 
 export function FinancialCalendarBalanceEvolution({
-  familyId,
+  workspaceId,
   from,
   through,
   accountId,
@@ -331,7 +331,7 @@ export function FinancialCalendarBalanceEvolution({
   onSelectDate,
   refreshKey = 0,
 }: {
-  familyId: string
+  workspaceId: string
   from: string
   through: string
   accountId: string
@@ -340,7 +340,7 @@ export function FinancialCalendarBalanceEvolution({
   refreshKey?: number
 }) {
   const requestVersion = useRef(0)
-  const requestKey = `${familyId}|${from}|${through}|${accountId}|${refreshKey}`
+  const requestKey = `${workspaceId}|${from}|${through}|${accountId}|${refreshKey}`
   const [balanceState, setBalanceState] = useState<RequestLoad<FinancialCalendarBalanceResponse>>({
     kind: 'loading',
     requestKey,
@@ -351,7 +351,7 @@ export function FinancialCalendarBalanceEvolution({
   useEffect(() => {
     const controller = new AbortController()
     const version = ++requestVersion.current
-    getFinancialCalendarBalances(familyId, from, through, accountId || undefined, controller.signal)
+    getFinancialCalendarBalances(workspaceId, from, through, accountId || undefined, controller.signal)
       .then((data) => {
         if (version === requestVersion.current) setBalanceState({ kind: 'loaded', requestKey, data })
       })
@@ -361,14 +361,14 @@ export function FinancialCalendarBalanceEvolution({
         }
       })
     return () => controller.abort()
-  }, [familyId, from, through, accountId, requestKey, refreshKey])
+  }, [workspaceId, from, through, accountId, requestKey, refreshKey])
 
   return (
     <section className="balance-evolution" aria-labelledby="balance-evolution-title">
       <div className="balance-evolution__heading">
         <div>
           <h3 id="balance-evolution-title">Evolução do saldo</h3>
-          <p className="meta">{accountId ? 'Conta selecionada' : 'Consolidado familiar'}</p>
+          <p className="meta">{accountId ? 'Conta selecionada' : 'Consolidado do orçamento'}</p>
         </div>
         <div className="balance-evolution__legend" aria-label="Legenda da evolução">
           <span><i className="balance-line-sample" /> Histórico realizado</span>

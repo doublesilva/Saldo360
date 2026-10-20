@@ -3,7 +3,7 @@ import { ApiRequestError, requestJson } from './apiErrors'
 
 export interface FinancialInvoiceReconciliation {
   id: string
-  familyId: string
+  workspaceId: string
   plannedTransactionId: string
   creditCardInvoiceId: string
   createdAt: string
@@ -17,12 +17,12 @@ export interface InvoiceReconciliationInput {
 
 const headers = { Accept: 'application/json' }
 
-function base(familyId: string): string {
-  return `/api/families/${encodeURIComponent(familyId)}/invoice-reconciliations`
+function base(workspaceId: string): string {
+  return `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/invoice-reconciliations`
 }
 
-export async function listInvoiceReconciliations(familyId: string, signal?: AbortSignal): Promise<FinancialInvoiceReconciliation[]> {
-  const response = await fetch(`${base(familyId)}/`, { signal, headers })
+export async function listInvoiceReconciliations(workspaceId: string, signal?: AbortSignal): Promise<FinancialInvoiceReconciliation[]> {
+  const response = await fetch(`${base(workspaceId)}/`, { signal, headers })
   if (!response.ok) throw new Error(`Falha ao carregar as conciliações (HTTP ${response.status}).`)
   return await response.json() as FinancialInvoiceReconciliation[]
 }
@@ -32,11 +32,11 @@ export type CreateReconciliationResult =
   | { ok: false; errors: Record<string, string[]> }
 
 export async function createInvoiceReconciliation(
-  familyId: string,
+  workspaceId: string,
   input: InvoiceReconciliationInput,
 ): Promise<CreateReconciliationResult> {
   try {
-    const reconciliation = await requestJson<FinancialInvoiceReconciliation>(`${base(familyId)}/`, {
+    const reconciliation = await requestJson<FinancialInvoiceReconciliation>(`${base(workspaceId)}/`, {
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', [CSRF_HEADER]: await getCsrfToken() }, body: JSON.stringify(input),
     }, { resultUncertainOnTimeout: true, fallback: 'Falha ao criar a conciliação.' })
     return { ok: true, reconciliation }
@@ -46,9 +46,9 @@ export async function createInvoiceReconciliation(
   }
 }
 
-export async function removeInvoiceReconciliation(familyId: string, id: string): Promise<{ ok: true } | { ok: false; message: string }> {
+export async function removeInvoiceReconciliation(workspaceId: string, id: string): Promise<{ ok: true } | { ok: false; message: string }> {
   try {
-    await requestJson<void>(`${base(familyId)}/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { ...headers, [CSRF_HEADER]: await getCsrfToken() } }, { resultUncertainOnTimeout: true, fallback: 'Falha ao desfazer a conciliação.' })
+    await requestJson<void>(`${base(workspaceId)}/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { ...headers, [CSRF_HEADER]: await getCsrfToken() } }, { resultUncertainOnTimeout: true, fallback: 'Falha ao desfazer a conciliação.' })
     return { ok: true }
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 404) return { ok: false, message: 'Conciliação não encontrada.' }

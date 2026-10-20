@@ -13,9 +13,9 @@ public sealed class FinancialDashboardEndpointsTests(PostgresFixture postgres) :
     public async Task EmptyFamily_ReturnsAllSectionsWithSixMonthHorizon()
     {
         var owner = await SignInAsync("dashboard-owner");
-        var family = await CreateFamilyAsync(owner, "Dashboard");
+        var family = await CreateWorkspaceAsync(owner, "Dashboard");
 
-        var response = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/financial-dashboard", owner);
+        var response = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{family.Id}/financial-dashboard", owner);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -36,11 +36,11 @@ public sealed class FinancialDashboardEndpointsTests(PostgresFixture postgres) :
     {
         var owner = await SignInAsync("dashboard-owner-2");
         var outsider = await SignInAsync("dashboard-outsider-2");
-        var family = await CreateFamilyAsync(owner, "Dashboard 2");
+        var family = await CreateWorkspaceAsync(owner, "Dashboard 2");
 
-        var invalidMonths = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/financial-dashboard?months=13", owner);
-        var invalidCompetence = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/financial-dashboard?competence=2026-1", owner);
-        var forbiddenFamily = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/financial-dashboard", outsider);
+        var invalidMonths = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{family.Id}/financial-dashboard?months=13", owner);
+        var invalidCompetence = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{family.Id}/financial-dashboard?competence=2026-1", owner);
+        var forbiddenFamily = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{family.Id}/financial-dashboard", outsider);
 
         Assert.Equal(HttpStatusCode.BadRequest, invalidMonths.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, invalidCompetence.StatusCode);
@@ -51,9 +51,9 @@ public sealed class FinancialDashboardEndpointsTests(PostgresFixture postgres) :
     public async Task NegativeAccount_ProducesStructuredAlertWithoutChangingFinancialData()
     {
         var owner = await SignInAsync("dashboard-negative");
-        var family = await CreateFamilyAsync(owner, "Dashboard negative");
+        var family = await CreateWorkspaceAsync(owner, "Dashboard negative");
         var csrf = await GetCsrfAsync(owner);
-        var accountRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/families/{family.Id}/accounts")
+        var accountRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/accounts")
         {
             Content = JsonContent.Create(new { name = "Conta negativa", type = "Checking", financialScope = "PF", openingBalance = "-100.00", openingBalanceDate = BusinessCalendar.Today(DateTimeOffset.UtcNow).AddDays(-1) })
         };
@@ -62,7 +62,7 @@ public sealed class FinancialDashboardEndpointsTests(PostgresFixture postgres) :
         var created = await Client.SendAsync(accountRequest);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
 
-        var response = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/financial-dashboard?months=1", owner);
+        var response = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{family.Id}/financial-dashboard?months=1", owner);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var alert = body.RootElement.GetProperty("alerts").EnumerateArray().Single(x => x.GetProperty("code").GetString() == "negative-realized-balance");

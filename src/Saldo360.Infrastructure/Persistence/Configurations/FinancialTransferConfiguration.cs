@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Common;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Transfers;
 using Saldo360.Domain.Users;
 
@@ -37,26 +37,26 @@ internal sealed class FinancialTransferConfiguration : IEntityTypeConfiguration<
         builder.Property(transfer => transfer.Currency).HasMaxLength(3).IsFixedLength();
 
         // Listagem: data decrescente e Id decrescente (ordem estável), sempre filtrada por família.
-        builder.HasIndex(transfer => new { transfer.FamilyId, transfer.TransferDate, transfer.Id })
+        builder.HasIndex(transfer => new { transfer.WorkspaceId, transfer.TransferDate, transfer.Id })
             .IsDescending(false, true, true);
 
         // Restrict em todas as FKs: nada apaga transferências por cascata (histórico preservado).
-        builder.HasOne<Family>()
+        builder.HasOne<FinancialWorkspace>()
             .WithMany()
-            .HasForeignKey(transfer => transfer.FamilyId)
+            .HasForeignKey(transfer => transfer.WorkspaceId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Origem e destino: (family_id, conta) → financial_accounts (family_id, id), as duas da MESMA família.
+        // Origem e destino: (workspace_id, conta) → financial_accounts (workspace_id, id), as duas da MESMA família.
         builder.HasOne<FinancialAccount>()
             .WithMany()
-            .HasForeignKey(transfer => new { transfer.FamilyId, transfer.SourceAccountId })
-            .HasPrincipalKey(account => new { account.FamilyId, account.Id })
+            .HasForeignKey(transfer => new { transfer.WorkspaceId, transfer.SourceAccountId })
+            .HasPrincipalKey(account => new { account.WorkspaceId, account.Id })
             .HasConstraintName("fk_financial_transfers_source_account_same_family")
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<FinancialAccount>()
             .WithMany()
-            .HasForeignKey(transfer => new { transfer.FamilyId, transfer.DestinationAccountId })
-            .HasPrincipalKey(account => new { account.FamilyId, account.Id })
+            .HasForeignKey(transfer => new { transfer.WorkspaceId, transfer.DestinationAccountId })
+            .HasPrincipalKey(account => new { account.WorkspaceId, account.Id })
             .HasConstraintName("fk_financial_transfers_destination_account_same_family")
             .OnDelete(DeleteBehavior.Restrict);
 

@@ -1,3 +1,4 @@
+using Saldo360.Domain.Workspaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -7,7 +8,7 @@ using Saldo360.Domain.Categories;
 using Saldo360.Domain.Families;
 using Saldo360.Domain.Planning;
 using Saldo360.Domain.Transactions;
-using Saldo360.Infrastructure.Families;
+using Saldo360.Infrastructure.Workspaces;
 using Saldo360.Infrastructure.Persistence;
 using Saldo360.Infrastructure.Users;
 using Saldo360.Tests.Support;
@@ -24,8 +25,8 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
     private string _connectionString = null!;
     private Guid _userA;
     private Guid _userB;
-    private Family _familyA = null!;
-    private Family _familyB = null!;
+    private FinancialWorkspace _familyA = null!;
+    private FinancialWorkspace _familyB = null!;
     private FinancialAccount _accountA = null!;
     private FinancialCategory _expenseA = null!;
     private FinancialAccount _accountB = null!;
@@ -38,9 +39,9 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
         var users = new UserDirectory(db, TimeProvider.System);
         _userA = await users.ResolveAsync("https://auth.test.invalid", "a", "A", CancellationToken.None);
         _userB = await users.ResolveAsync("https://auth.test.invalid", "b", "B", CancellationToken.None);
-        _familyA = Family.Create("Família A", _userA, DateTimeOffset.UtcNow);
-        _familyB = Family.Create("Família B", _userB, DateTimeOffset.UtcNow);
-        var families = new FamilyRepository(db);
+        _familyA = FinancialWorkspace.CreatePersonal(_userA, DateTimeOffset.UtcNow);
+        _familyB = FinancialWorkspace.CreatePersonal(_userB, DateTimeOffset.UtcNow);
+        var families = new FinancialWorkspaceRepository(db);
         await families.AddAsync(_familyA, CancellationToken.None);
         await families.AddAsync(_familyB, CancellationToken.None);
 
@@ -140,7 +141,7 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
         var plannedId = Guid.CreateVersion7();
         await using (var db = Db())
         {
-            await db.GetService<IMigrator>().MigrateAsync(PreviousMigration);
+            await HistoricalFinancialSchema.PrepareAsync(db, PreviousMigration);
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO financial_transactions (id, family_id, account_id, category_id, type, description, amount, transaction_date, currency, created_at, created_by_user_id, is_cancelled)
                 VALUES ({transactionId}, {_familyA.Id}, {_accountA.Id}, {_expenseA.Id}, 'Expense', 'Compra', 12.34, DATE '2026-09-02', 'BRL', now(), {_userA}, FALSE)
@@ -179,9 +180,9 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 
-    private static FinancialAccount Account(Guid familyId, Guid userId) =>
+    private static FinancialAccount Account(Guid workspaceId, Guid userId) =>
         FinancialAccount.Create(
-            familyId,
+            workspaceId,
             AccountDetails.TryCreate("Conta", null, nameof(AccountType.Checking), nameof(FinancialScope.PF), null, null, null, out _)!,
             userId,
             DateTimeOffset.UtcNow);

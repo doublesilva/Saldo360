@@ -2,26 +2,26 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Domain.CreditCards;
 
 namespace Saldo360.Application.CreditCards;
 
 public sealed class FinancialCreditCardImportService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialCreditCardImportRepository imports,
     TimeProvider timeProvider)
 {
     public const int MaxItems = 1_000;
 
     public async Task<CreditCardImportOperationResult> ConfirmAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid cardId,
         Guid userId,
         CreditCardImportConfirmation? confirmation,
         CancellationToken cancellationToken)
     {
-        if (await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is null)
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is null)
             return new(CreditCardImportAccess.NotFound, null, null);
         if (confirmation is null || !confirmation.Confirm)
             return Invalid("confirm", "A confirmação explícita é obrigatória.");
@@ -51,14 +51,14 @@ public sealed class FinancialCreditCardImportService(
             if (count > 1 && (number != 1 || string.IsNullOrWhiteSpace(item.TotalAmount))) itemErrors.Add("Parcela intermediária ou total original ausente não pode ser importada como compra completa.");
             if (number < 1 || number > count) itemErrors.Add("Número de parcela incompatível com a quantidade total.");
             if (!string.IsNullOrWhiteSpace(item.ExternalId) && !externalIds.Add(item.ExternalId.Trim())) itemErrors.Add("Identificador externo repetido na operação.");
-            if (!await imports.IsExpenseCategoryAsync(familyId, item.CategoryId, cancellationToken)) itemErrors.Add("A categoria deve ser uma despesa ativa da família.");
+            if (!await imports.IsExpenseCategoryAsync(workspaceId, item.CategoryId, cancellationToken)) itemErrors.Add("A categoria deve ser uma despesa ativa da família.");
             if (itemErrors.Count > 0) errors[$"row_{item.RowNumber}"] = itemErrors.ToArray();
             normalized.Add(item with { Description = description, Amount = amount?.ToString("0.00", CultureInfo.InvariantCulture) ?? item.Amount, TotalAmount = total?.ToString("0.00", CultureInfo.InvariantCulture), ExternalId = string.IsNullOrWhiteSpace(item.ExternalId) ? null : item.ExternalId.Trim(), InstallmentNumber = number, InstallmentCount = count });
         }
         if (errors.Count > 0) return new(CreditCardImportAccess.Invalid, null, errors);
 
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { familyId, cardId, items = normalized }))));
-        var repositoryResult = await imports.ConfirmAsync(familyId, cardId, userId, confirmation.ImportId, hash, normalized, timeProvider.GetUtcNow(), cancellationToken);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { workspaceId, cardId, items = normalized }))));
+        var repositoryResult = await imports.ConfirmAsync(workspaceId, cardId, userId, confirmation.ImportId, hash, normalized, timeProvider.GetUtcNow(), cancellationToken);
         if (repositoryResult.Conflict) return new(CreditCardImportAccess.Conflict, null, null, repositoryResult.Message);
         if (repositoryResult.NotFound) return new(CreditCardImportAccess.NotFound, null, null);
         return new(CreditCardImportAccess.Allowed, repositoryResult.Result, null);

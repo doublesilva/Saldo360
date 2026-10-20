@@ -9,11 +9,11 @@ public sealed class FinancialCreditCardInvoiceAdjustmentService(
     TimeProvider clock)
 {
     public Task<IReadOnlyList<FinancialCreditCardInvoiceAdjustmentDto>?> ListAsync(
-        Guid familyId, Guid cardId, Guid invoiceId, CancellationToken cancellationToken) =>
-        repository.ListAsync(familyId, cardId, invoiceId, cancellationToken);
+        Guid workspaceId, Guid cardId, Guid invoiceId, CancellationToken cancellationToken) =>
+        repository.ListAsync(workspaceId, cardId, invoiceId, cancellationToken);
 
     public async Task<InvoiceAdjustmentOperationResult> CreateAsync(
-        Guid familyId, Guid cardId, Guid invoiceId, Guid userId,
+        Guid workspaceId, Guid cardId, Guid invoiceId, Guid userId,
         FinancialCreditCardInvoiceAdjustmentInput? input, CancellationToken cancellationToken)
     {
         if (input is null) return Invalid("body", "Informe o ajuste da fatura.");
@@ -38,13 +38,13 @@ public sealed class FinancialCreditCardInvoiceAdjustmentService(
         else if (externalId.Length > FinancialCreditCardInvoiceAdjustment.ExternalIdMaxLength) errors["externalId"] = [$"A identidade externa deve ter no máximo {FinancialCreditCardInvoiceAdjustment.ExternalIdMaxLength} caracteres."];
         if (errors.Count > 0) return new(InvoiceAdjustmentAccess.Invalid, null, errors);
         var normalized = input with { Description = description, Amount = amount.ToString("0.00", CultureInfo.InvariantCulture), ExternalId = externalId };
-        return await repository.CreateAsync(familyId, cardId, invoiceId, userId, normalized, clock.GetUtcNow(), cancellationToken);
+        return await repository.CreateAsync(workspaceId, cardId, invoiceId, userId, normalized, clock.GetUtcNow(), cancellationToken);
     }
 
     public Task<InvoiceAdjustmentOperationResult> CancelAsync(
-        Guid familyId, Guid cardId, Guid invoiceId, Guid adjustmentId,
+        Guid workspaceId, Guid cardId, Guid invoiceId, Guid adjustmentId,
         Guid userId, CancellationToken cancellationToken) =>
-        repository.CancelAsync(familyId, cardId, invoiceId, adjustmentId, userId, clock.GetUtcNow(), cancellationToken);
+        repository.CancelAsync(workspaceId, cardId, invoiceId, adjustmentId, userId, clock.GetUtcNow(), cancellationToken);
 
     private static InvoiceAdjustmentOperationResult Invalid(string field, string message) =>
         new(InvoiceAdjustmentAccess.Invalid, null, new Dictionary<string, string[]> { [field] = [message] });

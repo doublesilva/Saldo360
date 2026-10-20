@@ -8,7 +8,7 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 const money = (value: string | null | undefined) => value == null ? 'Não identificado' : formatBrlDecimal(value)
 const purchaseTypes = new Set(['Purchase', 'InternationalPurchase'])
 
-export function FinancialCreditCardPdfImport({ familyId, cardId, categories, onChanged }: { familyId: string; cardId: string; categories: FinancialCategory[]; onChanged?: () => void }) {
+export function FinancialCreditCardPdfImport({ workspaceId, cardId, categories, onChanged }: { workspaceId: string; cardId: string; categories: FinancialCategory[]; onChanged?: () => void }) {
   const version = useRef(0)
   const [file, setFile] = useState<File | null>(null)
   const [competence, setCompetence] = useState('')
@@ -31,8 +31,8 @@ export function FinancialCreditCardPdfImport({ familyId, cardId, categories, onC
     catch (failure) { if (current === version.current) setError(errorMessage(failure)) }
     finally { if (current === version.current) setBusy(null) }
   }
-  const analyze = () => { if (!file) return; setReport(null); setResult(null); void run('preview', (signal) => previewPdf(familyId, cardId, file, options(), signal), setPreview) }
-  const reconcile = () => { if (!file) return; setResult(null); void run('reconcile', (signal) => preReconcilePdf(familyId, cardId, file, options(), signal), (value) => { setReport(value); setCategoryByComponent({}) }) }
+  const analyze = () => { if (!file) return; setReport(null); setResult(null); void run('preview', (signal) => previewPdf(workspaceId, cardId, file, options(), signal), setPreview) }
+  const reconcile = () => { if (!file) return; setResult(null); void run('reconcile', (signal) => preReconcilePdf(workspaceId, cardId, file, options(), signal), (value) => { setReport(value); setCategoryByComponent({}) }) }
   const createPurchases = report?.items.filter((item) => item.classification === 'Create' && purchaseTypes.has(item.type)) ?? []
   const blocking = report?.items.filter((item) => item.includedInCurrentTotal && ['NeedsReview', 'Conflict', 'Unsupported'].includes(item.classification)) ?? []
   const missingCategories = createPurchases.filter((item) => !categoryByComponent[item.componentId])
@@ -40,7 +40,7 @@ export function FinancialCreditCardPdfImport({ familyId, cardId, categories, onC
   const confirm = () => {
     if (!file || !report || confirmDisabled) return
     const decisions = createPurchases.map((item) => ({ componentId: item.componentId, categoryId: categoryByComponent[item.componentId] }))
-    void run('confirm', async (signal) => { try { return await confirmPdf(familyId, cardId, file, options(), report.documentKey, decisions, signal) } finally { setPassword('') } }, (value) => { setResult(value); onChanged?.() })
+    void run('confirm', async (signal) => { try { return await confirmPdf(workspaceId, cardId, file, options(), report.documentKey, decisions, signal) } finally { setPassword('') } }, (value) => { setResult(value); onChanged?.() })
   }
 
   return <section className="pdf-import-flow">

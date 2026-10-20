@@ -1,4 +1,4 @@
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
 
@@ -6,17 +6,17 @@ namespace Saldo360.Application.Calendar;
 
 /// <summary>Consulta unificada da agenda para qualquer integrante da família.</summary>
 public sealed class FinancialCalendarService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialCalendarRepository calendar,
     TimeProvider timeProvider)
 {
     public async Task<FinancialCalendarResult> ListAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid userId,
         FinancialCalendarQuery query,
         CancellationToken cancellationToken)
     {
-        if (await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is null)
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is null)
         {
             return FinancialCalendarResult.NotFoundResult;
         }
@@ -51,7 +51,7 @@ public sealed class FinancialCalendarService(
             query.AccountId,
             type,
             BusinessCalendar.Today(timeProvider.GetUtcNow()));
-        var snapshot = await calendar.ListAsync(familyId, filter, cancellationToken);
+        var snapshot = await calendar.ListAsync(workspaceId, filter, cancellationToken);
         return new FinancialCalendarResult(
             new FinancialCalendar(query.From, query.Through, snapshot.Items, snapshot.Summary),
             null,

@@ -11,7 +11,7 @@ public static class FinancialBudgetEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialBudgetEndpoints(this IEndpointRouteBuilder app)
     {
-        var budgets = app.MapGroup("/api/families/{familyId:guid}/budgets").RequireAuthorization();
+        var budgets = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/budgets").RequireAuthorization();
         budgets.MapGet("/", List);
         budgets.MapGet("/{budgetId:guid}", Get);
         budgets.MapGet("/{budgetId:guid}/execution", GetExecution);
@@ -25,91 +25,91 @@ public static class FinancialBudgetEndpoints
     }
 
     private static async Task<IResult> List(
-        Guid familyId, string? competence, bool? includeArchived, CurrentUser currentUser,
+        Guid workspaceId, string? competence, bool? includeArchived, CurrentUser currentUser,
         FinancialBudgetService service, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         if (competence is not null && !FinancialBudgetService.TryParseCompetence(competence, out _))
             return Results.ValidationProblem(new Dictionary<string, string[]>
                 { ["competence"] = ["Use uma competência válida no formato yyyy-MM."] });
-        var result = await service.ListAsync(familyId, userId, competence, includeArchived ?? false, cancellationToken);
+        var result = await service.ListAsync(workspaceId, userId, competence, includeArchived ?? false, cancellationToken);
         return result is null ? Results.NotFound() : Results.Ok(result.Select(FinancialBudgetResponse.From));
     }
 
     private static async Task<IResult> Get(
-        Guid familyId, Guid budgetId, CurrentUser currentUser, FinancialBudgetService service,
+        Guid workspaceId, Guid budgetId, CurrentUser currentUser, FinancialBudgetService service,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        var result = await service.GetAsync(familyId, budgetId, userId, cancellationToken);
+        var result = await service.GetAsync(workspaceId, budgetId, userId, cancellationToken);
         return result is null ? Results.NotFound() : Results.Ok(FinancialBudgetResponse.From(result));
     }
 
     private static async Task<IResult> GetExecution(
-        Guid familyId, Guid budgetId, CurrentUser currentUser, FinancialBudgetExecutionService service,
+        Guid workspaceId, Guid budgetId, CurrentUser currentUser, FinancialBudgetExecutionService service,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        var result = await service.GetAsync(familyId, budgetId, userId, cancellationToken);
+        var result = await service.GetAsync(workspaceId, budgetId, userId, cancellationToken);
         return result is null ? Results.NotFound() : Results.Ok(FinancialBudgetExecutionResponse.From(result));
     }
 
     private static async Task<IResult> Create(
-        Guid familyId, CreateFinancialBudgetRequest? request, CurrentUser currentUser, FinancialBudgetService service,
+        Guid workspaceId, CreateFinancialBudgetRequest? request, CurrentUser currentUser, FinancialBudgetService service,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        var result = await service.CreateAsync(familyId, userId, request?.Competence, request?.Description, cancellationToken);
+        var result = await service.CreateAsync(workspaceId, userId, request?.Competence, request?.Description, cancellationToken);
         return ToResponse(result, budget => Results.Created(
-            $"/api/families/{familyId}/budgets/{budget.Id}", FinancialBudgetResponse.From(budget)));
+            $"/api/financial-workspaces/{workspaceId}/budgets/{budget.Id}", FinancialBudgetResponse.From(budget)));
     }
 
     private static async Task<IResult> Update(
-        Guid familyId, Guid budgetId, UpdateFinancialBudgetRequest? request, CurrentUser currentUser,
+        Guid workspaceId, Guid budgetId, UpdateFinancialBudgetRequest? request, CurrentUser currentUser,
         FinancialBudgetService service, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         return ToResponse(await service.UpdateAsync(
-            familyId, budgetId, userId, request?.Description, cancellationToken),
+            workspaceId, budgetId, userId, request?.Description, cancellationToken),
             budget => Results.Ok(FinancialBudgetResponse.From(budget)));
     }
 
     private static async Task<IResult> Archive(
-        Guid familyId, Guid budgetId, CurrentUser currentUser, FinancialBudgetService service,
+        Guid workspaceId, Guid budgetId, CurrentUser currentUser, FinancialBudgetService service,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        return ToResponse(await service.ArchiveAsync(familyId, budgetId, userId, cancellationToken), _ => Results.NoContent());
+        return ToResponse(await service.ArchiveAsync(workspaceId, budgetId, userId, cancellationToken), _ => Results.NoContent());
     }
 
     private static async Task<IResult> AddTarget(
-        Guid familyId, Guid budgetId, CreateFinancialBudgetTargetRequest? request, CurrentUser currentUser,
+        Guid workspaceId, Guid budgetId, CreateFinancialBudgetTargetRequest? request, CurrentUser currentUser,
         FinancialBudgetService service, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        var result = await service.AddTargetAsync(familyId, budgetId, userId, request?.Name, request?.PlannedAmount,
+        var result = await service.AddTargetAsync(workspaceId, budgetId, userId, request?.Name, request?.PlannedAmount,
             request?.GroupingType, request?.CategoryId, cancellationToken);
         return ToResponse(result, budget => Results.Created(
-            $"/api/families/{familyId}/budgets/{budgetId}", FinancialBudgetResponse.From(budget)));
+            $"/api/financial-workspaces/{workspaceId}/budgets/{budgetId}", FinancialBudgetResponse.From(budget)));
     }
 
     private static async Task<IResult> UpdateTarget(
-        Guid familyId, Guid budgetId, Guid targetId, UpdateFinancialBudgetTargetRequest? request,
+        Guid workspaceId, Guid budgetId, Guid targetId, UpdateFinancialBudgetTargetRequest? request,
         CurrentUser currentUser, FinancialBudgetService service, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         return ToResponse(await service.UpdateTargetAsync(
-            familyId, budgetId, targetId, userId, request?.Name, request?.PlannedAmount, cancellationToken),
+            workspaceId, budgetId, targetId, userId, request?.Name, request?.PlannedAmount, cancellationToken),
             budget => Results.Ok(FinancialBudgetResponse.From(budget)));
     }
 
     private static async Task<IResult> ArchiveTarget(
-        Guid familyId, Guid budgetId, Guid targetId, CurrentUser currentUser, FinancialBudgetService service,
+        Guid workspaceId, Guid budgetId, Guid targetId, CurrentUser currentUser, FinancialBudgetService service,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         return ToResponse(await service.ArchiveTargetAsync(
-            familyId, budgetId, targetId, userId, cancellationToken), _ => Results.NoContent());
+            workspaceId, budgetId, targetId, userId, cancellationToken), _ => Results.NoContent());
     }
 
     private static IResult ToResponse(BudgetResult result, Func<FinancialBudgetDto, IResult> ok) => result.Access switch

@@ -17,24 +17,24 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
     private static readonly DateOnly Reference = new(2026, 9, 1);
 
     private string _owner = null!;
-    private string _member = null!;
+    private string _ownerSecondSession = null!;
     private string _outsider = null!;
-    private FamilyDto _family = null!;
-    private FamilyDto _otherFamily = null!;
+    private WorkspaceDto _family = null!;
+    private WorkspaceDto _otherFamily = null!;
     private Guid _pj;
     private Guid _pf;
     private Guid _foreignAccount;
 
-    private string TransfersUrl => $"/api/families/{_family.Id}/transfers";
+    private string TransfersUrl => $"/api/financial-workspaces/{_family.Id}/transfers";
 
     private async Task ArrangeAsync()
     {
         _owner = await SignInAsync("dona");
-        _member = await SignInAsync("membro");
+        _ownerSecondSession = _owner;
         _outsider = await SignInAsync("estranho");
-        var created = await CreateFamilyAsync(_owner, "Família Silva");
-        _family = await JoinByInvitationAsync(_owner, created.Id, _member);
-        _otherFamily = await CreateFamilyAsync(_outsider, "Família Estranha");
+        var created = await CreateWorkspaceAsync(_owner, "Família Silva");
+        _family = created;
+        _otherFamily = await CreateWorkspaceAsync(_outsider, "Família Estranha");
         _pj = await CreateAccountAsync("Itaú Empresas", "PJ", "2000.00", Reference);
         _pf = await CreateAccountAsync("Itaú PF", "PF", "100.00", Reference);
         _foreignAccount = await CreateAccountAsync("Conta Estranha", "PF", "0.00", Reference, _outsider, _otherFamily.Id);
@@ -45,7 +45,7 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
     {
         await ArrangeAsync();
 
-        var response = await SendWithCsrfAsync(HttpMethod.Post, TransfersUrl, _member, Body(_pj, _pf, "500.00", Reference.AddDays(3)));
+        var response = await SendWithCsrfAsync(HttpMethod.Post, TransfersUrl, _ownerSecondSession, Body(_pj, _pf, "500.00", Reference.AddDays(3)));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var transfer = await ReadAsync<TransferDto>(response);
@@ -71,7 +71,7 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
         var url = $"{TransfersUrl}/{transfer}";
 
         var first = await SendWithCsrfAsync(HttpMethod.Post, $"{url}/cancel", _owner);
-        var second = await SendWithCsrfAsync(HttpMethod.Post, $"{url}/cancel", _member);
+        var second = await SendWithCsrfAsync(HttpMethod.Post, $"{url}/cancel", _ownerSecondSession);
 
         Assert.Equal((HttpStatusCode.OK, HttpStatusCode.OK), (first.StatusCode, second.StatusCode));
         var cancelled = await ReadAsync<TransferDto>(first);
@@ -185,7 +185,7 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
         await AssertValidationErrorAsync(
             await SendWithCsrfAsync(HttpMethod.Post, TransfersUrl, _owner, Body(_pf, _pj, "1.00", Reference)), "destinationAccountId");
 
-        var listed = Assert.Single((await ListAsync(_member)).Items);
+        var listed = Assert.Single((await ListAsync(_ownerSecondSession)).Items);
         Assert.Equal((transfer, false, true), (listed.Id, listed.SourceAccount.IsActive, listed.DestinationAccount.IsActive));
         Assert.Equal(("1500.00", "600.00"), ((await BalanceAsync(_pj)).Balance, (await BalanceAsync(_pf)).Balance));
     }
@@ -230,7 +230,7 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
 
         var responses = new[]
         {
-            await SendRawAsync(TransfersUrl, _owner, $$"""{ {{fields}}, "familyId": "{{_otherFamily.Id}}" }"""),
+            await SendRawAsync(TransfersUrl, _owner, $$"""{ {{fields}}, "workspaceId": "{{_otherFamily.Id}}" }"""),
             await SendRawAsync(TransfersUrl, _owner, $$"""{ {{fields}}, "isCancelled": true }"""),
             await SendRawAsync(TransfersUrl, _owner, $$"""{ {{fields}}, "createdByUserId": "{{Guid.CreateVersion7()}}" }"""),
             await SendRawAsync(TransfersUrl, _owner, $$"""{ {{fields}}, "categoryId": "{{Guid.CreateVersion7()}}" }"""),
@@ -250,7 +250,7 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
         await ArrangeAsync();
         var transfer = await CreateAsync(_pj, _pf, "10.00", Reference);
         var url = $"{TransfersUrl}/{transfer}";
-        var otherRoute = $"/api/families/{_otherFamily.Id}/transfers/{transfer}";
+        var otherRoute = $"/api/financial-workspaces/{_otherFamily.Id}/transfers/{transfer}";
 
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, TransfersUrl, _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, url, _outsider)).StatusCode);
@@ -297,11 +297,11 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
         }
 
         var foreignOther = await CreateAccountAsync("Outra Estranha", "PF", "0.00", Reference, _outsider, _otherFamily.Id);
-        await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_otherFamily.Id}/transfers", _outsider,
+        await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_otherFamily.Id}/transfers", _outsider,
             Body(_foreignAccount, foreignOther, "1.00", Reference));
 
         var expected = ids.OrderByDescending(x => x.Date).ThenByDescending(x => x.Id.ToString()).Select(x => x.Id).ToList();
-        var pages = new[] { await ListAsync(_member, "pageSize=3&page=1"), await ListAsync(_member, "pageSize=3&page=2") };
+        var pages = new[] { await ListAsync(_ownerSecondSession, "pageSize=3&page=1"), await ListAsync(_ownerSecondSession, "pageSize=3&page=2") };
         Assert.All(pages, p => Assert.Equal(4, p.TotalCount));
         Assert.Equal(expected, pages.SelectMany(p => p.Items).Select(t => t.Id));
 
@@ -336,7 +336,7 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
 
         using var json = JsonDocument.Parse(body);
         Assert.Equal("1234.50", json.RootElement.GetProperty("items")[0].GetProperty("amount").GetString());
-        foreach (var forbidden in new[] { "familyId", "createdBy", "cancelledBy", "userId", _family.Id.ToString() })
+        foreach (var forbidden in new[] { "workspaceId", "createdBy", "cancelledBy", "userId", _family.Id.ToString() })
         {
             Assert.DoesNotContain(forbidden, body, StringComparison.OrdinalIgnoreCase);
         }
@@ -361,16 +361,16 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
 
     private async Task<BalanceDto> BalanceAsync(Guid account, DateOnly? asOf = null)
     {
-        var url = $"/api/families/{_family.Id}/accounts/{account}/balance" + (asOf is { } d ? $"?asOf={d:yyyy-MM-dd}" : string.Empty);
+        var url = $"/api/financial-workspaces/{_family.Id}/accounts/{account}/balance" + (asOf is { } d ? $"?asOf={d:yyyy-MM-dd}" : string.Empty);
         var response = await SendAsync(HttpMethod.Get, url, _owner);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await ReadAsync<BalanceDto>(response);
     }
 
     private async Task<Guid> CreateAccountAsync(
-        string name, string scope, string openingBalance, DateOnly openingBalanceDate, string? session = null, Guid? familyId = null)
+        string name, string scope, string openingBalance, DateOnly openingBalanceDate, string? session = null, Guid? workspaceId = null)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId ?? _family.Id}/accounts", session ?? _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId ?? _family.Id}/accounts", session ?? _owner,
             new { name, type = "Checking", financialScope = scope, openingBalance, openingBalanceDate });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -378,21 +378,21 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
 
     private async Task DeactivateAsync(Guid account, string name, string scope, string openingBalance)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Put, $"/api/families/{_family.Id}/accounts/{account}", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Put, $"/api/financial-workspaces/{_family.Id}/accounts/{account}", _owner,
             new { name, type = "Checking", financialScope = scope, openingBalance, openingBalanceDate = Reference, isActive = false });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     private async Task<Guid> CreateCategoryAsync(string name, string type)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/categories", _owner, new { name, type });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/categories", _owner, new { name, type });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
     }
 
     private async Task AddTransactionAsync(Guid account, Guid category, string type, string amount, DateOnly date)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions", _owner,
             new { accountId = account, categoryId = category, type, description = "Lançamento", amount, transactionDate = date });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }

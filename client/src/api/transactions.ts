@@ -73,13 +73,13 @@ export type SaveTransactionResult =
 
 const jsonHeaders = { Accept: 'application/json' }
 
-function transactionsUrl(familyId: string, transactionId?: string): string {
-  const base = `/api/families/${encodeURIComponent(familyId)}/transactions`
+function transactionsUrl(workspaceId: string, transactionId?: string): string {
+  const base = `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/transactions`
   return transactionId ? `${base}/${encodeURIComponent(transactionId)}` : base
 }
 
 export async function listTransactions(
-  familyId: string,
+  workspaceId: string,
   filters: TransactionFilters,
   page: number,
   signal?: AbortSignal,
@@ -92,7 +92,7 @@ export async function listTransactions(
   if (filters.type) query.set('type', filters.type)
   if (filters.includeCancelled) query.set('includeCancelled', 'true')
 
-  const response = await fetch(`${transactionsUrl(familyId)}?${query}`, { signal, headers: jsonHeaders })
+  const response = await fetch(`${transactionsUrl(workspaceId)}?${query}`, { signal, headers: jsonHeaders })
   if (response.status === 400) {
     const problem = (await response.json().catch(() => ({}))) as { errors?: Record<string, string[]> }
     throw new Error(Object.values(problem.errors ?? {}).flat()[0] ?? 'Filtros inválidos.')
@@ -117,26 +117,26 @@ async function write(method: 'POST' | 'PUT', url: string, body: unknown, expecte
     const problem = (await response.json().catch(() => ({}))) as { title?: string }
     return { ok: false, errors: { form: [problem.title ?? 'Lançamento cancelado não pode ser editado.'] } }
   }
-  if (response.status === 404) throw new Error('Lançamento ou família não encontrado.')
+  if (response.status === 404) throw new Error('Lançamento ou orçamento não encontrado.')
   throw new Error(`Falha ao salvar o lançamento (HTTP ${response.status}).`)
 }
 
-export function createTransaction(familyId: string, input: TransactionInput): Promise<SaveTransactionResult> {
-  return write('POST', transactionsUrl(familyId), input, 201)
+export function createTransaction(workspaceId: string, input: TransactionInput): Promise<SaveTransactionResult> {
+  return write('POST', transactionsUrl(workspaceId), input, 201)
 }
 
-export function updateTransaction(familyId: string, id: string, input: TransactionInput): Promise<SaveTransactionResult> {
-  return write('PUT', transactionsUrl(familyId, id), input, 200)
+export function updateTransaction(workspaceId: string, id: string, input: TransactionInput): Promise<SaveTransactionResult> {
+  return write('PUT', transactionsUrl(workspaceId, id), input, 200)
 }
 
 /** Cancela sem excluir; repetir é seguro (idempotente). */
-export function cancelTransaction(familyId: string, id: string): Promise<SaveTransactionResult> {
-  return write('POST', `${transactionsUrl(familyId, id)}/cancel`, undefined, 200)
+export function cancelTransaction(workspaceId: string, id: string): Promise<SaveTransactionResult> {
+  return write('POST', `${transactionsUrl(workspaceId, id)}/cancel`, undefined, 200)
 }
 
 /** Um lançamento (inclusive cancelado), por exemplo o efetivo de uma previsão realizada. */
-export async function getTransaction(familyId: string, id: string, signal?: AbortSignal): Promise<FinancialTransaction> {
-  const response = await fetch(transactionsUrl(familyId, id), { signal, headers: jsonHeaders })
+export async function getTransaction(workspaceId: string, id: string, signal?: AbortSignal): Promise<FinancialTransaction> {
+  const response = await fetch(transactionsUrl(workspaceId, id), { signal, headers: jsonHeaders })
   if (!response.ok) throw new Error(`Falha ao carregar o lançamento (HTTP ${response.status}).`)
   return (await response.json()) as FinancialTransaction
 }

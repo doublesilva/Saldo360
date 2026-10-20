@@ -11,7 +11,7 @@ public sealed class FinancialRecurrence : Entity
     public const int DescriptionMaxLength = 200;
     private FinancialRecurrence() { Description = string.Empty; Currency = "BRL"; }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid FinancialAccountId { get; private set; }
     public Guid FinancialCategoryId { get; private set; }
     public CategoryType Type { get; private set; }
@@ -30,8 +30,8 @@ public sealed class FinancialRecurrence : Entity
     public DateTimeOffset UpdatedAt { get; private set; }
     public DateTimeOffset? ArchivedAt { get; private set; }
 
-    public static FinancialRecurrence Create(Guid familyId, RecurrenceDetails details, DateTimeOffset now) =>
-        new FinancialRecurrence { FamilyId = familyId, CreatedAt = now, UpdatedAt = now, Status = RecurrenceStatus.Active }.Apply(details);
+    public static FinancialRecurrence Create(Guid workspaceId, RecurrenceDetails details, DateTimeOffset now) =>
+        new FinancialRecurrence { WorkspaceId = workspaceId, CreatedAt = now, UpdatedAt = now, Status = RecurrenceStatus.Active }.Apply(details);
 
     public void Update(RecurrenceDetails details, DateTimeOffset now)
     {

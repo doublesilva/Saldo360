@@ -4,9 +4,9 @@ import { listPlanned, type PlannedTransaction } from '../api/planned'
 import { formatBrlDecimal } from '../money'
 import { normalizeRequestError } from '../api/apiErrors'
 
-type Props = { familyId: string; debt: FinancialDebt; installment: DebtInstallment; onChanged?: () => void; onNavigateToAgenda?: (competence: string) => void; onNavigateToBudgets?: (competence: string) => void; onNavigateToPlanning?: () => void }
+type Props = { workspaceId: string; debt: FinancialDebt; installment: DebtInstallment; onChanged?: () => void; onNavigateToAgenda?: (competence: string) => void; onNavigateToBudgets?: (competence: string) => void; onNavigateToPlanning?: () => void }
 
-export function FinancialDebtReconciliation({ familyId, debt, installment, onChanged, onNavigateToAgenda, onNavigateToBudgets, onNavigateToPlanning }: Props) {
+export function FinancialDebtReconciliation({ workspaceId, debt, installment, onChanged, onNavigateToAgenda, onNavigateToBudgets, onNavigateToPlanning }: Props) {
   const [planned, setPlanned] = useState<PlannedTransaction[]>([])
   const [plannedTotal, setPlannedTotal] = useState(0)
   const [plannedPage, setPlannedPage] = useState(1)
@@ -19,27 +19,27 @@ export function FinancialDebtReconciliation({ familyId, debt, installment, onCha
   const selected = planned.find((item) => item.id === selectedId) ?? null
   const load = useCallback(async (signal: AbortSignal, pageNumber = 1, append = false) => {
     const [page, loadedLinks] = await Promise.all([
-      listPlanned(familyId, { from: '', to: '', accountId: debt.responsibleAccountId ?? '', categoryId: '', type: 'Expense', includeRealized: false, includeCancelled: false }, pageNumber, signal, 100),
-      listReconciliations(familyId, signal),
+      listPlanned(workspaceId, { from: '', to: '', accountId: debt.responsibleAccountId ?? '', categoryId: '', type: 'Expense', includeRealized: false, includeCancelled: false }, pageNumber, signal, 100),
+      listReconciliations(workspaceId, signal),
     ])
     const pending = page.items.filter((item) => item.status === 'Pending')
     setPlanned((current) => append ? [...current, ...pending.filter((item) => !current.some((existing) => existing.id === item.id))] : pending)
     setPlannedTotal(page.totalCount)
     setPlannedPage(page.page)
     setLinks(loadedLinks)
-  }, [familyId, debt.responsibleAccountId])
+  }, [workspaceId, debt.responsibleAccountId])
   useEffect(() => { const controller = new AbortController(); load(controller.signal).catch((failure) => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : 'Falha ao carregar previsões elegíveis.') }); return () => controller.abort() }, [load, debt.id, installment.id])
   const reconcile = async () => {
     if (!selected || busy) return
     setBusy(true); setError(null)
     try {
-      const result = await createReconciliation(familyId, { debtInstallmentId: installment.id, plannedTransactionId: selected.id })
+      const result = await createReconciliation(workspaceId, { debtInstallmentId: installment.id, plannedTransactionId: selected.id })
       if (!result) { setError('Conflito: parcela ou previsão já possui conciliação ativa.'); return }
       await load(new AbortController().signal); setSelectedId(''); setReview(false); onChanged?.()
     } catch (failure) {
       if (normalizeRequestError(failure).resultUncertain) {
         try {
-          const loaded = await listReconciliations(familyId)
+          const loaded = await listReconciliations(workspaceId)
           if (loaded.some((link) => link.removedAt === null && link.debtInstallmentId === installment.id && link.plannedTransactionId === selected.id)) {
             await load(new AbortController().signal); setSelectedId(''); setReview(false); onChanged?.(); return
           }
@@ -51,10 +51,10 @@ export function FinancialDebtReconciliation({ familyId, debt, installment, onCha
   const remove = async () => {
     if (!activeLink || !window.confirm('Desfazer esta conciliação? Parcela e previsão poderão voltar a ser contabilizadas separadamente.')) return
     setBusy(true); setError(null)
-    try { await removeReconciliation(familyId, activeLink.id); await load(new AbortController().signal); onChanged?.() } catch (failure) {
+    try { await removeReconciliation(workspaceId, activeLink.id); await load(new AbortController().signal); onChanged?.() } catch (failure) {
       if (normalizeRequestError(failure).resultUncertain) {
         try {
-          const loaded = await listReconciliations(familyId)
+          const loaded = await listReconciliations(workspaceId)
           if (loaded.some((link) => link.id === activeLink.id && link.removedAt !== null)) { await load(new AbortController().signal); onChanged?.(); return }
         } catch { /* A leitura também falhou; mantém o estado incerto visível. */ }
       }

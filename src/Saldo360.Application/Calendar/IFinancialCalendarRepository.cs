@@ -6,7 +6,7 @@ public interface IFinancialCalendarRepository
     /// Reúne lançamentos ativos e previsões pendentes num único snapshot, em ordem cronológica estável.
     /// </summary>
     Task<FinancialCalendarSnapshot> ListAsync(
-        Guid familyId,
+        Guid workspaceId,
         FinancialCalendarFilter filter,
         CancellationToken cancellationToken);
 }

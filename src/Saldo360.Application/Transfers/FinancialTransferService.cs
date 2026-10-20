@@ -1,4 +1,4 @@
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Common;
 using Saldo360.Domain.Transfers;
 
@@ -10,16 +10,16 @@ namespace Saldo360.Application.Transfers;
 /// mensagem de uma inexistente. Não há edição: corrige-se cancelando e cadastrando de novo.
 /// </summary>
 public sealed class FinancialTransferService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialTransferRepository transfers,
     TimeProvider timeProvider)
 {
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 100;
 
-    public async Task<TransferResult> CreateAsync(Guid familyId, Guid userId, TransferInput input, CancellationToken cancellationToken)
+    public async Task<TransferResult> CreateAsync(Guid workspaceId, Guid userId, TransferInput input, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
         {
             return TransferResult.NotFound;
         }
@@ -29,27 +29,27 @@ public sealed class FinancialTransferService(
             input.SourceAccountId, input.DestinationAccountId, input.Amount, input.TransferDate, input.Description,
             today, out var errors);
 
-        await ValidateAccountAsync(familyId, input.SourceAccountId, "sourceAccountId", "origem", errors, cancellationToken);
-        await ValidateAccountAsync(familyId, input.DestinationAccountId, "destinationAccountId", "destino", errors, cancellationToken);
+        await ValidateAccountAsync(workspaceId, input.SourceAccountId, "sourceAccountId", "origem", errors, cancellationToken);
+        await ValidateAccountAsync(workspaceId, input.DestinationAccountId, "destinationAccountId", "destino", errors, cancellationToken);
 
         if (details is null || errors.Count > 0)
         {
             return TransferResult.Invalid(errors);
         }
 
-        var transfer = FinancialTransfer.Create(familyId, details, userId, timeProvider.GetUtcNow());
+        var transfer = FinancialTransfer.Create(workspaceId, details, userId, timeProvider.GetUtcNow());
         await transfers.AddAsync(transfer, cancellationToken);
-        return TransferResult.Ok((await transfers.GetAsync(familyId, transfer.Id, cancellationToken))!);
+        return TransferResult.Ok((await transfers.GetAsync(workspaceId, transfer.Id, cancellationToken))!);
     }
 
-    public async Task<FinancialTransferDto?> GetAsync(Guid familyId, Guid transferId, Guid userId, CancellationToken cancellationToken) =>
-        await IsParticipantAsync(familyId, userId, cancellationToken)
-            ? await transfers.GetAsync(familyId, transferId, cancellationToken)
+    public async Task<FinancialTransferDto?> GetAsync(Guid workspaceId, Guid transferId, Guid userId, CancellationToken cancellationToken) =>
+        await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            ? await transfers.GetAsync(workspaceId, transferId, cancellationToken)
             : null;
 
-    public async Task<TransferListResult> ListAsync(Guid familyId, Guid userId, TransferQuery query, CancellationToken cancellationToken)
+    public async Task<TransferListResult> ListAsync(Guid workspaceId, Guid userId, TransferQuery query, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
         {
             return TransferListResult.NotFoundResult;
         }
@@ -78,14 +78,14 @@ public sealed class FinancialTransferService(
         }
 
         var filter = new TransferFilter(query.From, query.To, query.AccountId, query.IncludeCancelled, page, pageSize);
-        return new TransferListResult(await transfers.ListAsync(familyId, filter, cancellationToken), null, false);
+        return new TransferListResult(await transfers.ListAsync(workspaceId, filter, cancellationToken), null, false);
     }
 
     /// <summary>Cancela preservando o registro. Idempotente: cancelar de novo devolve o mesmo estado.</summary>
-    public async Task<TransferResult> CancelAsync(Guid familyId, Guid transferId, Guid userId, CancellationToken cancellationToken)
+    public async Task<TransferResult> CancelAsync(Guid workspaceId, Guid transferId, Guid userId, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
-            || await transfers.FindAsync(familyId, transferId, cancellationToken) is not { } transfer)
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            || await transfers.FindAsync(workspaceId, transferId, cancellationToken) is not { } transfer)
         {
             return TransferResult.NotFound;
         }
@@ -95,21 +95,21 @@ public sealed class FinancialTransferService(
             await transfers.SaveChangesAsync(cancellationToken);
         }
 
-        return TransferResult.Ok((await transfers.GetAsync(familyId, transfer.Id, cancellationToken))!);
+        return TransferResult.Ok((await transfers.GetAsync(workspaceId, transfer.Id, cancellationToken))!);
     }
 
-    private async Task<bool> IsParticipantAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>
-        await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is not null;
+    private async Task<bool> IsParticipantAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>
+        await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is not null;
 
     private async Task ValidateAccountAsync(
-        Guid familyId, Guid? accountId, string field, string role, Dictionary<string, string[]> errors, CancellationToken cancellationToken)
+        Guid workspaceId, Guid? accountId, string field, string role, Dictionary<string, string[]> errors, CancellationToken cancellationToken)
     {
         if (accountId is not { } id || id == Guid.Empty || errors.ContainsKey(field))
         {
             return;
         }
 
-        switch (await transfers.IsAccountActiveAsync(familyId, id, cancellationToken))
+        switch (await transfers.IsAccountActiveAsync(workspaceId, id, cancellationToken))
         {
             case null:
                 errors[field] = [$"Conta de {role} inválida."];

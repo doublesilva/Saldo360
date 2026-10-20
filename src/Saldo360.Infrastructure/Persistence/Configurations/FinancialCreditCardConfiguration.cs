@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.CreditCards;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Users;
 
 namespace Saldo360.Infrastructure.Persistence.Configurations;
@@ -28,17 +28,17 @@ internal sealed class FinancialCreditCardConfiguration : IEntityTypeConfiguratio
         builder.Property(card => card.Issuer).HasMaxLength(FinancialCreditCard.IssuerMaxLength).IsRequired();
         builder.Property(card => card.LastFourDigits).HasMaxLength(FinancialCreditCard.LastFourDigitsLength);
         builder.Property(card => card.CreditLimit).HasColumnType("numeric");
-        builder.HasIndex(card => new { card.FamilyId, card.IsArchived });
-        builder.HasAlternateKey(card => new { card.FamilyId, card.Id });
-        builder.HasOne<Family>().WithMany().HasForeignKey(card => card.FamilyId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(card => new { card.WorkspaceId, card.IsArchived });
+        builder.HasAlternateKey(card => new { card.WorkspaceId, card.Id });
+        builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(card => card.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(card => card.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(card => card.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(card => card.ArchivedByUserId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialAccount>().WithMany().HasForeignKey(card => new { card.FamilyId, card.DefaultPaymentAccountId })
-            .HasPrincipalKey(account => new { account.FamilyId, account.Id }).OnDelete(DeleteBehavior.Restrict)
+        builder.HasOne<FinancialAccount>().WithMany().HasForeignKey(card => new { card.WorkspaceId, card.DefaultPaymentAccountId })
+            .HasPrincipalKey(account => new { account.WorkspaceId, account.Id }).OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_financial_credit_cards_family_accounts");
-        builder.HasOne<FamilyMember>().WithMany().HasForeignKey(card => new { card.FamilyId, card.HolderUserId })
-            .HasPrincipalKey(member => new { member.FamilyId, member.UserId }).OnDelete(DeleteBehavior.Restrict)
-            .HasConstraintName("fk_financial_credit_cards_family_members_holder");
+        builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(card => new { card.WorkspaceId, card.HolderUserId })
+            .HasPrincipalKey(workspace => new { workspace.Id, workspace.OwnerUserId }).OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_financial_credit_cards_workspace_holder");
     }
 }

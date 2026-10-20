@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FinancialRecurrences } from './FinancialRecurrences'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
-const recurrence = { id: 'r1', familyId: 'f1', accountId: 'a1', categoryId: 'c1', type: 'Expense', description: 'Internet', amount: '380.00', isEstimated: true, frequency: 'Monthly', interval: 1, startDate: '2026-11-10', endDate: null, occurrenceCount: null, dayOfMonth: 10, status: 'Active', currency: 'BRL', createdAt: '', updatedAt: '', archivedAt: null }
+const recurrence = { id: 'r1', workspaceId: 'f1', accountId: 'a1', categoryId: 'c1', type: 'Expense', description: 'Internet', amount: '380.00', isEstimated: true, frequency: 'Monthly', interval: 1, startDate: '2026-11-10', endDate: null, occurrenceCount: null, dayOfMonth: 10, status: 'Active', currency: 'BRL', createdAt: '', updatedAt: '', archivedAt: null }
 const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } }))
 
 function mockApi(items: unknown[] = [], occurrences: unknown[] = []) {
@@ -23,7 +23,7 @@ function mockApi(items: unknown[] = [], occurrences: unknown[] = []) {
 describe('FinancialRecurrences', () => {
   it('exibe estado vazio e abre o cadastro', async () => {
     mockApi()
-    render(<FinancialRecurrences familyId="f1" />)
+    render(<FinancialRecurrences workspaceId="f1" />)
     await screen.findByText('Nenhuma recorrência cadastrada.')
     fireEvent.click(screen.getByRole('button', { name: 'Cadastrar recorrência' }))
     expect(screen.getByRole('dialog')).toBeTruthy()
@@ -32,7 +32,7 @@ describe('FinancialRecurrences', () => {
 
   it('lista recorrência e preserva o valor decimal como texto', async () => {
     mockApi([recurrence])
-    render(<FinancialRecurrences familyId="f1" />)
+    render(<FinancialRecurrences workspaceId="f1" />)
     const recurrenceButton = await screen.findByRole('button', { name: /Internet/ })
     expect(screen.getAllByText(/R\$\s*380,00/).length).toBeGreaterThan(0)
     fireEvent.click(recurrenceButton)

@@ -10,7 +10,7 @@ public static class FinancialAccountEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialAccountEndpoints(this IEndpointRouteBuilder app)
     {
-        var accounts = app.MapGroup("/api/families/{familyId:guid}/accounts").RequireAuthorization();
+        var accounts = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/accounts").RequireAuthorization();
         accounts.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         accounts.MapGet("/", List);
         accounts.MapGet("/{accountId:guid}", Get);
@@ -25,7 +25,7 @@ public static class FinancialAccountEndpoints
     /// pendentes vencidas e até a data-alvo. Valores como texto decimal exato; indisponível → todos nulos com o motivo.
     /// </summary>
     private static async Task<IResult> GetProjection(
-        Guid familyId, Guid accountId, string? through, CurrentUser currentUser, FinancialAccountService accounts,
+        Guid workspaceId, Guid accountId, string? through, CurrentUser currentUser, FinancialAccountService accounts,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -45,7 +45,7 @@ public static class FinancialAccountEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var result = await accounts.GetProjectionAsync(familyId, accountId, userId, date!.Value, cancellationToken);
+        var result = await accounts.GetProjectionAsync(workspaceId, accountId, userId, date!.Value, cancellationToken);
         return result.Access switch
         {
             BalanceAccess.NotFound => Results.NotFound(),
@@ -59,7 +59,7 @@ public static class FinancialAccountEndpoints
     /// como texto decimal exato. Indisponível (sem saldo inicial ou antes da referência): totais e saldo nulos.
     /// </summary>
     private static async Task<IResult> GetBalance(
-        Guid familyId, Guid accountId, string? asOf, CurrentUser currentUser, FinancialAccountService accounts,
+        Guid workspaceId, Guid accountId, string? asOf, CurrentUser currentUser, FinancialAccountService accounts,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -74,7 +74,7 @@ public static class FinancialAccountEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var result = await accounts.GetBalanceAsync(familyId, accountId, userId, date, cancellationToken);
+        var result = await accounts.GetBalanceAsync(workspaceId, accountId, userId, date, cancellationToken);
         return result.Access switch
         {
             BalanceAccess.NotFound => Results.NotFound(),
@@ -84,7 +84,7 @@ public static class FinancialAccountEndpoints
     }
 
     private static async Task<IResult> Create(
-        Guid familyId, CreateAccountRequest? request, CurrentUser currentUser, FinancialAccountService accounts,
+        Guid workspaceId, CreateAccountRequest? request, CurrentUser currentUser, FinancialAccountService accounts,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -92,18 +92,18 @@ public static class FinancialAccountEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await accounts.CreateAsync(familyId, userId, ToInput(request), cancellationToken);
+        var result = await accounts.CreateAsync(workspaceId, userId, ToInput(request), cancellationToken);
         return result.Access switch
         {
             AccountAccess.NotFound => Results.NotFound(),
             AccountAccess.Invalid => Results.ValidationProblem(result.Errors!),
-            _ => Results.Created($"/api/families/{familyId}/accounts/{result.Account!.Id}", AccountResponse.From(result.Account)),
+            _ => Results.Created($"/api/financial-workspaces/{workspaceId}/accounts/{result.Account!.Id}", AccountResponse.From(result.Account)),
         };
     }
 
     /// <summary>Contas ativas; com <c>includeInactive=true</c>, também as desativadas.</summary>
     private static async Task<IResult> List(
-        Guid familyId, bool? includeInactive, CurrentUser currentUser, FinancialAccountService accounts,
+        Guid workspaceId, bool? includeInactive, CurrentUser currentUser, FinancialAccountService accounts,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -111,13 +111,13 @@ public static class FinancialAccountEndpoints
             return Results.Unauthorized();
         }
 
-        return await accounts.ListAsync(familyId, userId, includeInactive ?? false, cancellationToken) is { } list
+        return await accounts.ListAsync(workspaceId, userId, includeInactive ?? false, cancellationToken) is { } list
             ? Results.Ok(list.Select(AccountResponse.From).ToList())
             : Results.NotFound();
     }
 
     private static async Task<IResult> Get(
-        Guid familyId, Guid accountId, CurrentUser currentUser, FinancialAccountService accounts,
+        Guid workspaceId, Guid accountId, CurrentUser currentUser, FinancialAccountService accounts,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -125,14 +125,14 @@ public static class FinancialAccountEndpoints
             return Results.Unauthorized();
         }
 
-        return await accounts.GetAsync(familyId, accountId, userId, cancellationToken) is { } account
+        return await accounts.GetAsync(workspaceId, accountId, userId, cancellationToken) is { } account
             ? Results.Ok(AccountResponse.From(account))
             : Results.NotFound();
     }
 
     /// <summary>Substitui os campos cadastrais e a situação (isActive obrigatório).</summary>
     private static async Task<IResult> Update(
-        Guid familyId, Guid accountId, UpdateAccountRequest? request, CurrentUser currentUser,
+        Guid workspaceId, Guid accountId, UpdateAccountRequest? request, CurrentUser currentUser,
         FinancialAccountService accounts, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -141,9 +141,9 @@ public static class FinancialAccountEndpoints
         }
 
         var input = new AccountInput(
-            request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleMemberId,
+            request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleUserId,
             request?.OpeningBalance, request?.OpeningBalanceDate);
-        var result = await accounts.UpdateAsync(familyId, accountId, userId, input, request?.IsActive, cancellationToken);
+        var result = await accounts.UpdateAsync(workspaceId, accountId, userId, input, request?.IsActive, cancellationToken);
         return result.Access switch
         {
             AccountAccess.NotFound => Results.NotFound(),
@@ -153,12 +153,12 @@ public static class FinancialAccountEndpoints
     }
 
     private static AccountInput ToInput(CreateAccountRequest? request) =>
-        new(request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleMemberId,
+        new(request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleUserId,
             request?.OpeningBalance, request?.OpeningBalanceDate);
 }
 
 /// <summary>
-/// Cadastro de conta. Família vem da rota e criador da sessão; campos como familyId, createdByUserId,
+/// Cadastro de conta. Família vem da rota e criador da sessão; campos como workspaceId, createdByUserId,
 /// isActive ou currency são recusados (400). Agência, número e credenciais bancárias não existem aqui.
 /// Saldo inicial opcional: <c>openingBalance</c> (número JSON, até duas casas) e <c>openingBalanceDate</c>
 /// (<c>yyyy-MM-dd</c>, sem horário), juntos ou ambos ausentes/nulos.
@@ -169,13 +169,13 @@ public sealed record CreateAccountRequest(
     string? Institution,
     string? Type,
     string? FinancialScope,
-    Guid? ResponsibleMemberId,
+    Guid? ResponsibleUserId,
     decimal? OpeningBalance,
     DateOnly? OpeningBalanceDate);
 
 /// <summary>
 /// Edição (substituição completa): os mesmos campos cadastrais mais a situação. Saldo inicial ausente ou nulo
-/// remove a configuração. familyId e createdByUserId são recusados.
+/// remove a configuração. workspaceId e createdByUserId são recusados.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record UpdateAccountRequest(
@@ -183,7 +183,7 @@ public sealed record UpdateAccountRequest(
     string? Institution,
     string? Type,
     string? FinancialScope,
-    Guid? ResponsibleMemberId,
+    Guid? ResponsibleUserId,
     decimal? OpeningBalance,
     DateOnly? OpeningBalanceDate,
     bool? IsActive);

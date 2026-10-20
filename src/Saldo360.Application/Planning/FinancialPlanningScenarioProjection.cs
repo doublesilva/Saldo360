@@ -1,5 +1,5 @@
 using Saldo360.Application.Calendar;
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Application.Goals;
 
 namespace Saldo360.Application.Planning;
@@ -47,25 +47,25 @@ public sealed record PlanningScenarioProjectionResult(PlanningScenarioProjection
 }
 
 public sealed class FinancialPlanningScenarioProjectionService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialPlanningScenarioRepository scenarios,
     FinancialCalendarMonthlyProjectionService monthlyProjection,
     IFinancialGoalAllocationRepository allocations)
 {
-    public async Task<PlanningScenarioProjectionResult> GetAsync(Guid familyId, Guid scenarioId, Guid userId, CancellationToken ct)
+    public async Task<PlanningScenarioProjectionResult> GetAsync(Guid workspaceId, Guid scenarioId, Guid userId, CancellationToken ct)
     {
-        if (await families.GetMemberRoleAsync(familyId, userId, ct) is null) return PlanningScenarioProjectionResult.NotFoundResult;
-        var scenario = await scenarios.GetScenarioAsync(familyId, scenarioId, ct);
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, ct) is null) return PlanningScenarioProjectionResult.NotFoundResult;
+        var scenario = await scenarios.GetScenarioAsync(workspaceId, scenarioId, ct);
         if (scenario is null) return PlanningScenarioProjectionResult.NotFoundResult;
-        var baseResult = await monthlyProjection.GetAsync(familyId, userId, new FinancialCalendarMonthlyProjectionQuery(scenario.StartMonth, scenario.Months, null), ct);
+        var baseResult = await monthlyProjection.GetAsync(workspaceId, userId, new FinancialCalendarMonthlyProjectionQuery(scenario.StartMonth, scenario.Months, null), ct);
         if (baseResult.NotFound) return PlanningScenarioProjectionResult.NotFoundResult;
         if (baseResult.Errors is not null) return new(null, baseResult.Errors, false);
-        var parameters = (await scenarios.ListParametersAsync(familyId, scenarioId, ct)).ToDictionary(x => x.Competence);
-        var goalSummary = await allocations.SummaryAsync(familyId, ct);
+        var parameters = (await scenarios.ListParametersAsync(workspaceId, scenarioId, ct)).ToDictionary(x => x.Competence);
+        var goalSummary = await allocations.SummaryAsync(workspaceId, ct);
         FinancialCalendarMonthlyProjection? accountProjection = null;
         if (scenario.RecoveryAccountId is { } recoveryAccountId)
         {
-            var accountResult = await monthlyProjection.GetAsync(familyId, userId, new FinancialCalendarMonthlyProjectionQuery(scenario.StartMonth, scenario.Months, recoveryAccountId), ct);
+            var accountResult = await monthlyProjection.GetAsync(workspaceId, userId, new FinancialCalendarMonthlyProjectionQuery(scenario.StartMonth, scenario.Months, recoveryAccountId), ct);
             if (!accountResult.NotFound && accountResult.Errors is null) accountProjection = accountResult.Projection;
         }
         var cumulative = 0m;

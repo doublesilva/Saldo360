@@ -7,7 +7,7 @@ public interface IFinancialCalendarBalanceRepository
     /// null indica que a conta solicitada não pertence à família.
     /// </summary>
     Task<FinancialCalendarBalanceSnapshot?> ReadAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid? accountId,
         DateOnly through,
         DateOnly today,
@@ -17,7 +17,7 @@ public interface IFinancialCalendarBalanceRepository
     /// Lê a base de saldos e os movimentos do período no mesmo snapshot somente leitura.
     /// </summary>
     Task<FinancialCalendarBalanceSnapshot?> ReadMonthlyAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid? accountId,
         DateOnly from,
         DateOnly through,

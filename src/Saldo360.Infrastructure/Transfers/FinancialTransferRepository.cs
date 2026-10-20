@@ -13,17 +13,17 @@ internal sealed class FinancialTransferRepository(Saldo360DbContext db) : IFinan
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public Task<FinancialTransfer?> FindAsync(Guid familyId, Guid transferId, CancellationToken cancellationToken) =>
-        db.FinancialTransfers.SingleOrDefaultAsync(t => t.Id == transferId && t.FamilyId == familyId, cancellationToken);
+    public Task<FinancialTransfer?> FindAsync(Guid workspaceId, Guid transferId, CancellationToken cancellationToken) =>
+        db.FinancialTransfers.SingleOrDefaultAsync(t => t.Id == transferId && t.WorkspaceId == workspaceId, cancellationToken);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken) => db.SaveChangesAsync(cancellationToken);
 
-    public Task<FinancialTransferDto?> GetAsync(Guid familyId, Guid transferId, CancellationToken cancellationToken) =>
-        Project(db.FinancialTransfers.Where(t => t.FamilyId == familyId && t.Id == transferId)).SingleOrDefaultAsync(cancellationToken);
+    public Task<FinancialTransferDto?> GetAsync(Guid workspaceId, Guid transferId, CancellationToken cancellationToken) =>
+        Project(db.FinancialTransfers.Where(t => t.WorkspaceId == workspaceId && t.Id == transferId)).SingleOrDefaultAsync(cancellationToken);
 
-    public async Task<TransferPage> ListAsync(Guid familyId, TransferFilter filter, CancellationToken cancellationToken)
+    public async Task<TransferPage> ListAsync(Guid workspaceId, TransferFilter filter, CancellationToken cancellationToken)
     {
-        var query = db.FinancialTransfers.Where(t => t.FamilyId == familyId);
+        var query = db.FinancialTransfers.Where(t => t.WorkspaceId == workspaceId);
         if (!filter.IncludeCancelled)
         {
             query = query.Where(t => !t.IsCancelled);
@@ -52,9 +52,9 @@ internal sealed class FinancialTransferRepository(Saldo360DbContext db) : IFinan
         return new TransferPage(items, filter.Page, filter.PageSize, total);
     }
 
-    public Task<bool?> IsAccountActiveAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken) =>
+    public Task<bool?> IsAccountActiveAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken) =>
         db.FinancialAccounts
-            .Where(a => a.FamilyId == familyId && a.Id == accountId)
+            .Where(a => a.WorkspaceId == workspaceId && a.Id == accountId)
             .Select(a => (bool?)a.IsActive)
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -62,8 +62,8 @@ internal sealed class FinancialTransferRepository(Saldo360DbContext db) : IFinan
     // decrescente e Id decrescente, estável entre páginas.
     private IQueryable<FinancialTransferDto> Project(IQueryable<FinancialTransfer> transfers) =>
         from t in transfers.AsNoTracking()
-        join source in db.FinancialAccounts on new { t.FamilyId, Id = t.SourceAccountId } equals new { source.FamilyId, source.Id }
-        join destination in db.FinancialAccounts on new { t.FamilyId, Id = t.DestinationAccountId } equals new { destination.FamilyId, destination.Id }
+        join source in db.FinancialAccounts on new { t.WorkspaceId, Id = t.SourceAccountId } equals new { source.WorkspaceId, source.Id }
+        join destination in db.FinancialAccounts on new { t.WorkspaceId, Id = t.DestinationAccountId } equals new { destination.WorkspaceId, destination.Id }
         orderby t.TransferDate descending, t.Id descending
         select new FinancialTransferDto(
             t.Id,

@@ -1,3 +1,4 @@
+using Saldo360.Domain.Workspaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -6,7 +7,7 @@ using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Families;
 using Saldo360.Domain.Planning;
-using Saldo360.Infrastructure.Families;
+using Saldo360.Infrastructure.Workspaces;
 using Saldo360.Infrastructure.Persistence;
 using Saldo360.Infrastructure.Users;
 using Saldo360.Tests.Support;
@@ -21,7 +22,7 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
 
     private string _connectionString = null!;
     private Guid _userA;
-    private Family _familyA = null!;
+    private FinancialWorkspace _familyA = null!;
     private FinancialAccount _accountA = null!;
     private FinancialAccount _accountB = null!;
     private FinancialCategory _expenseA = null!;
@@ -35,9 +36,9 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
         var users = new UserDirectory(db, TimeProvider.System);
         _userA = await users.ResolveAsync("https://auth.test.invalid", "a", "A", CancellationToken.None);
         var userB = await users.ResolveAsync("https://auth.test.invalid", "b", "B", CancellationToken.None);
-        _familyA = Family.Create("Família A", _userA, DateTimeOffset.UtcNow);
-        var familyB = Family.Create("Família B", userB, DateTimeOffset.UtcNow);
-        var families = new FamilyRepository(db);
+        _familyA = FinancialWorkspace.CreatePersonal(_userA, DateTimeOffset.UtcNow);
+        var familyB = FinancialWorkspace.CreatePersonal(userB, DateTimeOffset.UtcNow);
+        var families = new FinancialWorkspaceRepository(db);
         await families.AddAsync(_familyA, CancellationToken.None);
         await families.AddAsync(familyB, CancellationToken.None);
 
@@ -107,7 +108,7 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
     [Theory]
     [InlineData("DELETE FROM financial_accounts")]
     [InlineData("DELETE FROM financial_categories")]
-    [InlineData("DELETE FROM families")]
+    [InlineData("DELETE FROM financial_workspaces")]
     public async Task NothingDeletesPlannedByCascade(string sql)
     {
         await AddAsync(Planned(_accountA.Id, _expenseA.Id, CategoryType.Expense));
@@ -126,7 +127,7 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
         var otherAccount = Guid.CreateVersion7();
         await using (var db = Db())
         {
-            await db.GetService<IMigrator>().MigrateAsync(PreviousMigration);
+            await HistoricalFinancialSchema.PrepareAsync(db, PreviousMigration);
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO financial_accounts (id, family_id, name, type, scope, opening_balance, opening_balance_date, is_active, currency, created_at, created_by_user_id)
                 VALUES ({otherAccount}, {_familyA.Id}, 'Outra', 'Checking', 'PJ', -1234.56, DATE '2026-09-01', TRUE, 'BRL', now(), {_userA})
@@ -173,9 +174,9 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 
-    private static FinancialAccount Account(Guid familyId, Guid userId) =>
+    private static FinancialAccount Account(Guid workspaceId, Guid userId) =>
         FinancialAccount.Create(
-            familyId,
+            workspaceId,
             AccountDetails.TryCreate("Conta", null, nameof(AccountType.Checking), nameof(FinancialScope.PF), null, null, null, out _)!,
             userId,
             DateTimeOffset.UtcNow);

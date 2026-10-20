@@ -113,10 +113,10 @@ export interface FinancialCalendarMonthlyProjectionResponse {
   summary?: { totalIncome: string; totalExpense: string; lowestClosingBalance: string | null; lowestBalanceMonth: string | null; monthsOverBudget: number; monthsWithNegativeBalance: number }
 }
 
-export async function getSixMonthPlanning(familyId: string, from: string, accountId?: string, signal?: AbortSignal): Promise<FinancialCalendarMonthlyProjectionResponse> {
+export async function getSixMonthPlanning(workspaceId: string, from: string, accountId?: string, signal?: AbortSignal): Promise<FinancialCalendarMonthlyProjectionResponse> {
   const query = new URLSearchParams({ from })
   if (accountId) query.set('accountId', accountId)
-  const response = await fetch(`/api/families/${encodeURIComponent(familyId)}/financial-planning/six-months?${query}`, { signal, headers: { Accept: 'application/json' } })
+  const response = await fetch(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-planning/six-months?${query}`, { signal, headers: { Accept: 'application/json' } })
   if (!response.ok) throw new Error(`Falha ao carregar o planejamento financeiro (HTTP ${response.status}).`)
   return response.json()
 }
@@ -124,7 +124,7 @@ export async function getSixMonthPlanning(familyId: string, from: string, accoun
 const jsonHeaders = { Accept: 'application/json' }
 
 export async function getFinancialCalendar(
-  familyId: string,
+  workspaceId: string,
   from: string,
   through: string,
   filters: FinancialCalendarFilters,
@@ -134,7 +134,7 @@ export async function getFinancialCalendar(
   if (filters.accountId) query.set('accountId', filters.accountId)
   if (filters.type) query.set('type', filters.type)
 
-  const response = await fetch(`/api/families/${encodeURIComponent(familyId)}/financial-calendar?${query}`, {
+  const response = await fetch(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-calendar?${query}`, {
     signal,
     headers: jsonHeaders,
   })
@@ -144,7 +144,7 @@ export async function getFinancialCalendar(
 }
 
 export async function getFinancialCalendarBalances(
-  familyId: string,
+  workspaceId: string,
   from: string,
   through: string,
   accountId?: string,
@@ -153,7 +153,7 @@ export async function getFinancialCalendarBalances(
   const query = new URLSearchParams({ from, through })
   if (accountId) query.set('accountId', accountId)
   const response = await fetch(
-    `/api/families/${encodeURIComponent(familyId)}/financial-calendar/balances?${query}`,
+    `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-calendar/balances?${query}`,
     { signal, headers: jsonHeaders },
   )
   if (!response.ok) throw new Error(`Falha ao carregar a evolução do saldo (HTTP ${response.status}).`)
@@ -161,7 +161,7 @@ export async function getFinancialCalendarBalances(
 }
 
 export async function getFinancialCalendarMonthlyProjection(
-  familyId: string,
+  workspaceId: string,
   from: string,
   months = 6,
   accountId?: string,
@@ -170,7 +170,7 @@ export async function getFinancialCalendarMonthlyProjection(
   const query = new URLSearchParams({ from, months: String(months) })
   if (accountId) query.set('accountId', accountId)
   const response = await fetch(
-    `/api/families/${encodeURIComponent(familyId)}/financial-calendar/monthly-projection?${query}`,
+    `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-calendar/monthly-projection?${query}`,
     { signal, headers: jsonHeaders },
   )
   if (!response.ok) throw new Error(`Falha ao carregar o planejamento financeiro (HTTP ${response.status}).`)

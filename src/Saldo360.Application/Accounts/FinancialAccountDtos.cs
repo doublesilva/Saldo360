@@ -3,7 +3,7 @@ using Saldo360.Domain.Accounts;
 namespace Saldo360.Application.Accounts;
 
 /// <summary>
-/// Conta como exibida aos integrantes da família. Não expõe o criador nem dados de autenticação.
+/// Conta do workspace pessoal. Não expõe o criador nem dados de autenticação.
 /// Traz só o saldo inicial configurado (valor no início da data de referência); não há saldo atual nesta etapa.
 /// </summary>
 public sealed record FinancialAccountDto(
@@ -19,8 +19,8 @@ public sealed record FinancialAccountDto(
     string Currency,
     DateTimeOffset CreatedAt);
 
-/// <summary>Responsável: só o Id do vínculo familiar e o nome de exibição. Null = conta conjunta.</summary>
-public sealed record AccountResponsibleDto(Guid MemberId, string DisplayName);
+/// <summary>Responsável: somente UserId e nome de exibição, sem vínculo familiar obrigatório.</summary>
+public sealed record AccountResponsibleDto(Guid UserId, string DisplayName);
 
 /// <summary>Dados cadastrais enviados pelo cliente (texto bruto, validado pelo serviço).</summary>
 public sealed record AccountInput(
@@ -28,7 +28,7 @@ public sealed record AccountInput(
     string? Institution,
     string? Type,
     string? FinancialScope,
-    Guid? ResponsibleMemberId,
+    Guid? ResponsibleUserId,
     decimal? OpeningBalance,
     DateOnly? OpeningBalanceDate);
 

@@ -5,7 +5,7 @@ namespace Saldo360.Tests.CreditCards;
 
 public sealed class FinancialDocumentInboxServiceTests
 {
-    private static readonly Guid FamilyId = Guid.NewGuid();
+    private static readonly Guid WorkspaceId = Guid.NewGuid();
     private static readonly Guid UserId = Guid.NewGuid();
     private static readonly Guid CardId = Guid.NewGuid();
 
@@ -55,7 +55,7 @@ public sealed class FinancialDocumentInboxServiceTests
         var fixture = Fixture(Preview("Nubank", "Reconciled", "1234"));
         var received = await Receive(fixture.Service, [7, 7], null);
         fixture.Storage.Objects.Clear();
-        var result = await fixture.Service.ReprocessAsync(FamilyId, received.Item!.Id, UserId, null, null, CancellationToken.None);
+        var result = await fixture.Service.ReprocessAsync(WorkspaceId, received.Item!.Id, UserId, null, null, CancellationToken.None);
         Assert.Equal("Failed", result!.Status);
         Assert.Equal("StorageObjectMissing", result.FailureCode);
     }
@@ -100,7 +100,7 @@ public sealed class FinancialDocumentInboxServiceTests
             new FinancialDocumentClassificationOptions { Enabled = classificationEnabled }, new FakeClassifier(classification), new FinancialDocumentAnalysisRouter(), TimeProvider.System), repository, storage, extractor);
     }
     private static Task<FinancialDocumentInboxReceiveResult> Receive(FinancialDocumentInboxService service, byte[] bytes, string? externalId) =>
-        service.ReceiveAsync(FamilyId, UserId, new MemoryStream(bytes), bytes.Length, "fatura.pdf", "application/pdf",
+        service.ReceiveAsync(WorkspaceId, UserId, new MemoryStream(bytes), bytes.Length, "fatura.pdf", "application/pdf",
             FinancialDocumentSource.Manual, externalId, null, null, CancellationToken.None);
     private static CreditCardPdfPreview Preview(string parser, string reconciliation, string? digits) =>
         new("fatura.pdf", 1, parser, new("Nubank", digits, "2026-10", "2026-10-05", "2026-10-13", "10.00"),
@@ -109,19 +109,19 @@ public sealed class FinancialDocumentInboxServiceTests
     private sealed class FakeRepository : IFinancialDocumentInboxRepository
     {
         public List<FinancialDocumentInboxItem> Items { get; } = [];
-        public Task<bool> CanAccessFamilyAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) => Task.FromResult(familyId == FamilyId && userId == UserId);
-        public Task<bool> FamilyExistsAsync(Guid familyId, CancellationToken cancellationToken) => Task.FromResult(familyId == FamilyId);
-        public Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid familyId, string hash, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.FamilyId == familyId && item.ContentHash == hash));
-        public Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid familyId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.FamilyId == familyId && item.Source == source && item.ExternalSourceId == externalId));
-        public Task<FinancialDocumentInboxItem?> GetAsync(Guid familyId, Guid id, Guid userId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.FamilyId == familyId && item.Id == id && userId == UserId));
-        public Task<IReadOnlyList<FinancialDocumentInboxItem>> ListAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialDocumentInboxItem>>(Items.Where(item => item.FamilyId == familyId).ToList());
+        public Task<bool> CanAccessWorkspaceAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) => Task.FromResult(workspaceId == WorkspaceId && userId == UserId);
+        public Task<bool> WorkspaceExistsAsync(Guid workspaceId, CancellationToken cancellationToken) => Task.FromResult(workspaceId == WorkspaceId);
+        public Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid workspaceId, string hash, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.WorkspaceId == workspaceId && item.ContentHash == hash));
+        public Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid workspaceId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.WorkspaceId == workspaceId && item.Source == source && item.ExternalSourceId == externalId));
+        public Task<FinancialDocumentInboxItem?> GetAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.WorkspaceId == workspaceId && item.Id == id && userId == UserId));
+        public Task<IReadOnlyList<FinancialDocumentInboxItem>> ListAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialDocumentInboxItem>>(Items.Where(item => item.WorkspaceId == workspaceId).ToList());
         public Task<bool> TryAddAsync(FinancialDocumentInboxItem item, CancellationToken cancellationToken) { Items.Add(item); return Task.FromResult(true); }
         public Task SaveAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
     private sealed class FakeStorage : IFinancialDocumentStorage
     {
         public Dictionary<string, byte[]> Objects { get; } = [];
-        public async Task<string> SaveAsync(Guid familyId, Guid documentId, Stream content, CancellationToken cancellationToken) { using var memory = new MemoryStream(); await content.CopyToAsync(memory, cancellationToken); var key = $"{familyId:N}/{documentId:N}.pdf"; Objects[key] = memory.ToArray(); return key; }
+        public async Task<string> SaveAsync(Guid workspaceId, Guid documentId, Stream content, CancellationToken cancellationToken) { using var memory = new MemoryStream(); await content.CopyToAsync(memory, cancellationToken); var key = $"{workspaceId:N}/{documentId:N}.pdf"; Objects[key] = memory.ToArray(); return key; }
         public Task<Stream?> OpenReadAsync(string reference, CancellationToken cancellationToken) => Task.FromResult<Stream?>(Objects.TryGetValue(reference, out var bytes) ? new MemoryStream(bytes) : null);
         public Task DeleteAsync(string reference, CancellationToken cancellationToken) { Objects.Remove(reference); return Task.CompletedTask; }
     }
@@ -133,11 +133,11 @@ public sealed class FinancialDocumentInboxServiceTests
     }
     private sealed class FakePreviewService(CreditCardPdfPreview preview) : ICreditCardPdfPreviewService
     {
-        public Task<CreditCardPdfPreviewResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) => Task.FromResult(new CreditCardPdfPreviewResult(CreditCardPdfPreviewAccess.Allowed, preview, null));
+        public Task<CreditCardPdfPreviewResult> PreviewAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) => Task.FromResult(new CreditCardPdfPreviewResult(CreditCardPdfPreviewAccess.Allowed, preview, null));
     }
     private sealed class FakeResolutionRepository : ICreditCardStatementResolutionRepository
     {
-        public Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid familyId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CreditCardStatementCandidate>>([new(CardId, "Nubank", "1234", UserId)]);
+        public Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid workspaceId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CreditCardStatementCandidate>>([new(CardId, "Nubank", "1234", UserId)]);
     }
     private sealed class FakeClassifier(FinancialDocumentClassificationResult? value = null) : IFinancialDocumentClassifier { public Task<FinancialDocumentClassificationResult> ClassifyAsync(FinancialDocumentClassificationRequest request, CancellationToken cancellationToken) => Task.FromResult(value ?? new FinancialDocumentClassificationResult("CreditCardStatement", "High", [], "Deterministic")); }
 }

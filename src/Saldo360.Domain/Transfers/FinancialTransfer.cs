@@ -21,7 +21,7 @@ public sealed class FinancialTransfer : Entity
         Currency = DefaultCurrency;
     }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
 
     public Guid SourceAccountId { get; private init; }
 
@@ -47,10 +47,10 @@ public sealed class FinancialTransfer : Entity
 
     public Guid? CancelledByUserId { get; private set; }
 
-    public static FinancialTransfer Create(Guid familyId, TransferDetails details, Guid createdByUserId, DateTimeOffset now) =>
+    public static FinancialTransfer Create(Guid workspaceId, TransferDetails details, Guid createdByUserId, DateTimeOffset now) =>
         new()
         {
-            FamilyId = familyId,
+            WorkspaceId = workspaceId,
             SourceAccountId = details.SourceAccountId,
             DestinationAccountId = details.DestinationAccountId,
             Amount = details.Amount,

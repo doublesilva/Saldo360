@@ -1,22 +1,22 @@
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Common;
 
 namespace Saldo360.Application.Calendar;
 
 /// <summary>Consolida competências mensais reutilizando integralmente a evolução diária da Agenda.</summary>
 public sealed class FinancialCalendarMonthlyProjectionService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialCalendarBalanceRepository repository,
     TimeProvider timeProvider)
 {
     public async Task<FinancialCalendarMonthlyProjectionResult> GetAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid userId,
         FinancialCalendarMonthlyProjectionQuery query,
         CancellationToken cancellationToken,
         DateOnly? capturedToday = null)
     {
-        if (await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is null)
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is null)
         {
             return FinancialCalendarMonthlyProjectionResult.NotFoundResult;
         }
@@ -35,7 +35,7 @@ public sealed class FinancialCalendarMonthlyProjectionService(
         var today = capturedToday ?? BusinessCalendar.Today(timeProvider.GetUtcNow());
         var through = query.From.AddMonths(query.Months).AddDays(-1);
         var snapshot = await repository.ReadMonthlyAsync(
-            familyId, query.AccountId, query.From, through, today, cancellationToken);
+            workspaceId, query.AccountId, query.From, through, today, cancellationToken);
         if (snapshot is null)
         {
             return FinancialCalendarMonthlyProjectionResult.NotFoundResult;

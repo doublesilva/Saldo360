@@ -8,9 +8,9 @@ public interface IFinancialPlannedTransactionRepository : IReferenceLookup
 {
     Task AddAsync(FinancialPlannedTransaction planned, CancellationToken cancellationToken);
 
-    Task<FinancialPlannedTransactionDto?> GetAsync(Guid familyId, Guid plannedId, CancellationToken cancellationToken);
+    Task<FinancialPlannedTransactionDto?> GetAsync(Guid workspaceId, Guid plannedId, CancellationToken cancellationToken);
 
-    Task<PlannedTransactionPage> ListAsync(Guid familyId, PlannedTransactionFilter filter, CancellationToken cancellationToken);
+    Task<PlannedTransactionPage> ListAsync(Guid workspaceId, PlannedTransactionFilter filter, CancellationToken cancellationToken);
 
     /// <summary>
     /// Executa <paramref name="work"/> numa transação de banco com a linha da previsão bloqueada
@@ -20,11 +20,11 @@ public interface IFinancialPlannedTransactionRepository : IReferenceLookup
     /// realização ativa única vira <see cref="RealizationConflictException"/>.
     /// </summary>
     Task<T> RunLockedAsync<T>(
-        Guid familyId, Guid plannedId, Func<IPlannedTransactionLock?, Task<T>> work, CancellationToken cancellationToken);
+        Guid workspaceId, Guid plannedId, Func<IPlannedTransactionLock?, Task<T>> work, CancellationToken cancellationToken);
 
-    Task<bool> HasActiveReconciliationAsync(Guid familyId, Guid plannedId, CancellationToken cancellationToken);
+    Task<bool> HasActiveReconciliationAsync(Guid workspaceId, Guid plannedId, CancellationToken cancellationToken);
 
-    Task<bool> HasServiceBillConfirmationAsync(Guid familyId, Guid plannedId, CancellationToken cancellationToken) => Task.FromResult(false);
+    Task<bool> HasServiceBillConfirmationAsync(Guid workspaceId, Guid plannedId, CancellationToken cancellationToken) => Task.FromResult(false);
 }
 
 /// <summary>Previsão bloqueada e seu lançamento efetivo ativo, ambos carregados depois do bloqueio (dados atuais).</summary>

@@ -7,9 +7,9 @@ namespace Saldo360.Infrastructure.CreditCards;
 
 internal sealed class PostgresFinancialEmailCollectorLock(string connectionString) : IFinancialEmailCollectorLock
 {
-    public async Task<IAsyncDisposable?> TryAcquireAsync(Guid familyId, string profileName, CancellationToken cancellationToken)
+    public async Task<IAsyncDisposable?> TryAcquireAsync(Guid workspaceId, string profileName, CancellationToken cancellationToken)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{familyId:N}:{profileName.ToUpperInvariant()}"));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{workspaceId:N}:{profileName.ToUpperInvariant()}"));
         var key1 = BitConverter.ToInt32(hash, 0); var key2 = BitConverter.ToInt32(hash, 4);
         var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand("SELECT pg_try_advisory_lock(@key1, @key2)", connection);

@@ -7,9 +7,8 @@ import type {
   FinancialCalendarMonthlyProjectionResponse,
   FinancialCalendarResponse,
 } from '../api/financialCalendar'
-import type { FamilyDetails } from '../api/families'
 import { addCalendarMonths } from '../dates'
-import { Families } from './Families'
+import { PersonalFinance } from './PersonalFinance'
 import { FinancialCalendarPage } from './FinancialCalendar'
 
 type Call = { url: string; init?: RequestInit }
@@ -210,7 +209,7 @@ afterEach(() => {
 describe('FinancialCalendarPage — mês, calendário e compromissos', () => {
   it('abre no mês atual de São Paulo, consulta o intervalo correto e destaca hoje', async () => {
     const calls = mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
 
     expect(await screen.findByText('Dezembro de 2026')).toBeTruthy()
     await waitFor(() => expect(calendarCalls(calls)).toHaveLength(1))
@@ -223,7 +222,7 @@ describe('FinancialCalendarPage — mês, calendário e compromissos', () => {
 
   it('mostra resumo vindo da API sem perder precisão e itens realizados, pendentes e vencidos', async () => {
     mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
 
     const monthlySummary = await screen.findByLabelText('Resumo financeiro do mês')
     expect(within(monthlySummary).getByText(/↑ R\$\s9\.999\.999\.999\.999,99/)).toBeTruthy()
@@ -248,7 +247,7 @@ describe('FinancialCalendarPage — mês, calendário e compromissos', () => {
 
   it('permite selecionar dia vazio e anuncia ausência de acontecimentos', async () => {
     mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
 
     fireEvent.click(screen.getByRole('gridcell', { name: /16\/12\/2026: sem acontecimentos/ }))
@@ -267,7 +266,7 @@ describe('FinancialCalendarPage — mês, calendário e compromissos', () => {
       overdueExpense: '0.00',
     }
     mockApi(() => Response.json(response({ summary: zeroSummary, items: [] })))
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
 
     const monthlySummary = await screen.findByLabelText('Resumo financeiro do mês')
     expect(within(monthlySummary).getAllByText(/R\$\s0,00/)).toHaveLength(6)
@@ -295,7 +294,7 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
         summary: from === '2027-01-01' ? { ...summary, realizedIncome: '101.01' } : summary,
       }))
     })
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Dezembro de 2026')
 
     fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }))
@@ -316,7 +315,7 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
 
   it('consulta novamente ao filtrar por conta, receita e despesa', async () => {
     const calls = mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
 
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
@@ -342,7 +341,7 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
         }),
       ),
     )
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     const monthlySummary = await screen.findByLabelText('Resumo financeiro do mês')
     expect(within(monthlySummary).getByText(/↑ R\$\s9\.999\.999\.999\.999,99/)).toBeTruthy()
 
@@ -354,7 +353,7 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
 
   it('abre próximos meses, respeita a conta e retorna ao calendário da competência escolhida', async () => {
     const calls = mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
 
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
@@ -371,7 +370,7 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
 describe('FinancialCalendarPage — erros, família e concorrência', () => {
   it('trata falha da API sem manter o calendário anterior', async () => {
     mockApi(() => new Response(null, { status: 503 }))
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
 
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',
@@ -382,14 +381,14 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
 
   it('troca a família ativa, limpa filtros e consulta a nova família', async () => {
     const calls = mockApi()
-    const view = render(<FinancialCalendarPage familyId="family-1" />)
+    const view = render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
     await waitFor(() => expect(calendarCalls(calls).at(-1)!.url).toContain(`accountId=${itau.id}`))
 
-    view.rerender(<FinancialCalendarPage key="family-2" familyId="family-2" />)
+    view.rerender(<FinancialCalendarPage key="family-2" workspaceId="family-2" />)
 
-    await waitFor(() => expect(calendarCalls(calls).at(-1)!.url).toContain('/families/family-2/financial-calendar'))
+    await waitFor(() => expect(calendarCalls(calls).at(-1)!.url).toContain('/financial-workspaces/family-2/financial-calendar'))
     await waitFor(() => expect((screen.getByLabelText('Conta') as HTMLSelectElement).value).toBe(''))
   })
 
@@ -403,10 +402,10 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
         ? oldResponse
         : Response.json(response({ items: [item({ id: 'new', description: 'Resposta nova' })] })),
     )
-    const view = render(<FinancialCalendarPage familyId="family-old" />)
+    const view = render(<FinancialCalendarPage workspaceId="family-old" />)
     await screen.findByText('Carregando agenda…')
 
-    view.rerender(<FinancialCalendarPage familyId="family-new" />)
+    view.rerender(<FinancialCalendarPage workspaceId="family-new" />)
     expect(await screen.findByText('Resposta nova')).toBeTruthy()
     resolveOld(Response.json(response({ items: [item({ id: 'old', description: 'Resposta antiga' })] })))
 
@@ -416,19 +415,15 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
   })
 
   it('expõe Agenda na navegação principal sem remover as demais opções', async () => {
-    const family: FamilyDetails = {
-      id: 'family-1',
-      name: 'Família Silva',
-      createdAt: '2026-01-01T00:00:00Z',
-      myRole: 'Member',
-      members: [{ memberId: 'm1', displayName: 'Diego', role: 'Member', joinedAt: '2026-01-01T00:00:00Z', isCurrentUser: true }],
-    }
     const calls: Call[] = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
         calls.push({ url, init })
+        if (url === '/auth/csrf') return Response.json({ token: 'synthetic-csrf' })
+        if (url === '/api/me/financial-workspace') return Response.json({ id: 'workspace-1', ownerUserId: 'owner-1', name: 'Meu orçamento', type: 'Personal', isActive: true })
+        if (url.includes('/financial-dashboard')) return new Response(null, { status: 503 })
         if (url === '/api/families') return Response.json([])
         if (url.includes('/accounts')) return Response.json([itau])
         if (url.includes('/financial-calendar/balances')) return Response.json(balanceResponse())
@@ -436,11 +431,11 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
         throw new Error(`URL inesperada: ${url}`)
       }),
     )
-    render(<Families initialFamily={family} />)
+    render(<PersonalFinance />)
 
-    const navigation = screen.getByRole('navigation', { name: 'Navegação principal da família' })
+    const navigation = await screen.findByRole('navigation', { name: 'Navegação do orçamento pessoal' })
     expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual([
-      'Visão Geral', 'Agenda', 'Orçamentos', 'Cartões', 'Documentos', 'Recorrências', 'Planejamento', 'Dívidas', 'Objetivos', 'Contas', 'Categorias', 'Lançamentos', 'Transferências', 'Previsões',
+      'Visão Geral', 'Agenda', 'Orçamentos', 'Cartões', 'Documentos', 'Recorrências', 'Planejamento', 'Dívidas', 'Objetivos', 'Contas', 'Categorias', 'Lançamentos', 'Transferências', 'Previsões', 'Família (social)',
     ])
     fireEvent.click(within(navigation).getByRole('button', { name: 'Agenda' }))
 
@@ -453,7 +448,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
   it('seleciona dia pelo gráfico com clique e teclado, sincroniza calendário e não escreve nem recalcula dinheiro', async () => {
     const calls = mockApi()
     const changed = vi.fn()
-    render(<FinancialCalendarPage familyId="family-1" onChanged={changed} />)
+    render(<FinancialCalendarPage workspaceId="family-1" onChanged={changed} />)
     const future = await screen.findByRole('button', { name: /^Selecionar 20\/12\/2026:/ })
     const reads = balanceCalls(calls).length
     fireEvent.click(future)
@@ -472,7 +467,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
 
   it('explica que pendência histórica não compõe o saldo realizado', async () => {
     mockApi(undefined, () => Response.json(balanceResponse({ days: balanceResponse().days.map((day, index) => index === 0 ? { ...day, hasOverduePending: true } : day) })))
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     expect(await screen.findByText('Realizado · pendências vencidas não incluídas no saldo')).toBeTruthy()
     const row = screen.getByText('14/12/2026').closest('tr')!
     expect(within(row).getByText(/R\$\s1.000,00/)).toBeTruthy()
@@ -480,7 +475,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
 
   it('consulta o mês e conta selecionados e restaura a opção consolidada', async () => {
     const calls = mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
     await waitFor(() => expect(balanceCalls(calls).at(-1)?.url).toContain(`accountId=${itau.id}`))
@@ -488,17 +483,17 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
     await waitFor(() => expect(balanceCalls(calls).at(-1)?.url).toContain('from=2027-01-01&through=2027-01-31'))
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: '' } })
     await waitFor(() => expect(balanceCalls(calls).at(-1)?.url).not.toContain('accountId='))
-    expect(await screen.findByText('Consolidado familiar')).toBeTruthy()
+    expect(await screen.findByText('Consolidado do orçamento')).toBeTruthy()
   })
 
   it('descarta saldo antigo e limpa conta ao trocar a família diretamente', async () => {
     let resolveOld!: (response: Response) => void
     const old = new Promise<Response>(resolve => { resolveOld = resolve })
     const calls = mockApi(undefined, url => url.includes('family-1') && url.includes('accountId=') ? old : Response.json(balanceResponse({ openingBalance: '222.22' })))
-    const rendered = render(<FinancialCalendarPage familyId="family-1" />)
+    const rendered = render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
-    rendered.rerender(<FinancialCalendarPage familyId="family-2" />)
+    rendered.rerender(<FinancialCalendarPage workspaceId="family-2" />)
     await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
     expect((screen.getByLabelText('Conta') as HTMLSelectElement).value).toBe('')
     expect(balanceCalls(calls).at(-1)?.url).toContain('family-2')
@@ -510,7 +505,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
 
   it('exibe gráfico, indicadores e tabela acessível distinguindo realizado, projetado, negativo e vencidas', async () => {
     mockApi()
-    const rendered = render(<FinancialCalendarPage familyId="family-1" />)
+    const rendered = render(<FinancialCalendarPage workspaceId="family-1" />)
 
     expect(await screen.findByRole('group', { name: /Gráfico da evolução diária/ })).toBeTruthy()
     expect(screen.getByText('Histórico realizado')).toBeTruthy()
@@ -524,7 +519,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
 
   it('destaca na evolução o dia selecionado no calendário', async () => {
     mockApi()
-    const rendered = render(<FinancialCalendarPage familyId="family-1" />)
+    const rendered = render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
 
     fireEvent.click(screen.getByRole('gridcell', { name: /20\/12\/2026/ }))
@@ -538,7 +533,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
     let resolveBalances!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { resolveBalances = resolve })
     mockApi(undefined, () => pending)
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
 
     expect(await screen.findByText('Calculando evolução do saldo…')).toBeTruthy()
     expect(await screen.findByText('Salário recebido')).toBeTruthy()
@@ -566,7 +561,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
       })),
       risk: { minimumProjectedBalance: null, firstNegativeProjectedDate: null, endingProjectedBalance: null },
     })))
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
 
     expect(await screen.findByText(/existe conta sem saldo inicial configurado/)).toBeTruthy()
     expect(screen.getByText(/Nenhum total parcial/)).toBeTruthy()
@@ -581,7 +576,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
       : Response.json(url.includes(`accountId=${nubank.id}`)
         ? balanceResponse({ openingBalance: '222.00' })
         : balanceResponse()))
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
 
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })

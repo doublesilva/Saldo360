@@ -17,12 +17,12 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public Task<FinancialPlannedTransactionDto?> GetAsync(Guid familyId, Guid plannedId, CancellationToken cancellationToken) =>
-        Project(db.FinancialPlannedTransactions.Where(p => p.FamilyId == familyId && p.Id == plannedId)).SingleOrDefaultAsync(cancellationToken);
+    public Task<FinancialPlannedTransactionDto?> GetAsync(Guid workspaceId, Guid plannedId, CancellationToken cancellationToken) =>
+        Project(db.FinancialPlannedTransactions.Where(p => p.WorkspaceId == workspaceId && p.Id == plannedId)).SingleOrDefaultAsync(cancellationToken);
 
-    public async Task<PlannedTransactionPage> ListAsync(Guid familyId, PlannedTransactionFilter filter, CancellationToken cancellationToken)
+    public async Task<PlannedTransactionPage> ListAsync(Guid workspaceId, PlannedTransactionFilter filter, CancellationToken cancellationToken)
     {
-        var query = db.FinancialPlannedTransactions.Where(p => p.FamilyId == familyId);
+        var query = db.FinancialPlannedTransactions.Where(p => p.WorkspaceId == workspaceId);
 
         // Situação derivada: pendentes sempre; realizadas (lançamento ativo vinculado) e canceladas só se pedidas.
         var includeRealized = filter.IncludeRealized;
@@ -30,7 +30,7 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
         query = query.Where(p => p.IsCancelled
             ? includeCancelled
             : includeRealized || !db.FinancialTransactions.Any(t =>
-                t.FamilyId == p.FamilyId && t.PlannedTransactionId == p.Id && !t.IsCancelled));
+                t.WorkspaceId == p.WorkspaceId && t.PlannedTransactionId == p.Id && !t.IsCancelled));
 
         if (filter.From is { } from)
         {
@@ -66,7 +66,7 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
     }
 
     public async Task<T> RunLockedAsync<T>(
-        Guid familyId, Guid plannedId, Func<IPlannedTransactionLock?, Task<T>> work, CancellationToken cancellationToken)
+        Guid workspaceId, Guid plannedId, Func<IPlannedTransactionLock?, Task<T>> work, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         try
@@ -75,16 +75,16 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
             // o lançamento vinculado passam todos por aqui, então ficam em fila. Em READ COMMITTED, as leituras
             // seguintes (feitas depois de obter o bloqueio) já enxergam o que a operação anterior gravou.
             await db.Database.ExecuteSqlInterpolatedAsync(
-                $"SELECT 1 FROM financial_planned_transactions WHERE id = {plannedId} AND family_id = {familyId} FOR UPDATE",
+                $"SELECT 1 FROM financial_planned_transactions WHERE id = {plannedId} AND workspace_id = {workspaceId} FOR UPDATE",
                 cancellationToken);
 
             var planned = await db.FinancialPlannedTransactions
-                .SingleOrDefaultAsync(p => p.Id == plannedId && p.FamilyId == familyId, cancellationToken);
+                .SingleOrDefaultAsync(p => p.Id == plannedId && p.WorkspaceId == workspaceId, cancellationToken);
             Lock? locked = null;
             if (planned is not null)
             {
                 var active = await db.FinancialTransactions.SingleOrDefaultAsync(
-                    t => t.FamilyId == familyId && t.PlannedTransactionId == plannedId && !t.IsCancelled, cancellationToken);
+                    t => t.WorkspaceId == workspaceId && t.PlannedTransactionId == plannedId && !t.IsCancelled, cancellationToken);
                 locked = new Lock(db, planned, active);
             }
 
@@ -111,34 +111,34 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
         }
     }
 
-    public Task<AccountState?> GetAccountStateAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken) =>
+    public Task<AccountState?> GetAccountStateAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken) =>
         db.FinancialAccounts
-            .Where(a => a.FamilyId == familyId && a.Id == accountId)
+            .Where(a => a.WorkspaceId == workspaceId && a.Id == accountId)
             .Select(a => new AccountState(a.IsActive))
             .SingleOrDefaultAsync(cancellationToken);
 
-    public Task<CategoryState?> GetCategoryStateAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken) =>
+    public Task<CategoryState?> GetCategoryStateAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) =>
         db.FinancialCategories
-            .Where(c => c.FamilyId == familyId && c.Id == categoryId)
+            .Where(c => c.WorkspaceId == workspaceId && c.Id == categoryId)
             .Select(c => new CategoryState(c.Type, c.IsActive))
             .SingleOrDefaultAsync(cancellationToken);
 
-    public Task<bool> HasActiveReconciliationAsync(Guid familyId, Guid plannedId, CancellationToken cancellationToken) =>
-        db.FinancialPlannedInvoiceReconciliations.AnyAsync(item => item.FamilyId == familyId && item.PlannedTransactionId == plannedId && item.RemovedAt == null, cancellationToken)
-        .ContinueWith(async card => card.Result || await db.FinancialDebtInstallmentReconciliations.AnyAsync(item => item.FamilyId == familyId && item.PlannedTransactionId == plannedId && item.RemovedAt == null, cancellationToken), cancellationToken).Unwrap();
+    public Task<bool> HasActiveReconciliationAsync(Guid workspaceId, Guid plannedId, CancellationToken cancellationToken) =>
+        db.FinancialPlannedInvoiceReconciliations.AnyAsync(item => item.WorkspaceId == workspaceId && item.PlannedTransactionId == plannedId && item.RemovedAt == null, cancellationToken)
+        .ContinueWith(async card => card.Result || await db.FinancialDebtInstallmentReconciliations.AnyAsync(item => item.WorkspaceId == workspaceId && item.PlannedTransactionId == plannedId && item.RemovedAt == null, cancellationToken), cancellationToken).Unwrap();
 
-    public Task<bool> HasServiceBillConfirmationAsync(Guid familyId, Guid plannedId, CancellationToken cancellationToken) =>
-        db.FinancialDocumentInboxItems.AnyAsync(item => item.FamilyId == familyId && item.ServiceBillOccurrenceId == plannedId, cancellationToken);
+    public Task<bool> HasServiceBillConfirmationAsync(Guid workspaceId, Guid plannedId, CancellationToken cancellationToken) =>
+        db.FinancialDocumentInboxItems.AnyAsync(item => item.WorkspaceId == workspaceId && item.ServiceBillOccurrenceId == plannedId, cancellationToken);
 
     // Conta e categoria pela mesma família (as FKs garantem que existem) e o lançamento efetivo ATIVO, se houver
     // (o índice único garante no máximo um, então a junção não duplica linhas). Ordena antes de projetar: data
     // prevista crescente e Id crescente, estável entre páginas.
     private IQueryable<FinancialPlannedTransactionDto> Project(IQueryable<FinancialPlannedTransaction> planned) =>
         from p in planned.AsNoTracking()
-        join a in db.FinancialAccounts on new { p.FamilyId, Id = p.AccountId } equals new { a.FamilyId, a.Id }
-        join c in db.FinancialCategories on new { p.FamilyId, Id = p.CategoryId } equals new { c.FamilyId, c.Id }
+        join a in db.FinancialAccounts on new { p.WorkspaceId, Id = p.AccountId } equals new { a.WorkspaceId, a.Id }
+        join c in db.FinancialCategories on new { p.WorkspaceId, Id = p.CategoryId } equals new { c.WorkspaceId, c.Id }
         join r in db.FinancialTransactions.Where(t => !t.IsCancelled)
-            on new { p.FamilyId, Id = (Guid?)p.Id } equals new { r.FamilyId, Id = r.PlannedTransactionId } into realizations
+            on new { p.WorkspaceId, Id = (Guid?)p.Id } equals new { r.WorkspaceId, Id = r.PlannedTransactionId } into realizations
         from r in realizations.DefaultIfEmpty()
         orderby p.DueDate, p.Id
         select new FinancialPlannedTransactionDto(

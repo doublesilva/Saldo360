@@ -33,17 +33,17 @@ function errorMessage(error: unknown): string {
 }
 
 export function FinancialCalendarBudgetSummary({
-  familyId,
+  workspaceId,
   competence,
   refreshKey = 0,
   onNavigateToBudgets,
 }: {
-  familyId: string
+  workspaceId: string
   competence: string
   refreshKey?: number
   onNavigateToBudgets: (competence: string) => void
 }) {
-  const requestKey = `${familyId}|${competence.slice(0, 7)}|${refreshKey}`
+  const requestKey = `${workspaceId}|${competence.slice(0, 7)}|${refreshKey}`
   const requestVersion = useRef(0)
   const [state, setState] = useState<LoadState>({ kind: 'loading', requestKey })
   const current = state.requestKey === requestKey ? state : { kind: 'loading' as const, requestKey }
@@ -52,14 +52,14 @@ export function FinancialCalendarBudgetSummary({
     const controller = new AbortController()
     const version = ++requestVersion.current
     const month = competence.slice(0, 7)
-    listBudgets(familyId, month, controller.signal)
+    listBudgets(workspaceId, month, controller.signal)
       .then(async (budgets) => {
         const budget = budgets.find((item) => !item.isArchived) ?? null
         if (!budget) {
           if (version === requestVersion.current) setState({ kind: 'loaded', requestKey, budget: null, execution: null })
           return
         }
-        const execution = await getBudgetExecution(familyId, budget.id, controller.signal)
+        const execution = await getBudgetExecution(workspaceId, budget.id, controller.signal)
         if (version === requestVersion.current) setState({ kind: 'loaded', requestKey, budget, execution })
       })
       .catch((error: unknown) => {
@@ -68,14 +68,14 @@ export function FinancialCalendarBudgetSummary({
         }
       })
     return () => controller.abort()
-  }, [familyId, competence, refreshKey, requestKey])
+  }, [workspaceId, competence, refreshKey, requestKey])
 
   return (
     <section className="calendar-budget" aria-labelledby="calendar-budget-title" aria-live="polite">
       <div className="calendar-budget__heading">
         <div>
           <h3 id="calendar-budget-title">Situação do orçamento</h3>
-          <p className="meta">Orçamento familiar da competência — independente dos filtros da Agenda.</p>
+          <p className="meta">Orçamento pessoal da competência — independente dos filtros da Agenda.</p>
         </div>
         <button type="button" className="button--link" onClick={() => onNavigateToBudgets(competence.slice(0, 7))}>Ver orçamento completo</button>
       </div>

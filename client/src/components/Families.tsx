@@ -8,22 +8,7 @@ import {
   type FamilyRole,
   type FamilySummary,
 } from '../api/families'
-import { Accounts } from './Accounts'
-import { Categories } from './Categories'
-import { Transactions } from './Transactions'
-import { Planned } from './Planned'
-import { Transfers } from './Transfers'
 import { InvitePanel } from './InvitePanel'
-import { FinancialCalendarPage } from './FinancialCalendar'
-import { FinancialBudgetsPage } from './FinancialBudgets'
-import { FinancialCreditCardsPage } from './FinancialCreditCards'
-import { FinancialRecurrences } from './FinancialRecurrences'
-import { FinancialPlanning } from './FinancialPlanning'
-import { FinancialDebts } from './FinancialDebts'
-import { FinancialGoals } from './FinancialGoals'
-import { FinancialDashboard } from './FinancialDashboard'
-import { FinancialDocumentInbox } from './FinancialDocumentInbox'
-import { listFinancialDocuments } from '../api/financialDocuments'
 
 const roleLabels: Record<FamilyRole, string> = { Owner: 'Responsável', Member: 'Membro' }
 
@@ -167,150 +152,24 @@ function CreateFamilyForm({ onCreated, onCancel }: { onCreated: (family: FamilyD
   )
 }
 
-type DetailState =
-  | { kind: 'loading' }
-  | { kind: 'loaded'; family: FamilyDetails }
-  | { kind: 'not-found' }
-  | { kind: 'error'; message: string }
+type DetailState = { kind: 'loading' } | { kind: 'loaded'; family: FamilyDetails } | { kind: 'error'; message: string }
 
-type FamilySection = 'overview' | 'calendar' | 'budgets' | 'cards' | 'documents' | 'recurrences' | 'planning' | 'debts' | 'goals' | 'accounts' | 'categories' | 'transactions' | 'transfers' | 'planned'
-
-const familySections: Array<{ id: FamilySection; label: string }> = [
-  { id: 'overview', label: 'Visão Geral' },
-  { id: 'calendar', label: 'Agenda' },
-  { id: 'budgets', label: 'Orçamentos' },
-  { id: 'cards', label: 'Cartões' },
-  { id: 'documents', label: 'Documentos' },
-  { id: 'recurrences', label: 'Recorrências' },
-  { id: 'planning', label: 'Planejamento' },
-  { id: 'debts', label: 'Dívidas' },
-  { id: 'goals', label: 'Objetivos' },
-  { id: 'accounts', label: 'Contas' },
-  { id: 'categories', label: 'Categorias' },
-  { id: 'transactions', label: 'Lançamentos' },
-  { id: 'transfers', label: 'Transferências' },
-  { id: 'planned', label: 'Previsões' },
-]
-
-/** Detalhe de uma família: recebe os dados prontos (após criar) ou o Id para buscar. */
 function FamilyView({ family, onBack }: { family: FamilyDetails | string; onBack: () => void }) {
-  const [state, setState] = useState<DetailState>(
-    typeof family === 'string' ? { kind: 'loading' } : { kind: 'loaded', family },
-  )
-  // Muda a cada mudança financeira (lançamento, transferência ou realização criados, editados ou cancelados):
-  // saldos, lançamentos e previsões consultam de novo. Ex.: realizar cria lançamento; cancelar o lançamento
-  // efetivo reabre a previsão.
-  const [financeVersion, setFinanceVersion] = useState(0)
-  const [section, setSection] = useState<FamilySection>('overview')
-  const [calendarMonth, setCalendarMonth] = useState<string | undefined>(undefined)
-  const [budgetCompetence, setBudgetCompetence] = useState<string | undefined>(undefined)
-  const [documentAttentionCount, setDocumentAttentionCount] = useState(0)
-  const financeChanged = () => setFinanceVersion((n) => n + 1)
-
-  useEffect(() => {
-    if (state.kind !== 'loaded') return
-    const controller = new AbortController()
-    void listFinancialDocuments(state.family.id, controller.signal)
-      .then((items) => setDocumentAttentionCount(items.filter((item) => ['NeedsReview', 'Conflict', 'Failed'].includes(item.status)).length))
-      .catch(() => undefined)
-    return () => controller.abort()
-  }, [state])
-
+  const [state, setState] = useState<DetailState>(typeof family === 'string' ? { kind: 'loading' } : { kind: 'loaded', family })
   useEffect(() => {
     if (typeof family !== 'string') return
     const controller = new AbortController()
-    getFamily(family, controller.signal)
-      .then((details) => setState(details ? { kind: 'loaded', family: details } : { kind: 'not-found' }))
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) setState({ kind: 'error', message: errorMessage(error) })
-      })
+    getFamily(family, controller.signal).then(value => {
+      if (!controller.signal.aborted) setState(value ? { kind: 'loaded', family: value } : { kind: 'error', message: 'Família não encontrada.' })
+    }).catch((error: unknown) => { if (!controller.signal.aborted) setState({ kind: 'error', message: errorMessage(error) }) })
     return () => controller.abort()
   }, [family])
-
-  return (
-    <section className="card" aria-live="polite">
-      <button type="button" className="button--link" onClick={onBack}>
-        ← Núcleos familiares
-      </button>
-
-      {state.kind === 'loading' && <p className="status status--pending">Carregando…</p>}
-      {state.kind === 'not-found' && <p className="status status--down">Família não encontrada.</p>}
-      {state.kind === 'error' && <p className="status status--down">{state.message}</p>}
-
-      {state.kind === 'loaded' && (
-        <>
-          <h2>{state.family.name}</h2>
-          <nav className="family-navigation" aria-label="Navegação principal da família">
-            {familySections.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={section === item.id ? 'family-navigation__item family-navigation__item--active' : 'family-navigation__item'}
-                aria-current={section === item.id ? 'page' : undefined}
-                onClick={() => setSection(item.id)}
-              >
-                {item.label}{item.id === 'documents' && documentAttentionCount > 0 && <span className="inbox-counter" aria-label={`${documentAttentionCount} documentos exigem atenção`}>{documentAttentionCount}</span>}
-              </button>
-            ))}
-          </nav>
-
-          {section === 'overview' && (
-            <div className="family-section">
-              <FinancialDashboard key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onNavigate={(target) => setSection(target)} />
-              <details className="card"><summary>Membros e acesso</summary>
-              <ul className="checks">
-                {state.family.members.map((member, index) => (
-                  <li key={`${member.joinedAt}-${index}`}>
-                    <span>
-                      {member.displayName}
-                      {member.isCurrentUser && <span className="meta"> (você)</span>}
-                    </span>
-                    <span>{roleLabels[member.role]}</span>
-                  </li>
-                ))}
-              </ul>
-              {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
-              </details>
-            </div>
-          )}
-          {section === 'calendar' && (
-            <FinancialCalendarPage
-              key={`${state.family.id}|${calendarMonth ?? 'current'}`}
-              familyId={state.family.id}
-              initialMonth={calendarMonth}
-              onChanged={financeChanged}
-              onNavigateToBudgets={(competence) => { setBudgetCompetence(competence); setSection('budgets') }}
-            />
-          )}
-          {section === 'budgets' && (
-            <FinancialBudgetsPage
-              key={`${state.family.id}|${budgetCompetence ?? 'current'}`}
-              familyId={state.family.id}
-              initialCompetence={budgetCompetence}
-              refreshKey={financeVersion}
-              onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }}
-            />
-          )}
-          {section === 'cards' && <FinancialCreditCardsPage familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} />}
-          {section === 'documents' && <FinancialDocumentInbox key={state.family.id} familyId={state.family.id} onChanged={financeChanged} onAttentionCount={setDocumentAttentionCount} />}
-          {section === 'recurrences' && <FinancialRecurrences key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }} />}
-          {section === 'planning' && <FinancialPlanning key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} />}
-          {section === 'debts' && <FinancialDebts key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToAgenda={(competence) => { setCalendarMonth(`${competence}-01`); setSection('calendar') }} onNavigateToBudgets={(competence) => { setBudgetCompetence(competence); setSection('budgets') }} onNavigateToPlanning={() => setSection('planning')} />}
-          {section === 'goals' && <FinancialGoals key={state.family.id} familyId={state.family.id} refreshKey={financeVersion} onChanged={financeChanged} onNavigateToPlanning={() => setSection('planning')} />}
-          {section === 'accounts' && (
-            <Accounts familyId={state.family.id} members={state.family.members} balanceVersion={financeVersion} />
-          )}
-          {section === 'categories' && <Categories familyId={state.family.id} />}
-          {section === 'transactions' && (
-            <Transactions familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
-          )}
-          {section === 'transfers' && <Transfers familyId={state.family.id} onChanged={financeChanged} />}
-          {/* Toda mudança em previsões muda a projeção (e realizar muda o saldo realizado): avisa. */}
-          {section === 'planned' && (
-            <Planned familyId={state.family.id} onChanged={financeChanged} refreshKey={financeVersion} />
-          )}
-        </>
-      )}
-    </section>
-  )
+  return <section className="card"><button type="button" onClick={onBack}>← Núcleos familiares</button>
+    {state.kind === 'loading' && <p role="status">Carregando…</p>}
+    {state.kind === 'error' && <p role="alert">{state.message}</p>}
+    {state.kind === 'loaded' && <><h2>{state.family.name}</h2><p>Relação social. Os orçamentos pessoais permanecem privados.</p>
+      <ul>{state.family.members.map(member => <li key={member.memberId}>{member.displayName} · {roleLabels[member.role]}</li>)}</ul>
+      {state.family.myRole === 'Owner' && <InvitePanel familyId={state.family.id} />}
+    </>}
+  </section>
 }

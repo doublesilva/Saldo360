@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.CreditCards;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Recurrences;
 
 namespace Saldo360.Infrastructure.Persistence.Configurations;
@@ -20,13 +20,13 @@ internal sealed class ServiceAccountBindingConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.AccountReferenceMasked).HasMaxLength(40);
         builder.Property(x => x.ServiceReferenceMasked).HasMaxLength(40);
         builder.Property(x => x.Origin).HasMaxLength(40).IsRequired();
-        builder.HasIndex(x => new { x.FamilyId, x.DocumentType, x.AccountReferenceHash }).IsUnique()
+        builder.HasIndex(x => new { x.WorkspaceId, x.DocumentType, x.AccountReferenceHash }).IsUnique()
             .HasFilter("account_reference_hash IS NOT NULL");
-        builder.HasIndex(x => new { x.FamilyId, x.DocumentType, x.ServiceReferenceHash }).IsUnique()
+        builder.HasIndex(x => new { x.WorkspaceId, x.DocumentType, x.ServiceReferenceHash }).IsUnique()
             .HasFilter("service_reference_hash IS NOT NULL");
-        builder.HasIndex(x => new { x.FamilyId, x.RecurringTemplateId });
-        builder.HasOne<Family>().WithMany().HasForeignKey(x => x.FamilyId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialRecurrence>().WithMany().HasForeignKey(x => new { x.FamilyId, Id = x.RecurringTemplateId })
-            .HasPrincipalKey(x => new { x.FamilyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => new { x.WorkspaceId, x.RecurringTemplateId });
+        builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialRecurrence>().WithMany().HasForeignKey(x => new { x.WorkspaceId, Id = x.RecurringTemplateId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.Id }).OnDelete(DeleteBehavior.Restrict);
     }
 }

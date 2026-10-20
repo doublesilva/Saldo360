@@ -14,26 +14,26 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
     private static readonly DateOnly Reference = new(2026, 9, 1);
 
     private string _owner = null!;
-    private string _member = null!;
+    private string _ownerSecondSession = null!;
     private string _outsider = null!;
-    private FamilyDto _family = null!;
-    private FamilyDto _otherFamily = null!;
+    private WorkspaceDto _family = null!;
+    private WorkspaceDto _otherFamily = null!;
     private Guid _itau;
     private Guid _salario;
     private Guid _aluguel;
 
     private static DateOnly Today => BusinessCalendar.Today(DateTimeOffset.UtcNow);
 
-    private string PlannedUrl => $"/api/families/{_family.Id}/planned-transactions";
+    private string PlannedUrl => $"/api/financial-workspaces/{_family.Id}/planned-transactions";
 
     private async Task ArrangeAsync()
     {
         _owner = await SignInAsync("dona");
-        _member = await SignInAsync("membro");
+        _ownerSecondSession = _owner;
         _outsider = await SignInAsync("estranho");
-        var created = await CreateFamilyAsync(_owner, "Família Silva");
-        _family = await JoinByInvitationAsync(_owner, created.Id, _member);
-        _otherFamily = await CreateFamilyAsync(_outsider, "Família Estranha");
+        var created = await CreateWorkspaceAsync(_owner, "Família Silva");
+        _family = created;
+        _otherFamily = await CreateWorkspaceAsync(_outsider, "Família Estranha");
         _itau = await CreateAccountAsync("Itaú PF", "1000.00", Reference);
         _salario = await CreateCategoryAsync("Salário", "Income");
         _aluguel = await CreateCategoryAsync("Aluguel", "Expense");
@@ -57,12 +57,12 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
         await CreatePlannedAsync(_aluguel, "Expense", "100.00", Today.AddDays(-3)); // vencida pendente
         Assert.Equal(("1000.00", "0.00", "100.00", "500.00", "200.00", "1200.00"), Money(await ProjectionJsonAsync(_itau, through)));
 
-        var realized = await SendWithCsrfAsync(HttpMethod.Post, $"{PlannedUrl}/{aluguel}/realize", _member, new { amount = "210.00", transactionDate = Today });
+        var realized = await SendWithCsrfAsync(HttpMethod.Post, $"{PlannedUrl}/{aluguel}/realize", _ownerSecondSession, new { amount = "210.00", transactionDate = Today });
         Assert.Equal(HttpStatusCode.Created, realized.StatusCode);
         Assert.Equal(("790.00", "0.00", "100.00", "500.00", "0.00", "1190.00"), Money(await ProjectionJsonAsync(_itau, through)));
 
         var transactionId = JsonDocument.Parse(await realized.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
-        await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions/{transactionId}/cancel", _owner);
+        await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions/{transactionId}/cancel", _owner);
         Assert.Equal(("1000.00", "0.00", "100.00", "500.00", "200.00", "1200.00"), Money(await ProjectionJsonAsync(_itau, through)));
     }
 
@@ -93,8 +93,8 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
     {
         await ArrangeAsync();
         await CreatePlannedAsync(_aluguel, "Expense", "300.00", Today.AddDays(2));
-        await SendWithCsrfAsync(HttpMethod.Put, $"/api/families/{_family.Id}/categories/{_aluguel}", _owner, new { name = "Aluguel", isActive = false });
-        await SendWithCsrfAsync(HttpMethod.Put, $"/api/families/{_family.Id}/accounts/{_itau}", _owner,
+        await SendWithCsrfAsync(HttpMethod.Put, $"/api/financial-workspaces/{_family.Id}/categories/{_aluguel}", _owner, new { name = "Aluguel", isActive = false });
+        await SendWithCsrfAsync(HttpMethod.Put, $"/api/financial-workspaces/{_family.Id}/accounts/{_itau}", _owner,
             new { name = "Itaú PF", type = "Checking", financialScope = "PF", openingBalance = "1000.00", openingBalanceDate = Reference, isActive = false });
 
         Assert.Equal("700.00", Money(await ProjectionJsonAsync(_itau, Today.AddDays(5))).Item6);
@@ -105,15 +105,15 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
     {
         await ArrangeAsync();
         var nubank = await CreateAccountAsync("Nubank", "0.00", Reference);
-        await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions", _owner,
+        await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions", _owner,
             new { accountId = _itau, categoryId = _aluguel, type = "Expense", description = "Compra", amount = "12.34", transactionDate = Today });
-        await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transfers", _owner,
+        await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transfers", _owner,
             new { sourceAccountId = _itau, destinationAccountId = nubank, amount = "100.00", transferDate = Today, description = "Reserva" });
         await CreatePlannedAsync(_salario, "Income", "0.10", Today.AddDays(1));
         await CreatePlannedAsync(_salario, "Income", "0.20", Today.AddDays(2));
 
         var projection = Money(await ProjectionJsonAsync(_itau, Today.AddDays(3)));
-        using var balance = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, $"/api/families/{_family.Id}/accounts/{_itau}/balance", _owner)).Content.ReadAsStringAsync());
+        using var balance = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_family.Id}/accounts/{_itau}/balance", _owner)).Content.ReadAsStringAsync());
 
         Assert.Equal(balance.RootElement.GetProperty("balance").GetString(), projection.Item1);
         Assert.Equal(("887.66", "0.30", "887.96"), (projection.Item1, projection.Item4, projection.Item6));
@@ -144,7 +144,7 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
         await CreatePlannedAsync(_aluguel, "Expense", "40.00", Today.AddDays(1), nubank);
         var foreign = await CreateAccountAsync("Conta Estranha", "0.00", Reference, _outsider, _otherFamily.Id);
         var foreignCategory = await CreateCategoryAsync("Aluguel", "Expense", _outsider, _otherFamily.Id);
-        await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_otherFamily.Id}/planned-transactions", _outsider,
+        await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_otherFamily.Id}/planned-transactions", _outsider,
             new { accountId = foreign, categoryId = foreignCategory, type = "Expense", description = "X", amount = "77.00", dueDate = Today });
 
         Assert.Equal("1000.00", Money(await ProjectionJsonAsync(_itau, Today.AddDays(5))).Item6);
@@ -153,7 +153,7 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, Url(_itau, Today), _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, Url(foreign, Today), _owner)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
-            (await SendAsync(HttpMethod.Get, $"/api/families/{_otherFamily.Id}/accounts/{_itau}/projection?through={Today:yyyy-MM-dd}", _outsider)).StatusCode);
+            (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_otherFamily.Id}/accounts/{_itau}/projection?through={Today:yyyy-MM-dd}", _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, Url(Guid.CreateVersion7(), Today), _owner)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await Client.GetAsync(Url(_itau, Today))).StatusCode);
     }
@@ -190,7 +190,7 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
     {
         await ArrangeAsync();
 
-        var response = await SendAsync(HttpMethod.Get, $"/api/families/{_family.Id}/accounts/{_itau}/projection{query}", _owner);
+        var response = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_family.Id}/accounts/{_itau}/projection{query}", _owner);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -203,7 +203,7 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
         await ArrangeAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, Url(_itau, Today.AddDays(-1)), _owner)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Get, Url(_itau, Today), _member)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Get, Url(_itau, Today), _ownerSecondSession)).StatusCode);
     }
 
     [Fact]
@@ -220,9 +220,9 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
         {
             for (var i = 0; i < 8; i++)
             {
-                var realized = await SendWithCsrfAsync(HttpMethod.Post, $"{PlannedUrl}/{aluguel}/realize", _member, new { amount = "210.00", transactionDate = Today });
+                var realized = await SendWithCsrfAsync(HttpMethod.Post, $"{PlannedUrl}/{aluguel}/realize", _ownerSecondSession, new { amount = "210.00", transactionDate = Today });
                 var id = JsonDocument.Parse(await realized.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
-                await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions/{id}/cancel", _member);
+                await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions/{id}/cancel", _ownerSecondSession);
             }
         });
 
@@ -250,7 +250,7 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
         json.GetProperty("projectedBalance").GetString());
 
     private string Url(Guid account, DateOnly through) =>
-        $"/api/families/{_family.Id}/accounts/{account}/projection?through={through:yyyy-MM-dd}";
+        $"/api/financial-workspaces/{_family.Id}/accounts/{account}/projection?through={through:yyyy-MM-dd}";
 
     private async Task<JsonElement> ProjectionJsonAsync(Guid account, DateOnly through)
     {
@@ -269,17 +269,17 @@ public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : 
     }
 
     private async Task<Guid> CreateAccountAsync(
-        string name, string? openingBalance, DateOnly? openingBalanceDate, string? session = null, Guid? familyId = null)
+        string name, string? openingBalance, DateOnly? openingBalanceDate, string? session = null, Guid? workspaceId = null)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId ?? _family.Id}/accounts", session ?? _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId ?? _family.Id}/accounts", session ?? _owner,
             new { name, type = "Checking", financialScope = "PF", openingBalance, openingBalanceDate });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
     }
 
-    private async Task<Guid> CreateCategoryAsync(string name, string type, string? session = null, Guid? familyId = null)
+    private async Task<Guid> CreateCategoryAsync(string name, string type, string? session = null, Guid? workspaceId = null)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId ?? _family.Id}/categories", session ?? _owner, new { name, type });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId ?? _family.Id}/categories", session ?? _owner, new { name, type });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
     }

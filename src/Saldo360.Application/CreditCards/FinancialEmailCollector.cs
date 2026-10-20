@@ -16,7 +16,7 @@ public sealed class FinancialEmailImportOptions
 public sealed class FinancialEmailImportProfile
 {
     public string Name { get; set; } = string.Empty;
-    public Guid FamilyId { get; set; }
+    public Guid WorkspaceId { get; set; }
     public string Query { get; set; } = "has:attachment filename:pdf";
     public bool Enabled { get; set; }
     public FinancialEmailCollectionMode CollectionMode { get; set; } = FinancialEmailCollectionMode.Attachments;
@@ -46,8 +46,8 @@ public interface IFinancialEmailSource
 }
 public interface IFinancialEmailCollectorCheckpointRepository
 {
-    Task<FinancialEmailCollectorCheckpoint> GetOrCreateAsync(Guid familyId, string profileName, CancellationToken cancellationToken);
-    Task<IReadOnlyList<FinancialEmailCollectorCheckpoint>> ListAsync(IReadOnlyCollection<Guid> familyIds, CancellationToken cancellationToken);
+    Task<FinancialEmailCollectorCheckpoint> GetOrCreateAsync(Guid workspaceId, string profileName, CancellationToken cancellationToken);
+    Task<IReadOnlyList<FinancialEmailCollectorCheckpoint>> ListAsync(IReadOnlyCollection<Guid> workspaceIds, CancellationToken cancellationToken);
     Task SaveAsync(CancellationToken cancellationToken);
 }
 public sealed record FinancialEmailCollectorError(string MessageId, string? AttachmentId, string Code);
@@ -98,7 +98,7 @@ public sealed class FinancialEmailCollector(
         // Enabled controla somente o agendador. A execução manual autenticada permanece
         // disponível para provisionamento, dry-run e recuperação operacional.
         if (!string.Equals(options.Provider, "Gmail", StringComparison.OrdinalIgnoreCase) || profile is null
-            || !await inboxRepository.CanAccessFamilyAsync(profile.FamilyId, userId, cancellationToken)) return null;
+            || !await inboxRepository.CanAccessWorkspaceAsync(profile.WorkspaceId, userId, cancellationToken)) return null;
         return await RunCoreAsync(profile, dryRun, cancellationToken);
     }
 
@@ -106,7 +106,7 @@ public sealed class FinancialEmailCollector(
     {
         var profile = options.Sources.SingleOrDefault(p => p.Enabled && string.Equals(p.Name, profileName, StringComparison.OrdinalIgnoreCase));
         if (userId == Guid.Empty || !string.Equals(options.Provider, "Gmail", StringComparison.OrdinalIgnoreCase) || profile is null
-            || !await inboxRepository.CanAccessFamilyAsync(profile.FamilyId, userId, cancellationToken)) return null;
+            || !await inboxRepository.CanAccessWorkspaceAsync(profile.WorkspaceId, userId, cancellationToken)) return null;
         return await RunCoreAsync(profile, dryRun, cancellationToken, window);
     }
 
@@ -114,13 +114,13 @@ public sealed class FinancialEmailCollector(
     {
         var profile = options.Sources.SingleOrDefault(candidate => candidate.Enabled && string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase));
         if (!options.Enabled || !string.Equals(options.Provider, "Gmail", StringComparison.OrdinalIgnoreCase) || profile is null
-            || !await inboxRepository.FamilyExistsAsync(profile.FamilyId, cancellationToken)) return null;
+            || !await inboxRepository.WorkspaceExistsAsync(profile.WorkspaceId, cancellationToken)) return null;
         return await RunCoreAsync(profile, false, cancellationToken);
     }
 
     private async Task<FinancialEmailCollectorResult> RunCoreAsync(FinancialEmailImportProfile profile, bool dryRun, CancellationToken cancellationToken, FinancialEmailHistoricalWindow? window = null)
     {
-        var checkpoint = window is null ? await checkpoints.GetOrCreateAsync(profile.FamilyId, profile.Name, cancellationToken) : null;
+        var checkpoint = window is null ? await checkpoints.GetOrCreateAsync(profile.WorkspaceId, profile.Name, cancellationToken) : null;
         var started = clock.GetUtcNow();
         if (!dryRun && checkpoint is not null) { checkpoint.Start(started); await checkpoints.SaveAsync(cancellationToken); }
         var after = window?.StartUtc.AddSeconds(-1) ?? checkpoint?.LastMessageAt?.AddMinutes(-5) ?? started.AddDays(-Math.Clamp(options.LookbackDays, 1, 90));
@@ -144,7 +144,7 @@ public sealed class FinancialEmailCollector(
                     if (!IsPdf(attachment) || attachment.Size <= 0 || attachment.Size > CreditCardPdfPreviewService.MaxFileBytes) { rejectedAttachments++; continue; }
                     hasCandidate = true; candidates++;
                     var externalId = GmailAttachmentIdentity.Create(message.Id, attachment.PartId); ids.Add(externalId);
-                    var existing = window is not null && await inboxRepository.FindByExternalIdAsync(profile.FamilyId, FinancialDocumentSource.Email, externalId, cancellationToken) is not null;
+                    var existing = window is not null && await inboxRepository.FindByExternalIdAsync(profile.WorkspaceId, FinancialDocumentSource.Email, externalId, cancellationToken) is not null;
                     if (existing) existingIdentities++;
                     if (dryRun) continue;
                     if (existing) { duplicates++; continue; }
@@ -154,7 +154,7 @@ public sealed class FinancialEmailCollector(
                         using var content = new MemoryStream(); await downloaded.CopyToAsync(content, cancellationToken);
                         if (content.Length is <= 0 or > CreditCardPdfPreviewService.MaxFileBytes || !HasPdfSignature(content)) { failures++; errors.Add(new(message.Id, $"part:{attachment.PartId}", "InvalidPdfContent")); continue; }
                         content.Position = 0;
-                        Count(await inbox.ReceiveAutomationAsync(profile.FamilyId, content, content.Length, attachment.FileName, attachment.ContentType, externalId, message.ReceivedAt, cancellationToken));
+                        Count(await inbox.ReceiveAutomationAsync(profile.WorkspaceId, content, content.Length, attachment.FileName, attachment.ContentType, externalId, message.ReceivedAt, cancellationToken));
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException) { failures++; errors.Add(new(message.Id, $"part:{attachment.PartId}", "AttachmentProcessingFailed")); }
                 }
@@ -171,7 +171,7 @@ public sealed class FinancialEmailCollector(
                     foreach (var link in extraction.Candidates)
                     {
                         hasCandidate = true; var externalId = GmailLinkedDocumentIdentity.Create(message.Id, link.Ordinal); ids.Add(externalId);
-                        var existing = window is not null && await inboxRepository.FindByExternalIdAsync(profile.FamilyId, FinancialDocumentSource.Email, externalId, cancellationToken) is not null;
+                        var existing = window is not null && await inboxRepository.FindByExternalIdAsync(profile.WorkspaceId, FinancialDocumentSource.Email, externalId, cancellationToken) is not null;
                         if (existing) existingIdentities++;
                         if (dryRun) continue;
                         if (existing) { duplicates++; continue; }
@@ -179,7 +179,7 @@ public sealed class FinancialEmailCollector(
                         {
                             var document = await linkedDocumentDownloader.DownloadAsync(profile, link.Url, cancellationToken); linkedDownloads++;
                             using var content = new MemoryStream(document.Content, writable: false);
-                            Count(await inbox.ReceiveAutomationAsync(profile.FamilyId, content, content.Length, document.FileName, document.ContentType, externalId, message.ReceivedAt, cancellationToken));
+                            Count(await inbox.ReceiveAutomationAsync(profile.WorkspaceId, content, content.Length, document.FileName, document.ContentType, externalId, message.ReceivedAt, cancellationToken));
                         }
                         catch (Exception exception) when (exception is not OperationCanceledException) { failures++; errors.Add(new(message.Id, $"link:{link.Ordinal}", "LinkedDocumentProcessingFailed")); }
                     }

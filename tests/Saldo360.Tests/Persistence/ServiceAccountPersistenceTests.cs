@@ -30,13 +30,13 @@ public sealed class ServiceAccountPersistenceTests(PostgresFixture postgres) : I
     {
         await using var db = Db();
         var migrations = db.Database.GetMigrations().ToList();
-        Assert.EndsWith("AddUserServiceAccounts", migrations[^1]);
-        await db.GetService<IMigrator>().MigrateAsync(migrations[^2]);
+        var serviceMigration = migrations.Single(m => m.EndsWith("AddUserServiceAccounts", StringComparison.Ordinal));
+        await db.GetService<IMigrator>().MigrateAsync(migrations[migrations.IndexOf(serviceMigration) - 1]);
         await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync();
         await using var command = new NpgsqlCommand("SELECT to_regclass('service_accounts') IS NULL AND to_regclass('financial_accounts') IS NOT NULL", connection);
         Assert.Equal(true, await command.ExecuteScalarAsync());
         await db.GetService<IMigrator>().MigrateAsync();
-        Assert.Contains(migrations[^1], await db.Database.GetAppliedMigrationsAsync());
+        Assert.Contains(serviceMigration, await db.Database.GetAppliedMigrationsAsync());
     }
 
     [Fact]

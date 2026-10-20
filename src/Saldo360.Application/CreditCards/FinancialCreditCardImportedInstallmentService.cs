@@ -1,48 +1,48 @@
 using System.Globalization;
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 
 namespace Saldo360.Application.CreditCards;
 
 public sealed class FinancialCreditCardImportedInstallmentService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialCreditCardImportedInstallmentRepository repository)
 {
-    public async Task<ImportedInstallmentOperationResult> FindMatchesAsync(Guid familyId, Guid cardId, Guid userId, ImportedInstallmentInput? input, CancellationToken cancellationToken)
+    public async Task<ImportedInstallmentOperationResult> FindMatchesAsync(Guid workspaceId, Guid cardId, Guid userId, ImportedInstallmentInput? input, CancellationToken cancellationToken)
     {
-        if (!await IsParticipant(familyId, userId, cancellationToken)) return new(ImportedInstallmentAccess.NotFound, null, null, null);
+        if (!await IsParticipant(workspaceId, userId, cancellationToken)) return new(ImportedInstallmentAccess.NotFound, null, null, null);
         if (!TryValidateInput(input, out var normalized, out var errors)) return new(ImportedInstallmentAccess.Invalid, null, null, errors);
-        return new(ImportedInstallmentAccess.Allowed, null, await repository.FindMatchesAsync(familyId, cardId, normalized.Date, normalized.Amount, normalized.Number, normalized.Count, normalized.Competence, normalized.Description, cancellationToken), null);
+        return new(ImportedInstallmentAccess.Allowed, null, await repository.FindMatchesAsync(workspaceId, cardId, normalized.Date, normalized.Amount, normalized.Number, normalized.Count, normalized.Competence, normalized.Description, cancellationToken), null);
     }
 
-    public async Task<ImportedInstallmentOperationResult> LinkAsync(Guid familyId, Guid cardId, Guid userId, ImportedInstallmentInput? input, CancellationToken cancellationToken)
+    public async Task<ImportedInstallmentOperationResult> LinkAsync(Guid workspaceId, Guid cardId, Guid userId, ImportedInstallmentInput? input, CancellationToken cancellationToken)
     {
-        if (!await IsParticipant(familyId, userId, cancellationToken)) return new(ImportedInstallmentAccess.NotFound, null, null, null);
+        if (!await IsParticipant(workspaceId, userId, cancellationToken)) return new(ImportedInstallmentAccess.NotFound, null, null, null);
         if (!TryValidateInput(input, out var normalized, out var errors)) return new(ImportedInstallmentAccess.Invalid, null, null, errors);
         if (normalized.InstallmentId is null) return Invalid("installmentId", "Selecione explicitamente uma parcela existente.");
         if (!normalized.Confirm) return Invalid("confirm", "A confirmação explícita é obrigatória.");
-        return await repository.LinkAsync(familyId, cardId, userId, normalized.ToInput(), DateTimeOffset.UtcNow, cancellationToken);
+        return await repository.LinkAsync(workspaceId, cardId, userId, normalized.ToInput(), DateTimeOffset.UtcNow, cancellationToken);
     }
 
-    public async Task<ImportedInstallmentOperationResult> CreateHistoricalAsync(Guid familyId, Guid cardId, Guid userId, ImportedInstallmentInput? input, CancellationToken cancellationToken)
+    public async Task<ImportedInstallmentOperationResult> CreateHistoricalAsync(Guid workspaceId, Guid cardId, Guid userId, ImportedInstallmentInput? input, CancellationToken cancellationToken)
     {
-        if (!await IsParticipant(familyId, userId, cancellationToken)) return new(ImportedInstallmentAccess.NotFound, null, null, null);
+        if (!await IsParticipant(workspaceId, userId, cancellationToken)) return new(ImportedInstallmentAccess.NotFound, null, null, null);
         if (!TryValidateInput(input, out var normalized, out var errors)) return new(ImportedInstallmentAccess.Invalid, null, null, errors);
         if (!normalized.Confirm) return Invalid("confirm", "A confirmação explícita é obrigatória.");
         if (normalized.Competence is null) return Invalid("competence", "A competência da fatura é obrigatória para uma parcela histórica.");
-        if (normalized.CategoryId is { } category && !await repository.IsExpenseCategoryAsync(familyId, category, cancellationToken)) return Invalid("categoryId", "A categoria deve ser uma despesa ativa da família.");
-        return await repository.CreateHistoricalAsync(familyId, cardId, userId, normalized.ToInput(), DateTimeOffset.UtcNow, cancellationToken);
+        if (normalized.CategoryId is { } category && !await repository.IsExpenseCategoryAsync(workspaceId, category, cancellationToken)) return Invalid("categoryId", "A categoria deve ser uma despesa ativa da família.");
+        return await repository.CreateHistoricalAsync(workspaceId, cardId, userId, normalized.ToInput(), DateTimeOffset.UtcNow, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<ImportedInstallmentRecordDto>?> ListAsync(Guid familyId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
-        await IsParticipant(familyId, userId, cancellationToken) ? await repository.ListAsync(familyId, cardId, cancellationToken) : null;
+    public async Task<IReadOnlyList<ImportedInstallmentRecordDto>?> ListAsync(Guid workspaceId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
+        await IsParticipant(workspaceId, userId, cancellationToken) ? await repository.ListAsync(workspaceId, cardId, cancellationToken) : null;
 
-    public async Task<bool> CancelAsync(Guid familyId, Guid cardId, Guid id, Guid userId, CancellationToken cancellationToken)
+    public async Task<bool> CancelAsync(Guid workspaceId, Guid cardId, Guid id, Guid userId, CancellationToken cancellationToken)
     {
-        if (!await IsParticipant(familyId, userId, cancellationToken)) return false;
-        return await repository.CancelAsync(familyId, cardId, id, userId, DateTimeOffset.UtcNow, cancellationToken);
+        if (!await IsParticipant(workspaceId, userId, cancellationToken)) return false;
+        return await repository.CancelAsync(workspaceId, cardId, id, userId, DateTimeOffset.UtcNow, cancellationToken);
     }
 
-    private async Task<bool> IsParticipant(Guid familyId, Guid userId, CancellationToken cancellationToken) => await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is not null;
+    private async Task<bool> IsParticipant(Guid workspaceId, Guid userId, CancellationToken cancellationToken) => await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is not null;
 
     private static bool TryValidateInput(ImportedInstallmentInput? input, out Normalized normalized, out IDictionary<string, string[]> errors)
     {

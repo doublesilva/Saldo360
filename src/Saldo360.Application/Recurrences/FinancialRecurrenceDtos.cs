@@ -5,7 +5,7 @@ namespace Saldo360.Application.Recurrences;
 
 public sealed record RecurrenceInput(Guid? AccountId, Guid? CategoryId, string? Type, string? Description, decimal? Amount,
     bool IsEstimated, string? Frequency, int? Interval, DateOnly? StartDate, DateOnly? EndDate, int? OccurrenceCount, int? DayOfMonth);
-public sealed record RecurrenceDto(Guid Id, Guid FamilyId, Guid AccountId, Guid CategoryId, CategoryType Type, string Description,
+public sealed record RecurrenceDto(Guid Id, Guid WorkspaceId, Guid AccountId, Guid CategoryId, CategoryType Type, string Description,
     decimal Amount, bool IsEstimated, RecurrenceFrequency Frequency, int Interval, DateOnly StartDate, DateOnly? EndDate,
     int? OccurrenceCount, int DayOfMonth, RecurrenceStatus Status, string Currency, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt);
 public sealed record RecurrenceOccurrenceDto(Guid RecurrenceId, int Sequence, DateOnly Date, string Description, CategoryType Type, decimal Amount, bool IsEstimated, Guid AccountId, Guid CategoryId);

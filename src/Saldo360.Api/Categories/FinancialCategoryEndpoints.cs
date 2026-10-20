@@ -8,7 +8,7 @@ public static class FinancialCategoryEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialCategoryEndpoints(this IEndpointRouteBuilder app)
     {
-        var categories = app.MapGroup("/api/families/{familyId:guid}/categories").RequireAuthorization();
+        var categories = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/categories").RequireAuthorization();
         categories.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         categories.MapGet("/", List);
         categories.MapGet("/{categoryId:guid}", Get);
@@ -17,7 +17,7 @@ public static class FinancialCategoryEndpoints
     }
 
     private static async Task<IResult> Create(
-        Guid familyId, CreateCategoryRequest? request, CurrentUser currentUser, FinancialCategoryService categories,
+        Guid workspaceId, CreateCategoryRequest? request, CurrentUser currentUser, FinancialCategoryService categories,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -25,13 +25,13 @@ public static class FinancialCategoryEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await categories.CreateAsync(familyId, userId, request?.Name, request?.Type, cancellationToken);
-        return ToResponse(result, category => Results.Created($"/api/families/{familyId}/categories/{category.Id}", category));
+        var result = await categories.CreateAsync(workspaceId, userId, request?.Name, request?.Type, cancellationToken);
+        return ToResponse(result, category => Results.Created($"/api/financial-workspaces/{workspaceId}/categories/{category.Id}", category));
     }
 
     /// <summary>Categorias ativas; com <c>includeInactive=true</c>, também as desativadas.</summary>
     private static async Task<IResult> List(
-        Guid familyId, bool? includeInactive, CurrentUser currentUser, FinancialCategoryService categories,
+        Guid workspaceId, bool? includeInactive, CurrentUser currentUser, FinancialCategoryService categories,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -39,13 +39,13 @@ public static class FinancialCategoryEndpoints
             return Results.Unauthorized();
         }
 
-        return await categories.ListAsync(familyId, userId, includeInactive ?? false, cancellationToken) is { } list
+        return await categories.ListAsync(workspaceId, userId, includeInactive ?? false, cancellationToken) is { } list
             ? Results.Ok(list)
             : Results.NotFound();
     }
 
     private static async Task<IResult> Get(
-        Guid familyId, Guid categoryId, CurrentUser currentUser, FinancialCategoryService categories,
+        Guid workspaceId, Guid categoryId, CurrentUser currentUser, FinancialCategoryService categories,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -53,14 +53,14 @@ public static class FinancialCategoryEndpoints
             return Results.Unauthorized();
         }
 
-        return await categories.GetAsync(familyId, categoryId, userId, cancellationToken) is { } category
+        return await categories.GetAsync(workspaceId, categoryId, userId, cancellationToken) is { } category
             ? Results.Ok(category)
             : Results.NotFound();
     }
 
     /// <summary>Renomeia e ativa/desativa (name e isActive obrigatórios). O tipo não pode ser enviado.</summary>
     private static async Task<IResult> Update(
-        Guid familyId, Guid categoryId, UpdateCategoryRequest? request, CurrentUser currentUser,
+        Guid workspaceId, Guid categoryId, UpdateCategoryRequest? request, CurrentUser currentUser,
         FinancialCategoryService categories, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -68,7 +68,7 @@ public static class FinancialCategoryEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await categories.UpdateAsync(familyId, categoryId, userId, request?.Name, request?.IsActive, cancellationToken);
+        var result = await categories.UpdateAsync(workspaceId, categoryId, userId, request?.Name, request?.IsActive, cancellationToken);
         return ToResponse(result, Results.Ok);
     }
 
@@ -83,7 +83,7 @@ public static class FinancialCategoryEndpoints
 
 /// <summary>
 /// Cadastro de categoria: nome e tipo (<c>Income</c> ou <c>Expense</c>). Família vem da rota e criador da sessão;
-/// campos como familyId, createdByUserId, isActive ou createdAt são recusados (400).
+/// campos como workspaceId, createdByUserId, isActive ou createdAt são recusados (400).
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreateCategoryRequest(string? Name, string? Type);

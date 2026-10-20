@@ -11,7 +11,7 @@ namespace Saldo360.Infrastructure.Calendar;
 internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinancialCalendarRepository
 {
     public async Task<FinancialCalendarSnapshot> ListAsync(
-        Guid familyId,
+        Guid workspaceId,
         FinancialCalendarFilter filter,
         CancellationToken cancellationToken)
     {
@@ -22,7 +22,7 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
 
         var effectiveTransactions = db.FinancialTransactions
             .AsNoTracking()
-            .Where(t => t.FamilyId == familyId
+            .Where(t => t.WorkspaceId == workspaceId
                 && !t.IsCancelled
                 && t.TransactionDate >= filter.From
                 && t.TransactionDate <= filter.Through
@@ -31,27 +31,27 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
 
         var pendingPlannedTransactions = db.FinancialPlannedTransactions
             .AsNoTracking()
-            .Where(p => p.FamilyId == familyId
+            .Where(p => p.WorkspaceId == workspaceId
                 && !p.IsCancelled
                 && p.DueDate >= filter.From
                 && p.DueDate <= filter.Through
                 && (filter.AccountId == null || p.AccountId == filter.AccountId)
                 && (filter.Type == null || p.Type == filter.Type)
                 && !db.FinancialTransactions.Any(t =>
-                    t.FamilyId == p.FamilyId && t.PlannedTransactionId == p.Id && !t.IsCancelled)
+                    t.WorkspaceId == p.WorkspaceId && t.PlannedTransactionId == p.Id && !t.IsCancelled)
                 && !db.FinancialPlannedInvoiceReconciliations.Any(r =>
-                    r.FamilyId == p.FamilyId && r.PlannedTransactionId == p.Id && r.RemovedAt == null)
+                    r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null)
                 && !db.FinancialDebtInstallmentReconciliations.Any(r =>
-                    r.FamilyId == p.FamilyId && r.PlannedTransactionId == p.Id && r.RemovedAt == null));
+                    r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null));
 
 
         var effective =
             from t in effectiveTransactions
-            join a in db.FinancialAccounts on new { t.FamilyId, Id = t.AccountId } equals new { a.FamilyId, a.Id }
-            join category in db.FinancialCategories on new { t.FamilyId, t.CategoryId } equals new { category.FamilyId, CategoryId = (Guid?)category.Id } into categories
+            join a in db.FinancialAccounts on new { t.WorkspaceId, Id = t.AccountId } equals new { a.WorkspaceId, a.Id }
+            join category in db.FinancialCategories on new { t.WorkspaceId, t.CategoryId } equals new { category.WorkspaceId, CategoryId = (Guid?)category.Id } into categories
             from c in categories.DefaultIfEmpty()
-            join materialization in db.FinancialRecurrenceMaterializations on new { t.FamilyId, PlannedTransactionId = t.PlannedTransactionId }
-                equals new { materialization.FamilyId, PlannedTransactionId = (Guid?)materialization.PlannedTransactionId } into materializations
+            join materialization in db.FinancialRecurrenceMaterializations on new { t.WorkspaceId, PlannedTransactionId = t.PlannedTransactionId }
+                equals new { materialization.WorkspaceId, PlannedTransactionId = (Guid?)materialization.PlannedTransactionId } into materializations
             from m in materializations.DefaultIfEmpty()
             select new FinancialCalendarItemDto(
                 t.Id,
@@ -72,8 +72,8 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
 
         var planned =
             from p in pendingPlannedTransactions
-            join a in db.FinancialAccounts on new { p.FamilyId, Id = p.AccountId } equals new { a.FamilyId, a.Id }
-            join c in db.FinancialCategories on new { p.FamilyId, Id = p.CategoryId } equals new { c.FamilyId, c.Id }
+            join a in db.FinancialAccounts on new { p.WorkspaceId, Id = p.AccountId } equals new { a.WorkspaceId, a.Id }
+            join c in db.FinancialCategories on new { p.WorkspaceId, Id = p.CategoryId } equals new { c.WorkspaceId, c.Id }
             join materialization in db.FinancialRecurrenceMaterializations on p.Id equals materialization.PlannedTransactionId into materializations
             from m in materializations.DefaultIfEmpty()
             select new FinancialCalendarItemDto(
@@ -96,14 +96,14 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
         var effectiveItems = await effective.ToListAsync(cancellationToken);
         var plannedItems = await planned.ToListAsync(cancellationToken);
         var debtRows = await (from i in db.FinancialDebtInstallments.AsNoTracking()
-            join d in db.FinancialDebts.AsNoTracking() on new { i.FamilyId, DebtId = i.DebtId } equals new { d.FamilyId, DebtId = d.Id }
-            join a0 in db.FinancialAccounts.AsNoTracking() on new { i.FamilyId, Id = d.ResponsibleAccountId } equals new { a0.FamilyId, Id = (Guid?)a0.Id } into accounts
+            join d in db.FinancialDebts.AsNoTracking() on new { i.WorkspaceId, DebtId = i.DebtId } equals new { d.WorkspaceId, DebtId = d.Id }
+            join a0 in db.FinancialAccounts.AsNoTracking() on new { i.WorkspaceId, Id = d.ResponsibleAccountId } equals new { a0.WorkspaceId, Id = (Guid?)a0.Id } into accounts
             from a in accounts.DefaultIfEmpty()
-            where i.FamilyId == familyId && d.Status != Domain.Debts.DebtStatus.Archived && i.CancelledAt == null
+            where i.WorkspaceId == workspaceId && d.Status != Domain.Debts.DebtStatus.Archived && i.CancelledAt == null
                 && i.DueDate >= filter.From && i.DueDate <= filter.Through
                 && (filter.AccountId == null || d.ResponsibleAccountId == filter.AccountId)
                 && (filter.Type == null || filter.Type == CategoryType.Expense)
-            let paid = db.FinancialDebtPayments.Where(p => p.FamilyId == familyId && p.InstallmentId == i.Id && p.CancelledAt == null).Sum(p => (decimal?)p.Amount) ?? 0m
+            let paid = db.FinancialDebtPayments.Where(p => p.WorkspaceId == workspaceId && p.InstallmentId == i.Id && p.CancelledAt == null).Sum(p => (decimal?)p.Amount) ?? 0m
             let remaining = i.ScheduledAmount - paid
             where remaining > 0
             select new { i, d, a, paid, remaining }).ToListAsync(cancellationToken);

@@ -83,7 +83,7 @@ public sealed class ServiceBillRecurringMatchTests
     private static ServiceBillExtractionOutput Extraction(string type, string? issuer, string amount, string assessment = "Reliable", string? accountReference = null, string? serviceReference = null) => new(new(type, issuer, "2026-10", "2026-10-20", amount, accountReference, serviceReference, "High", "Deterministic", null), assessment);
     private sealed class Repository(IEnumerable<ServiceBillRecurringCandidateData> values, bool enforceCompetence = false) : IServiceBillRecurringCandidateRepository
     {
-        public Task<IReadOnlyList<ServiceBillRecurringCandidateData>> ListAsync(Guid familyId, string competence, string documentType, string? accountReferenceHash, string? serviceReferenceHash, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<ServiceBillRecurringCandidateData>> ListAsync(Guid workspaceId, string competence, string documentType, string? accountReferenceHash, string? serviceReferenceHash, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ServiceBillRecurringCandidateData>>(values.Where(value => !enforceCompetence || value.DueDate.ToString("yyyy-MM") == competence).ToList());
     }
 }

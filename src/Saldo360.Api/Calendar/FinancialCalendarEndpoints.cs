@@ -13,15 +13,15 @@ public static class FinancialCalendarEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialCalendarEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/families/{familyId:guid}/financial-calendar", List).RequireAuthorization();
-        app.MapGet("/api/families/{familyId:guid}/financial-calendar/balances", ListBalances).RequireAuthorization();
-        app.MapGet("/api/families/{familyId:guid}/financial-calendar/monthly-projection", ListMonthlyProjection)
+        app.MapGet("/api/financial-workspaces/{workspaceId:guid}/financial-calendar", List).RequireAuthorization();
+        app.MapGet("/api/financial-workspaces/{workspaceId:guid}/financial-calendar/balances", ListBalances).RequireAuthorization();
+        app.MapGet("/api/financial-workspaces/{workspaceId:guid}/financial-calendar/monthly-projection", ListMonthlyProjection)
             .RequireAuthorization();
-        app.MapGet("/api/families/{familyId:guid}/financial-planning/six-months", ListSixMonths).RequireAuthorization();
+        app.MapGet("/api/financial-workspaces/{workspaceId:guid}/financial-planning/six-months", ListSixMonths).RequireAuthorization();
         return app;
     }
 
-    private static async Task<IResult> ListSixMonths(Guid familyId, string? from, Guid? accountId,
+    private static async Task<IResult> ListSixMonths(Guid workspaceId, string? from, Guid? accountId,
         CurrentUser currentUser, FinancialCalendarMonthlyProjectionService projections, TimeProvider clock,
         CancellationToken cancellationToken)
     {
@@ -31,7 +31,7 @@ public static class FinancialCalendarEndpoints
         if (from is not null && (from.Length != 7 || !DateOnly.TryParseExact($"{from}-01", "yyyy-MM-dd",
             CultureInfo.InvariantCulture, DateTimeStyles.None, out first)))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["from"] = ["Use uma competência válida no formato yyyy-MM."] });
-        var result = await projections.GetAsync(familyId, userId, new(first, 6, accountId), cancellationToken, today);
+        var result = await projections.GetAsync(workspaceId, userId, new(first, 6, accountId), cancellationToken, today);
         return result switch
         {
             { NotFound: true } => Results.NotFound(),
@@ -41,7 +41,7 @@ public static class FinancialCalendarEndpoints
     }
 
     private static async Task<IResult> ListMonthlyProjection(
-        Guid familyId,
+        Guid workspaceId,
         string? from,
         int? months,
         Guid? accountId,
@@ -76,7 +76,7 @@ public static class FinancialCalendarEndpoints
         }
 
         var result = await projections.GetAsync(
-            familyId,
+            workspaceId,
             userId,
             new FinancialCalendarMonthlyProjectionQuery(firstMonth!.Value, months ?? 6, accountId),
             cancellationToken);
@@ -93,7 +93,7 @@ public static class FinancialCalendarEndpoints
     /// Sem accountId, consolida todas as contas e elimina transferências internas.
     /// </summary>
     private static async Task<IResult> ListBalances(
-        Guid familyId,
+        Guid workspaceId,
         string? from,
         string? through,
         Guid? accountId,
@@ -115,7 +115,7 @@ public static class FinancialCalendarEndpoints
         }
 
         var result = await balances.GetAsync(
-            familyId,
+            workspaceId,
             userId,
             new FinancialCalendarBalanceQuery(fromDate!.Value, throughDate!.Value, accountId),
             cancellationToken);
@@ -132,7 +132,7 @@ public static class FinancialCalendarEndpoints
     /// (Income/Expense) são opcionais. Realizações aparecem somente pelo lançamento efetivo.
     /// </summary>
     private static async Task<IResult> List(
-        Guid familyId,
+        Guid workspaceId,
         string? from,
         string? through,
         Guid? accountId,
@@ -155,7 +155,7 @@ public static class FinancialCalendarEndpoints
         }
 
         var result = await calendar.ListAsync(
-            familyId,
+            workspaceId,
             userId,
             new FinancialCalendarQuery(fromDate!.Value, throughDate!.Value, accountId, type),
             cancellationToken);

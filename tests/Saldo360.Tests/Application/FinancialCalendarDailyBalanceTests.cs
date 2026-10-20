@@ -1,3 +1,5 @@
+using Saldo360.Application.Workspaces;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Application.Accounts;
 using Saldo360.Application.Calendar;
 using Saldo360.Application.Families;
@@ -73,15 +75,16 @@ public sealed class FinancialCalendarDailyBalanceTests
     private sealed class SnapshotRepository : IFinancialCalendarBalanceRepository
     {
         public int Reads { get; private set; } public DateOnly Today { get; private set; }
-        public Task<FinancialCalendarBalanceSnapshot?> ReadAsync(Guid familyId, Guid? accountId, DateOnly through, DateOnly today, CancellationToken ct)
+        public Task<FinancialCalendarBalanceSnapshot?> ReadAsync(Guid workspaceId, Guid? accountId, DateOnly through, DateOnly today, CancellationToken ct)
         { Reads++; Today = today; return Task.FromResult<FinancialCalendarBalanceSnapshot?>(new([new(Guid.NewGuid(), 0m, today.AddDays(-1))], [], [])); }
-        public Task<FinancialCalendarBalanceSnapshot?> ReadMonthlyAsync(Guid familyId, Guid? accountId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct) => throw new NotSupportedException();
+        public Task<FinancialCalendarBalanceSnapshot?> ReadMonthlyAsync(Guid workspaceId, Guid? accountId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct) => throw new NotSupportedException();
     }
-    private sealed class MemberFamily : IFamilyRepository
+    private sealed class MemberFamily : IFinancialWorkspaceRepository
     {
-        public Task<FamilyRole?> GetMemberRoleAsync(Guid familyId, Guid userId, CancellationToken ct) => Task.FromResult<FamilyRole?>(FamilyRole.Owner);
+        public Task<FinancialWorkspace> EnsurePersonalAsync(Guid user, DateTimeOffset now, CancellationToken ct) => throw new NotSupportedException();
+        public Task<FinancialWorkspaceRole?> GetOwnerRoleAsync(Guid workspaceId, Guid userId, CancellationToken ct) => Task.FromResult<FinancialWorkspaceRole?>(FinancialWorkspaceRole.Owner);
         public Task AddAsync(Family family, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<FamilySummary>> ListForUserAsync(Guid userId, CancellationToken ct) => throw new NotSupportedException();
-        public Task<FamilyDetails?> FindForMemberAsync(Guid familyId, Guid userId, CancellationToken ct) => throw new NotSupportedException();
+        public Task<FamilyDetails?> FindForMemberAsync(Guid workspaceId, Guid userId, CancellationToken ct) => throw new NotSupportedException();
     }
 }

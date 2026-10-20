@@ -15,7 +15,7 @@ internal sealed class FinancialDocumentInboxItemConfiguration : IEntityTypeConfi
             table.HasCheckConstraint("ck_financial_document_inbox_service_bill_amount_scale",
                 "service_bill_projected_amount IS NULL OR (scale(service_bill_projected_amount) <= 2 AND scale(service_bill_confirmed_amount) <= 2)");
         });
-        builder.HasKey(item => new { item.FamilyId, item.Id });
+        builder.HasKey(item => new { item.WorkspaceId, item.Id });
         builder.Property(item => item.OriginalFileName).HasMaxLength(255).IsRequired();
         builder.Property(item => item.ContentHash).HasMaxLength(64).IsRequired();
         builder.Property(item => item.ContentType).HasMaxLength(100).IsRequired();
@@ -33,21 +33,21 @@ internal sealed class FinancialDocumentInboxItemConfiguration : IEntityTypeConfi
         builder.Property(item => item.ServiceBillConfirmedAmount).HasColumnType("numeric");
         builder.Property(item => item.Source).HasConversion<string>().HasMaxLength(20);
         builder.Property(item => item.Status).HasConversion<string>().HasMaxLength(30);
-        builder.HasIndex(item => new { item.FamilyId, item.ContentHash }).IsUnique();
-        builder.HasIndex(item => new { item.FamilyId, item.Source, item.ExternalSourceId }).IsUnique()
+        builder.HasIndex(item => new { item.WorkspaceId, item.ContentHash }).IsUnique();
+        builder.HasIndex(item => new { item.WorkspaceId, item.Source, item.ExternalSourceId }).IsUnique()
             .HasFilter("external_source_id IS NOT NULL");
-        builder.HasIndex(item => new { item.FamilyId, item.Status, item.ReceivedAt });
+        builder.HasIndex(item => new { item.WorkspaceId, item.Status, item.ReceivedAt });
         builder.HasIndex(item => item.StorageReference).IsUnique();
-        builder.HasIndex(item => new { item.FamilyId, item.ServiceBillOccurrenceId }).IsUnique()
+        builder.HasIndex(item => new { item.WorkspaceId, item.ServiceBillOccurrenceId }).IsUnique()
             .HasFilter("service_bill_occurrence_id IS NOT NULL");
-        builder.HasOne<Saldo360.Domain.Families.Family>().WithMany().HasForeignKey(item => item.FamilyId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialCreditCard>().WithMany().HasForeignKey(item => new { item.FamilyId, Id = item.CreditCardId })
-            .HasPrincipalKey(card => new { card.FamilyId, card.Id }).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Saldo360.Domain.Workspaces.FinancialWorkspace>().WithMany().HasForeignKey(item => item.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialCreditCard>().WithMany().HasForeignKey(item => new { item.WorkspaceId, Id = item.CreditCardId })
+            .HasPrincipalKey(card => new { card.WorkspaceId, card.Id }).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Saldo360.Domain.Planning.FinancialPlannedTransaction>().WithMany()
-            .HasForeignKey(item => new { item.FamilyId, Id = item.ServiceBillOccurrenceId })
-            .HasPrincipalKey(planned => new { planned.FamilyId, planned.Id }).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
+            .HasForeignKey(item => new { item.WorkspaceId, Id = item.ServiceBillOccurrenceId })
+            .HasPrincipalKey(planned => new { planned.WorkspaceId, planned.Id }).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Saldo360.Domain.Recurrences.FinancialRecurrence>().WithMany()
-            .HasForeignKey(item => new { item.FamilyId, Id = item.ServiceBillRecurrenceId })
-            .HasPrincipalKey(recurrence => new { recurrence.FamilyId, recurrence.Id }).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
+            .HasForeignKey(item => new { item.WorkspaceId, Id = item.ServiceBillRecurrenceId })
+            .HasPrincipalKey(recurrence => new { recurrence.WorkspaceId, recurrence.Id }).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
     }
 }

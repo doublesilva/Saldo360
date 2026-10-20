@@ -10,7 +10,7 @@ public sealed class FinancialCreditCard : Entity
 
     private FinancialCreditCard() { Name = string.Empty; Issuer = string.Empty; }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public string Name { get; private set; }
     public string Issuer { get; private set; }
     public string? LastFourDigits { get; private set; }
@@ -27,9 +27,9 @@ public sealed class FinancialCreditCard : Entity
     public DateTimeOffset? ArchivedAt { get; private set; }
     public Guid? ArchivedByUserId { get; private set; }
 
-    public static FinancialCreditCard Create(Guid familyId, CreditCardDetails details, Guid userId, DateTimeOffset now) => new()
+    public static FinancialCreditCard Create(Guid workspaceId, CreditCardDetails details, Guid userId, DateTimeOffset now) => new()
     {
-        FamilyId = familyId, CreatedAt = now, UpdatedAt = now, CreatedByUserId = userId, UpdatedByUserId = userId,
+        WorkspaceId = workspaceId, CreatedAt = now, UpdatedAt = now, CreatedByUserId = userId, UpdatedByUserId = userId,
         Name = details.Name, Issuer = details.Issuer, LastFourDigits = details.LastFourDigits, HolderUserId = details.HolderUserId,
         CreditLimit = details.CreditLimit, ClosingDay = details.ClosingDay, DueDay = details.DueDay,
         DefaultPaymentAccountId = details.DefaultPaymentAccountId,

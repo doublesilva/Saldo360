@@ -51,18 +51,18 @@ afterEach(() => {
 describe('Categories', () => {
   it('separa receitas e despesas e começa sem criar nada', async () => {
     const calls = mockApi()
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
 
     await screen.findByText('Salário')
     expect(within(section('Receitas')).getByText('Salário')).toBeTruthy()
     expect(within(section('Receitas')).queryByText('Mercado')).toBeNull()
     expect(within(section('Despesas')).getByText('Mercado')).toBeTruthy()
-    expect(calls.map((c) => c.url)).toEqual(['/api/families/f1/categories'])
+    expect(calls.map((c) => c.url)).toEqual(['/api/financial-workspaces/f1/categories'])
   })
 
   it('lista vazia não cria categorias automaticamente', async () => {
     const calls = mockApi({ active: [] })
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
 
     expect(await screen.findByText('Nenhuma categoria de receita ativa cadastrada.')).toBeTruthy()
     expect(screen.getByText('Nenhuma categoria de despesa ativa cadastrada.')).toBeTruthy()
@@ -71,14 +71,14 @@ describe('Categories', () => {
 
   it('mostra inativas somente quando solicitado', async () => {
     const calls = mockApi()
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
     await screen.findByText('Mercado')
     expect(screen.queryByText('Academia')).toBeNull()
 
     fireEvent.click(screen.getByLabelText('Mostrar categorias inativas'))
 
     expect(await screen.findByText('Academia')).toBeTruthy()
-    expect(calls.at(-1)!.url).toBe('/api/families/f1/categories?includeInactive=true')
+    expect(calls.at(-1)!.url).toBe('/api/financial-workspaces/f1/categories?includeInactive=true')
     const item = screen.getByText('Academia').closest('li')!
     expect(within(item).getByText('(inativa)')).toBeTruthy()
     expect(within(item).getByRole('button', { name: 'Reativar' })).toBeTruthy()
@@ -86,7 +86,7 @@ describe('Categories', () => {
 
   it('cria despesa com CSRF, nome sem espaços nas pontas e tipo da seção', async () => {
     const calls = mockApi()
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
     await screen.findByText('Mercado')
 
     fireEvent.change(screen.getByLabelText('Nova categoria de despesa'), { target: { value: '  Farmácia ' } })
@@ -94,14 +94,14 @@ describe('Categories', () => {
 
     await waitFor(() => expect(saves(calls)).toHaveLength(1))
     const post = saves(calls)[0]
-    expect(post.url).toBe('/api/families/f1/categories')
+    expect(post.url).toBe('/api/financial-workspaces/f1/categories')
     expect((post.init!.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
     expect(JSON.parse(String(post.init!.body))).toEqual({ name: 'Farmácia', type: 'Expense' })
   })
 
   it('cria receita pela seção de receitas', async () => {
     const calls = mockApi()
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
     await screen.findByText('Salário')
 
     fireEvent.change(screen.getByLabelText('Nova categoria de receita'), { target: { value: 'Freelance' } })
@@ -113,7 +113,7 @@ describe('Categories', () => {
 
   it('nome em branco não é enviado', async () => {
     const calls = mockApi()
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
     await screen.findByText('Mercado')
 
     fireEvent.change(screen.getByLabelText('Nova categoria de despesa'), { target: { value: '   ' } })
@@ -125,7 +125,7 @@ describe('Categories', () => {
 
   it('mostra a mensagem de duplicidade (409) devolvida pela API', async () => {
     mockApi({ saveStatus: 409, saveBody: { title: 'Já existe uma categoria com esse nome e tipo nesta família (ativa ou inativa).' } })
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
     await screen.findByText('Mercado')
 
     fireEvent.change(screen.getByLabelText('Nova categoria de despesa'), { target: { value: 'mercado' } })
@@ -137,7 +137,7 @@ describe('Categories', () => {
 
   it('renomeia enviando só nome e situação, nunca o tipo', async () => {
     const calls = mockApi()
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
     const item = (await screen.findByText('Mercado')).closest('li')!
 
     fireEvent.click(within(item).getByRole('button', { name: 'Renomear' }))
@@ -146,14 +146,14 @@ describe('Categories', () => {
 
     await waitFor(() => expect(saves(calls)).toHaveLength(1))
     const put = saves(calls)[0]
-    expect(put.url).toBe('/api/families/f1/categories/c2')
+    expect(put.url).toBe('/api/financial-workspaces/f1/categories/c2')
     expect(put.init!.method).toBe('PUT')
     expect(JSON.parse(String(put.init!.body))).toEqual({ name: 'Supermercado', isActive: true })
   })
 
   it('cancelar a renomeação não envia nada', async () => {
     const calls = mockApi()
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
     const item = (await screen.findByText('Mercado')).closest('li')!
 
     fireEvent.click(within(item).getByRole('button', { name: 'Renomear' }))
@@ -166,7 +166,7 @@ describe('Categories', () => {
   it('desativar pede confirmação e envia isActive=false', async () => {
     const calls = mockApi()
     const confirm = vi.spyOn(window, 'confirm')
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
     const item = (await screen.findByText('Mercado')).closest('li')!
 
     confirm.mockReturnValueOnce(false)
@@ -184,7 +184,7 @@ describe('Categories', () => {
   it('reativar também pede confirmação', async () => {
     const calls = mockApi()
     const confirm = vi.spyOn(window, 'confirm')
-    render(<Categories familyId="f1" />)
+    render(<Categories workspaceId="f1" />)
     await screen.findByText('Mercado')
     fireEvent.click(screen.getByLabelText('Mostrar categorias inativas'))
     const item = (await screen.findByText('Academia')).closest('li')!

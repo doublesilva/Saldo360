@@ -24,13 +24,13 @@ function errorMessage(error: unknown): string {
 }
 
 export function FinancialCalendarDetails({
-  familyId,
+  workspaceId,
   item,
   returnFocus,
   onClose,
   onChanged,
 }: {
-  familyId: string
+  workspaceId: string
   item: FinancialCalendarItem
   returnFocus: HTMLElement | null
   onClose: () => void
@@ -55,26 +55,26 @@ export function FinancialCalendarDetails({
     if (item.source === 'DebtInstallment') return
     const controller = new AbortController()
     const request = item.source === 'PlannedTransaction'
-      ? getPlanned(familyId, item.id, controller.signal).then<Detail>((value) => ({ source: 'PlannedTransaction', value }))
-      : getTransaction(familyId, item.id, controller.signal).then<Detail>((value) => ({ source: 'Transaction', value }))
+      ? getPlanned(workspaceId, item.id, controller.signal).then<Detail>((value) => ({ source: 'PlannedTransaction', value }))
+      : getTransaction(workspaceId, item.id, controller.signal).then<Detail>((value) => ({ source: 'Transaction', value }))
     request
       .then((data) => { if (!controller.signal.aborted) setDetail({ kind: 'loaded', data }) })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setDetail({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, item.id, item.source])
+  }, [workspaceId, item.id, item.source])
 
   useEffect(() => {
     if (mode !== 'edit') return
     const controller = new AbortController()
-    Promise.all([listAccounts(familyId, true, controller.signal), listCategories(familyId, true, controller.signal)])
+    Promise.all([listAccounts(workspaceId, true, controller.signal), listCategories(workspaceId, true, controller.signal)])
       .then(([accounts, categories]) => { if (!controller.signal.aborted) setReferences({ kind: 'loaded', data: { accounts, categories } }) })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setReferences({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, mode])
+  }, [workspaceId, mode])
 
   const finish = () => {
     onChanged()
@@ -129,8 +129,8 @@ export function FinancialCalendarDetails({
     setActionError(null)
     try {
       const result = isPlanned
-        ? await cancelPlanned(familyId, data.value.id)
-        : await cancelTransaction(familyId, data.value.id)
+        ? await cancelPlanned(workspaceId, data.value.id)
+        : await cancelTransaction(workspaceId, data.value.id)
       if (result.ok) finish()
       else setActionError(Object.values(result.errors).flat()[0] ?? `Não foi possível cancelar o ${label}.`)
     } catch (error: unknown) {
@@ -151,7 +151,7 @@ export function FinancialCalendarDetails({
   const viewOrigin = async () => {
     if (!loaded || loaded.source !== 'Transaction' || !loaded.value.plannedTransactionId) return
     setBusy(true)
-    try { setOrigin(await getPlanned(familyId, loaded.value.plannedTransactionId)) }
+    try { setOrigin(await getPlanned(workspaceId, loaded.value.plannedTransactionId)) }
     catch (error: unknown) { setActionError(errorMessage(error)) }
     finally { setBusy(false) }
   }
@@ -211,7 +211,7 @@ export function FinancialCalendarDetails({
 
         {mode === 'realize' && loaded?.source === 'PlannedTransaction' && (
           <RealizeForm
-            familyId={familyId}
+            workspaceId={workspaceId}
             planned={loaded.value}
             onRealized={finish}
             onCancel={() => setMode('details')}
@@ -229,7 +229,7 @@ export function FinancialCalendarDetails({
         )}
         {mode === 'edit' && references?.kind === 'loaded' && loaded?.source === 'PlannedTransaction' && (
           <PlannedForm
-            familyId={familyId}
+            workspaceId={workspaceId}
             references={references.data}
             planned={loaded.value}
             onSaved={finish}
@@ -238,7 +238,7 @@ export function FinancialCalendarDetails({
         )}
         {mode === 'edit' && references?.kind === 'loaded' && loaded?.source === 'Transaction' && (
           <TransactionForm
-            familyId={familyId}
+            workspaceId={workspaceId}
             references={references.data}
             transaction={loaded.value}
             onSaved={finish}

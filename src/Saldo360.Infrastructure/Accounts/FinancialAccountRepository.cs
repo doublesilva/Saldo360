@@ -17,16 +17,16 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public Task<FinancialAccount?> FindAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken) =>
-        db.FinancialAccounts.SingleOrDefaultAsync(a => a.Id == accountId && a.FamilyId == familyId, cancellationToken);
+    public Task<FinancialAccount?> FindAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken) =>
+        db.FinancialAccounts.SingleOrDefaultAsync(a => a.Id == accountId && a.WorkspaceId == workspaceId, cancellationToken);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken) => db.SaveChangesAsync(cancellationToken);
 
     public async Task<IReadOnlyList<FinancialAccountDto>> ListAsync(
-        Guid familyId, bool includeInactive, CancellationToken cancellationToken)
+        Guid workspaceId, bool includeInactive, CancellationToken cancellationToken)
     {
         var rows = await Project(db.FinancialAccounts
-                .Where(a => a.FamilyId == familyId && (includeInactive || a.IsActive)))
+                .Where(a => a.WorkspaceId == workspaceId && (includeInactive || a.IsActive)))
             .ToListAsync(cancellationToken);
 
         // Poucas contas por família: ordena em memória (ativas primeiro, depois por nome).
@@ -37,19 +37,19 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             .ToList();
     }
 
-    public async Task<FinancialAccountDto?> GetAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken)
+    public async Task<FinancialAccountDto?> GetAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken)
     {
-        var row = await Project(db.FinancialAccounts.Where(a => a.FamilyId == familyId && a.Id == accountId))
+        var row = await Project(db.FinancialAccounts.Where(a => a.WorkspaceId == workspaceId && a.Id == accountId))
             .SingleOrDefaultAsync(cancellationToken);
         return row is null ? null : ToDto(row);
     }
 
-    public Task<bool> IsMemberOfFamilyAsync(Guid familyId, Guid memberId, CancellationToken cancellationToken) =>
-        db.FamilyMembers.AnyAsync(m => m.Id == memberId && m.FamilyId == familyId, cancellationToken);
+    public Task<bool> IsWorkspaceOwnerAsync(Guid workspaceId, Guid memberId, CancellationToken cancellationToken) =>
+        db.FinancialWorkspaces.AnyAsync(w => w.OwnerUserId == memberId && w.Id == workspaceId && w.IsActive && w.Type == Saldo360.Domain.Workspaces.FinancialWorkspaceType.Personal, cancellationToken);
 
-    public Task<AccountOpeningBalance?> GetOpeningBalanceAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken) =>
+    public Task<AccountOpeningBalance?> GetOpeningBalanceAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken) =>
         db.FinancialAccounts
-            .Where(a => a.FamilyId == familyId && a.Id == accountId)
+            .Where(a => a.WorkspaceId == workspaceId && a.Id == accountId)
             .Select(a => new AccountOpeningBalance(a.OpeningBalance, a.OpeningBalanceDate))
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -57,10 +57,10 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
     // nos lançamentos e por papel da conta (destino/origem) nas transferências. O período é o desta conta, então
     // uma transferência pode entrar aqui e já estar no saldo inicial da outra ponta. Nada no período → zero.
     public async Task<AccountTotals> SumMovementsAsync(
-        Guid familyId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken)
+        Guid workspaceId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken)
     {
         var transactions = await db.FinancialTransactions
-            .Where(t => t.FamilyId == familyId && t.AccountId == accountId && !t.IsCancelled
+            .Where(t => t.WorkspaceId == workspaceId && t.AccountId == accountId && !t.IsCancelled
                 && t.TransactionDate >= from && t.TransactionDate <= to)
             .GroupBy(t => t.AccountId)
             .Select(g => new
@@ -71,9 +71,9 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             .SingleOrDefaultAsync(cancellationToken);
 
         var transfers = await db.FinancialTransfers
-            .Where(t => t.FamilyId == familyId && (t.SourceAccountId == accountId || t.DestinationAccountId == accountId)
+            .Where(t => t.WorkspaceId == workspaceId && (t.SourceAccountId == accountId || t.DestinationAccountId == accountId)
                 && !t.IsCancelled && t.TransferDate >= from && t.TransferDate <= to)
-            .GroupBy(t => t.FamilyId)
+            .GroupBy(t => t.WorkspaceId)
             .Select(g => new
             {
                 In = g.Sum(t => t.DestinationAccountId == accountId ? t.Amount : 0m),
@@ -89,12 +89,12 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
     // pendentes. Pendente = não cancelada e sem lançamento ativo vinculado (NOT EXISTS, a mesma regra que deriva
     // "Realized"). Sem filtro por data do saldo inicial nem por situação de conta/categoria.
     public async Task<PlannedTotals> SumPendingPlannedAsync(
-        Guid familyId, Guid accountId, DateOnly baseDate, DateOnly through, CancellationToken cancellationToken)
+        Guid workspaceId, Guid accountId, DateOnly baseDate, DateOnly through, CancellationToken cancellationToken)
     {
         var totals = await db.FinancialPlannedTransactions
-            .Where(p => p.FamilyId == familyId && p.AccountId == accountId && !p.IsCancelled && p.DueDate <= through
-                && !db.FinancialTransactions.Any(t => t.FamilyId == p.FamilyId && t.PlannedTransactionId == p.Id && !t.IsCancelled)
-                && !db.FinancialPlannedInvoiceReconciliations.Any(r => r.FamilyId == p.FamilyId && r.PlannedTransactionId == p.Id && r.RemovedAt == null))
+            .Where(p => p.WorkspaceId == workspaceId && p.AccountId == accountId && !p.IsCancelled && p.DueDate <= through
+                && !db.FinancialTransactions.Any(t => t.WorkspaceId == p.WorkspaceId && t.PlannedTransactionId == p.Id && !t.IsCancelled)
+                && !db.FinancialPlannedInvoiceReconciliations.Any(r => r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null))
             .GroupBy(p => p.AccountId)
             .Select(g => new PlannedTotals(
                 g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Income ? p.Amount : 0m),
@@ -105,38 +105,38 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         return totals ?? new PlannedTotals(0m, 0m, 0m, 0m);
     }
 
-    public async Task<CreditCardProjectionTotals> SumCreditCardObligationsAsync(Guid familyId, Guid accountId, DateOnly through, CancellationToken cancellationToken)
+    public async Task<CreditCardProjectionTotals> SumCreditCardObligationsAsync(Guid workspaceId, Guid accountId, DateOnly through, CancellationToken cancellationToken)
     {
         var obligations = await (from installment in db.FinancialCreditCardInstallments.AsNoTracking()
                                  join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
                                  join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
-                                 join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
-                                 where installment.FamilyId == familyId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
-                                    && purchase.FamilyId == familyId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
-                                    && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                 join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.WorkspaceId, CardId = invoice.CreditCardId } equals new { card.WorkspaceId, CardId = card.Id }
+                                 where installment.WorkspaceId == workspaceId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
+                                    && purchase.WorkspaceId == workspaceId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
+                                    && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
                                  group installment.Amount by new { invoice.Id, card.DefaultPaymentAccountId } into grouped
                                  select new { grouped.Key.Id, grouped.Key.DefaultPaymentAccountId, Total = grouped.Sum() }).ToListAsync(cancellationToken);
         var historicalObligations = await (from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
                                            join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
-                                           join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
-                                           where item.FamilyId == familyId && item.IsHistorical && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
-                                              && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                           join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.WorkspaceId, CardId = invoice.CreditCardId } equals new { card.WorkspaceId, CardId = card.Id }
+                                           where item.WorkspaceId == workspaceId && item.IsHistorical && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
+                                              && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
                                            group item.Amount by new { invoice.Id, card.DefaultPaymentAccountId } into grouped
                                            select new { grouped.Key.Id, grouped.Key.DefaultPaymentAccountId, Total = grouped.Sum() }).ToListAsync(cancellationToken);
         var adjustmentObligations = await (from item in db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
                                            join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
-                                           join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.FamilyId, CardId = invoice.CreditCardId } equals new { card.FamilyId, CardId = card.Id }
-                                           where item.FamilyId == familyId && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentStatus.Active
-                                              && invoice.FamilyId == familyId && invoice.DueDate <= through
+                                           join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.WorkspaceId, CardId = invoice.CreditCardId } equals new { card.WorkspaceId, CardId = card.Id }
+                                           where item.WorkspaceId == workspaceId && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentStatus.Active
+                                              && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
                                            group item by new { invoice.Id, card.DefaultPaymentAccountId } into grouped
                                            select new { grouped.Key.Id, grouped.Key.DefaultPaymentAccountId, Total = grouped.Sum(item => item.Nature == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentNature.Debit ? item.Amount : -item.Amount) }).ToListAsync(cancellationToken);
         obligations = obligations.Concat(historicalObligations).Concat(adjustmentObligations)
             .GroupBy(item => new { item.Id, item.DefaultPaymentAccountId })
             .Select(group => new { group.Key.Id, group.Key.DefaultPaymentAccountId, Total = group.Sum(item => item.Total) })
             .ToList();
-        var paid = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(payment => payment.FamilyId == familyId && payment.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoicePaymentStatus.Active)
+        var paid = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(payment => payment.WorkspaceId == workspaceId && payment.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoicePaymentStatus.Active)
             .GroupBy(payment => payment.InvoiceId).Select(group => new { Id = group.Key, Amount = group.Sum(payment => payment.Amount) }).ToListAsync(cancellationToken);
-        var familyAccounts = await db.FinancialAccounts.AsNoTracking().Where(account => account.FamilyId == familyId).Select(account => account.Id).ToListAsync(cancellationToken);
+        var familyAccounts = await db.FinancialAccounts.AsNoTracking().Where(account => account.WorkspaceId == workspaceId).Select(account => account.Id).ToListAsync(cancellationToken);
         var paidByInvoice = paid.ToDictionary(item => item.Id, item => item.Amount);
         var outstanding = obligations.Where(item => item.DefaultPaymentAccountId == accountId).Sum(item => Math.Max(0m, item.Total - paidByInvoice.GetValueOrDefault(item.Id)));
         var unallocated = obligations.Any(item => item.DefaultPaymentAccountId is null || !familyAccounts.Contains(item.DefaultPaymentAccountId.Value));
@@ -162,11 +162,7 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
     // Responsável: junção com o vínculo da mesma família e o nome de exibição do usuário.
     private IQueryable<AccountRow> Project(IQueryable<FinancialAccount> accounts) =>
         from account in accounts.AsNoTracking()
-        join member in db.FamilyMembers
-            on new { account.FamilyId, MemberId = account.ResponsibleMemberId }
-            equals new { member.FamilyId, MemberId = (Guid?)member.Id } into responsibles
-        from member in responsibles.DefaultIfEmpty()
-        join user in db.Users on member.UserId equals user.Id into users
+        join user in db.Users on account.ResponsibleUserId equals (Guid?)user.Id into users
         from user in users.DefaultIfEmpty()
         select new AccountRow(
             account.Id,
@@ -174,7 +170,7 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             account.Institution,
             account.Type,
             account.Scope,
-            account.ResponsibleMemberId,
+            account.ResponsibleUserId,
             user.DisplayName,
             account.OpeningBalance,
             account.OpeningBalanceDate,
@@ -188,7 +184,7 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         row.Institution,
         row.Type,
         row.Scope,
-        row.ResponsibleMemberId is { } memberId ? new AccountResponsibleDto(memberId, row.ResponsibleName ?? UnnamedMember) : null,
+        row.ResponsibleUserId is { } memberId ? new AccountResponsibleDto(memberId, row.ResponsibleName ?? UnnamedMember) : null,
         row.OpeningBalance,
         row.OpeningBalanceDate,
         row.IsActive,
@@ -201,7 +197,7 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         string? Institution,
         AccountType Type,
         FinancialScope Scope,
-        Guid? ResponsibleMemberId,
+        Guid? ResponsibleUserId,
         string? ResponsibleName,
         decimal? OpeningBalance,
         DateOnly? OpeningBalanceDate,

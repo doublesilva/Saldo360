@@ -7,7 +7,7 @@ public enum FinancialCreditCardImportedInstallmentStatus { Active, Cancelled }
 public sealed class FinancialCreditCardImportedInstallment : Entity
 {
     private FinancialCreditCardImportedInstallment() { Description = string.Empty; }
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid CreditCardId { get; private init; }
     public Guid ImportId { get; private init; }
     public int RowNumber { get; private init; }
@@ -28,11 +28,11 @@ public sealed class FinancialCreditCardImportedInstallment : Entity
     public Guid? CancelledByUserId { get; private set; }
 
     public static FinancialCreditCardImportedInstallment Create(
-        Guid familyId, Guid cardId, Guid importId, int rowNumber, string? externalId, Guid? linkedInstallmentId,
+        Guid workspaceId, Guid cardId, Guid importId, int rowNumber, string? externalId, Guid? linkedInstallmentId,
         Guid invoiceId, DateOnly transactionDate, string description, decimal amount, int installmentNumber,
         int installmentCount, Guid? categoryId, bool historical, Guid userId, DateTimeOffset now) => new()
     {
-        Id = Guid.NewGuid(), FamilyId = familyId, CreditCardId = cardId, ImportId = importId, RowNumber = rowNumber,
+        Id = Guid.NewGuid(), WorkspaceId = workspaceId, CreditCardId = cardId, ImportId = importId, RowNumber = rowNumber,
         ExternalId = externalId, LinkedInstallmentId = linkedInstallmentId, InvoiceId = invoiceId,
         TransactionDate = transactionDate, Description = description, Amount = amount,
         InstallmentNumber = installmentNumber, InstallmentCount = installmentCount, CategoryId = categoryId,

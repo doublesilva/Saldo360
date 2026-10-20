@@ -9,7 +9,7 @@ public sealed class FinancialBudget : Entity
 
     private FinancialBudget() { }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public DateOnly Competence { get; private init; }
     public string? Description { get; private set; }
     public bool IsArchived { get; private set; }
@@ -21,9 +21,9 @@ public sealed class FinancialBudget : Entity
     public Guid? ArchivedByUserId { get; private set; }
 
     public static FinancialBudget Create(
-        Guid familyId, DateOnly competence, string? description, Guid userId, DateTimeOffset now) => new()
+        Guid workspaceId, DateOnly competence, string? description, Guid userId, DateTimeOffset now) => new()
         {
-            FamilyId = familyId,
+            WorkspaceId = workspaceId,
             Competence = competence,
             Description = description,
             CreatedAt = now,

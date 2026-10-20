@@ -1,3 +1,4 @@
+using Saldo360.Domain.Workspaces;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -8,7 +9,7 @@ using Saldo360.Domain.Families;
 using Saldo360.Domain.Transactions;
 using Saldo360.Domain.Transfers;
 using Saldo360.Infrastructure.Accounts;
-using Saldo360.Infrastructure.Families;
+using Saldo360.Infrastructure.Workspaces;
 using Saldo360.Infrastructure.Persistence;
 using Saldo360.Infrastructure.Users;
 using Saldo360.Tests.Support;
@@ -23,7 +24,7 @@ public sealed class AccountBalancePersistenceTests(PostgresFixture postgres) : I
 
     private string _connectionString = null!;
     private Guid _user;
-    private Family _family = null!;
+    private FinancialWorkspace _family = null!;
     private FinancialAccount _account = null!;
     private FinancialAccount _otherAccount = null!;
     private FinancialCategory _income = null!;
@@ -34,8 +35,8 @@ public sealed class AccountBalancePersistenceTests(PostgresFixture postgres) : I
         _connectionString = await postgres.CreateDatabaseAsync();
         await using var db = Db();
         _user = await new UserDirectory(db, TimeProvider.System).ResolveAsync("https://auth.test.invalid", "a", "A", CancellationToken.None);
-        _family = Family.Create("Família", _user, DateTimeOffset.UtcNow);
-        await new FamilyRepository(db).AddAsync(_family, CancellationToken.None);
+        _family = FinancialWorkspace.CreatePersonal(_user, DateTimeOffset.UtcNow);
+        await new FinancialWorkspaceRepository(db).AddAsync(_family, CancellationToken.None);
         _account = Account("Itaú");
         _otherAccount = Account("Nubank");
         _income = FinancialCategory.Create(_family.Id, "Salário", CategoryType.Income, _user, DateTimeOffset.UtcNow);

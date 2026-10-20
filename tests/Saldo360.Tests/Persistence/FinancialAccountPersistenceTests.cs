@@ -1,3 +1,4 @@
+using Saldo360.Domain.Workspaces;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -5,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Families;
-using Saldo360.Infrastructure.Families;
+using Saldo360.Infrastructure.Workspaces;
 using Saldo360.Infrastructure.Persistence;
 using Saldo360.Infrastructure.Users;
 using Saldo360.Tests.Support;
@@ -20,8 +21,8 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
 
     private string _connectionString = null!;
     private Guid _userA;
-    private Family _familyA = null!;
-    private Family _familyB = null!;
+    private FinancialWorkspace _familyA = null!;
+    private FinancialWorkspace _familyB = null!;
 
     public async Task InitializeAsync()
     {
@@ -30,18 +31,18 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         var users = new UserDirectory(db, TimeProvider.System);
         _userA = await users.ResolveAsync("https://auth.test.invalid", "a", "A", CancellationToken.None);
         var userB = await users.ResolveAsync("https://auth.test.invalid", "b", "B", CancellationToken.None);
-        _familyA = Family.Create("Família A", _userA, DateTimeOffset.UtcNow);
-        _familyB = Family.Create("Família B", userB, DateTimeOffset.UtcNow);
-        var families = new FamilyRepository(db);
+        _familyA = FinancialWorkspace.CreatePersonal(_userA, DateTimeOffset.UtcNow);
+        _familyB = FinancialWorkspace.CreatePersonal(userB, DateTimeOffset.UtcNow);
+        var families = new FinancialWorkspaceRepository(db);
         await families.AddAsync(_familyA, CancellationToken.None);
         await families.AddAsync(_familyB, CancellationToken.None);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private Guid MemberOfA => _familyA.Members.Single().Id;
+    private Guid MemberOfA => _familyA.OwnerUserId;
 
-    private Guid MemberOfB => _familyB.Members.Single().Id;
+    private Guid MemberOfB => _familyB.OwnerUserId;
 
     [Fact]
     public async Task ResponsibleFromSameFamily_AndJointAccount_AreAccepted()
@@ -49,7 +50,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         await using var db = Db();
         db.FinancialAccounts.AddRange(
             Account("Itaú PF", MemberOfA),
-            Account("Dinheiro", responsibleMemberId: null));
+            Account("Dinheiro", responsibleUserId: null));
 
         await db.SaveChangesAsync();
 
@@ -67,7 +68,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
 
         var postgresError = Assert.IsType<PostgresException>(exception.InnerException);
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, postgresError.SqlState);
-        Assert.Equal("fk_financial_accounts_family_members_responsible", postgresError.ConstraintName);
+        Assert.Equal("fk_financial_accounts_workspace_responsible", postgresError.ConstraintName);
     }
 
     [Fact]
@@ -81,7 +82,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
 
         await using var update = Db();
         var exception = await Assert.ThrowsAsync<PostgresException>(() => update.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE financial_accounts SET responsible_member_id = {MemberOfB}"));
+            $"UPDATE financial_accounts SET responsible_user_id = {MemberOfB}"));
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
     }
 
@@ -125,7 +126,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
 
         await using var delete = Db();
         var exception = await Assert.ThrowsAsync<PostgresException>(() => delete.Database.ExecuteSqlInterpolatedAsync(
-            $"DELETE FROM families WHERE id = {_familyA.Id}"));
+            $"DELETE FROM financial_workspaces WHERE id = {_familyA.Id}"));
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
         Assert.Equal(1, await delete.FinancialAccounts.CountAsync());
     }
@@ -158,7 +159,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         var accountId = Guid.CreateVersion7();
         await using (var db = Db())
         {
-            await db.GetService<IMigrator>().MigrateAsync(PreviousMigration);
+            await HistoricalFinancialSchema.PrepareAsync(db, PreviousMigration);
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO financial_accounts (id, family_id, name, institution, type, scope, responsible_member_id, is_active, currency, created_at, created_by_user_id)
                 VALUES ({accountId}, {_familyA.Id}, 'Itaú PF', 'Itaú', 'Checking', 'PF', {MemberOfA}, TRUE, 'BRL', now(), {_userA})
@@ -170,7 +171,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         var stored = await verify.FinancialAccounts.SingleAsync(a => a.Id == accountId);
         Assert.Equal((null, null), (stored.OpeningBalance, stored.OpeningBalanceDate));
         Assert.Equal(("Itaú PF", "Itaú", AccountType.Checking, FinancialScope.PF, MemberOfA, true),
-            (stored.Name, stored.Institution, stored.Type, stored.Scope, stored.ResponsibleMemberId, stored.IsActive));
+            (stored.Name, stored.Institution, stored.Type, stored.Scope, stored.ResponsibleUserId, stored.IsActive));
     }
 
     [Fact]
@@ -257,15 +258,15 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 
     private FinancialAccount Account(
-        string name, Guid? responsibleMemberId, FinancialScope scope = FinancialScope.PF,
+        string name, Guid? responsibleUserId, FinancialScope scope = FinancialScope.PF,
         decimal? openingBalance = null, DateOnly? openingBalanceDate = null) =>
         FinancialAccount.Create(
-            _familyA.Id, Details(name, responsibleMemberId, scope, openingBalance, openingBalanceDate), _userA, DateTimeOffset.UtcNow);
+            _familyA.Id, Details(name, responsibleUserId, scope, openingBalance, openingBalanceDate), _userA, DateTimeOffset.UtcNow);
 
     private static AccountDetails Details(
-        string name, Guid? responsibleMemberId, FinancialScope scope = FinancialScope.PF,
+        string name, Guid? responsibleUserId, FinancialScope scope = FinancialScope.PF,
         decimal? openingBalance = null, DateOnly? openingBalanceDate = null) =>
         AccountDetails.TryCreate(
-            name, "Itaú", nameof(AccountType.Checking), scope.ToString(), responsibleMemberId,
+            name, "Itaú", nameof(AccountType.Checking), scope.ToString(), responsibleUserId,
             openingBalance, openingBalanceDate, out _)!;
 }

@@ -12,13 +12,13 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentRepository(Saldo360DbC
     : IFinancialCreditCardInvoiceAdjustmentRepository
 {
     public async Task<InvoiceAdjustmentOperationResult> CreateAsync(
-        Guid familyId, Guid cardId, Guid invoiceId, Guid userId,
+        Guid workspaceId, Guid cardId, Guid invoiceId, Guid userId,
         FinancialCreditCardInvoiceAdjustmentInput input, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var existing = await db.FinancialCreditCardInvoiceAdjustments
-            .SingleOrDefaultAsync(item => item.FamilyId == familyId && item.CreditCardId == cardId && item.ExternalId == input.ExternalId, cancellationToken);
+            .SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.ExternalId == input.ExternalId, cancellationToken);
         if (existing is not null)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -28,21 +28,21 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentRepository(Saldo360DbC
         }
 
         var invoiceExists = await db.FinancialCreditCardInvoices.AnyAsync(
-            item => item.FamilyId == familyId && item.CreditCardId == cardId && item.Id == invoiceId, cancellationToken);
+            item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.Id == invoiceId, cancellationToken);
         if (!invoiceExists)
         {
             await transaction.RollbackAsync(cancellationToken);
             return new(InvoiceAdjustmentAccess.NotFound);
         }
         if (input.CategoryId is { } categoryId && !await db.FinancialCategories.AnyAsync(
-                item => item.FamilyId == familyId && item.Id == categoryId && item.IsActive, cancellationToken))
+                item => item.WorkspaceId == workspaceId && item.Id == categoryId && item.IsActive, cancellationToken))
         {
             await transaction.RollbackAsync(cancellationToken);
             return Invalid("categoryId", "A categoria deve estar ativa e pertencer à mesma família.");
         }
 
         var entity = FinancialCreditCardInvoiceAdjustment.Create(
-            familyId, cardId, invoiceId,
+            workspaceId, cardId, invoiceId,
             Enum.Parse<FinancialCreditCardInvoiceAdjustmentType>(input.Type, true),
             Enum.Parse<FinancialCreditCardInvoiceAdjustmentNature>(input.Nature, true),
             DateOnly.ParseExact(input.TransactionDate, "yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -60,7 +60,7 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentRepository(Saldo360DbC
             await transaction.RollbackAsync(cancellationToken);
             db.ChangeTracker.Clear();
             var raced = await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
-                .SingleOrDefaultAsync(item => item.FamilyId == familyId && item.CreditCardId == cardId && item.ExternalId == input.ExternalId, cancellationToken);
+                .SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.ExternalId == input.ExternalId, cancellationToken);
             return raced is not null && Matches(raced, invoiceId, input)
                 ? new(InvoiceAdjustmentAccess.Allowed, ToDto(raced))
                 : new(InvoiceAdjustmentAccess.Conflict, null, null, "A identidade externa foi utilizada simultaneamente com conteúdo diferente.");
@@ -68,12 +68,12 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentRepository(Saldo360DbC
     }
 
     public async Task<InvoiceAdjustmentOperationResult> CancelAsync(
-        Guid familyId, Guid cardId, Guid invoiceId, Guid adjustmentId,
+        Guid workspaceId, Guid cardId, Guid invoiceId, Guid adjustmentId,
         Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var adjustment = await db.FinancialCreditCardInvoiceAdjustments.SingleOrDefaultAsync(
-            item => item.FamilyId == familyId && item.CreditCardId == cardId && item.InvoiceId == invoiceId && item.Id == adjustmentId, cancellationToken);
+            item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.InvoiceId == invoiceId && item.Id == adjustmentId, cancellationToken);
         if (adjustment is null)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -84,8 +84,8 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentRepository(Saldo360DbC
             await transaction.RollbackAsync(cancellationToken);
             return new(InvoiceAdjustmentAccess.Allowed, ToDto(adjustment));
         }
-        var total = await FinancialCreditCardInvoiceTotals.TotalAsync(db, familyId, invoiceId, cancellationToken);
-        var paid = await FinancialCreditCardInvoiceTotals.PaidAsync(db, familyId, invoiceId, cancellationToken);
+        var total = await FinancialCreditCardInvoiceTotals.TotalAsync(db, workspaceId, invoiceId, cancellationToken);
+        var paid = await FinancialCreditCardInvoiceTotals.PaidAsync(db, workspaceId, invoiceId, cancellationToken);
         var totalAfterCancellation = total - adjustment.SignedAmount;
         if (totalAfterCancellation < paid)
         {
@@ -99,11 +99,11 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentRepository(Saldo360DbC
     }
 
     public async Task<IReadOnlyList<FinancialCreditCardInvoiceAdjustmentDto>?> ListAsync(
-        Guid familyId, Guid cardId, Guid invoiceId, CancellationToken cancellationToken)
+        Guid workspaceId, Guid cardId, Guid invoiceId, CancellationToken cancellationToken)
     {
-        if (!await db.FinancialCreditCardInvoices.AnyAsync(item => item.FamilyId == familyId && item.CreditCardId == cardId && item.Id == invoiceId, cancellationToken)) return null;
+        if (!await db.FinancialCreditCardInvoices.AnyAsync(item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.Id == invoiceId, cancellationToken)) return null;
         return (await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
-            .Where(item => item.FamilyId == familyId && item.CreditCardId == cardId && item.InvoiceId == invoiceId)
+            .Where(item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.InvoiceId == invoiceId)
             .OrderBy(item => item.TransactionDate).ThenBy(item => item.CreatedAt).ToListAsync(cancellationToken))
             .Select(ToDto).ToList();
     }

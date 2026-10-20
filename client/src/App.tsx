@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchHealth, type HealthResponse } from './api/health'
 import type { FamilyDetails } from './api/families'
-import { Families } from './components/Families'
+import { PersonalFinance } from './components/PersonalFinance'
 import { InvitePage } from './components/InvitePage'
 import { UserMenu } from './components/UserMenu'
 import { INVITE_PATH } from './invite'
@@ -28,7 +28,6 @@ function App() {
   const session = useSession()
   // Página do convite (/convite) ou página inicial; sem biblioteca de rotas.
   const [onInvitePage, setOnInvitePage] = useState(() => window.location.pathname === INVITE_PATH)
-  const [openFamily, setOpenFamily] = useState<FamilyDetails | null>(null)
   const [state, setState] = useState<State>({ kind: 'loading' })
   // Incrementado pelo botão para disparar uma nova verificação.
   const [attempt, setAttempt] = useState(0)
@@ -43,9 +42,8 @@ function App() {
     return () => controller.abort()
   }, [attempt])
 
-  const handleInvitationAccepted = (family: FamilyDetails) => {
+  const handleInvitationAccepted = (_family: FamilyDetails) => {
     window.history.replaceState(null, '', '/')
-    setOpenFamily(family)
     setOnInvitePage(false)
   }
 
@@ -64,7 +62,7 @@ function App() {
       <header className="page-header">
         <div>
           <h1>Saldo360</h1>
-          <p className="subtitle">Orçamento familiar</p>
+          <p className="subtitle">Orçamento pessoal</p>
         </div>
         <UserMenu session={session} />
       </header>
@@ -80,7 +78,7 @@ function App() {
         <InvitePage session={session} onAccepted={handleInvitationAccepted} />
       ) : (
         session.state.kind === 'authenticated' && (
-          <Families key={`${session.state.user.issuer}|${session.state.user.subject}`} initialFamily={openFamily} />
+          <PersonalFinance key={`${session.state.user.issuer}|${session.state.user.subject}`} />
         )
       )}
 

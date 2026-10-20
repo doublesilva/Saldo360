@@ -74,7 +74,7 @@ afterEach(() => {
 
 async function openForm(options?: Parameters<typeof mockApi>[0]) {
   const calls = mockApi(options)
-  render(<Transfers familyId="f1" />)
+  render(<Transfers workspaceId="f1" />)
   await screen.findByText(/Pró-labore/)
   fireEvent.click(screen.getByRole('button', { name: 'Nova transferência' }))
   await screen.findByLabelText('De (origem)')
@@ -90,19 +90,19 @@ function fill(fields: Partial<Record<'De (origem)' | 'Para (destino)' | 'Valor (
 describe('Transfers — lista', () => {
   it('mostra "De [conta] para [conta]" com escopo, valor exato e conta inativa identificada', async () => {
     const calls = mockApi()
-    render(<Transfers familyId="f1" />)
+    render(<Transfers workspaceId="f1" />)
 
     const item = (await screen.findByText(/^De Itaú Empresas \(PJ\) para Conta antiga \(PF\) — inativa$/)).closest('li')!
     expect(item.textContent).toMatch(/R\$\s500,00/)
     expect(item.textContent).not.toMatch(/[+−]R\$/) // não é receita nem despesa
     expect(within(item).getByText('05/10/2026')).toBeTruthy()
     expect(screen.getByText(/não é receita nem despesa/i)).toBeTruthy()
-    expect(listCalls(calls)[0].url).toBe('/api/families/f1/transfers?page=1&pageSize=20')
+    expect(listCalls(calls)[0].url).toBe('/api/financial-workspaces/f1/transfers?page=1&pageSize=20')
   })
 
   it('mostra canceladas só sob pedido, sem botão de cancelar', async () => {
     const calls = mockApi()
-    render(<Transfers familyId="f1" />)
+    render(<Transfers workspaceId="f1" />)
     await screen.findByText(/Pró-labore/)
     expect(screen.queryByText('Errada')).toBeNull()
 
@@ -116,7 +116,7 @@ describe('Transfers — lista', () => {
 
   it('filtra por período e conta (origem ou destino) e pagina', async () => {
     const calls = mockApi({ page: { totalCount: 45 } })
-    render(<Transfers familyId="f1" />)
+    render(<Transfers workspaceId="f1" />)
     expect(await screen.findByText(/Página 1 de 3 · 45 transferências/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Próxima' }))
@@ -140,7 +140,7 @@ describe('Transfers — lista', () => {
     const calls = mockApi()
     const onChanged = vi.fn()
     const confirm = vi.spyOn(window, 'confirm')
-    render(<Transfers familyId="f1" onChanged={onChanged} />)
+    render(<Transfers workspaceId="f1" onChanged={onChanged} />)
     const item = (await screen.findByText(/Pró-labore/)).closest('li')!
 
     confirm.mockReturnValueOnce(false)
@@ -152,7 +152,7 @@ describe('Transfers — lista', () => {
 
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
     expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('Os saldos das duas contas voltam'))
-    expect(writes(calls)[0].url).toBe('/api/families/f1/transfers/t1/cancel')
+    expect(writes(calls)[0].url).toBe('/api/financial-workspaces/f1/transfers/t1/cancel')
     expect((writes(calls)[0].init!.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
   })
 })
@@ -161,7 +161,7 @@ describe('Transfers — formulário', () => {
   it('cria PJ → PF com valor em texto exato, sem categoria, e avisa os saldos', async () => {
     const calls = mockApi()
     const onChanged = vi.fn()
-    render(<Transfers familyId="f1" onChanged={onChanged} />)
+    render(<Transfers workspaceId="f1" onChanged={onChanged} />)
     await screen.findByText(/Pró-labore/)
     fireEvent.click(screen.getByRole('button', { name: 'Nova transferência' }))
     await screen.findByLabelText('De (origem)')
@@ -174,7 +174,7 @@ describe('Transfers — formulário', () => {
 
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
     const post = writes(calls)[0]
-    expect(post.url).toBe('/api/families/f1/transfers')
+    expect(post.url).toBe('/api/financial-workspaces/f1/transfers')
     expect(JSON.parse(String(post.init!.body))).toEqual({
       sourceAccountId: empresas.id,
       destinationAccountId: pessoal.id,
@@ -229,7 +229,7 @@ describe('Transfers — formulário', () => {
   it('exibe erro da API e não avisa os saldos', async () => {
     mockApi({ saveStatus: 400, saveBody: { errors: { sourceAccountId: ['Conta de origem inválida.'] } } })
     const onChanged = vi.fn()
-    render(<Transfers familyId="f1" onChanged={onChanged} />)
+    render(<Transfers workspaceId="f1" onChanged={onChanged} />)
     await screen.findByText(/Pró-labore/)
     fireEvent.click(screen.getByRole('button', { name: 'Nova transferência' }))
     await screen.findByLabelText('De (origem)')

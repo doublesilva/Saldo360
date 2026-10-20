@@ -5,9 +5,9 @@ public sealed class ServiceBillPreviewService(IFinancialDocumentInboxRepository 
     ICreditCardPdfTextExtractor pdfExtractor, IServiceBillExtractor extractor, ServiceBillExtractionOptions options,
     Saldo360.Application.ServiceAccounts.IServiceAccountResolver? resolver = null)
 {
-    public async Task<ServiceBillPreviewResult> PreviewAsync(Guid familyId, Guid id, Guid userId, string? password, CancellationToken cancellationToken)
+    public async Task<ServiceBillPreviewResult> PreviewAsync(Guid workspaceId, Guid id, Guid userId, string? password, CancellationToken cancellationToken)
     {
-        var item = await repository.GetAsync(familyId, id, userId, cancellationToken);
+        var item = await repository.GetAsync(workspaceId, id, userId, cancellationToken);
         if (item is null) return new(FinancialDocumentClassificationAccess.NotFound);
         if (!options.Enabled) return Invalid("feature", "A extração experimental de contas está desabilitada.");
         if (item.DocumentType is not ("ElectricityBill" or "WaterBill" or "TelecomBill")) return Invalid("documentType", "O tipo documental não é uma conta de serviço suportada.");

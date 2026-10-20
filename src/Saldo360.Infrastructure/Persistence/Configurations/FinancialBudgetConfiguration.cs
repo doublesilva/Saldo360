@@ -1,14 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Budgets;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Users;
 
 namespace Saldo360.Infrastructure.Persistence.Configurations;
 
 internal sealed class FinancialBudgetConfiguration : IEntityTypeConfiguration<FinancialBudget>
 {
-    public const string UniqueCompetenceIndex = "ux_financial_budgets_family_id_competence";
+    public const string UniqueCompetenceIndex = "ux_financial_budgets_workspace_id_competence";
 
     public void Configure(EntityTypeBuilder<FinancialBudget> builder)
     {
@@ -24,9 +24,9 @@ internal sealed class FinancialBudgetConfiguration : IEntityTypeConfiguration<Fi
         builder.Property(item => item.Id).ValueGeneratedNever();
         builder.Property(item => item.Competence).HasColumnType("date");
         builder.Property(item => item.Description).HasMaxLength(FinancialBudget.DescriptionMaxLength);
-        builder.HasAlternateKey(item => new { item.FamilyId, item.Id });
-        builder.HasIndex(item => new { item.FamilyId, item.Competence }).IsUnique().HasDatabaseName(UniqueCompetenceIndex);
-        builder.HasOne<Family>().WithMany().HasForeignKey(item => item.FamilyId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasAlternateKey(item => new { item.WorkspaceId, item.Id });
+        builder.HasIndex(item => new { item.WorkspaceId, item.Competence }).IsUnique().HasDatabaseName(UniqueCompetenceIndex);
+        builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(item => item.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.ArchivedByUserId).OnDelete(DeleteBehavior.Restrict);

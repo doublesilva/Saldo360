@@ -23,7 +23,7 @@ internal sealed class FinancialPlanningMonthlyParameterConfiguration : IEntityTy
         builder.Property(x => x.ContingencyReserve).HasPrecision(18, 2);
         builder.Property(x => x.RecoveryTargetPercentage).HasPrecision(5, 2);
         builder.Property(x => x.Notes).HasMaxLength(FinancialPlanningMonthlyParameter.NotesMaxLength);
-        builder.HasIndex(x => new { x.FamilyId, x.ScenarioId, x.Competence }).IsUnique().HasDatabaseName(UniqueCompetenceIndex);
-        builder.HasOne<FinancialPlanningScenario>().WithMany().HasForeignKey(x => new { x.FamilyId, x.ScenarioId }).HasPrincipalKey(x => new { x.FamilyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => new { x.WorkspaceId, x.ScenarioId, x.Competence }).IsUnique().HasDatabaseName(UniqueCompetenceIndex);
+        builder.HasOne<FinancialPlanningScenario>().WithMany().HasForeignKey(x => new { x.WorkspaceId, x.ScenarioId }).HasPrincipalKey(x => new { x.WorkspaceId, x.Id }).OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Categories;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Users;
 
 namespace Saldo360.Infrastructure.Persistence.Configurations;
@@ -14,7 +14,7 @@ internal sealed class FinancialCategoryConfiguration : IEntityTypeConfiguration<
     /// </summary>
     public const string CaseInsensitiveCollation = "case_insensitive";
 
-    public const string UniqueNameIndex = "ux_financial_categories_family_id_type_name";
+    public const string UniqueNameIndex = "ux_financial_categories_workspace_id_type_name";
 
     public static void ConfigureCollation(ModelBuilder modelBuilder) =>
         modelBuilder.HasCollation(CaseInsensitiveCollation, locale: "und-u-ks-level2", provider: "icu", deterministic: false);
@@ -39,14 +39,14 @@ internal sealed class FinancialCategoryConfiguration : IEntityTypeConfiguration<
         builder.Property(category => category.Type).HasConversion<string>().HasMaxLength(20);
 
         // Unicidade por família e tipo, contando inativas; a colação da coluna torna o índice case-insensitive.
-        builder.HasIndex(category => new { category.FamilyId, category.Type, category.Name })
+        builder.HasIndex(category => new { category.WorkspaceId, category.Type, category.Name })
             .IsUnique()
             .HasDatabaseName(UniqueNameIndex);
 
         // Restrict: categorias nunca são apagadas por cascata (não há exclusão física).
-        builder.HasOne<Family>()
+        builder.HasOne<FinancialWorkspace>()
             .WithMany()
-            .HasForeignKey(category => category.FamilyId)
+            .HasForeignKey(category => category.WorkspaceId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>()
             .WithMany()

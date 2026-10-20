@@ -27,7 +27,7 @@ public sealed class FinancialAccount : Entity
         Currency = DefaultCurrency;
     }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
 
     public string Name { get; private set; }
 
@@ -37,8 +37,8 @@ public sealed class FinancialAccount : Entity
 
     public FinancialScope Scope { get; private set; }
 
-    /// <summary>Vínculo (FamilyMember.Id) do responsável, da mesma família; null = conta conjunta.</summary>
-    public Guid? ResponsibleMemberId { get; private set; }
+    /// <summary>Usuário responsável opcional, sem dependência de participação familiar.</summary>
+    public Guid? ResponsibleUserId { get; private set; }
 
     /// <summary>Saldo no início de <see cref="OpeningBalanceDate"/>; pode ser negativo. Null = não informado.</summary>
     public decimal? OpeningBalance { get; private set; }
@@ -54,11 +54,11 @@ public sealed class FinancialAccount : Entity
 
     public Guid CreatedByUserId { get; private init; }
 
-    public static FinancialAccount Create(Guid familyId, AccountDetails details, Guid createdByUserId, DateTimeOffset now)
+    public static FinancialAccount Create(Guid workspaceId, AccountDetails details, Guid createdByUserId, DateTimeOffset now)
     {
         var account = new FinancialAccount
         {
-            FamilyId = familyId,
+            WorkspaceId = workspaceId,
             IsActive = true,
             CreatedAt = now,
             CreatedByUserId = createdByUserId,
@@ -80,7 +80,7 @@ public sealed class FinancialAccount : Entity
         Institution = details.Institution;
         Type = details.Type;
         Scope = details.Scope;
-        ResponsibleMemberId = details.ResponsibleMemberId;
+        ResponsibleUserId = details.ResponsibleUserId;
         OpeningBalance = details.OpeningBalance?.Amount;
         OpeningBalanceDate = details.OpeningBalance?.Date;
     }
@@ -90,14 +90,14 @@ public sealed class FinancialAccount : Entity
 public sealed record AccountDetails
 {
     private AccountDetails(
-        string name, string? institution, AccountType type, FinancialScope scope, Guid? responsibleMemberId,
+        string name, string? institution, AccountType type, FinancialScope scope, Guid? responsibleUserId,
         OpeningBalance? openingBalance)
     {
         Name = name;
         Institution = institution;
         Type = type;
         Scope = scope;
-        ResponsibleMemberId = responsibleMemberId;
+        ResponsibleUserId = responsibleUserId;
         OpeningBalance = openingBalance;
     }
 
@@ -109,7 +109,7 @@ public sealed record AccountDetails
 
     public FinancialScope Scope { get; }
 
-    public Guid? ResponsibleMemberId { get; }
+    public Guid? ResponsibleUserId { get; }
 
     /// <summary>Saldo inicial com data de referência; null = não informado.</summary>
     public OpeningBalance? OpeningBalance { get; }
@@ -120,7 +120,7 @@ public sealed record AccountDetails
     /// ambos ausentes). Espaços nas pontas são removidos.
     /// </summary>
     public static AccountDetails? TryCreate(
-        string? name, string? institution, string? type, string? scope, Guid? responsibleMemberId,
+        string? name, string? institution, string? type, string? scope, Guid? responsibleUserId,
         decimal? openingBalance, DateOnly? openingBalanceDate,
         out Dictionary<string, string[]> errors)
     {
@@ -152,15 +152,15 @@ public sealed record AccountDetails
             errors["financialScope"] = ["Escopo inválido. Use PF ou PJ."];
         }
 
-        if (responsibleMemberId == Guid.Empty)
+        if (responsibleUserId == Guid.Empty)
         {
-            errors["responsibleMemberId"] = ["Responsável inválido."];
+            errors["responsibleUserId"] = ["Responsável inválido."];
         }
 
         var parsedBalance = Accounts.OpeningBalance.TryCreate(openingBalance, openingBalanceDate, errors);
 
         return errors.Count == 0
-            ? new AccountDetails(trimmedName, trimmedInstitution, parsedType, parsedScope, responsibleMemberId, parsedBalance)
+            ? new AccountDetails(trimmedName, trimmedInstitution, parsedType, parsedScope, responsibleUserId, parsedBalance)
             : null;
     }
 }

@@ -49,14 +49,14 @@ public sealed class CreditCardPdfConfirmationServiceTests
 
     private sealed class FakePreReconciliation(CreditCardPdfPreReconciliationReport report) : ICreditCardPdfPreReconciliationService
     {
-        public Task<CreditCardPdfPreReconciliationResult> PreReconcileAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) =>
+        public Task<CreditCardPdfPreReconciliationResult> PreReconcileAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) =>
             Task.FromResult(new CreditCardPdfPreReconciliationResult(CreditCardPdfPreviewAccess.Allowed, report, null));
     }
 
     private sealed class FakeRepository : ICreditCardPdfConfirmationRepository
     {
         public CreditCardPdfTrustedConfirmation? Confirmation { get; private set; }
-        public Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(Guid familyId, Guid cardId, Guid userId, CreditCardPdfTrustedConfirmation confirmation, DateTimeOffset now, CancellationToken cancellationToken)
+        public Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(Guid workspaceId, Guid cardId, Guid userId, CreditCardPdfTrustedConfirmation confirmation, DateTimeOffset now, CancellationToken cancellationToken)
         {
             Confirmation = confirmation;
             return Task.FromResult(new CreditCardPdfConfirmationOperationResult(CreditCardPdfConfirmationAccess.Allowed));

@@ -9,9 +9,9 @@ namespace Saldo360.Tests.Api;
 public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
-    private string _member = null!;
+    private string _ownerSecondSession = null!;
     private string _outsider = null!;
-    private FamilyDto _family = null!;
+    private WorkspaceDto _family = null!;
     private Guid _account;
     private Guid _otherAccount;
     private Guid _income;
@@ -20,15 +20,15 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
     private static DateOnly Today => BusinessCalendar.Today(DateTimeOffset.UtcNow);
 
     private string CalendarUrl(DateOnly from, DateOnly through) =>
-        $"/api/families/{_family.Id}/financial-calendar?from={from:yyyy-MM-dd}&through={through:yyyy-MM-dd}";
+        $"/api/financial-workspaces/{_family.Id}/financial-calendar?from={from:yyyy-MM-dd}&through={through:yyyy-MM-dd}";
 
     private async Task ArrangeAsync()
     {
         _owner = await SignInAsync("dona");
-        _member = await SignInAsync("membro");
+        _ownerSecondSession = _owner;
         _outsider = await SignInAsync("estranho");
-        var created = await CreateFamilyAsync(_owner, "Família Silva");
-        _family = await JoinByInvitationAsync(_owner, created.Id, _member);
+        var created = await CreateWorkspaceAsync(_owner, "Família Silva");
+        _family = created;
         _account = await CreateAccountAsync("Itaú");
         _otherAccount = await CreateAccountAsync("Nubank");
         _income = await CreateCategoryAsync("Salário", "Income");
@@ -59,11 +59,11 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
         var overdueExpense = await CreatePlannedAsync(_account, _expense, "Expense", "21.25", Today.AddDays(-1), "Conta vencida");
         // A data prevista fica fora do período: a realização deve entrar pela data efetiva, sem depender dela.
         var realizedPlanned = await CreatePlannedAsync(_account, _expense, "Expense", "30.00", Today.AddDays(40), "Conta prevista");
-        var realization = await RealizeAsync(realizedPlanned, "31.50", Today, _member);
+        var realization = await RealizeAsync(realizedPlanned, "31.50", Today, _ownerSecondSession);
         var cancelledPlanned = await CreatePlannedAsync(_account, _expense, "Expense", "88.00", Today.AddDays(2), "Previsão cancelada");
         await CancelPlannedAsync(cancelledPlanned);
 
-        var response = await SendAsync(HttpMethod.Get, CalendarUrl(Today.AddDays(-10), Today.AddDays(10)), _member);
+        var response = await SendAsync(HttpMethod.Get, CalendarUrl(Today.AddDays(-10), Today.AddDays(10)), _ownerSecondSession);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var calendar = await ReadAsync<CalendarDto>(response);
@@ -108,13 +108,13 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
     {
         await ArrangeAsync();
 
-        await AssertErrorAsync(await SendAsync(HttpMethod.Get, $"/api/families/{_family.Id}/financial-calendar", _owner), "from", "through");
+        await AssertErrorAsync(await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_family.Id}/financial-calendar", _owner), "from", "through");
         await AssertErrorAsync(await SendAsync(HttpMethod.Get,
-            $"/api/families/{_family.Id}/financial-calendar?from=01/09/2026&through=2026-09-30", _owner), "from");
+            $"/api/financial-workspaces/{_family.Id}/financial-calendar?from=01/09/2026&through=2026-09-30", _owner), "from");
         await AssertErrorAsync(await SendAsync(HttpMethod.Get,
-            $"/api/families/{_family.Id}/financial-calendar?from=2026-09-30&through=2026-09-01", _owner), "through");
+            $"/api/financial-workspaces/{_family.Id}/financial-calendar?from=2026-09-30&through=2026-09-01", _owner), "through");
         await AssertErrorAsync(await SendAsync(HttpMethod.Get,
-            $"/api/families/{_family.Id}/financial-calendar?from=2026-09-01&through=2026-09-30&type=Both", _owner), "type");
+            $"/api/financial-workspaces/{_family.Id}/financial-calendar?from=2026-09-01&through=2026-09-30&type=Both", _owner), "type");
 
         Assert.Equal(HttpStatusCode.NotFound,
             (await SendAsync(HttpMethod.Get, CalendarUrl(Today.AddDays(-1), Today.AddDays(1)), _outsider)).StatusCode);
@@ -171,7 +171,7 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
 
     private async Task<Guid> CreateAccountAsync(string name)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/accounts", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/accounts", _owner,
             new { name, type = "Checking", financialScope = "PF", openingBalance = "0.00", openingBalanceDate = Today.AddDays(-30) });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -179,7 +179,7 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
 
     private async Task<Guid> CreateCategoryAsync(string name, string type)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/categories", _owner, new { name, type });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/categories", _owner, new { name, type });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
     }
@@ -187,7 +187,7 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
     private async Task<Guid> CreateTransactionAsync(
         Guid accountId, Guid categoryId, string type, string amount, DateOnly date, string description)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions", _owner,
             new { accountId, categoryId, type, amount, transactionDate = date, description });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -196,7 +196,7 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
     private async Task<Guid> CreatePlannedAsync(
         Guid accountId, Guid categoryId, string type, string amount, DateOnly date, string description)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/planned-transactions", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/planned-transactions", _owner,
             new { accountId, categoryId, type, amount, dueDate = date, description });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -205,7 +205,7 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
     private async Task<Guid> RealizeAsync(Guid plannedId, string amount, DateOnly date, string session)
     {
         var response = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/planned-transactions/{plannedId}/realize", session,
+            $"/api/financial-workspaces/{_family.Id}/planned-transactions/{plannedId}/realize", session,
             new { amount, transactionDate = date });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -214,14 +214,14 @@ public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : 
     private async Task CancelTransactionAsync(Guid transactionId)
     {
         var response = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/transactions/{transactionId}/cancel", _owner);
+            $"/api/financial-workspaces/{_family.Id}/transactions/{transactionId}/cancel", _owner);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     private async Task CancelPlannedAsync(Guid plannedId)
     {
         var response = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/planned-transactions/{plannedId}/cancel", _owner);
+            $"/api/financial-workspaces/{_family.Id}/planned-transactions/{plannedId}/cancel", _owner);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 

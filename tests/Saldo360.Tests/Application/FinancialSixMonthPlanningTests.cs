@@ -1,3 +1,5 @@
+using Saldo360.Application.Workspaces;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Application.Calendar;
 using Saldo360.Application.Families;
 using Saldo360.Domain.Families;
@@ -43,9 +45,10 @@ public sealed class FinancialSixMonthPlanningTests
         }
         public Task<FinancialCalendarBalanceSnapshot?> ReadAsync(Guid family, Guid? account, DateOnly through, DateOnly today, CancellationToken ct) => throw new NotSupportedException();
     }
-    private sealed class Member : IFamilyRepository
+    private sealed class Member : IFinancialWorkspaceRepository
     {
-        public Task<FamilyRole?> GetMemberRoleAsync(Guid family, Guid user, CancellationToken ct) => Task.FromResult<FamilyRole?>(FamilyRole.Owner);
+        public Task<FinancialWorkspace> EnsurePersonalAsync(Guid user, DateTimeOffset now, CancellationToken ct) => throw new NotSupportedException();
+        public Task<FinancialWorkspaceRole?> GetOwnerRoleAsync(Guid family, Guid user, CancellationToken ct) => Task.FromResult<FinancialWorkspaceRole?>(FinancialWorkspaceRole.Owner);
         public Task AddAsync(Family family, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<FamilySummary>> ListForUserAsync(Guid user, CancellationToken ct) => throw new NotSupportedException();
         public Task<FamilyDetails?> FindForMemberAsync(Guid family, Guid user, CancellationToken ct) => throw new NotSupportedException();

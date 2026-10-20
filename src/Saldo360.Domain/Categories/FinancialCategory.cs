@@ -17,7 +17,7 @@ public sealed class FinancialCategory : Entity
         Name = string.Empty;
     }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
 
     public string Name { get; private set; }
 
@@ -30,10 +30,10 @@ public sealed class FinancialCategory : Entity
     public Guid CreatedByUserId { get; private init; }
 
     /// <param name="name">Já normalizado por <see cref="TryNormalizeName"/>.</param>
-    public static FinancialCategory Create(Guid familyId, string name, CategoryType type, Guid createdByUserId, DateTimeOffset now) =>
+    public static FinancialCategory Create(Guid workspaceId, string name, CategoryType type, Guid createdByUserId, DateTimeOffset now) =>
         new()
         {
-            FamilyId = familyId,
+            WorkspaceId = workspaceId,
             Name = name,
             Type = type,
             IsActive = true,

@@ -2,7 +2,7 @@ namespace Saldo360.Application.CreditCards;
 
 public interface IFinancialEmailCollectorLock
 {
-    Task<IAsyncDisposable?> TryAcquireAsync(Guid familyId, string profileName, CancellationToken cancellationToken);
+    Task<IAsyncDisposable?> TryAcquireAsync(Guid workspaceId, string profileName, CancellationToken cancellationToken);
 }
 
 public sealed class FinancialEmailCollectorRunner(
@@ -16,8 +16,8 @@ public sealed class FinancialEmailCollectorRunner(
     public async Task<FinancialEmailCollectorResult?> RunHistoricalAsync(string profileName, Guid userId, bool dryRun, FinancialEmailHistoricalWindow window, CancellationToken cancellationToken)
     {
         var profile = options.Sources.SingleOrDefault(p => p.Enabled && string.Equals(p.Name, profileName, StringComparison.OrdinalIgnoreCase));
-        if (userId == Guid.Empty || profile is null || !await inbox.CanAccessFamilyAsync(profile.FamilyId, userId, cancellationToken)) return null;
-        await using var lease = await distributedLock.TryAcquireAsync(profile.FamilyId, profile.Name, cancellationToken);
+        if (userId == Guid.Empty || profile is null || !await inbox.CanAccessWorkspaceAsync(profile.WorkspaceId, userId, cancellationToken)) return null;
+        await using var lease = await distributedLock.TryAcquireAsync(profile.WorkspaceId, profile.Name, cancellationToken);
         if (lease is null) return window.Annotate(new(profile.Name, dryRun, "SkippedAlreadyRunning", 0, 0, 0, 0, 0, 0, 0, 0, 0, [], []));
         var started = clock.GetUtcNow();
         try { return await collector.RunHistoricalAsync(profile.Name, userId, dryRun, window, cancellationToken); }
@@ -34,8 +34,8 @@ public sealed class FinancialEmailCollectorRunner(
     {
         var profile = options.Sources.SingleOrDefault(item => item.Enabled && string.Equals(item.Name, profileName, StringComparison.OrdinalIgnoreCase));
         if (profile is null || (userId is null && !options.Enabled)) return null;
-        if (userId is { } actor && !await inbox.CanAccessFamilyAsync(profile.FamilyId, actor, cancellationToken)) return null;
-        await using var lease = await distributedLock.TryAcquireAsync(profile.FamilyId, profile.Name, cancellationToken);
+        if (userId is { } actor && !await inbox.CanAccessWorkspaceAsync(profile.WorkspaceId, actor, cancellationToken)) return null;
+        await using var lease = await distributedLock.TryAcquireAsync(profile.WorkspaceId, profile.Name, cancellationToken);
         if (lease is null)
         {
             return new(profile.Name, dryRun, "SkippedAlreadyRunning", 0, 0, 0, 0, 0, 0, 0, 0, 0, [], []);
@@ -47,7 +47,7 @@ public sealed class FinancialEmailCollectorRunner(
         {
             if (!dryRun)
             {
-                var checkpoint = await checkpoints.GetOrCreateAsync(profile.FamilyId, profile.Name, cancellationToken);
+                var checkpoint = await checkpoints.GetOrCreateAsync(profile.WorkspaceId, profile.Name, cancellationToken);
                 checkpoint.Fail(clock.GetUtcNow(), (long)(clock.GetUtcNow() - started).TotalMilliseconds);
                 await checkpoints.SaveAsync(cancellationToken);
             }
@@ -91,7 +91,7 @@ public sealed class FinancialEmailSchedule
     }
 }
 
-public sealed record FinancialEmailCollectorStatusDto(string Profile, Guid FamilyId, bool Enabled, string? LastRunAt,
+public sealed record FinancialEmailCollectorStatusDto(string Profile, Guid WorkspaceId, bool Enabled, string? LastRunAt,
     string? LastSuccessfulRunAt, long? DurationMilliseconds, string Status, int MessagesScanned, int CandidateAttachments,
     int AcceptedDocuments, int Duplicates, int NeedsReview, int Failures, string NextRunAt, bool Delayed);
 
@@ -102,14 +102,14 @@ public sealed class FinancialEmailCollectorStatusService(FinancialEmailImportOpt
     {
         var profiles = new List<FinancialEmailImportProfile>();
         foreach (var profile in options.Sources)
-            if (await inbox.CanAccessFamilyAsync(profile.FamilyId, userId, cancellationToken)) profiles.Add(profile);
-        var states = await checkpoints.ListAsync(profiles.Select(item => item.FamilyId).Distinct().ToList(), cancellationToken);
+            if (await inbox.CanAccessWorkspaceAsync(profile.WorkspaceId, userId, cancellationToken)) profiles.Add(profile);
+        var states = await checkpoints.ListAsync(profiles.Select(item => item.WorkspaceId).Distinct().ToList(), cancellationToken);
         var now = clock.GetUtcNow(); var next = schedule.Next(now); var previous = schedule.Previous(now);
         return profiles.Select(profile =>
         {
-            var state = states.SingleOrDefault(item => item.FamilyId == profile.FamilyId && item.ProfileName == profile.Name);
+            var state = states.SingleOrDefault(item => item.WorkspaceId == profile.WorkspaceId && item.ProfileName == profile.Name);
             var delayed = options.Enabled && profile.Enabled && now > previous.AddHours(1) && (state?.LastCompletedAt is null || state.LastCompletedAt < previous);
-            return new FinancialEmailCollectorStatusDto(profile.Name, profile.FamilyId, options.Enabled && profile.Enabled,
+            return new FinancialEmailCollectorStatusDto(profile.Name, profile.WorkspaceId, options.Enabled && profile.Enabled,
                 state?.LastStartedAt?.ToString("O"), state?.LastSuccessfulRunAt?.ToString("O"), state?.LastCompletedAt is null ? null : state.LastDurationMilliseconds,
                 state?.LastResult ?? "NeverRun", state?.LastMessagesScanned ?? 0, state?.LastCandidateAttachments ?? 0,
                 state?.LastAcceptedDocuments ?? 0, state?.LastDuplicates ?? 0, state?.LastNeedsReview ?? 0, state?.LastFailures ?? 0,

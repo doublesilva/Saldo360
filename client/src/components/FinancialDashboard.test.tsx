@@ -24,7 +24,7 @@ describe('FinancialDashboard', () => {
 
   it('exibe o resumo, projeção, alertas e mantém valores monetários formatados', async () => {
     const onNavigate = vi.fn()
-    render(<FinancialDashboard familyId="family-1" onNavigate={onNavigate} />)
+    render(<FinancialDashboard workspaceId="family-1" onNavigate={onNavigate} />)
 
     expect(await screen.findByRole('heading', { name: 'Visão Geral' })).toBeTruthy()
     expect(screen.getAllByText(/R\$.*5\.000,00/).length).toBeGreaterThan(0)
@@ -39,7 +39,7 @@ describe('FinancialDashboard', () => {
     const fetchMock = vi.mocked(fetch)
     const incomplete = { ...dashboard, coverage: { ...dashboard.coverage, complete: false, reason: 'Fatura sem conta de pagamento.' } }
     fetchMock.mockImplementation((input) => Promise.resolve(Response.json(String(input).includes('competence=2026-11') ? incomplete : dashboard)))
-    render(<FinancialDashboard familyId="family-1" />)
+    render(<FinancialDashboard workspaceId="family-1" />)
     await screen.findByText('Evolução projetada')
     fireEvent.change(screen.getByLabelText('Competência do dashboard'), { target: { value: '2026-11' } })
     fireEvent.change(screen.getByLabelText('Horizonte da projeção'), { target: { value: '12' } })
@@ -56,7 +56,7 @@ describe('FinancialDashboard', () => {
       alerts: Array.from({ length: 6 }, (_, index) => ({ ...dashboard.alerts[0], code: `balance-${index}`, severity: 'Critical' as const, title: `Risco ${index}` })),
     }
     vi.mocked(fetch).mockResolvedValue(Response.json(negative))
-    render(<FinancialDashboard familyId="family-1" onNavigate={onNavigate} />)
+    render(<FinancialDashboard workspaceId="family-1" onNavigate={onNavigate} />)
     expect(await screen.findByText('Risco de saldo projetado negativo.')).toBeTruthy()
     expect(screen.getByText('Vencido')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Mostrar todos os alertas/ })).toBeTruthy()
@@ -79,7 +79,7 @@ describe('FinancialDashboard', () => {
       cashFlow: { realizedIncome: '0.00', realizedExpense: '0.00', pendingIncome: '0.00', pendingExpense: '0.00' },
     }
     vi.mocked(fetch).mockResolvedValue(Response.json(empty))
-    render(<FinancialDashboard familyId="family-1" />)
+    render(<FinancialDashboard workspaceId="family-1" />)
     expect(await screen.findByText('Nenhuma projeção disponível para o período selecionado.')).toBeTruthy()
     expect(screen.getByText('Nenhum cartão cadastrado.')).toBeTruthy()
     expect(screen.getByText(/Disponibilidade antes do próximo recebimento indeterminada/)).toBeTruthy()
@@ -89,7 +89,7 @@ describe('FinancialDashboard', () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response('{}', { status: 503 }))
       .mockResolvedValueOnce(Response.json(dashboard))
-    render(<FinancialDashboard familyId="family-1" />)
+    render(<FinancialDashboard workspaceId="family-1" />)
     expect(await screen.findByRole('alert')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
     expect(await screen.findByText('Evolução projetada')).toBeTruthy()
@@ -102,9 +102,9 @@ describe('FinancialDashboard', () => {
       if (String(input).includes('family-old')) return new Promise<Response>((resolve) => { resolveOld = resolve })
       return Promise.resolve(new Response('{}', { status: 503 }))
     })
-    const view = render(<FinancialDashboard familyId="family-old" />)
+    const view = render(<FinancialDashboard workspaceId="family-old" />)
     await screen.findByText('Carregando painel financeiro…')
-    view.rerender(<FinancialDashboard familyId="family-new" />)
+    view.rerender(<FinancialDashboard workspaceId="family-new" />)
     expect(await screen.findByRole('alert')).toBeTruthy()
     resolveOld(Response.json(dashboard))
     await Promise.resolve()

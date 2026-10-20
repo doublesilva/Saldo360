@@ -17,7 +17,7 @@ public sealed class FinancialCreditCardInvoiceAdjustment : Entity
         ExternalId = string.Empty;
     }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid CreditCardId { get; private init; }
     public Guid InvoiceId { get; private init; }
     public FinancialCreditCardInvoiceAdjustmentType Type { get; private init; }
@@ -36,12 +36,12 @@ public sealed class FinancialCreditCardInvoiceAdjustment : Entity
     public decimal SignedAmount => Nature == FinancialCreditCardInvoiceAdjustmentNature.Debit ? Amount : -Amount;
 
     public static FinancialCreditCardInvoiceAdjustment Create(
-        Guid familyId, Guid creditCardId, Guid invoiceId,
+        Guid workspaceId, Guid creditCardId, Guid invoiceId,
         FinancialCreditCardInvoiceAdjustmentType type, FinancialCreditCardInvoiceAdjustmentNature nature,
         DateOnly transactionDate, string description, decimal amount, string externalId,
         Guid? categoryId, Guid userId, DateTimeOffset now) => new()
     {
-        Id = Guid.NewGuid(), FamilyId = familyId, CreditCardId = creditCardId, InvoiceId = invoiceId,
+        Id = Guid.NewGuid(), WorkspaceId = workspaceId, CreditCardId = creditCardId, InvoiceId = invoiceId,
         Type = type, Nature = nature, TransactionDate = transactionDate, Description = description,
         Amount = amount, ExternalId = externalId, CategoryId = categoryId,
         Status = FinancialCreditCardInvoiceAdjustmentStatus.Active,

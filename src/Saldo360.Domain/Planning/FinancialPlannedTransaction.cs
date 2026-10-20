@@ -23,7 +23,7 @@ public sealed class FinancialPlannedTransaction : Entity
         Currency = DefaultCurrency;
     }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
 
     public Guid AccountId { get; private set; }
 
@@ -56,11 +56,11 @@ public sealed class FinancialPlannedTransaction : Entity
 
     public Guid? CancelledByUserId { get; private set; }
 
-    public static FinancialPlannedTransaction Create(Guid familyId, PlannedTransactionDetails details, Guid createdByUserId, DateTimeOffset now)
+    public static FinancialPlannedTransaction Create(Guid workspaceId, PlannedTransactionDetails details, Guid createdByUserId, DateTimeOffset now)
     {
         var planned = new FinancialPlannedTransaction
         {
-            FamilyId = familyId,
+            WorkspaceId = workspaceId,
             CreatedAt = now,
             CreatedByUserId = createdByUserId,
         };

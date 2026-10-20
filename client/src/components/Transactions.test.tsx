@@ -106,7 +106,7 @@ afterEach(() => {
 
 async function openNewForm() {
   const calls = mockApi()
-  render(<Transactions familyId="f1" />)
+  render(<Transactions workspaceId="f1" />)
   await screen.findByText('Feira do mês')
   fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
   await screen.findByLabelText('Conta')
@@ -122,7 +122,7 @@ function fill(fields: Partial<Record<'Conta' | 'Categoria' | 'Descrição' | 'Va
 describe('Transactions — lista', () => {
   it('explica que são movimentações realizadas e mostra valor com sinal, conta e categoria (mesmo inativas)', async () => {
     const calls = mockApi()
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
 
     const item = (await screen.findByText('Feira do mês')).closest('li')!
     expect(item.textContent).toMatch(/−R\$\s1\.234,56/)
@@ -131,12 +131,12 @@ describe('Transactions — lista', () => {
     expect(within(item).getByText('Conta antiga (inativa)')).toBeTruthy()
     expect(screen.getByText('Salário setembro').closest('li')!.textContent).toMatch(/\+R\$\s5\.000,00/)
     expect(screen.getByText(/já aconteceram/)).toBeTruthy()
-    expect(listCalls(calls)[0].url).toBe('/api/families/f1/transactions?page=1&pageSize=20')
+    expect(listCalls(calls)[0].url).toBe('/api/financial-workspaces/f1/transactions?page=1&pageSize=20')
   })
 
   it('mostra cancelados só sob pedido, sem ações de edição', async () => {
     const calls = mockApi()
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
     await screen.findByText('Feira do mês')
     expect(screen.queryByText('Lançamento errado')).toBeNull()
 
@@ -150,7 +150,7 @@ describe('Transactions — lista', () => {
 
   it('filtra por período, tipo, conta e categoria e volta para a página 1', async () => {
     const calls = mockApi({ page: { totalCount: 45 } })
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
     await screen.findByText('Feira do mês')
 
     fireEvent.click(screen.getByRole('button', { name: 'Próxima' }))
@@ -177,7 +177,7 @@ describe('Transactions — lista', () => {
 
   it('pagina com Anterior/Próxima e mostra o total', async () => {
     const calls = mockApi({ page: { totalCount: 45 } })
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
     expect(await screen.findByText(/Página 1 de 3 · 45 lançamentos/)).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Anterior' }) as HTMLButtonElement).disabled).toBe(true)
 
@@ -189,7 +189,7 @@ describe('Transactions — lista', () => {
   it('cancelar pede confirmação e usa o endpoint de cancelamento com CSRF', async () => {
     const calls = mockApi()
     const confirm = vi.spyOn(window, 'confirm')
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
     const item = (await screen.findByText('Feira do mês')).closest('li')!
 
     confirm.mockReturnValueOnce(false)
@@ -201,7 +201,7 @@ describe('Transactions — lista', () => {
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1))
     expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('não poderá mais ser editado'))
-    expect(writes(calls)[0].url).toBe('/api/families/f1/transactions/t1/cancel')
+    expect(writes(calls)[0].url).toBe('/api/financial-workspaces/f1/transactions/t1/cancel')
     expect((writes(calls)[0].init!.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
   })
 })
@@ -217,7 +217,7 @@ describe('Transactions — formulário', () => {
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1))
     const post = writes(calls)[0]
-    expect(post.url).toBe('/api/families/f1/transactions')
+    expect(post.url).toBe('/api/financial-workspaces/f1/transactions')
     expect(JSON.parse(String(post.init!.body))).toEqual({
       accountId: itau.id,
       categoryId: mercado.id,
@@ -275,7 +275,7 @@ describe('Transactions — formulário', () => {
 
   it('orienta a cadastrar conta e categoria quando não há ativas', async () => {
     mockApi({ accounts: [antiga], categories: [lazer, salario] })
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
     await screen.findByText('Feira do mês')
     fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
 
@@ -286,7 +286,7 @@ describe('Transactions — formulário', () => {
 
   it('edição mantém conta e categoria inativas já usadas e envia PUT', async () => {
     const calls = mockApi()
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
     const item = (await screen.findByText('Feira do mês')).closest('li')!
     fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
     await screen.findByLabelText('Conta')
@@ -299,7 +299,7 @@ describe('Transactions — formulário', () => {
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1))
     const put = writes(calls)[0]
-    expect(put.url).toBe('/api/families/f1/transactions/t1')
+    expect(put.url).toBe('/api/financial-workspaces/f1/transactions/t1')
     expect(put.init!.method).toBe('PUT')
     expect(JSON.parse(String(put.init!.body))).toEqual({
       accountId: antiga.id,
@@ -313,7 +313,7 @@ describe('Transactions — formulário', () => {
 
   it('exibe erros da API (ex.: categoria de outro tipo ou lançamento já cancelado)', async () => {
     mockApi({ saveStatus: 409, saveBody: { title: 'Lançamento cancelado não pode ser editado.' } })
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
     const item = (await screen.findByText('Feira do mês')).closest('li')!
     fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
     await screen.findByLabelText('Conta')
@@ -329,7 +329,7 @@ describe('Transactions — aviso de mudança para os saldos', () => {
     mockApi()
     const onChanged = vi.fn()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<Transactions familyId="f1" onChanged={onChanged} />)
+    render(<Transactions workspaceId="f1" onChanged={onChanged} />)
     await screen.findByText('Feira do mês')
 
     fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
@@ -346,7 +346,7 @@ describe('Transactions — aviso de mudança para os saldos', () => {
   it('não chama onChanged quando a gravação é recusada', async () => {
     mockApi({ saveStatus: 400, saveBody: { errors: { categoryId: ['Categoria inválida.'] } } })
     const onChanged = vi.fn()
-    render(<Transactions familyId="f1" onChanged={onChanged} />)
+    render(<Transactions workspaceId="f1" onChanged={onChanged} />)
     await screen.findByText('Feira do mês')
     fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
     await screen.findByLabelText('Conta')
@@ -382,7 +382,7 @@ describe('Transactions — valor como texto decimal exato', () => {
 
   it('exibe centavos e o valor máximo exatamente, a partir do texto', async () => {
     mockPage([maximo, centavos])
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
 
     expect((await screen.findByText('Valor máximo')).closest('li')!.textContent).toMatch(/\+R\$\s9\.999\.999\.999\.999,99/)
     expect(screen.getByText('Bala').closest('li')!.textContent).toMatch(/−R\$\s0,10/)
@@ -390,7 +390,7 @@ describe('Transactions — valor como texto decimal exato', () => {
 
   it('edição do valor máximo preenche o campo e reenvia o mesmo texto exato', async () => {
     const calls = mockPage([maximo])
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
     const item = (await screen.findByText('Valor máximo')).closest('li')!
     fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
     await screen.findByLabelText('Conta')
@@ -408,7 +408,7 @@ describe('Transactions — valor como texto decimal exato', () => {
 
   it('edição de centavos reenvia "0.10", não 0.1', async () => {
     const calls = mockPage([centavos])
-    render(<Transactions familyId="f1" />)
+    render(<Transactions workspaceId="f1" />)
     const item = (await screen.findByText('Bala')).closest('li')!
     fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
     await screen.findByLabelText('Conta')
@@ -440,7 +440,7 @@ describe('Transactions — lançamento que realiza previsão', () => {
     )
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const onChanged = vi.fn()
-    render(<Transactions familyId="f1" onChanged={onChanged} />)
+    render(<Transactions workspaceId="f1" onChanged={onChanged} />)
     const item = (await screen.findByText('Aluguel de setembro')).closest('li')!
 
     expect(within(item).getByText('Realiza previsão')).toBeTruthy()
@@ -449,16 +449,16 @@ describe('Transactions — lançamento que realiza previsão', () => {
 
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('a previsão voltará a ficar pendente'))
-    expect(calls.some((c) => c.url === '/api/families/f1/transactions/t7/cancel')).toBe(true)
+    expect(calls.some((c) => c.url === '/api/financial-workspaces/f1/transactions/t7/cancel')).toBe(true)
   })
 
   it('recarrega quando outra seção muda as finanças (refreshKey)', async () => {
     const calls = mockApi()
-    const { rerender } = render(<Transactions familyId="f1" refreshKey={0} />)
+    const { rerender } = render(<Transactions workspaceId="f1" refreshKey={0} />)
     await screen.findByText('Feira do mês')
     const before = listCalls(calls).length
 
-    rerender(<Transactions familyId="f1" refreshKey={1} />)
+    rerender(<Transactions workspaceId="f1" refreshKey={1} />)
 
     await waitFor(() => expect(listCalls(calls).length).toBe(before + 1))
   })

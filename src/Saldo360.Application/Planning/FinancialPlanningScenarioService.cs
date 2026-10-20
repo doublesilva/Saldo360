@@ -1,74 +1,74 @@
 using System.Globalization;
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Application.Accounts;
 using Saldo360.Domain.Common;
 using Saldo360.Domain.Planning;
 
 namespace Saldo360.Application.Planning;
 
-public sealed class FinancialPlanningScenarioService(IFamilyRepository families, IFinancialPlanningScenarioRepository repository, IFinancialAccountRepository accounts, TimeProvider time)
+public sealed class FinancialPlanningScenarioService(IFinancialWorkspaceRepository workspaces, IFinancialPlanningScenarioRepository repository, IFinancialAccountRepository accounts, TimeProvider time)
 {
-    public async Task<PlanningScenarioResult> CreateAsync(Guid familyId, Guid userId, PlanningScenarioInput input, CancellationToken ct)
+    public async Task<PlanningScenarioResult> CreateAsync(Guid workspaceId, Guid userId, PlanningScenarioInput input, CancellationToken ct)
     {
-        if (!await IsParticipant(familyId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
+        if (!await IsParticipant(workspaceId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
         var errors = ValidateScenario(input, out var name, out var description, out var startMonth, out var months, out var recoveryAccountId);
-        await ValidateRecoveryAccount(errors, familyId, recoveryAccountId, ct);
+        await ValidateRecoveryAccount(errors, workspaceId, recoveryAccountId, ct);
         if (errors.Count > 0) return new(PlanningScenarioAccess.Invalid, null, errors);
-        if (await repository.ScenarioNameExistsAsync(familyId, name!, null, ct)) return new(PlanningScenarioAccess.Conflict, null, null, "Já existe um cenário com este nome nesta família.");
-        var entity = FinancialPlanningScenario.Create(familyId, name!, description, startMonth, months, time.GetUtcNow(), recoveryAccountId);
+        if (await repository.ScenarioNameExistsAsync(workspaceId, name!, null, ct)) return new(PlanningScenarioAccess.Conflict, null, null, "Já existe um cenário com este nome nesta família.");
+        var entity = FinancialPlanningScenario.Create(workspaceId, name!, description, startMonth, months, time.GetUtcNow(), recoveryAccountId);
         try { await repository.AddScenarioAsync(entity, ct); } catch (InvalidOperationException e) { return new(PlanningScenarioAccess.Conflict, null, null, e.Message); }
-        return new(PlanningScenarioAccess.Allowed, await repository.GetScenarioAsync(familyId, entity.Id, ct), null);
+        return new(PlanningScenarioAccess.Allowed, await repository.GetScenarioAsync(workspaceId, entity.Id, ct), null);
     }
 
-    public async Task<IReadOnlyList<PlanningScenarioDto>?> ListAsync(Guid familyId, Guid userId, bool includeArchived, CancellationToken ct) =>
-        await IsParticipant(familyId, userId, ct) ? await repository.ListScenariosAsync(familyId, includeArchived, ct) : null;
+    public async Task<IReadOnlyList<PlanningScenarioDto>?> ListAsync(Guid workspaceId, Guid userId, bool includeArchived, CancellationToken ct) =>
+        await IsParticipant(workspaceId, userId, ct) ? await repository.ListScenariosAsync(workspaceId, includeArchived, ct) : null;
 
-    public async Task<PlanningScenarioDto?> GetAsync(Guid familyId, Guid id, Guid userId, CancellationToken ct) =>
-        await IsParticipant(familyId, userId, ct) ? await repository.GetScenarioAsync(familyId, id, ct) : null;
+    public async Task<PlanningScenarioDto?> GetAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken ct) =>
+        await IsParticipant(workspaceId, userId, ct) ? await repository.GetScenarioAsync(workspaceId, id, ct) : null;
 
-    public async Task<PlanningScenarioResult> UpdateAsync(Guid familyId, Guid id, Guid userId, PlanningScenarioInput input, CancellationToken ct)
+    public async Task<PlanningScenarioResult> UpdateAsync(Guid workspaceId, Guid id, Guid userId, PlanningScenarioInput input, CancellationToken ct)
     {
-        if (!await IsParticipant(familyId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
-        var entity = await repository.FindScenarioAsync(familyId, id, ct); if (entity is null) return new(PlanningScenarioAccess.NotFound, null, null);
+        if (!await IsParticipant(workspaceId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
+        var entity = await repository.FindScenarioAsync(workspaceId, id, ct); if (entity is null) return new(PlanningScenarioAccess.NotFound, null, null);
         var errors = ValidateScenario(input, out var name, out var description, out var startMonth, out var months, out var recoveryAccountId);
-        await ValidateRecoveryAccount(errors, familyId, recoveryAccountId, ct);
+        await ValidateRecoveryAccount(errors, workspaceId, recoveryAccountId, ct);
         if (errors.Count > 0) return new(PlanningScenarioAccess.Invalid, null, errors);
-        if (await repository.ScenarioNameExistsAsync(familyId, name!, id, ct)) return new(PlanningScenarioAccess.Conflict, null, null, "Já existe um cenário com este nome nesta família.");
+        if (await repository.ScenarioNameExistsAsync(workspaceId, name!, id, ct)) return new(PlanningScenarioAccess.Conflict, null, null, "Já existe um cenário com este nome nesta família.");
         try { entity.Update(name!, description, startMonth, months, time.GetUtcNow(), recoveryAccountId); await repository.SaveAsync(ct); }
         catch (InvalidOperationException e) { return new(PlanningScenarioAccess.Conflict, null, null, e.Message); }
-        return new(PlanningScenarioAccess.Allowed, await repository.GetScenarioAsync(familyId, id, ct), null);
+        return new(PlanningScenarioAccess.Allowed, await repository.GetScenarioAsync(workspaceId, id, ct), null);
     }
 
-    public async Task<PlanningScenarioResult> ArchiveAsync(Guid familyId, Guid id, Guid userId, CancellationToken ct)
+    public async Task<PlanningScenarioResult> ArchiveAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken ct)
     {
-        if (!await IsParticipant(familyId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
-        var entity = await repository.FindScenarioAsync(familyId, id, ct); if (entity is null) return new(PlanningScenarioAccess.NotFound, null, null);
+        if (!await IsParticipant(workspaceId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
+        var entity = await repository.FindScenarioAsync(workspaceId, id, ct); if (entity is null) return new(PlanningScenarioAccess.NotFound, null, null);
         entity.Archive(time.GetUtcNow()); await repository.SaveAsync(ct);
-        return new(PlanningScenarioAccess.Allowed, await repository.GetScenarioAsync(familyId, id, ct), null);
+        return new(PlanningScenarioAccess.Allowed, await repository.GetScenarioAsync(workspaceId, id, ct), null);
     }
 
-    public async Task<IReadOnlyList<PlanningMonthlyParameterDto>?> ListParametersAsync(Guid familyId, Guid scenarioId, Guid userId, CancellationToken ct)
+    public async Task<IReadOnlyList<PlanningMonthlyParameterDto>?> ListParametersAsync(Guid workspaceId, Guid scenarioId, Guid userId, CancellationToken ct)
     {
-        if (!await IsParticipant(familyId, userId, ct) || await repository.GetScenarioAsync(familyId, scenarioId, ct) is null) return null;
-        return await repository.ListParametersAsync(familyId, scenarioId, ct);
+        if (!await IsParticipant(workspaceId, userId, ct) || await repository.GetScenarioAsync(workspaceId, scenarioId, ct) is null) return null;
+        return await repository.ListParametersAsync(workspaceId, scenarioId, ct);
     }
 
-    public async Task<PlanningParameterResult> UpsertParameterAsync(Guid familyId, Guid scenarioId, string competence, Guid userId, PlanningMonthlyParameterInput input, CancellationToken ct)
+    public async Task<PlanningParameterResult> UpsertParameterAsync(Guid workspaceId, Guid scenarioId, string competence, Guid userId, PlanningMonthlyParameterInput input, CancellationToken ct)
     {
-        if (!await IsParticipant(familyId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
-        var scenario = await repository.FindScenarioAsync(familyId, scenarioId, ct); if (scenario is null) return new(PlanningScenarioAccess.NotFound, null, null);
+        if (!await IsParticipant(workspaceId, userId, ct)) return new(PlanningScenarioAccess.NotFound, null, null);
+        var scenario = await repository.FindScenarioAsync(workspaceId, scenarioId, ct); if (scenario is null) return new(PlanningScenarioAccess.NotFound, null, null);
         if (scenario.Status == PlanningScenarioStatus.Archived) return new(PlanningScenarioAccess.Conflict, null, null, "Cenário arquivado não pode receber parâmetros.");
         var errors = ValidateParameter(competence, input, scenario, out var month, out var values);
         if (errors.Count > 0) return new(PlanningScenarioAccess.Invalid, null, errors);
-        var existing = await repository.FindParameterAsync(familyId, scenarioId, month, ct);
+        var existing = await repository.FindParameterAsync(workspaceId, scenarioId, month, ct);
         if (existing is null)
         {
-            var entity = FinancialPlanningMonthlyParameter.Create(familyId, scenarioId, month, values.income, values.expense, values.reserve, values.recovery, values.notes);
+            var entity = FinancialPlanningMonthlyParameter.Create(workspaceId, scenarioId, month, values.income, values.expense, values.reserve, values.recovery, values.notes);
             await repository.AddParameterAsync(entity, ct);
-            return new(PlanningScenarioAccess.Allowed, new(entity.Id, entity.FamilyId, entity.ScenarioId, entity.Competence, entity.ExpectedAdditionalIncome, entity.ExpectedAdditionalExpense, entity.ContingencyReserve, entity.RecoveryTargetPercentage, entity.Notes), null);
+            return new(PlanningScenarioAccess.Allowed, new(entity.Id, entity.WorkspaceId, entity.ScenarioId, entity.Competence, entity.ExpectedAdditionalIncome, entity.ExpectedAdditionalExpense, entity.ContingencyReserve, entity.RecoveryTargetPercentage, entity.Notes), null);
         }
         existing.Update(values.income, values.expense, values.reserve, values.recovery, values.notes); await repository.SaveAsync(ct);
-        return new(PlanningScenarioAccess.Allowed, new(existing.Id, existing.FamilyId, existing.ScenarioId, existing.Competence, existing.ExpectedAdditionalIncome, existing.ExpectedAdditionalExpense, existing.ContingencyReserve, existing.RecoveryTargetPercentage, existing.Notes), null);
+        return new(PlanningScenarioAccess.Allowed, new(existing.Id, existing.WorkspaceId, existing.ScenarioId, existing.Competence, existing.ExpectedAdditionalIncome, existing.ExpectedAdditionalExpense, existing.ContingencyReserve, existing.RecoveryTargetPercentage, existing.Notes), null);
     }
 
     private static Dictionary<string, string[]> ValidateScenario(PlanningScenarioInput input, out string? name, out string? description, out DateOnly startMonth, out int months, out Guid? recoveryAccountId)
@@ -81,10 +81,10 @@ public sealed class FinancialPlanningScenarioService(IFamilyRepository families,
         return errors;
     }
 
-    private async Task ValidateRecoveryAccount(Dictionary<string, string[]> errors, Guid familyId, Guid? accountId, CancellationToken ct)
+    private async Task ValidateRecoveryAccount(Dictionary<string, string[]> errors, Guid workspaceId, Guid? accountId, CancellationToken ct)
     {
         if (accountId is not { } id) return;
-        var account = await accounts.GetAsync(familyId, id, ct);
+        var account = await accounts.GetAsync(workspaceId, id, ct);
         if (account is null) errors["recoveryAccountId"] = ["A conta-alvo não pertence à família."];
         else if (!account.IsActive) errors["recoveryAccountId"] = ["A conta-alvo está arquivada ou inativa."];
     }
@@ -111,5 +111,5 @@ public sealed class FinancialPlanningScenarioService(IFamilyRepository families,
         if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value) || value is < 0 or > 100 || value.Scale > 2) errors["recoveryTargetPercentage"] = ["O percentual deve estar entre 0 e 100, com até duas casas."];
         return value;
     }
-    private async Task<bool> IsParticipant(Guid familyId, Guid userId, CancellationToken ct) => await families.GetMemberRoleAsync(familyId, userId, ct) is not null;
+    private async Task<bool> IsParticipant(Guid workspaceId, Guid userId, CancellationToken ct) => await workspaces.GetOwnerRoleAsync(workspaceId, userId, ct) is not null;
 }

@@ -12,10 +12,10 @@ public sealed class FinancialRecurrenceMaterializationEndpointsTests(PostgresFix
     public async Task Materialization_IsIdempotent_AndDoesNotCreateBankTransactions()
     {
         var owner = await SignInAsync("recurrence-owner");
-        var family = await CreateFamilyAsync(owner, "Família Recorrência");
+        var family = await CreateWorkspaceAsync(owner, "Família Recorrência");
         var account = await CreateAccountAsync(owner, family.Id, "Conta", "1000.00");
         var category = await CreateCategoryAsync(owner, family.Id, "Internet", "Expense");
-        var baseUrl = $"/api/families/{family.Id}/recurrences";
+        var baseUrl = $"/api/financial-workspaces/{family.Id}/recurrences";
         var created = await SendWithCsrfAsync(HttpMethod.Post, baseUrl, owner, new { accountId = account, categoryId = category, type = "Expense", description = "Internet", amount = "380.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-11-10", dayOfMonth = 10 });
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var recurrenceId = (await ReadAsync<IdDto>(created)).Id;
@@ -38,7 +38,7 @@ public sealed class FinancialRecurrenceMaterializationEndpointsTests(PostgresFix
         Assert.Equal(5, materializations.RootElement.GetArrayLength());
         Assert.Equal(JsonValueKind.Null, materializations.RootElement[4].GetProperty("plannedTransactionId").ValueKind);
 
-        var calendar = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/financial-calendar?from=2026-11-01&through=2027-03-31", owner);
+        var calendar = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{family.Id}/financial-calendar?from=2026-11-01&through=2027-03-31", owner);
         Assert.Equal(HttpStatusCode.OK, calendar.StatusCode);
         using var calendarBody = JsonDocument.Parse(await calendar.Content.ReadAsStringAsync());
         Assert.Equal(4, calendarBody.RootElement.GetProperty("items").GetArrayLength());
@@ -53,10 +53,10 @@ public sealed class FinancialRecurrenceMaterializationEndpointsTests(PostgresFix
     public async Task Realization_PreservesRecurrenceIdentity_AndIsIdempotent()
     {
         var owner = await SignInAsync("recurrence-realization-owner");
-        var family = await CreateFamilyAsync(owner, "Família Realização Recorrente");
+        var family = await CreateWorkspaceAsync(owner, "Família Realização Recorrente");
         var account = await CreateAccountAsync(owner, family.Id, "Conta", "5000.00");
         var category = await CreateCategoryAsync(owner, family.Id, "Internet", "Expense");
-        var baseUrl = $"/api/families/{family.Id}/recurrences";
+        var baseUrl = $"/api/financial-workspaces/{family.Id}/recurrences";
         var created = await SendWithCsrfAsync(HttpMethod.Post, baseUrl, owner, new
         {
             accountId = account, categoryId = category, type = "Expense", description = "Internet",
@@ -72,12 +72,12 @@ public sealed class FinancialRecurrenceMaterializationEndpointsTests(PostgresFix
         var plannedId = materializedBody.RootElement.GetProperty("items")[0].GetProperty("plannedTransactionId").GetGuid();
 
         var realization = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{family.Id}/planned-transactions/{plannedId}/realize", owner,
+            $"/api/financial-workspaces/{family.Id}/planned-transactions/{plannedId}/realize", owner,
             new { amount = "380.00", transactionDate = "2026-10-15" });
         Assert.Equal(HttpStatusCode.Created, realization.StatusCode);
 
         var repeated = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{family.Id}/planned-transactions/{plannedId}/realize", owner,
+            $"/api/financial-workspaces/{family.Id}/planned-transactions/{plannedId}/realize", owner,
             new { amount = "380.00", transactionDate = "2026-10-15" });
         Assert.Equal(HttpStatusCode.OK, repeated.StatusCode);
 
@@ -93,14 +93,14 @@ public sealed class FinancialRecurrenceMaterializationEndpointsTests(PostgresFix
         Assert.Equal(plannedId, viewBody.RootElement[0].GetProperty("plannedTransactionId").GetGuid());
     }
 
-    private async Task<Guid> CreateAccountAsync(string session, Guid familyId, string name, string openingBalance)
+    private async Task<Guid> CreateAccountAsync(string session, Guid workspaceId, string name, string openingBalance)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/accounts", session, new { name, type = "Checking", financialScope = "PF", openingBalance, openingBalanceDate = "2026-09-01" });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/accounts", session, new { name, type = "Checking", financialScope = "PF", openingBalance, openingBalanceDate = "2026-09-01" });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode); return (await ReadAsync<IdDto>(response)).Id;
     }
-    private async Task<Guid> CreateCategoryAsync(string session, Guid familyId, string name, string type)
+    private async Task<Guid> CreateCategoryAsync(string session, Guid workspaceId, string name, string type)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/categories", session, new { name, type });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/categories", session, new { name, type });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode); return (await ReadAsync<IdDto>(response)).Id;
     }
     private sealed record IdDto(Guid Id);

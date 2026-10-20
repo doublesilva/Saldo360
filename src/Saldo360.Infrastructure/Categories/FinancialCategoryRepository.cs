@@ -15,8 +15,8 @@ internal sealed class FinancialCategoryRepository(Saldo360DbContext db) : IFinan
         return await TrySaveChangesAsync(cancellationToken);
     }
 
-    public Task<FinancialCategory?> FindAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken) =>
-        db.FinancialCategories.SingleOrDefaultAsync(c => c.Id == categoryId && c.FamilyId == familyId, cancellationToken);
+    public Task<FinancialCategory?> FindAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) =>
+        db.FinancialCategories.SingleOrDefaultAsync(c => c.Id == categoryId && c.WorkspaceId == workspaceId, cancellationToken);
 
     public async Task<bool> TrySaveChangesAsync(CancellationToken cancellationToken)
     {
@@ -35,22 +35,22 @@ internal sealed class FinancialCategoryRepository(Saldo360DbContext db) : IFinan
 
     // A coluna name usa colação ICU que ignora a caixa: a igualdade abaixo já é case-insensitive no banco.
     public Task<bool> NameExistsAsync(
-        Guid familyId, CategoryType type, string name, Guid? exceptCategoryId, CancellationToken cancellationToken) =>
+        Guid workspaceId, CategoryType type, string name, Guid? exceptCategoryId, CancellationToken cancellationToken) =>
         db.FinancialCategories.AnyAsync(
-            c => c.FamilyId == familyId && c.Type == type && c.Name == name && c.Id != exceptCategoryId,
+            c => c.WorkspaceId == workspaceId && c.Type == type && c.Name == name && c.Id != exceptCategoryId,
             cancellationToken);
 
     public async Task<IReadOnlyList<FinancialCategoryDto>> ListAsync(
-        Guid familyId, bool includeInactive, CancellationToken cancellationToken) =>
+        Guid workspaceId, bool includeInactive, CancellationToken cancellationToken) =>
         await Project(db.FinancialCategories
-                .Where(c => c.FamilyId == familyId && (includeInactive || c.IsActive))
+                .Where(c => c.WorkspaceId == workspaceId && (includeInactive || c.IsActive))
                 .OrderByDescending(c => c.IsActive)
                 .ThenBy(c => c.Type == CategoryType.Income ? 0 : 1) // receitas antes de despesas
                 .ThenBy(c => c.Name))
             .ToListAsync(cancellationToken);
 
-    public Task<FinancialCategoryDto?> GetAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken) =>
-        Project(db.FinancialCategories.Where(c => c.FamilyId == familyId && c.Id == categoryId))
+    public Task<FinancialCategoryDto?> GetAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) =>
+        Project(db.FinancialCategories.Where(c => c.WorkspaceId == workspaceId && c.Id == categoryId))
             .SingleOrDefaultAsync(cancellationToken);
 
     private static IQueryable<FinancialCategoryDto> Project(IQueryable<FinancialCategory> categories) =>

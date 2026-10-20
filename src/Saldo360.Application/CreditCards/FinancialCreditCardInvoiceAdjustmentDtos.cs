@@ -34,14 +34,14 @@ public sealed record InvoiceAdjustmentOperationResult(
 public interface IFinancialCreditCardInvoiceAdjustmentRepository
 {
     Task<InvoiceAdjustmentOperationResult> CreateAsync(
-        Guid familyId, Guid cardId, Guid invoiceId, Guid userId,
+        Guid workspaceId, Guid cardId, Guid invoiceId, Guid userId,
         FinancialCreditCardInvoiceAdjustmentInput input, DateTimeOffset now,
         CancellationToken cancellationToken);
 
     Task<InvoiceAdjustmentOperationResult> CancelAsync(
-        Guid familyId, Guid cardId, Guid invoiceId, Guid adjustmentId,
+        Guid workspaceId, Guid cardId, Guid invoiceId, Guid adjustmentId,
         Guid userId, DateTimeOffset now, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<FinancialCreditCardInvoiceAdjustmentDto>?> ListAsync(
-        Guid familyId, Guid cardId, Guid invoiceId, CancellationToken cancellationToken);
+        Guid workspaceId, Guid cardId, Guid invoiceId, CancellationToken cancellationToken);
 }

@@ -4,7 +4,7 @@ namespace Saldo360.Tests.CreditCards;
 
 public sealed class CreditCardPdfPreReconciliationServiceTests
 {
-    private static readonly Guid FamilyId = Guid.NewGuid();
+    private static readonly Guid WorkspaceId = Guid.NewGuid();
     private static readonly Guid CardId = Guid.NewGuid();
     private static readonly Guid UserId = Guid.NewGuid();
 
@@ -73,7 +73,7 @@ public sealed class CreditCardPdfPreReconciliationServiceTests
 
     private static Task<CreditCardPdfPreReconciliationResult> Run(
         CreditCardPdfPreReconciliationService service, byte[] bytes) =>
-        service.PreReconcileAsync(FamilyId, CardId, UserId, new MemoryStream(bytes), bytes.Length,
+        service.PreReconcileAsync(WorkspaceId, CardId, UserId, new MemoryStream(bytes), bytes.Length,
             "fatura.pdf", null, null, null, null, CancellationToken.None);
 
     private static CreditCardPdfPreview Preview(IReadOnlyList<CreditCardPdfPreviewItem> items) =>
@@ -90,13 +90,13 @@ public sealed class CreditCardPdfPreReconciliationServiceTests
 
     private sealed class FakePreviewService(CreditCardPdfPreview preview) : ICreditCardPdfPreviewService
     {
-        public Task<CreditCardPdfPreviewResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) =>
+        public Task<CreditCardPdfPreviewResult> PreviewAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) =>
             Task.FromResult(new CreditCardPdfPreviewResult(CreditCardPdfPreviewAccess.Allowed, preview, null));
     }
 
     private sealed class FakeRepository(IReadOnlyList<CreditCardPdfExistingOperation> operations) : ICreditCardPdfPreReconciliationRepository
     {
-        public Task<CreditCardPdfPreReconciliationSnapshot?> GetSnapshotAsync(Guid familyId, Guid cardId, Guid userId, string? competence, CancellationToken cancellationToken) =>
+        public Task<CreditCardPdfPreReconciliationSnapshot?> GetSnapshotAsync(Guid workspaceId, Guid cardId, Guid userId, string? competence, CancellationToken cancellationToken) =>
             Task.FromResult<CreditCardPdfPreReconciliationSnapshot?>(new(
                 "Cartão teste", "Itau", "9876", UserId,
                 new(Guid.NewGuid(), "2026-10", new(2026, 10, 8), new(2026, 10, 15)), operations));

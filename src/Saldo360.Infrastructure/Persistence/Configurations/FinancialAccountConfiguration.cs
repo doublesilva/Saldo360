@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Common;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Users;
 
 namespace Saldo360.Infrastructure.Persistence.Configurations;
@@ -39,26 +39,24 @@ internal sealed class FinancialAccountConfiguration : IEntityTypeConfiguration<F
         builder.Property(account => account.OpeningBalance).HasColumnType("numeric");
         builder.Property(account => account.OpeningBalanceDate).HasColumnType("date");
         builder.Property(account => account.Currency).HasMaxLength(3).IsFixedLength();
-        builder.HasIndex(account => new { account.FamilyId, account.IsActive });
+        builder.HasIndex(account => new { account.WorkspaceId, account.IsActive });
 
         // Restrict em todas as FKs: contas nunca são apagadas por cascata (não há exclusão física).
-        builder.HasOne<Family>()
+        builder.HasOne<FinancialWorkspace>()
             .WithMany()
-            .HasForeignKey(account => account.FamilyId)
+            .HasForeignKey(account => account.WorkspaceId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>()
             .WithMany()
             .HasForeignKey(account => account.CreatedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // FK composta (family_id, responsible_member_id) → family_members (family_id, id): o banco só aceita
-        // responsável que seja vínculo da MESMA família. Com responsible_member_id nulo (conta conjunta),
-        // a FK não é verificada (MATCH SIMPLE).
-        builder.HasOne<FamilyMember>()
+        // Personal: a responsible user, when assigned, must be the workspace owner.
+        builder.HasOne<FinancialWorkspace>()
             .WithMany()
-            .HasForeignKey(account => new { account.FamilyId, account.ResponsibleMemberId })
-            .HasPrincipalKey(member => new { member.FamilyId, member.Id })
-            .HasConstraintName("fk_financial_accounts_family_members_responsible")
+            .HasForeignKey(account => new { account.WorkspaceId, account.ResponsibleUserId })
+            .HasPrincipalKey(workspace => new { workspace.Id, workspace.OwnerUserId })
+            .HasConstraintName("fk_financial_accounts_workspace_responsible")
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

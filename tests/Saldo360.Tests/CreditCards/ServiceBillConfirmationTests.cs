@@ -44,12 +44,12 @@ public sealed class ServiceBillConfirmationServiceTests
 
     private sealed class Preview(ServiceBillRecurringMatchPreview value) : IServiceBillRecurringMatchPreviewService
     {
-        public Task<(FinancialDocumentClassificationAccess Access, ServiceBillRecurringMatchPreview? Preview, IDictionary<string, string[]>? Errors)> PreviewAsync(Guid familyId, Guid id, Guid userId, string? password, CancellationToken cancellationToken) => Task.FromResult((FinancialDocumentClassificationAccess.Allowed, (ServiceBillRecurringMatchPreview?)value, (IDictionary<string, string[]>?)null));
+        public Task<(FinancialDocumentClassificationAccess Access, ServiceBillRecurringMatchPreview? Preview, IDictionary<string, string[]>? Errors)> PreviewAsync(Guid workspaceId, Guid id, Guid userId, string? password, CancellationToken cancellationToken) => Task.FromResult((FinancialDocumentClassificationAccess.Allowed, (ServiceBillRecurringMatchPreview?)value, (IDictionary<string, string[]>?)null));
     }
     private sealed class Store(ServiceBillConfirmationStoreResult value) : IServiceBillConfirmationRepository
     {
         public int Calls { get; private set; }
-        public Task<ServiceBillConfirmationStoreResult> ConfirmAsync(Guid familyId, Guid documentId, Guid userId, Guid occurrenceId, Guid recurrenceId, string competence, decimal confirmedAmount, DateTimeOffset now, CancellationToken cancellationToken) { Calls++; return Task.FromResult(value); }
+        public Task<ServiceBillConfirmationStoreResult> ConfirmAsync(Guid workspaceId, Guid documentId, Guid userId, Guid occurrenceId, Guid recurrenceId, string competence, decimal confirmedAmount, DateTimeOffset now, CancellationToken cancellationToken) { Calls++; return Task.FromResult(value); }
     }
 }
 
@@ -60,17 +60,17 @@ public sealed class ServiceBillConfirmationPersistenceTests(PostgresFixture post
     public async Task ConcurrentDoubleSubmitConfirmsOnceAndReturnsIdempotentResult()
     {
         var owner = await SignInAsync("service-bill-double-submit-owner");
-        var family = await CreateFamilyAsync(owner, "Família Double Submit");
-        var account = await CreateAsync(owner, $"/api/families/{family.Id}/accounts", new { name = "Conta", type = "Checking", financialScope = "PF", openingBalance = "5000.00", openingBalanceDate = "2026-09-01" });
-        var category = await CreateAsync(owner, $"/api/families/{family.Id}/categories", new { name = "Água", type = "Expense" });
-        var recurrence = await CreateAsync(owner, $"/api/families/{family.Id}/recurrences", new { accountId = account, categoryId = category, type = "Expense", description = "DMAE", amount = "150.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-10-20", dayOfMonth = 20 });
-        var materialized = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/recurrences/{recurrence}/materialize", owner, new { from = "2026-10-01", through = "2026-10-31" });
+        var family = await CreateWorkspaceAsync(owner, "Família Double Submit");
+        var account = await CreateAsync(owner, $"/api/financial-workspaces/{family.Id}/accounts", new { name = "Conta", type = "Checking", financialScope = "PF", openingBalance = "5000.00", openingBalanceDate = "2026-09-01" });
+        var category = await CreateAsync(owner, $"/api/financial-workspaces/{family.Id}/categories", new { name = "Água", type = "Expense" });
+        var recurrence = await CreateAsync(owner, $"/api/financial-workspaces/{family.Id}/recurrences", new { accountId = account, categoryId = category, type = "Expense", description = "DMAE", amount = "150.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-10-20", dayOfMonth = 20 });
+        var materialized = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/recurrences/{recurrence}/materialize", owner, new { from = "2026-10-01", through = "2026-10-31" });
         using var body = JsonDocument.Parse(await materialized.Content.ReadAsStringAsync());
         var occurrence = body.RootElement.GetProperty("items")[0].GetProperty("plannedTransactionId").GetGuid();
         Guid userId; var documentId = Guid.NewGuid();
         await using (var setup = Db())
         {
-            userId = await setup.FamilyMembers.Where(x => x.FamilyId == family.Id).Select(x => x.UserId).SingleAsync();
+            userId = await setup.FinancialWorkspaces.Where(x => x.Id == family.Id).Select(w => w.OwnerUserId).SingleAsync();
             setup.FinancialDocumentInboxItems.Add(FinancialDocumentInboxItem.Create(documentId, family.Id,
                 FinancialDocumentSource.Manual, null, "agua.pdf", new string('d', 64), "application/pdf",
                 "test/service-bill-double-submit", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
@@ -97,18 +97,18 @@ public sealed class ServiceBillConfirmationPersistenceTests(PostgresFixture post
     public async Task ConfirmationChangesOnlyMonthlyOccurrenceAndIsIdempotent()
     {
         var owner = await SignInAsync("service-bill-confirm-owner");
-        var family = await CreateFamilyAsync(owner, "Família Contas");
-        var account = await CreateAsync(owner, $"/api/families/{family.Id}/accounts", new { name = "Conta", type = "Checking", financialScope = "PF", openingBalance = "5000.00", openingBalanceDate = "2026-09-01" });
-        var category = await CreateAsync(owner, $"/api/families/{family.Id}/categories", new { name = "Energia", type = "Expense" });
-        var recurrence = await CreateAsync(owner, $"/api/families/{family.Id}/recurrences", new { accountId = account, categoryId = category, type = "Expense", description = "CEEE", amount = "200.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-10-20", dayOfMonth = 20 });
-        var materialized = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/recurrences/{recurrence}/materialize", owner, new { from = "2026-10-01", through = "2026-11-30" });
+        var family = await CreateWorkspaceAsync(owner, "Família Contas");
+        var account = await CreateAsync(owner, $"/api/financial-workspaces/{family.Id}/accounts", new { name = "Conta", type = "Checking", financialScope = "PF", openingBalance = "5000.00", openingBalanceDate = "2026-09-01" });
+        var category = await CreateAsync(owner, $"/api/financial-workspaces/{family.Id}/categories", new { name = "Energia", type = "Expense" });
+        var recurrence = await CreateAsync(owner, $"/api/financial-workspaces/{family.Id}/recurrences", new { accountId = account, categoryId = category, type = "Expense", description = "CEEE", amount = "200.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-10-20", dayOfMonth = 20 });
+        var materialized = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/recurrences/{recurrence}/materialize", owner, new { from = "2026-10-01", through = "2026-11-30" });
         using var body = JsonDocument.Parse(await materialized.Content.ReadAsStringAsync());
         var october = body.RootElement.GetProperty("items")[0].GetProperty("plannedTransactionId").GetGuid();
         var november = body.RootElement.GetProperty("items")[1].GetProperty("plannedTransactionId").GetGuid();
         Guid userId; Guid documentId = Guid.NewGuid();
         await using (var db = Db())
         {
-            userId = await db.FamilyMembers.Where(x => x.FamilyId == family.Id).Select(x => x.UserId).SingleAsync();
+            userId = await db.FinancialWorkspaces.Where(x => x.Id == family.Id).Select(w => w.OwnerUserId).SingleAsync();
             db.FinancialDocumentInboxItems.Add(FinancialDocumentInboxItem.Create(documentId, family.Id, FinancialDocumentSource.Manual,
                 null, "energia.pdf", new string('a', 64), "application/pdf", "test/service-bill", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
             await db.SaveChangesAsync();
@@ -140,16 +140,16 @@ public sealed class ServiceBillConfirmationPersistenceTests(PostgresFixture post
             Assert.Equal(ServiceBillConfirmationStoreStatus.Conflict, conflict.Status);
         }
         var calendar = await SendAsync(HttpMethod.Get,
-            $"/api/families/{family.Id}/financial-calendar?from=2026-10-01&through=2026-11-30", owner);
+            $"/api/financial-workspaces/{family.Id}/financial-calendar?from=2026-10-01&through=2026-11-30", owner);
         using var calendarBody = JsonDocument.Parse(await calendar.Content.ReadAsStringAsync());
         var values = calendarBody.RootElement.GetProperty("items").EnumerateArray()
             .Select(item => item.GetProperty("amount").GetString()).ToArray();
         Assert.Equal(new string?[] { "187.43", "200.00" }, values);
         var editConfirmed = await SendWithCsrfAsync(HttpMethod.Put,
-            $"/api/families/{family.Id}/planned-transactions/{october}", owner,
+            $"/api/financial-workspaces/{family.Id}/planned-transactions/{october}", owner,
             new { accountId = account, categoryId = category, type = "Expense", description = "CEEE", amount = "199.00", dueDate = "2026-10-20" });
         Assert.Equal(HttpStatusCode.Conflict, editConfirmed.StatusCode);
-        var inbox = await SendAsync(HttpMethod.Get, $"/api/families/{family.Id}/financial-documents/inbox", owner);
+        var inbox = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{family.Id}/financial-documents/inbox", owner);
         using var inboxBody = JsonDocument.Parse(await inbox.Content.ReadAsStringAsync());
         var confirmedDocument = inboxBody.RootElement.EnumerateArray().Single(item => item.GetProperty("id").GetGuid() == documentId);
         var confirmation = confirmedDocument.GetProperty("serviceBillConfirmation");
@@ -177,8 +177,8 @@ public sealed class ServiceBillConfirmationPersistenceTests(PostgresFixture post
                 "ElectricityBill", accountHash, null, CancellationToken.None);
             Assert.True(Assert.Single(candidates).AccountBindingMatch);
         }
-        var otherRecurrence = await CreateAsync(owner, $"/api/families/{family.Id}/recurrences", new { accountId = account, categoryId = category, type = "Expense", description = "Energia garagem", amount = "80.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-10-25", dayOfMonth = 25 });
-        var otherMaterialized = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/recurrences/{otherRecurrence}/materialize", owner, new { from = "2026-10-01", through = "2026-10-31" });
+        var otherRecurrence = await CreateAsync(owner, $"/api/financial-workspaces/{family.Id}/recurrences", new { accountId = account, categoryId = category, type = "Expense", description = "Energia garagem", amount = "80.00", isEstimated = true, frequency = "Monthly", interval = 1, startDate = "2026-10-25", dayOfMonth = 25 });
+        var otherMaterialized = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/recurrences/{otherRecurrence}/materialize", owner, new { from = "2026-10-01", through = "2026-10-31" });
         using var otherBody = JsonDocument.Parse(await otherMaterialized.Content.ReadAsStringAsync());
         var otherOccurrence = otherBody.RootElement.GetProperty("items")[0].GetProperty("plannedTransactionId").GetGuid();
         var otherDocument = Guid.NewGuid();

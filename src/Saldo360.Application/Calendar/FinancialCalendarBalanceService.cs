@@ -1,22 +1,22 @@
 using Saldo360.Application.Accounts;
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Common;
 
 namespace Saldo360.Application.Calendar;
 
 /// <summary>Evolução diária realizada/projetada da Agenda, sem persistir saldos calculados.</summary>
 public sealed class FinancialCalendarBalanceService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialCalendarBalanceRepository repository,
     TimeProvider timeProvider)
 {
     public async Task<FinancialCalendarBalanceResult> GetAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid userId,
         FinancialCalendarBalanceQuery query,
         CancellationToken cancellationToken)
     {
-        if (await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is null)
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is null)
         {
             return FinancialCalendarBalanceResult.NotFoundResult;
         }
@@ -31,7 +31,7 @@ public sealed class FinancialCalendarBalanceService(
 
         var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
         var snapshot = await repository.ReadAsync(
-            familyId, query.AccountId, query.Through, today, cancellationToken);
+            workspaceId, query.AccountId, query.Through, today, cancellationToken);
         if (snapshot is null)
         {
             return FinancialCalendarBalanceResult.NotFoundResult;

@@ -1,61 +1,61 @@
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Common;
 
 namespace Saldo360.Application.Accounts;
 
 /// <summary>
-/// Contas financeiras da família. Owner e Member consultam, cadastram e editam; todas as contas são
-/// visíveis a todos os integrantes. Família vem da rota, criador vem da sessão.
+/// Contas do workspace pessoal. Somente o proprietário pode consultar, cadastrar e editar.
+/// Workspace vem da rota, autoria vem da sessão; participação familiar não concede acesso.
 /// </summary>
 public sealed class FinancialAccountService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialAccountRepository accounts,
     TimeProvider timeProvider)
 {
-    private const string ResponsibleField = "responsibleMemberId";
+    private const string ResponsibleField = "responsibleUserId";
     private const string InvalidResponsible = "Responsável inválido.";
 
-    public async Task<AccountResult> CreateAsync(Guid familyId, Guid userId, AccountInput input, CancellationToken cancellationToken)
+    public async Task<AccountResult> CreateAsync(Guid workspaceId, Guid userId, AccountInput input, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
         {
             return AccountResult.NotFound;
         }
 
-        var (details, errors) = await ValidateAsync(familyId, input, cancellationToken);
+        var (details, errors) = await ValidateAsync(workspaceId, input, cancellationToken);
         if (details is null)
         {
             return AccountResult.Invalid(errors);
         }
 
-        var account = FinancialAccount.Create(familyId, details, userId, timeProvider.GetUtcNow());
+        var account = FinancialAccount.Create(workspaceId, details, userId, timeProvider.GetUtcNow());
         await accounts.AddAsync(account, cancellationToken);
-        return AccountResult.Ok((await accounts.GetAsync(familyId, account.Id, cancellationToken))!);
+        return AccountResult.Ok((await accounts.GetAsync(workspaceId, account.Id, cancellationToken))!);
     }
 
     public async Task<IReadOnlyList<FinancialAccountDto>?> ListAsync(
-        Guid familyId, Guid userId, bool includeInactive, CancellationToken cancellationToken) =>
-        await IsParticipantAsync(familyId, userId, cancellationToken)
-            ? await accounts.ListAsync(familyId, includeInactive, cancellationToken)
+        Guid workspaceId, Guid userId, bool includeInactive, CancellationToken cancellationToken) =>
+        await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            ? await accounts.ListAsync(workspaceId, includeInactive, cancellationToken)
             : null;
 
-    public async Task<FinancialAccountDto?> GetAsync(Guid familyId, Guid accountId, Guid userId, CancellationToken cancellationToken) =>
-        await IsParticipantAsync(familyId, userId, cancellationToken)
-            ? await accounts.GetAsync(familyId, accountId, cancellationToken)
+    public async Task<FinancialAccountDto?> GetAsync(Guid workspaceId, Guid accountId, Guid userId, CancellationToken cancellationToken) =>
+        await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            ? await accounts.GetAsync(workspaceId, accountId, cancellationToken)
             : null;
 
     /// <summary>Atualiza campos cadastrais e situação. Família, criador, moeda e data de criação não mudam.</summary>
     public async Task<AccountResult> UpdateAsync(
-        Guid familyId, Guid accountId, Guid userId, AccountInput input, bool? isActive, CancellationToken cancellationToken)
+        Guid workspaceId, Guid accountId, Guid userId, AccountInput input, bool? isActive, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
-            || await accounts.FindAsync(familyId, accountId, cancellationToken) is not { } account)
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            || await accounts.FindAsync(workspaceId, accountId, cancellationToken) is not { } account)
         {
             return AccountResult.NotFound;
         }
 
-        var (details, errors) = await ValidateAsync(familyId, input, cancellationToken);
+        var (details, errors) = await ValidateAsync(workspaceId, input, cancellationToken);
         if (isActive is null)
         {
             errors["isActive"] = ["Informe se a conta está ativa."];
@@ -68,7 +68,7 @@ public sealed class FinancialAccountService(
 
         account.Update(details, isActive.Value);
         await accounts.SaveChangesAsync(cancellationToken);
-        return AccountResult.Ok((await accounts.GetAsync(familyId, account.Id, cancellationToken))!);
+        return AccountResult.Ok((await accounts.GetAsync(workspaceId, account.Id, cancellationToken))!);
     }
 
     /// <summary>
@@ -77,9 +77,9 @@ public sealed class FinancialAccountService(
     /// inativa também é consultável. As somas vêm agregadas do banco; aqui só se combina em decimal.
     /// </summary>
     public async Task<BalanceResult> GetBalanceAsync(
-        Guid familyId, Guid accountId, Guid userId, DateOnly? asOf, CancellationToken cancellationToken)
+        Guid workspaceId, Guid accountId, Guid userId, DateOnly? asOf, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
         {
             return new BalanceResult(BalanceAccess.NotFound, null, null);
         }
@@ -95,7 +95,7 @@ public sealed class FinancialAccountService(
         }
 
         var balance = await accounts.ReadConsistentAsync(
-            () => ReadBalanceAsync(familyId, accountId, date, cancellationToken), cancellationToken);
+            () => ReadBalanceAsync(workspaceId, accountId, date, cancellationToken), cancellationToken);
         return balance is null
             ? new BalanceResult(BalanceAccess.NotFound, null, null)
             : new BalanceResult(BalanceAccess.Allowed, balance, null);
@@ -109,9 +109,9 @@ public sealed class FinancialAccountService(
     /// não. Tudo num único snapshot do banco. Saldo realizado indisponível → todos os valores nulos, com o motivo.
     /// </summary>
     public async Task<ProjectionResult> GetProjectionAsync(
-        Guid familyId, Guid accountId, Guid userId, DateOnly through, CancellationToken cancellationToken)
+        Guid workspaceId, Guid accountId, Guid userId, DateOnly through, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
         {
             return new ProjectionResult(BalanceAccess.NotFound, null, null);
         }
@@ -127,7 +127,7 @@ public sealed class FinancialAccountService(
 
         var projection = await accounts.ReadConsistentAsync<AccountProjectionDto?>(async () =>
         {
-            if (await ReadBalanceAsync(familyId, accountId, baseDate, cancellationToken) is not { } balance)
+            if (await ReadBalanceAsync(workspaceId, accountId, baseDate, cancellationToken) is not { } balance)
             {
                 return null;
             }
@@ -138,8 +138,8 @@ public sealed class FinancialAccountService(
                     accountId, baseDate, through, null, null, null, null, null, null, balance.UnavailableReason);
             }
 
-            var planned = await accounts.SumPendingPlannedAsync(familyId, accountId, baseDate, through, cancellationToken);
-            var creditCard = await accounts.SumCreditCardObligationsAsync(familyId, accountId, through, cancellationToken);
+            var planned = await accounts.SumPendingPlannedAsync(workspaceId, accountId, baseDate, through, cancellationToken);
+            var creditCard = await accounts.SumCreditCardObligationsAsync(workspaceId, accountId, through, cancellationToken);
             var projected = FinancialBalanceCalculator.Project(realized, planned);
             projected -= creditCard.Outstanding;
             return new AccountProjectionDto(
@@ -157,9 +157,9 @@ public sealed class FinancialAccountService(
     /// inexistente na família. Sem saldo inicial ou antes da referência: indisponível (nunca zero).
     /// </summary>
     private async Task<AccountBalanceDto?> ReadBalanceAsync(
-        Guid familyId, Guid accountId, DateOnly date, CancellationToken cancellationToken)
+        Guid workspaceId, Guid accountId, DateOnly date, CancellationToken cancellationToken)
     {
-        if (await accounts.GetOpeningBalanceAsync(familyId, accountId, cancellationToken) is not { } opening)
+        if (await accounts.GetOpeningBalanceAsync(workspaceId, accountId, cancellationToken) is not { } opening)
         {
             return null;
         }
@@ -174,7 +174,7 @@ public sealed class FinancialAccountService(
             return Unavailable(BalanceUnavailableReason.BeforeOpeningBalanceDate);
         }
 
-        var totals = await accounts.SumMovementsAsync(familyId, accountId, referenceDate, date, cancellationToken);
+        var totals = await accounts.SumMovementsAsync(workspaceId, accountId, referenceDate, date, cancellationToken);
         var balance = FinancialBalanceCalculator.ApplyMovements(
             amount, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut);
         return new AccountBalanceDto(
@@ -185,19 +185,19 @@ public sealed class FinancialAccountService(
             new(accountId, date, opening.Amount, opening.Date, null, null, null, null, null, reason);
     }
 
-    private async Task<bool> IsParticipantAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>
-        await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is not null;
+    private async Task<bool> IsParticipantAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>
+        await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is not null;
 
     private async Task<(AccountDetails? Details, Dictionary<string, string[]> Errors)> ValidateAsync(
-        Guid familyId, AccountInput input, CancellationToken cancellationToken)
+        Guid workspaceId, AccountInput input, CancellationToken cancellationToken)
     {
         var details = AccountDetails.TryCreate(
-            input.Name, input.Institution, input.Type, input.FinancialScope, input.ResponsibleMemberId,
+            input.Name, input.Institution, input.Type, input.FinancialScope, input.ResponsibleUserId,
             input.OpeningBalance, input.OpeningBalanceDate, out var errors);
 
         // Responsável precisa ser vínculo desta família. A mensagem não diz se o Id existe em outra.
-        if (input.ResponsibleMemberId is { } memberId && !errors.ContainsKey(ResponsibleField)
-            && !await accounts.IsMemberOfFamilyAsync(familyId, memberId, cancellationToken))
+        if (input.ResponsibleUserId is { } memberId && !errors.ContainsKey(ResponsibleField)
+            && !await accounts.IsWorkspaceOwnerAsync(workspaceId, memberId, cancellationToken))
         {
             errors[ResponsibleField] = [InvalidResponsible];
             details = null;

@@ -7,13 +7,13 @@ public static class CreditCardCsvPreviewEndpoints
 {
     public static IEndpointRouteBuilder MapCreditCardCsvPreviewEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/families/{familyId:guid}/credit-cards/{cardId:guid}/imports").RequireAuthorization();
+        var group = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/credit-cards/{cardId:guid}/imports").RequireAuthorization();
         group.MapPost("/preview", Preview).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
     private static async Task<IResult> Preview(
-        Guid familyId,
+        Guid workspaceId,
         Guid cardId,
         HttpRequest request,
         CurrentUser user,
@@ -33,7 +33,7 @@ public static class CreditCardCsvPreviewEndpoints
             form["installmentNumberColumn"], form["installmentCountColumn"], form["externalIdColumn"], form["competenceColumn"],
             form["delimiter"], form["dateFormat"], form["decimalFormat"]);
         await using var stream = file.OpenReadStream();
-        var result = await service.PreviewAsync(familyId, cardId, userId, stream, file.Length, input, cancellationToken);
+        var result = await service.PreviewAsync(workspaceId, cardId, userId, stream, file.Length, input, cancellationToken);
         return result.Access switch
         {
             CreditCardCsvPreviewAccess.NotFound => Results.NotFound(),

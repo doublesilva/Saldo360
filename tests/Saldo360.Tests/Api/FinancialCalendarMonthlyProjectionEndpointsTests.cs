@@ -10,9 +10,9 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
     : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
-    private string _member = null!;
+    private string _ownerSecondSession = null!;
     private string _outsider = null!;
-    private FamilyDto _family = null!;
+    private WorkspaceDto _family = null!;
     private Guid _income;
     private Guid _expense;
 
@@ -24,7 +24,7 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
     {
         await ArrangeAsync();
         await CreateAccountAsync("Synthetic", "100.01", ThisMonth.AddMonths(-1));
-        var url = $"/api/families/{_family.Id}/financial-planning/six-months";
+        var url = $"/api/financial-workspaces/{_family.Id}/financial-planning/six-months";
         var response = await SendAsync(HttpMethod.Get, url, _owner);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -48,16 +48,16 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
         for (var index = 0; index < 2; index++)
         {
             var month = first.AddMonths(index);
-            var created = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/budgets", _owner,
+            var created = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/budgets", _owner,
                 new { competence = month.ToString("yyyy-MM") });
             Assert.Equal(HttpStatusCode.Created, created.StatusCode);
             var budget = (await ReadAsync<IdDto>(created)).Id; budgetIds.Add(budget);
-            var target = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/budgets/{budget}/targets", _owner,
+            var target = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/budgets/{budget}/targets", _owner,
                 new { name = "Synthetic", plannedAmount = "100.00", groupingType = "Category", categoryId = _expense });
             Assert.Equal(HttpStatusCode.Created, target.StatusCode);
             await CreatePlannedAsync(account, _expense, "Expense", index == 0 ? "120.01" : "100.00", month.AddDays(9), "Synthetic");
         }
-        var response = await SendAsync(HttpMethod.Get, $"/api/families/{_family.Id}/financial-planning/six-months?from={first:yyyy-MM}", _owner);
+        var response = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_family.Id}/financial-planning/six-months?from={first:yyyy-MM}", _owner);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var months = result.RootElement.GetProperty("months");
@@ -73,7 +73,7 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
         foreach (var budget in budgetIds)
         {
             using var execution = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get,
-                $"/api/families/{_family.Id}/budgets/{budget}/execution", _owner)).Content.ReadAsStringAsync());
+                $"/api/financial-workspaces/{_family.Id}/budgets/{budget}/execution", _owner)).Content.ReadAsStringAsync());
             Assert.Equal("100.00", execution.RootElement.GetProperty("total").GetProperty("planned").GetString());
         }
     }
@@ -81,10 +81,10 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
     private async Task ArrangeAsync()
     {
         _owner = await SignInAsync("dona-projecao-mensal");
-        _member = await SignInAsync("membro-projecao-mensal");
+        _ownerSecondSession = _owner;
         _outsider = await SignInAsync("estranho-projecao-mensal");
-        var created = await CreateFamilyAsync(_owner);
-        _family = await JoinByInvitationAsync(_owner, created.Id, _member);
+        var created = await CreateWorkspaceAsync(_owner);
+        _family = created;
         _income = await CreateCategoryAsync("Receitas mensais", "Income");
         _expense = await CreateCategoryAsync("Despesas mensais", "Expense");
     }
@@ -168,8 +168,8 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
                 consolidated.PendingIncome, consolidated.PendingExpense));
 
         var balances = await ReadAsync<BalancesDto>(await SendAsync(HttpMethod.Get,
-            $"/api/families/{_family.Id}/financial-calendar/balances?from={ThisMonth:yyyy-MM-dd}&through={ThisMonth.AddMonths(1).AddDays(-1):yyyy-MM-dd}&accountId={source}",
-            _member));
+            $"/api/financial-workspaces/{_family.Id}/financial-calendar/balances?from={ThisMonth:yyyy-MM-dd}&through={ThisMonth.AddMonths(1).AddDays(-1):yyyy-MM-dd}&accountId={source}",
+            _ownerSecondSession));
         Assert.Equal(balances.Days[^1].ClosingBalance, individual.ClosingBalance);
     }
 
@@ -181,9 +181,9 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
         await CreateAccountAsync("Sem saldo", null, null);
 
         Assert.Equal(HttpStatusCode.BadRequest,
-            (await SendAsync(HttpMethod.Get, $"/api/families/{_family.Id}/financial-calendar/monthly-projection?from=2026-1", _member)).StatusCode);
+            (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_family.Id}/financial-calendar/monthly-projection?from=2026-1", _ownerSecondSession)).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,
-            (await SendAsync(HttpMethod.Get, Url(null, ThisMonth, 13), _member)).StatusCode);
+            (await SendAsync(HttpMethod.Get, Url(null, ThisMonth, 13), _ownerSecondSession)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await SendAsync(HttpMethod.Get, Url(configured, ThisMonth, 1), _outsider)).StatusCode);
 
@@ -252,38 +252,38 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
     }
 
     private string Url(Guid? account, DateOnly from, int? months) =>
-        $"/api/families/{_family.Id}/financial-calendar/monthly-projection?from={from:yyyy-MM}"
+        $"/api/financial-workspaces/{_family.Id}/financial-calendar/monthly-projection?from={from:yyyy-MM}"
         + (months is { } count ? $"&months={count}" : string.Empty)
         + (account is { } id ? $"&accountId={id}" : string.Empty);
 
     private async Task<ProjectionDto> ProjectionAsync(Guid? account, DateOnly from, int? months)
     {
-        var response = await SendAsync(HttpMethod.Get, Url(account, from, months), _member);
+        var response = await SendAsync(HttpMethod.Get, Url(account, from, months), _ownerSecondSession);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await ReadAsync<ProjectionDto>(response);
     }
 
     private async Task<Guid> CreateAccountAsync(string name, string? balance, DateOnly? date)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/accounts", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/accounts", _owner,
             new { name, type = "Checking", financialScope = "PF", openingBalance = balance, openingBalanceDate = date });
         return (await ReadAsync<IdDto>(response)).Id;
     }
 
     private async Task<Guid> CreateCategoryAsync(string name, string type)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/categories", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/categories", _owner,
             new { name, type });
         return (await ReadAsync<IdDto>(response)).Id;
     }
 
     private async Task CreateTransactionAsync(Guid accountId, Guid categoryId, string type, string amount, DateOnly date, string description) =>
-        _ = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions", _owner,
+        _ = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions", _owner,
             new { accountId, categoryId, type, amount, transactionDate = date, description });
 
     private async Task<Guid> CreatePlannedAsync(Guid accountId, Guid categoryId, string type, string amount, DateOnly date, string description)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/planned-transactions", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/planned-transactions", _owner,
             new { accountId, categoryId, type, amount, dueDate = date, description });
         return (await ReadAsync<IdDto>(response)).Id;
     }
@@ -291,16 +291,16 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
     private async Task<Guid> RealizeAsync(Guid plannedId, string amount, DateOnly date)
     {
         var response = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/planned-transactions/{plannedId}/realize", _member,
+            $"/api/financial-workspaces/{_family.Id}/planned-transactions/{plannedId}/realize", _ownerSecondSession,
             new { amount, transactionDate = date });
         return (await ReadAsync<IdDto>(response)).Id;
     }
 
     private async Task CancelTransactionAsync(Guid id) =>
-        _ = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions/{id}/cancel", _member);
+        _ = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions/{id}/cancel", _ownerSecondSession);
 
     private async Task CreateTransferAsync(Guid source, Guid destination, string amount, DateOnly date) =>
-        _ = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transfers", _owner,
+        _ = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transfers", _owner,
             new { sourceAccountId = source, destinationAccountId = destination, amount, transferDate = date, description = "Transferência" });
 
     private sealed record IdDto(Guid Id);

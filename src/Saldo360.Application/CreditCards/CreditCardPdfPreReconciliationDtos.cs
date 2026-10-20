@@ -11,7 +11,7 @@ public enum CreditCardPdfComponentClassification
 }
 
 public sealed record CreditCardPdfDestinationValidation(
-    Guid FamilyId,
+    Guid WorkspaceId,
     Guid CreditCardId,
     string Family,
     string CreditCard,
@@ -101,7 +101,7 @@ public sealed record CreditCardPdfExistingOperation(
 public interface ICreditCardPdfPreReconciliationRepository
 {
     Task<CreditCardPdfPreReconciliationSnapshot?> GetSnapshotAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid cardId,
         Guid userId,
         string? competence,
@@ -111,7 +111,7 @@ public interface ICreditCardPdfPreReconciliationRepository
 public interface ICreditCardPdfPreReconciliationService
 {
     Task<CreditCardPdfPreReconciliationResult> PreReconcileAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid cardId,
         Guid userId,
         Stream pdf,

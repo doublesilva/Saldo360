@@ -36,11 +36,11 @@ export type PlannedReferences = { accounts: FinancialAccount[]; categories: Fina
  * (ex.: cancelar o lançamento efetivo reabre a previsão).
  */
 export function Planned({
-  familyId,
+  workspaceId,
   onChanged,
   refreshKey = 0,
 }: {
-  familyId: string
+  workspaceId: string
   onChanged?: () => void
   refreshKey?: number
 }) {
@@ -58,23 +58,23 @@ export function Planned({
   // Contas e categorias mudam em outras seções: recarrega ao abrir o formulário e após salvar.
   useEffect(() => {
     const controller = new AbortController()
-    Promise.all([listAccounts(familyId, true, controller.signal), listCategories(familyId, true, controller.signal)])
+    Promise.all([listAccounts(workspaceId, true, controller.signal), listCategories(workspaceId, true, controller.signal)])
       .then(([accounts, categories]) => setRefs({ kind: 'loaded', data: { accounts, categories } }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setRefs({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, reloadKey, editing])
+  }, [workspaceId, reloadKey, editing])
 
   useEffect(() => {
     const controller = new AbortController()
-    listPlanned(familyId, filters, pageNumber, controller.signal)
+    listPlanned(workspaceId, filters, pageNumber, controller.signal)
       .then((data) => setPage({ kind: 'loaded', data }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setPage({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, filters, pageNumber, reloadKey, refreshKey])
+  }, [workspaceId, filters, pageNumber, reloadKey, refreshKey])
 
   const reload = () => setReloadKey((n) => n + 1)
 
@@ -92,7 +92,7 @@ export function Planned({
     setCancellingId(planned.id)
     setActionError(null)
     try {
-      const result = await cancelPlanned(familyId, planned.id)
+      const result = await cancelPlanned(workspaceId, planned.id)
       if (!result.ok) setActionError(Object.values(result.errors).flat()[0] ?? 'Não foi possível cancelar.')
       reload()
       onChanged?.() // muda a projeção
@@ -106,7 +106,7 @@ export function Planned({
   if (realizing !== null) {
     return (
       <RealizeForm
-        familyId={familyId}
+        workspaceId={workspaceId}
         planned={realizing}
         onRealized={() => {
           setRealizing(null)
@@ -122,7 +122,7 @@ export function Planned({
     if (refs.kind !== 'loaded') return <p className="status status--pending">Carregando contas e categorias…</p>
     return (
       <PlannedForm
-        familyId={familyId}
+        workspaceId={workspaceId}
         references={refs.data}
         planned={editing === 'new' ? null : editing}
         onSaved={() => {
@@ -257,7 +257,7 @@ export function Planned({
                     {planned.status === 'Realized' && <span className="badge badge--realized">Realizada</span>}
                     {planned.status === 'Cancelled' && <span className="badge badge--cancelled">Cancelada</span>}
                   </div>
-                  {planned.realization && <RealizationSummary familyId={familyId} planned={planned} />}
+                  {planned.realization && <RealizationSummary workspaceId={workspaceId} planned={planned} />}
                   {planned.status === 'Pending' && (
                     <div className="form__actions">
                       <button type="button" className="button--primary" onClick={() => setRealizing(planned)}>
@@ -301,7 +301,7 @@ export function Planned({
  * Previsão realizada: valor previsto e valor efetivo lado a lado (nunca somados ou subtraídos aqui), data efetiva
  * e acesso ao lançamento efetivo, carregado sob demanda.
  */
-function RealizationSummary({ familyId, planned }: { familyId: string; planned: PlannedTransaction }) {
+function RealizationSummary({ workspaceId, planned }: { workspaceId: string; planned: PlannedTransaction }) {
   const [details, setDetails] = useState<Load<FinancialTransaction> | null>(null)
   const realization = planned.realization!
 
@@ -312,7 +312,7 @@ function RealizationSummary({ familyId, planned }: { familyId: string; planned: 
     }
 
     setDetails({ kind: 'loading' })
-    getTransaction(familyId, realization.transactionId)
+    getTransaction(workspaceId, realization.transactionId)
       .then((data) => setDetails({ kind: 'loaded', data }))
       .catch((error: unknown) => setDetails({ kind: 'error', message: errorMessage(error) }))
   }
@@ -345,12 +345,12 @@ function RealizationSummary({ familyId, planned }: { familyId: string; planned: 
  * Conta, categoria, tipo e descrição vêm da previsão. Pede confirmação antes de criar o lançamento efetivo.
  */
 export function RealizeForm({
-  familyId,
+  workspaceId,
   planned,
   onRealized,
   onCancel,
 }: {
-  familyId: string
+  workspaceId: string
   planned: PlannedTransaction
   onRealized: () => void
   onCancel: () => void
@@ -386,7 +386,7 @@ export function RealizeForm({
     setBusy(true)
     setErrors({})
     try {
-      const result = await realizePlanned(familyId, planned.id, { amount: amount.text, transactionDate: date })
+      const result = await realizePlanned(workspaceId, planned.id, { amount: amount.text, transactionDate: date })
       if (result.ok) onRealized()
       else setErrors(result.errors)
     } catch (error: unknown) {
@@ -471,13 +471,13 @@ type FormState = {
 }
 
 export function PlannedForm({
-  familyId,
+  workspaceId,
   references,
   planned,
   onSaved,
   onCancel,
 }: {
-  familyId: string
+  workspaceId: string
   references: PlannedReferences
   planned: PlannedTransaction | null
   onSaved: () => void
@@ -547,7 +547,7 @@ export function PlannedForm({
         amount: amount.text,
         dueDate: form.dueDate,
       }
-      const result = planned ? await updatePlanned(familyId, planned.id, input) : await createPlanned(familyId, input)
+      const result = planned ? await updatePlanned(workspaceId, planned.id, input) : await createPlanned(workspaceId, input)
       if (result.ok) onSaved()
       else setErrors(result.errors)
     } catch (error: unknown) {

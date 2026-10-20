@@ -1,3 +1,4 @@
+using Saldo360.Domain.Workspaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -5,7 +6,7 @@ using Npgsql;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Families;
 using Saldo360.Infrastructure.Categories;
-using Saldo360.Infrastructure.Families;
+using Saldo360.Infrastructure.Workspaces;
 using Saldo360.Infrastructure.Persistence;
 using Saldo360.Infrastructure.Users;
 using Saldo360.Tests.Support;
@@ -17,12 +18,12 @@ namespace Saldo360.Tests.Persistence;
 public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string PreviousMigration = "20261010165551_AddOpeningBalanceToFinancialAccounts";
-    private const string UniqueIndex = "ux_financial_categories_family_id_type_name";
+    private const string UniqueIndex = "ux_financial_categories_workspace_id_type_name";
 
     private string _connectionString = null!;
     private Guid _userA;
-    private Family _familyA = null!;
-    private Family _familyB = null!;
+    private FinancialWorkspace _familyA = null!;
+    private FinancialWorkspace _familyB = null!;
 
     public async Task InitializeAsync()
     {
@@ -31,9 +32,9 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         var users = new UserDirectory(db, TimeProvider.System);
         _userA = await users.ResolveAsync("https://auth.test.invalid", "a", "A", CancellationToken.None);
         var userB = await users.ResolveAsync("https://auth.test.invalid", "b", "B", CancellationToken.None);
-        _familyA = Family.Create("Família A", _userA, DateTimeOffset.UtcNow);
-        _familyB = Family.Create("Família B", userB, DateTimeOffset.UtcNow);
-        var families = new FamilyRepository(db);
+        _familyA = FinancialWorkspace.CreatePersonal(_userA, DateTimeOffset.UtcNow);
+        _familyB = FinancialWorkspace.CreatePersonal(userB, DateTimeOffset.UtcNow);
+        var families = new FinancialWorkspaceRepository(db);
         await families.AddAsync(_familyA, CancellationToken.None);
         await families.AddAsync(_familyB, CancellationToken.None);
     }
@@ -161,7 +162,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
 
         await using var delete = Db();
         var exception = await Assert.ThrowsAsync<PostgresException>(() => delete.Database.ExecuteSqlInterpolatedAsync(
-            $"DELETE FROM families WHERE id = {_familyA.Id}"));
+            $"DELETE FROM financial_workspaces WHERE id = {_familyA.Id}"));
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
     }
 
@@ -170,10 +171,10 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
     {
         // Volta ao esquema anterior, grava conta com saldo inicial, reaplica a migration das categorias.
         var accountId = Guid.CreateVersion7();
-        var memberId = _familyA.Members.Single().Id;
+        var memberId = _familyA.OwnerUserId;
         await using (var db = Db())
         {
-            await db.GetService<IMigrator>().MigrateAsync(PreviousMigration);
+            await HistoricalFinancialSchema.PrepareAsync(db, PreviousMigration);
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO financial_accounts (id, family_id, name, institution, type, scope, responsible_member_id, opening_balance, opening_balance_date, is_active, currency, created_at, created_by_user_id)
                 VALUES ({accountId}, {_familyA.Id}, 'Itaú PF', 'Itaú', 'Checking', 'PF', {memberId}, -1234.56, DATE '2026-10-01', TRUE, 'BRL', now(), {_userA})
@@ -184,7 +185,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         await using var verify = Db();
         var account = await verify.FinancialAccounts.SingleAsync(a => a.Id == accountId);
         Assert.Equal(("Itaú PF", -1234.56m, new DateOnly(2026, 10, 1), memberId),
-            (account.Name, account.OpeningBalance, account.OpeningBalanceDate, account.ResponsibleMemberId));
+            (account.Name, account.OpeningBalance, account.OpeningBalanceDate, account.ResponsibleUserId));
         Assert.Equal(2, await verify.Users.CountAsync());
         Assert.Equal(2, await verify.Families.CountAsync());
         Assert.Equal(0, await verify.FinancialCategories.CountAsync()); // nenhuma categoria criada automaticamente
@@ -192,8 +193,8 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 
-    private FinancialCategory Category(string name, CategoryType type = CategoryType.Expense, Guid? familyId = null) =>
-        FinancialCategory.Create(familyId ?? _familyA.Id, name, type, _userA, DateTimeOffset.UtcNow);
+    private FinancialCategory Category(string name, CategoryType type = CategoryType.Expense, Guid? workspaceId = null) =>
+        FinancialCategory.Create(workspaceId ?? _familyA.Id, name, type, _userA, DateTimeOffset.UtcNow);
 
     private async Task AddAsync(FinancialCategory category)
     {

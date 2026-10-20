@@ -14,13 +14,11 @@ namespace Saldo360.Tests.Infrastructure;
 [Collection(PostgresCollection.Name)]
 public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
-    private const string PreviousMigration = "20261016194924_AddFinancialGoalAllocations";
-
     [Fact]
     public async Task Migration_PreservesHistoricalPayments_AssignsDistinctRequiredIdentities_AndDoesNotDuplicateEffects()
     {
         var owner = await SignInAsync("migration-operation-owner");
-        var family = await CreateFamilyAsync(owner, "Família Migration T16.3");
+        var family = await CreateWorkspaceAsync(owner);
         var today = BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var account = await CreateAccountAsync(family.Id, owner, today);
         var category = await CreateCategoryAsync(family.Id, owner);
@@ -30,7 +28,7 @@ public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixtur
         var first = await CreatePaymentAsync(family.Id, owner, card, invoice, account, Guid.NewGuid(), "100.00", today);
         var second = await CreatePaymentAsync(family.Id, owner, card, invoice, account, Guid.NewGuid(), "50.00", today);
         var cancel = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{family.Id}/credit-cards/{card}/invoices/{invoice}/payments/{second}/cancel", owner);
+            $"/api/financial-workspaces/{family.Id}/credit-cards/{card}/invoices/{invoice}/payments/{second}/cancel", owner);
         Assert.Equal(HttpStatusCode.OK, cancel.StatusCode);
 
         await using (var before = Db())
@@ -42,9 +40,18 @@ public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixtur
         NpgsqlConnection.ClearAllPools();
         await using (var migrationContext = Db())
         {
-            var migrator = migrationContext.Database.GetService<IMigrator>();
-            await migrator.MigrateAsync(PreviousMigration);
-            await migrator.MigrateAsync();
+            // Exercise the historical operation-id transformation, not a destructive downgrade
+            // of the populated workspace root. Translate only the renamed scope identifier.
+            var assembly = migrationContext.GetService<IMigrationsAssembly>();
+            var type = assembly.Migrations.Single(x => x.Key.EndsWith("AddInvoicePaymentOperationIdentity", StringComparison.Ordinal)).Value;
+            var migration = assembly.CreateMigration(type, migrationContext.Database.ProviderName!);
+            var generator = migrationContext.GetService<IMigrationsSqlGenerator>();
+            await using var tx = await migrationContext.Database.BeginTransactionAsync();
+            foreach (var command in generator.Generate(migration.DownOperations).Concat(generator.Generate(migration.UpOperations)))
+                await migrationContext.Database.ExecuteSqlRawAsync(command.CommandText
+                    .Replace("ix_financial_credit_card_invoice_payments_family_id_operation_", "ix_financial_credit_card_invoice_payments_workspace_id_operati", StringComparison.Ordinal)
+                    .Replace("family_id", "workspace_id", StringComparison.Ordinal));
+            await tx.CommitAsync();
         }
         NpgsqlConnection.ClearAllPools();
 
@@ -71,41 +78,41 @@ public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixtur
             SELECT indexdef FROM pg_indexes
             WHERE schemaname = 'public'
               AND tablename = 'financial_credit_card_invoice_payments'
-              AND indexdef ILIKE '%UNIQUE%family_id%operation_id%'
+              AND indexdef ILIKE '%UNIQUE%workspace_id%operation_id%'
             """, connection);
         Assert.NotNull(await index.ExecuteScalarAsync());
     }
 
-    private async Task<Guid> CreateAccountAsync(Guid familyId, string owner, DateOnly today)
+    private async Task<Guid> CreateAccountAsync(Guid workspaceId, string owner, DateOnly today)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/accounts", owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/accounts", owner,
             new { name = "Conta migration", type = "Checking", financialScope = "PF", openingBalance = "1000.00", openingBalanceDate = today });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<JsonElement>(response)).GetProperty("id").GetGuid();
     }
 
-    private async Task<Guid> CreateCategoryAsync(Guid familyId, string owner)
+    private async Task<Guid> CreateCategoryAsync(Guid workspaceId, string owner)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/categories", owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/categories", owner,
             new { name = "Compras migration", type = "Expense" });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<JsonElement>(response)).GetProperty("id").GetGuid();
     }
 
-    private async Task<Guid> CreateCardAsync(Guid familyId, string owner, Guid account)
+    private async Task<Guid> CreateCardAsync(Guid workspaceId, string owner, Guid account)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/credit-cards", owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/credit-cards", owner,
             new { name = "Cartão migration", issuer = "Banco", creditLimit = "5000.00", closingDay = 10, dueDay = 20, defaultPaymentAccountId = account });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<JsonElement>(response)).GetProperty("id").GetGuid();
     }
 
-    private async Task<Guid> CreatePurchaseAndGetInvoiceAsync(Guid familyId, string owner, Guid card, Guid category)
+    private async Task<Guid> CreatePurchaseAndGetInvoiceAsync(Guid workspaceId, string owner, Guid card, Guid category)
     {
-        var purchase = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/credit-cards/{card}/purchases", owner,
+        var purchase = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/credit-cards/{card}/purchases", owner,
             new { description = "Compra histórica", purchaseDate = "2026-09-01", totalAmount = "300.00", installmentCount = 1, categoryId = category });
         Assert.Equal(HttpStatusCode.Created, purchase.StatusCode);
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/families/{familyId}/credit-cards/{card}/invoices?from=2026-09&through=2026-09");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/financial-workspaces/{workspaceId}/credit-cards/{card}/invoices?from=2026-09&through=2026-09");
         request.Headers.Add("Cookie", owner);
         var invoiceResponse = await Client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, invoiceResponse.StatusCode);
@@ -113,10 +120,10 @@ public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixtur
         return invoices[0].GetProperty("id").GetGuid();
     }
 
-    private async Task<Guid> CreatePaymentAsync(Guid familyId, string owner, Guid card, Guid invoice, Guid account, Guid operationId, string amount, DateOnly today)
+    private async Task<Guid> CreatePaymentAsync(Guid workspaceId, string owner, Guid card, Guid invoice, Guid account, Guid operationId, string amount, DateOnly today)
     {
         var response = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{familyId}/credit-cards/{card}/invoices/{invoice}/payments", owner,
+            $"/api/financial-workspaces/{workspaceId}/credit-cards/{card}/invoices/{invoice}/payments", owner,
             new { operationId, financialAccountId = account, paymentDate = today, amount });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<JsonElement>(response)).GetProperty("id").GetGuid();

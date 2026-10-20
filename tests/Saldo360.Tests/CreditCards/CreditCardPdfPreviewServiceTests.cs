@@ -102,7 +102,7 @@ public sealed class CreditCardPdfPreviewServiceTests
 
     private sealed class FakeContextRepository(string? lastFourDigits = null) : ICreditCardPdfContextRepository
     {
-        public Task<CreditCardPdfContext?> GetAsync(Guid familyId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
+        public Task<CreditCardPdfContext?> GetAsync(Guid workspaceId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
             Task.FromResult<CreditCardPdfContext?>(new("Banco Teste", HolderId, lastFourDigits));
     }
 

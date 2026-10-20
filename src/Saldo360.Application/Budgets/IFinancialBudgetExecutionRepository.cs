@@ -7,6 +7,6 @@ public interface IFinancialBudgetExecutionRepository
     /// Returns null when the budget does not exist in the family or is archived.
     /// </summary>
     Task<FinancialBudgetExecutionSource?> GetAsync(
-        Guid familyId, Guid budgetId, CancellationToken cancellationToken);
+        Guid workspaceId, Guid budgetId, CancellationToken cancellationToken);
 }
 

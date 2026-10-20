@@ -7,10 +7,10 @@ public sealed class CreditCardStatementAgentShadowService(
     IParserBackedCreditCardStatementExtractorAgent parserAgent,
     LlmCreditCardStatementExtractorAgent llmAgent) : ICreditCardStatementAgentShadowService
 {
-    public async Task<CreditCardStatementAgentShadowResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf,
+    public async Task<CreditCardStatementAgentShadowResult> PreviewAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
         long length, string fileName, string? competence, string? password, CancellationToken cancellationToken)
     {
-        var card = await context.GetAsync(familyId, cardId, userId, cancellationToken);
+        var card = await context.GetAsync(workspaceId, cardId, userId, cancellationToken);
         if (card is null) return new(CreditCardPdfPreviewAccess.NotFound, null, null);
         if (length <= 0 || length > CreditCardPdfPreviewService.MaxFileBytes || !fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             return Invalid("file", "Informe um arquivo PDF válido de até 10 MB.");

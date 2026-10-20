@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Planning;
 using Saldo360.Domain.Transactions;
 using Saldo360.Domain.Users;
@@ -49,38 +49,38 @@ internal sealed class FinancialTransactionConfiguration : IEntityTypeConfigurati
         builder.Property(transaction => transaction.Currency).HasMaxLength(3).IsFixedLength();
 
         // Listagem: data decrescente e Id decrescente (ordem estável), sempre filtrada por família.
-        builder.HasIndex(transaction => new { transaction.FamilyId, transaction.TransactionDate, transaction.Id })
+        builder.HasIndex(transaction => new { transaction.WorkspaceId, transaction.TransactionDate, transaction.Id })
             .IsDescending(false, true, true);
 
         // Restrict em todas as FKs: nada apaga lançamentos por cascata (histórico preservado).
-        builder.HasOne<Family>()
+        builder.HasOne<FinancialWorkspace>()
             .WithMany()
-            .HasForeignKey(transaction => transaction.FamilyId)
+            .HasForeignKey(transaction => transaction.WorkspaceId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // (family_id, account_id) → financial_accounts (family_id, id): conta da MESMA família.
+        // (workspace_id, account_id) → financial_accounts (workspace_id, id): conta da MESMA família.
         builder.HasOne<FinancialAccount>()
             .WithMany()
-            .HasForeignKey(transaction => new { transaction.FamilyId, transaction.AccountId })
-            .HasPrincipalKey(account => new { account.FamilyId, account.Id })
+            .HasForeignKey(transaction => new { transaction.WorkspaceId, transaction.AccountId })
+            .HasPrincipalKey(account => new { account.WorkspaceId, account.Id })
             .HasConstraintName("fk_financial_transactions_accounts_same_family")
             .OnDelete(DeleteBehavior.Restrict);
 
-        // (family_id, category_id, type) → financial_categories (family_id, id, type): categoria da MESMA
+        // (workspace_id, category_id, type) → financial_categories (workspace_id, id, type): categoria da MESMA
         // família e do MESMO tipo do lançamento. O tipo da categoria é imutável, então a FK nunca é quebrada.
         builder.HasOne<FinancialCategory>()
             .WithMany()
-            .HasForeignKey(transaction => new { transaction.FamilyId, transaction.CategoryId, transaction.Type })
-            .HasPrincipalKey(category => new { category.FamilyId, category.Id, category.Type })
+            .HasForeignKey(transaction => new { transaction.WorkspaceId, transaction.CategoryId, transaction.Type })
+            .HasPrincipalKey(category => new { category.WorkspaceId, category.Id, category.Type })
             .HasConstraintName("fk_financial_transactions_categories_same_family_type")
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Realização de previsão: (family_id, planned_transaction_id) → financial_planned_transactions (family_id, id),
+        // Realização de previsão: (workspace_id, planned_transaction_id) → financial_planned_transactions (workspace_id, id),
         // previsão da MESMA família. Nulo = lançamento avulso (FK não verificada, MATCH SIMPLE).
         builder.HasOne<FinancialPlannedTransaction>()
             .WithMany()
-            .HasForeignKey(transaction => new { transaction.FamilyId, transaction.PlannedTransactionId })
-            .HasPrincipalKey(planned => new { planned.FamilyId, planned.Id })
+            .HasForeignKey(transaction => new { transaction.WorkspaceId, transaction.PlannedTransactionId })
+            .HasPrincipalKey(planned => new { planned.WorkspaceId, planned.Id })
             .HasConstraintName("fk_financial_transactions_planned_same_family")
             .OnDelete(DeleteBehavior.Restrict);
 

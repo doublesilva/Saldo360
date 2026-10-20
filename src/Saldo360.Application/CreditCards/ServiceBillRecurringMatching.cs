@@ -16,12 +16,12 @@ public sealed record ServiceBillRecurringCandidateData(Guid OccurrenceId, Guid R
     DateOnly DueDate, decimal ProjectedAmount, bool AccountBindingMatch = false, bool ServiceBindingMatch = false);
 public interface IServiceBillRecurringCandidateRepository
 {
-    Task<IReadOnlyList<ServiceBillRecurringCandidateData>> ListAsync(Guid familyId, string competence, string documentType,
+    Task<IReadOnlyList<ServiceBillRecurringCandidateData>> ListAsync(Guid workspaceId, string competence, string documentType,
         string? accountReferenceHash, string? serviceReferenceHash, CancellationToken cancellationToken);
 }
 public interface IServiceBillRecurringMatchService
 {
-    Task<ServiceBillRecurringMatchResult> MatchAsync(Guid familyId, Guid documentId, ServiceBillExtractionOutput extraction, CancellationToken cancellationToken);
+    Task<ServiceBillRecurringMatchResult> MatchAsync(Guid workspaceId, Guid documentId, ServiceBillExtractionOutput extraction, CancellationToken cancellationToken);
 }
 public sealed class ServiceBillReconciliationOptions { public bool Enabled { get; set; } public bool ConfirmationEnabled { get; set; } public bool BindingEnabled { get; set; } }
 
@@ -45,13 +45,13 @@ public static class ServiceReferenceIdentity
 
 public sealed class ServiceBillRecurringMatchService(IServiceBillRecurringCandidateRepository repository) : IServiceBillRecurringMatchService
 {
-    public async Task<ServiceBillRecurringMatchResult> MatchAsync(Guid familyId, Guid documentId, ServiceBillExtractionOutput extraction, CancellationToken cancellationToken)
+    public async Task<ServiceBillRecurringMatchResult> MatchAsync(Guid workspaceId, Guid documentId, ServiceBillExtractionOutput extraction, CancellationToken cancellationToken)
     {
         var bill = extraction.Result;
         if (extraction.Assessment != "Reliable" || bill.DocumentType is not ("ElectricityBill" or "WaterBill" or "TelecomBill")
             || bill.Competence is null || bill.TotalAmount is null)
             return Result(ServiceBillRecurringMatchStatus.Rejected, [], ["ExtractionNotReliable"]);
-        var data = await repository.ListAsync(familyId, bill.Competence, bill.DocumentType,
+        var data = await repository.ListAsync(workspaceId, bill.Competence, bill.DocumentType,
             ServiceReferenceIdentity.Hash(bill.AccountReference), ServiceReferenceIdentity.Hash(bill.ServiceReference), cancellationToken);
         var plausible = new List<ServiceBillRecurringCandidate>(); var strong = new List<ServiceBillRecurringCandidate>();
         foreach (var candidate in data)
@@ -102,19 +102,19 @@ public sealed class ServiceBillRecurringMatchService(IServiceBillRecurringCandid
 public interface IServiceBillRecurringMatchPreviewService
 {
     Task<(FinancialDocumentClassificationAccess Access, ServiceBillRecurringMatchPreview? Preview, IDictionary<string, string[]>? Errors)> PreviewAsync(
-        Guid familyId, Guid id, Guid userId, string? password, CancellationToken cancellationToken);
+        Guid workspaceId, Guid id, Guid userId, string? password, CancellationToken cancellationToken);
 }
 public sealed class ServiceBillRecurringMatchPreviewService(ServiceBillPreviewService extraction, IServiceBillRecurringMatchService matching,
     ServiceBillReconciliationOptions options)
     : IServiceBillRecurringMatchPreviewService
 {
     public async Task<(FinancialDocumentClassificationAccess Access, ServiceBillRecurringMatchPreview? Preview, IDictionary<string, string[]>? Errors)> PreviewAsync(
-        Guid familyId, Guid id, Guid userId, string? password, CancellationToken cancellationToken)
+        Guid workspaceId, Guid id, Guid userId, string? password, CancellationToken cancellationToken)
     {
         if (!options.Enabled) return (FinancialDocumentClassificationAccess.Invalid, null, new Dictionary<string, string[]> { ["feature"] = ["A reconciliação experimental está desabilitada."] });
-        var extracted = await extraction.PreviewAsync(familyId, id, userId, password, cancellationToken);
+        var extracted = await extraction.PreviewAsync(workspaceId, id, userId, password, cancellationToken);
         if (extracted.Access != FinancialDocumentClassificationAccess.Allowed || extracted.Preview is null) return (extracted.Access, null, extracted.Errors);
         return (FinancialDocumentClassificationAccess.Allowed, new(extracted.Preview,
-            await matching.MatchAsync(familyId, id, extracted.Preview, cancellationToken)), null);
+            await matching.MatchAsync(workspaceId, id, extracted.Preview, cancellationToken)), null);
     }
 }

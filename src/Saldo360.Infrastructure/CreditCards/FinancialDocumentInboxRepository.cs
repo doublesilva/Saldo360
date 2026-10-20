@@ -8,19 +8,19 @@ namespace Saldo360.Infrastructure.CreditCards;
 
 internal sealed class FinancialDocumentInboxRepository(Saldo360DbContext db) : IFinancialDocumentInboxRepository
 {
-    public Task<bool> CanAccessFamilyAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>
-        db.FamilyMembers.AsNoTracking().AnyAsync(member => member.FamilyId == familyId && member.UserId == userId, cancellationToken);
-    public Task<bool> FamilyExistsAsync(Guid familyId, CancellationToken cancellationToken) => db.Families.AsNoTracking().AnyAsync(family => family.Id == familyId, cancellationToken);
-    public Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid familyId, string hash, CancellationToken cancellationToken) =>
-        db.FinancialDocumentInboxItems.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.ContentHash == hash, cancellationToken);
-    public Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid familyId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken) =>
-        db.FinancialDocumentInboxItems.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.Source == source && item.ExternalSourceId == externalId, cancellationToken);
-    public Task<FinancialDocumentInboxItem?> GetAsync(Guid familyId, Guid id, Guid userId, CancellationToken cancellationToken) =>
-        db.FinancialDocumentInboxItems.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.Id == id
-            && db.FamilyMembers.Any(member => member.FamilyId == familyId && member.UserId == userId), cancellationToken);
-    public async Task<IReadOnlyList<FinancialDocumentInboxItem>> ListAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>
-        await db.FinancialDocumentInboxItems.AsNoTracking().Where(item => item.FamilyId == familyId
-            && db.FamilyMembers.Any(member => member.FamilyId == familyId && member.UserId == userId))
+    public Task<bool> CanAccessWorkspaceAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>
+        db.FinancialWorkspaces.AsNoTracking().AnyAsync(member => member.Id == workspaceId && member.OwnerUserId == userId && member.IsActive && member.Type == Saldo360.Domain.Workspaces.FinancialWorkspaceType.Personal, cancellationToken);
+    public Task<bool> WorkspaceExistsAsync(Guid workspaceId, CancellationToken cancellationToken) => db.FinancialWorkspaces.AsNoTracking().AnyAsync(workspace => workspace.Id == workspaceId && workspace.IsActive && workspace.Type == Saldo360.Domain.Workspaces.FinancialWorkspaceType.Personal, cancellationToken);
+    public Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid workspaceId, string hash, CancellationToken cancellationToken) =>
+        db.FinancialDocumentInboxItems.SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.ContentHash == hash, cancellationToken);
+    public Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid workspaceId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken) =>
+        db.FinancialDocumentInboxItems.SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.Source == source && item.ExternalSourceId == externalId, cancellationToken);
+    public Task<FinancialDocumentInboxItem?> GetAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken cancellationToken) =>
+        db.FinancialDocumentInboxItems.SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.Id == id
+            && db.FinancialWorkspaces.Any(member => member.Id == workspaceId && member.OwnerUserId == userId && member.IsActive && member.Type == Saldo360.Domain.Workspaces.FinancialWorkspaceType.Personal), cancellationToken);
+    public async Task<IReadOnlyList<FinancialDocumentInboxItem>> ListAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>
+        await db.FinancialDocumentInboxItems.AsNoTracking().Where(item => item.WorkspaceId == workspaceId
+            && db.FinancialWorkspaces.Any(member => member.Id == workspaceId && member.OwnerUserId == userId && member.IsActive && member.Type == Saldo360.Domain.Workspaces.FinancialWorkspaceType.Personal))
             .OrderByDescending(item => item.ReceivedAt).Take(200).ToListAsync(cancellationToken);
     public async Task<bool> TryAddAsync(FinancialDocumentInboxItem item, CancellationToken cancellationToken)
     {

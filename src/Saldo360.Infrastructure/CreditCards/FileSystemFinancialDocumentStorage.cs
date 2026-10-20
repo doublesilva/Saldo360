@@ -11,9 +11,9 @@ internal sealed class FileSystemFinancialDocumentStorage : IFinancialDocumentSto
         Directory.CreateDirectory(root);
     }
 
-    public async Task<string> SaveAsync(Guid familyId, Guid documentId, Stream content, CancellationToken cancellationToken)
+    public async Task<string> SaveAsync(Guid workspaceId, Guid documentId, Stream content, CancellationToken cancellationToken)
     {
-        var reference = $"{familyId:N}/{documentId:N}.pdf";
+        var reference = $"workspaces/{workspaceId:N}/{documentId:N}.pdf";
         var target = Resolve(reference); Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         var temporary = target + ".tmp";
         try

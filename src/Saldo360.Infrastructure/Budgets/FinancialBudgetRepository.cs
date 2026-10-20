@@ -10,11 +10,11 @@ namespace Saldo360.Infrastructure.Budgets;
 
 internal sealed class FinancialBudgetRepository(Saldo360DbContext db) : IFinancialBudgetRepository
 {
-    public Task<bool> BudgetExistsAsync(Guid familyId, DateOnly competence, CancellationToken cancellationToken) =>
-        db.FinancialBudgets.AnyAsync(item => item.FamilyId == familyId && item.Competence == competence, cancellationToken);
+    public Task<bool> BudgetExistsAsync(Guid workspaceId, DateOnly competence, CancellationToken cancellationToken) =>
+        db.FinancialBudgets.AnyAsync(item => item.WorkspaceId == workspaceId && item.Competence == competence, cancellationToken);
 
-    public Task<FinancialBudget?> FindBudgetAsync(Guid familyId, Guid budgetId, CancellationToken cancellationToken) =>
-        db.FinancialBudgets.SingleOrDefaultAsync(item => item.FamilyId == familyId && item.Id == budgetId, cancellationToken);
+    public Task<FinancialBudget?> FindBudgetAsync(Guid workspaceId, Guid budgetId, CancellationToken cancellationToken) =>
+        db.FinancialBudgets.SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.Id == budgetId, cancellationToken);
 
     public Task<FinancialBudgetTarget?> FindTargetAsync(Guid budgetId, Guid targetId, CancellationToken cancellationToken) =>
         db.FinancialBudgetTargets.SingleOrDefaultAsync(item => item.BudgetId == budgetId && item.Id == targetId, cancellationToken);
@@ -22,9 +22,9 @@ internal sealed class FinancialBudgetRepository(Saldo360DbContext db) : IFinanci
     public Task<bool> TargetExistsAsync(Guid budgetId, Guid categoryId, CancellationToken cancellationToken) =>
         db.FinancialBudgetTargets.AnyAsync(item => item.BudgetId == budgetId && item.CategoryId == categoryId, cancellationToken);
 
-    public Task<BudgetCategoryState?> GetCategoryAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken) =>
+    public Task<BudgetCategoryState?> GetCategoryAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) =>
         db.FinancialCategories.AsNoTracking()
-            .Where(item => item.FamilyId == familyId && item.Id == categoryId)
+            .Where(item => item.WorkspaceId == workspaceId && item.Id == categoryId)
             .Select(item => new BudgetCategoryState(item.Name, item.IsActive, item.Type == CategoryType.Expense))
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -53,19 +53,19 @@ internal sealed class FinancialBudgetRepository(Saldo360DbContext db) : IFinanci
     }
 
     public async Task<IReadOnlyList<FinancialBudgetDto>> ListAsync(
-        Guid familyId, DateOnly? competence, bool includeArchived, CancellationToken cancellationToken)
+        Guid workspaceId, DateOnly? competence, bool includeArchived, CancellationToken cancellationToken)
     {
-        var query = db.FinancialBudgets.AsNoTracking().Where(item => item.FamilyId == familyId);
+        var query = db.FinancialBudgets.AsNoTracking().Where(item => item.WorkspaceId == workspaceId);
         if (competence is { } month) query = query.Where(item => item.Competence == month);
         if (!includeArchived) query = query.Where(item => !item.IsArchived);
         var entities = await query.OrderByDescending(item => item.Competence).ThenBy(item => item.Id).ToListAsync(cancellationToken);
         return await ProjectAsync(entities, cancellationToken);
     }
 
-    public async Task<FinancialBudgetDto?> GetAsync(Guid familyId, Guid budgetId, CancellationToken cancellationToken)
+    public async Task<FinancialBudgetDto?> GetAsync(Guid workspaceId, Guid budgetId, CancellationToken cancellationToken)
     {
         var entity = await db.FinancialBudgets.AsNoTracking()
-            .SingleOrDefaultAsync(item => item.FamilyId == familyId && item.Id == budgetId, cancellationToken);
+            .SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.Id == budgetId, cancellationToken);
         return entity is null ? null : (await ProjectAsync([entity], cancellationToken)).Single();
     }
 
@@ -76,8 +76,8 @@ internal sealed class FinancialBudgetRepository(Saldo360DbContext db) : IFinanci
         var targets = await (
             from target in db.FinancialBudgetTargets.AsNoTracking()
             join category in db.FinancialCategories.AsNoTracking()
-                on new { target.FamilyId, Id = target.CategoryId, target.CategoryType }
-                equals new { category.FamilyId, category.Id, CategoryType = category.Type }
+                on new { target.WorkspaceId, Id = target.CategoryId, target.CategoryType }
+                equals new { category.WorkspaceId, category.Id, CategoryType = category.Type }
             where ids.Contains(target.BudgetId)
             orderby target.IsArchived, target.Name, target.Id
             select new

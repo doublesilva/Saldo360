@@ -25,11 +25,11 @@ function accountLabel(account: TransferAccount): string {
 }
 
 /**
- * Transferências já realizadas entre contas da família (PF ↔ PJ ou mesmo escopo). Não são receita nem
+ * Transferências já realizadas entre contas do orçamento (PF ↔ PJ ou mesmo escopo). Não são receita nem
  * despesa: movem saldo da origem para o destino. Não há edição: para corrigir, cancelar e cadastrar de novo.
  * `onChanged` avisa quem exibe saldos que uma transferência foi criada ou cancelada.
  */
-export function Transfers({ familyId, onChanged }: { familyId: string; onChanged?: () => void }) {
+export function Transfers({ workspaceId, onChanged }: { workspaceId: string; onChanged?: () => void }) {
   const [accounts, setAccounts] = useState<Load<FinancialAccount[]>>({ kind: 'loading' })
   const [page, setPage] = useState<Load<TransferPage>>({ kind: 'loading' })
   const [filters, setFilters] = useState<TransferFilters>(emptyTransferFilters)
@@ -42,23 +42,23 @@ export function Transfers({ familyId, onChanged }: { familyId: string; onChanged
   // Contas mudam em outra seção: recarrega ao abrir o formulário e após salvar.
   useEffect(() => {
     const controller = new AbortController()
-    listAccounts(familyId, true, controller.signal)
+    listAccounts(workspaceId, true, controller.signal)
       .then((data) => setAccounts({ kind: 'loaded', data }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setAccounts({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, reloadKey, creating])
+  }, [workspaceId, reloadKey, creating])
 
   useEffect(() => {
     const controller = new AbortController()
-    listTransfers(familyId, filters, pageNumber, controller.signal)
+    listTransfers(workspaceId, filters, pageNumber, controller.signal)
       .then((data) => setPage({ kind: 'loaded', data }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setPage({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, filters, pageNumber, reloadKey])
+  }, [workspaceId, filters, pageNumber, reloadKey])
 
   const reload = () => setReloadKey((n) => n + 1)
 
@@ -77,7 +77,7 @@ export function Transfers({ familyId, onChanged }: { familyId: string; onChanged
     setCancellingId(transfer.id)
     setActionError(null)
     try {
-      const result = await cancelTransfer(familyId, transfer.id)
+      const result = await cancelTransfer(workspaceId, transfer.id)
       if (!result.ok) setActionError(Object.values(result.errors).flat()[0] ?? 'Não foi possível cancelar.')
       reload()
       onChanged?.()
@@ -92,7 +92,7 @@ export function Transfers({ familyId, onChanged }: { familyId: string; onChanged
     if (accounts.kind !== 'loaded') return <p className="status status--pending">Carregando contas…</p>
     return (
       <TransferForm
-        familyId={familyId}
+        workspaceId={workspaceId}
         accounts={accounts.data}
         onSaved={() => {
           setCreating(false)
@@ -212,12 +212,12 @@ export function Transfers({ familyId, onChanged }: { familyId: string; onChanged
 type FormState = { sourceAccountId: string; destinationAccountId: string; amount: string; transferDate: string; description: string }
 
 function TransferForm({
-  familyId,
+  workspaceId,
   accounts,
   onSaved,
   onCancel,
 }: {
-  familyId: string
+  workspaceId: string
   accounts: FinancialAccount[]
   onSaved: () => void
   onCancel: () => void
@@ -261,7 +261,7 @@ function TransferForm({
     setBusy(true)
     setErrors({})
     try {
-      const result = await createTransfer(familyId, {
+      const result = await createTransfer(workspaceId, {
         sourceAccountId: form.sourceAccountId,
         destinationAccountId: form.destinationAccountId,
         amount: amount.text,
@@ -306,7 +306,7 @@ function TransferForm({
     <form className="form transfers" onSubmit={handleSubmit} noValidate>
       <h3>Nova transferência</h3>
       <p className="meta">
-        Só transferências já realizadas, entre contas da família. A origem pode ficar negativa: o Saldo360 não bloqueia
+        Só transferências já realizadas, entre contas do orçamento. A origem pode ficar negativa: o Saldo360 não bloqueia
         por saldo insuficiente. Não há categoria: transferência não é receita nem despesa.
       </p>
 

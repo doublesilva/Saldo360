@@ -2,7 +2,7 @@ namespace Saldo360.Application.CreditCards;
 
 public sealed record FinancialPlannedInvoiceReconciliationDto(
     Guid Id,
-    Guid FamilyId,
+    Guid WorkspaceId,
     Guid PlannedTransactionId,
     Guid CreditCardInvoiceId,
     DateTimeOffset CreatedAt,

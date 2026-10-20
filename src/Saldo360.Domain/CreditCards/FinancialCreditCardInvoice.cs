@@ -7,7 +7,7 @@ public enum FinancialCreditCardInvoiceStatus { Open, Closed }
 public sealed class FinancialCreditCardInvoice : Entity
 {
     private FinancialCreditCardInvoice() { }
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid CreditCardId { get; private init; }
     public string Competence { get; private init; } = string.Empty;
     public DateOnly CycleStartDate { get; private init; }
@@ -15,9 +15,9 @@ public sealed class FinancialCreditCardInvoice : Entity
     public DateOnly DueDate { get; private init; }
     public DateTimeOffset CreatedAt { get; private init; }
 
-    public static FinancialCreditCardInvoice Create(Guid familyId, Guid cardId, string competence, DateOnly cycleStartDate, DateOnly closingDate, DateOnly dueDate, DateTimeOffset now) => new()
+    public static FinancialCreditCardInvoice Create(Guid workspaceId, Guid cardId, string competence, DateOnly cycleStartDate, DateOnly closingDate, DateOnly dueDate, DateTimeOffset now) => new()
     {
-        FamilyId = familyId, CreditCardId = cardId, Competence = competence, CycleStartDate = cycleStartDate,
+        WorkspaceId = workspaceId, CreditCardId = cardId, Competence = competence, CycleStartDate = cycleStartDate,
         ClosingDate = closingDate, DueDate = dueDate, CreatedAt = now,
     };
 

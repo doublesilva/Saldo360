@@ -219,7 +219,7 @@ afterEach(() => {
 describe('FinancialCalendarDetails', () => {
   it('parcela de dívida sem conta é consultiva, nunca consultada como lançamento', async () => {
     const { calls } = mockApi()
-    render(<FinancialCalendarDetails familyId="family-1" item={{ ...calendarItem(overdue), source: 'DebtInstallment', account: null, allowedActions: [] }} returnFocus={null} onClose={vi.fn()} onChanged={vi.fn()} />)
+    render(<FinancialCalendarDetails workspaceId="family-1" item={{ ...calendarItem(overdue), source: 'DebtInstallment', account: null, allowedActions: [] }} returnFocus={null} onClose={vi.fn()} onChanged={vi.fn()} />)
     expect(screen.getByText('Sem conta atribuída')).toBeTruthy()
     expect(screen.getByText(/consulte e altere pelo fluxo de Dívidas/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Realizar' })).toBeNull()
@@ -229,7 +229,7 @@ describe('FinancialCalendarDetails', () => {
   it('não inventa ações quando o backend devolve lista vazia', async () => {
     const { state } = mockApi()
     state.noActions = true
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Ver detalhes de Salário recebido' }))
     const dialog = await screen.findByRole('dialog')
     await waitFor(() => expect(within(dialog).queryByRole('status')).toBeNull())
@@ -240,7 +240,7 @@ describe('FinancialCalendarDetails', () => {
   it('estado cancelado consultado no detalhe prevalece sobre Pending da agenda antiga', async () => {
     const { state } = mockApi()
     state.cancelledDetail = true
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
     fireEvent.click(screen.getByRole('gridcell', { name: /10\/12\/2026/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Conta vencida' }))
@@ -254,7 +254,7 @@ describe('FinancialCalendarDetails', () => {
     const { state, calls } = mockApi()
     state.conflict = true
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
     fireEvent.click(screen.getByRole('gridcell', { name: /10\/12\/2026/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Conta vencida' }))
@@ -269,7 +269,7 @@ describe('FinancialCalendarDetails', () => {
 
   it('consulta previsão de origem sem mutação e distingue data/valor previstos dos efetivos', async () => {
     const { calls } = mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Ver detalhes de Aluguel realizado' }))
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Ver previsão de origem' }))
@@ -280,7 +280,7 @@ describe('FinancialCalendarDetails', () => {
 
   it('abre, exibe as propriedades disponíveis, gerencia foco e fecha por teclado', async () => {
     mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
     fireEvent.click(screen.getByRole('gridcell', { name: /20\/12\/2026/ }))
     const trigger = screen.getByRole('button', { name: 'Ver detalhes de Aluguel previsto' })
@@ -308,7 +308,7 @@ describe('FinancialCalendarDetails', () => {
 
   it('oferece ações conforme origem e impede editar uma realização vinculada', async () => {
     mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Salário recebido' }))
@@ -336,7 +336,7 @@ describe('FinancialCalendarDetails', () => {
     const { calls } = mockApi()
     const changed = vi.fn()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<FinancialCalendarPage familyId="family-1" onChanged={changed} />)
+    render(<FinancialCalendarPage workspaceId="family-1" onChanged={changed} />)
     await screen.findByText('Salário recebido')
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: inactiveAccount.id } })
     fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'Expense' } })
@@ -368,7 +368,7 @@ describe('FinancialCalendarDetails', () => {
 
   it('reutiliza a edição de previsão e mantém conta e categoria históricas selecionáveis', async () => {
     const { calls } = mockApi()
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
     fireEvent.click(screen.getByRole('gridcell', { name: /20\/12\/2026/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Aluguel previsto' }))
@@ -394,7 +394,7 @@ describe('FinancialCalendarDetails', () => {
   it('confirma cancelamentos com valor e consequência, inclusive a reabertura da previsão', async () => {
     const { calls } = mockApi()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
     fireEvent.click(screen.getByRole('gridcell', { name: /10\/12\/2026/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Conta vencida' }))
@@ -422,7 +422,7 @@ describe('FinancialCalendarDetails', () => {
     const { state } = mockApi()
     state.failNextAction = true
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<FinancialCalendarPage familyId="family-1" />)
+    render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByText('Salário recebido')
     fireEvent.click(screen.getByRole('gridcell', { name: /10\/12\/2026/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de Conta vencida' }))

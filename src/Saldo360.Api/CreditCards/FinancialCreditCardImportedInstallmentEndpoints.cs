@@ -8,7 +8,7 @@ public static class FinancialCreditCardImportedInstallmentEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialCreditCardImportedInstallmentEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/families/{familyId:guid}/credit-cards/{cardId:guid}/imports/installments").RequireAuthorization();
+        var group = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/credit-cards/{cardId:guid}/imports/installments").RequireAuthorization();
         group.MapPost("/matches", Matches).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/link", Link).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/historical", Historical).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -17,20 +17,20 @@ public static class FinancialCreditCardImportedInstallmentEndpoints
         return app;
     }
 
-    private static async Task<IResult> Matches(Guid familyId, Guid cardId, InstallmentRequest? request, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
-        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : Result(await service.FindMatchesAsync(familyId, cardId, userId, request?.ToInput(), cancellationToken), matches: true);
+    private static async Task<IResult> Matches(Guid workspaceId, Guid cardId, InstallmentRequest? request, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
+        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : Result(await service.FindMatchesAsync(workspaceId, cardId, userId, request?.ToInput(), cancellationToken), matches: true);
 
-    private static async Task<IResult> Link(Guid familyId, Guid cardId, InstallmentRequest? request, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
-        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : Result(await service.LinkAsync(familyId, cardId, userId, request?.ToInput(), cancellationToken));
+    private static async Task<IResult> Link(Guid workspaceId, Guid cardId, InstallmentRequest? request, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
+        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : Result(await service.LinkAsync(workspaceId, cardId, userId, request?.ToInput(), cancellationToken));
 
-    private static async Task<IResult> Historical(Guid familyId, Guid cardId, InstallmentRequest? request, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
-        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : Result(await service.CreateHistoricalAsync(familyId, cardId, userId, request?.ToInput(), cancellationToken));
+    private static async Task<IResult> Historical(Guid workspaceId, Guid cardId, InstallmentRequest? request, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
+        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : Result(await service.CreateHistoricalAsync(workspaceId, cardId, userId, request?.ToInput(), cancellationToken));
 
-    private static async Task<IResult> List(Guid familyId, Guid cardId, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
-        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : await service.ListAsync(familyId, cardId, userId, cancellationToken) is { } list ? Results.Ok(list) : Results.NotFound();
+    private static async Task<IResult> List(Guid workspaceId, Guid cardId, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
+        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : await service.ListAsync(workspaceId, cardId, userId, cancellationToken) is { } list ? Results.Ok(list) : Results.NotFound();
 
-    private static async Task<IResult> Cancel(Guid familyId, Guid cardId, Guid id, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
-        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : await service.CancelAsync(familyId, cardId, id, userId, cancellationToken) ? Results.NoContent() : Results.Conflict(new { message = "A obrigação não existe, não é histórica ou não pode ser cancelada após pagamentos." });
+    private static async Task<IResult> Cancel(Guid workspaceId, Guid cardId, Guid id, CurrentUser user, FinancialCreditCardImportedInstallmentService service, CancellationToken cancellationToken) =>
+        await user.GetUserIdAsync(cancellationToken) is not { } userId ? Results.Unauthorized() : await service.CancelAsync(workspaceId, cardId, id, userId, cancellationToken) ? Results.NoContent() : Results.Conflict(new { message = "A obrigação não existe, não é histórica ou não pode ser cancelada após pagamentos." });
 
     private static IResult Result(ImportedInstallmentOperationResult result, bool matches = false) => result.Access switch
     {

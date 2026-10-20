@@ -109,7 +109,7 @@ public sealed record CreditCardStatementAgentPreviewResult(
 
 public interface ICreditCardStatementAgentPreviewService
 {
-    Task<CreditCardStatementAgentPreviewResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf,
+    Task<CreditCardStatementAgentPreviewResult> PreviewAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
         long length, string fileName, string? competence, string? password, CancellationToken cancellationToken);
 }
 

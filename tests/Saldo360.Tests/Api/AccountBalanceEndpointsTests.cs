@@ -15,10 +15,10 @@ public sealed class AccountBalanceEndpointsTests(PostgresFixture postgres) : Pos
     private static readonly DateOnly Reference = new(2026, 9, 1);
 
     private string _owner = null!;
-    private string _member = null!;
+    private string _ownerSecondSession = null!;
     private string _outsider = null!;
-    private FamilyDto _family = null!;
-    private FamilyDto _otherFamily = null!;
+    private WorkspaceDto _family = null!;
+    private WorkspaceDto _otherFamily = null!;
     private Guid _salario;
     private Guid _mercado;
     private Guid _foreignCategory;
@@ -26,11 +26,11 @@ public sealed class AccountBalanceEndpointsTests(PostgresFixture postgres) : Pos
     private async Task ArrangeAsync()
     {
         _owner = await SignInAsync("dona");
-        _member = await SignInAsync("membro");
+        _ownerSecondSession = _owner;
         _outsider = await SignInAsync("estranho");
-        var created = await CreateFamilyAsync(_owner, "Família Silva");
-        _family = await JoinByInvitationAsync(_owner, created.Id, _member);
-        _otherFamily = await CreateFamilyAsync(_outsider, "Família Estranha");
+        var created = await CreateWorkspaceAsync(_owner, "Família Silva");
+        _family = created;
+        _otherFamily = await CreateWorkspaceAsync(_outsider, "Família Estranha");
         _salario = await CreateCategoryAsync(_owner, _family.Id, "Salário", "Income");
         _mercado = await CreateCategoryAsync(_owner, _family.Id, "Mercado", "Expense");
         _foreignCategory = await CreateCategoryAsync(_outsider, _otherFamily.Id, "Mercado", "Expense");
@@ -44,7 +44,7 @@ public sealed class AccountBalanceEndpointsTests(PostgresFixture postgres) : Pos
         await AddAsync(account, "Income", "500.00", Reference);
         await AddAsync(account, "Expense", "200.00", Reference);
 
-        var response = await SendAsync(HttpMethod.Get, BalanceUrl(account, Reference.AddDays(5)), _member);
+        var response = await SendAsync(HttpMethod.Get, BalanceUrl(account, Reference.AddDays(5)), _ownerSecondSession);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -235,7 +235,7 @@ public sealed class AccountBalanceEndpointsTests(PostgresFixture postgres) : Pos
         await AddAsync(itau, "Income", "1.00", Reference);
         await AddAsync(nubank, "Income", "1000.00", Reference);
         var foreign = await CreateAccountAsync("Conta Estranha", "100.00", Reference, _outsider, _otherFamily.Id);
-        await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_otherFamily.Id}/transactions", _outsider,
+        await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_otherFamily.Id}/transactions", _outsider,
             new { accountId = foreign, categoryId = _foreignCategory, type = "Expense", description = "X", amount = "50.00", transactionDate = Reference });
 
         Assert.Equal("101.00", (await GetBalanceAsync(itau, Reference)).Balance);
@@ -252,7 +252,7 @@ public sealed class AccountBalanceEndpointsTests(PostgresFixture postgres) : Pos
 
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, BalanceUrl(account), _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
-            (await SendAsync(HttpMethod.Get, $"/api/families/{_otherFamily.Id}/accounts/{account}/balance", _outsider)).StatusCode);
+            (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_otherFamily.Id}/accounts/{account}/balance", _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, BalanceUrl(foreign), _owner)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, BalanceUrl(Guid.CreateVersion7()), _owner)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await Client.GetAsync(BalanceUrl(account))).StatusCode);
@@ -282,22 +282,22 @@ public sealed class AccountBalanceEndpointsTests(PostgresFixture postgres) : Pos
         Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, $"{BalanceUrl(account)}?asOf=01/09/2026", _owner)).StatusCode);
     }
 
-    private string TransactionsUrl => $"/api/families/{_family.Id}/transactions";
+    private string TransactionsUrl => $"/api/financial-workspaces/{_family.Id}/transactions";
 
-    private string BalanceUrl(Guid account, DateOnly? asOf = null, Guid? familyId = null) =>
-        $"/api/families/{familyId ?? _family.Id}/accounts/{account}/balance" + (asOf is { } d ? $"?asOf={d:yyyy-MM-dd}" : string.Empty);
+    private string BalanceUrl(Guid account, DateOnly? asOf = null, Guid? workspaceId = null) =>
+        $"/api/financial-workspaces/{workspaceId ?? _family.Id}/accounts/{account}/balance" + (asOf is { } d ? $"?asOf={d:yyyy-MM-dd}" : string.Empty);
 
-    private async Task<BalanceDto> GetBalanceAsync(Guid account, DateOnly? asOf, string? session = null, Guid? familyId = null)
+    private async Task<BalanceDto> GetBalanceAsync(Guid account, DateOnly? asOf, string? session = null, Guid? workspaceId = null)
     {
-        var response = await SendAsync(HttpMethod.Get, BalanceUrl(account, asOf, familyId), session ?? _owner);
+        var response = await SendAsync(HttpMethod.Get, BalanceUrl(account, asOf, workspaceId), session ?? _owner);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await ReadAsync<BalanceDto>(response);
     }
 
     private async Task<Guid> CreateAccountAsync(
-        string name, string? openingBalance, DateOnly? openingBalanceDate, string? session = null, Guid? familyId = null)
+        string name, string? openingBalance, DateOnly? openingBalanceDate, string? session = null, Guid? workspaceId = null)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId ?? _family.Id}/accounts", session ?? _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId ?? _family.Id}/accounts", session ?? _owner,
             new { name, type = "Checking", financialScope = "PF", openingBalance, openingBalanceDate });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -305,21 +305,21 @@ public sealed class AccountBalanceEndpointsTests(PostgresFixture postgres) : Pos
 
     private async Task UpdateAccountAsync(Guid account, string name, string openingBalance, DateOnly openingBalanceDate, bool isActive = true)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Put, $"/api/families/{_family.Id}/accounts/{account}", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Put, $"/api/financial-workspaces/{_family.Id}/accounts/{account}", _owner,
             new { name, type = "Checking", financialScope = "PF", openingBalance, openingBalanceDate, isActive });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    private async Task<Guid> CreateCategoryAsync(string session, Guid familyId, string name, string type)
+    private async Task<Guid> CreateCategoryAsync(string session, Guid workspaceId, string name, string type)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/categories", session, new { name, type });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/categories", session, new { name, type });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
     }
 
     private async Task<Guid> AddAsync(Guid account, string type, string amount, DateOnly date)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, TransactionsUrl, _member, TransactionBody(account, type, amount, date));
+        var response = await SendWithCsrfAsync(HttpMethod.Post, TransactionsUrl, _ownerSecondSession, TransactionBody(account, type, amount, date));
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
     }

@@ -34,13 +34,13 @@ internal sealed class FinancialBudgetTargetConfiguration : IEntityTypeConfigurat
         builder.HasIndex(item => new { item.BudgetId, item.GroupingType, item.CategoryId })
             .IsUnique().HasDatabaseName(UniqueGroupingIndex);
         builder.HasOne<FinancialBudget>().WithMany()
-            .HasForeignKey(item => new { item.FamilyId, item.BudgetId })
-            .HasPrincipalKey(item => new { item.FamilyId, item.Id })
+            .HasForeignKey(item => new { item.WorkspaceId, item.BudgetId })
+            .HasPrincipalKey(item => new { item.WorkspaceId, item.Id })
             .HasConstraintName("fk_financial_budget_targets_budgets_same_family")
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<FinancialCategory>().WithMany()
-            .HasForeignKey(item => new { item.FamilyId, item.CategoryId, item.CategoryType })
-            .HasPrincipalKey(item => new { item.FamilyId, item.Id, item.Type })
+            .HasForeignKey(item => new { item.WorkspaceId, item.CategoryId, item.CategoryType })
+            .HasPrincipalKey(item => new { item.WorkspaceId, item.Id, item.Type })
             .HasConstraintName("fk_financial_budget_targets_categories_same_family_expense")
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);

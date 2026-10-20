@@ -36,7 +36,7 @@ describe('FinancialCalendarBudgetSummary', () => {
       targetExecution('reached', 'cat-reached', 'LimitReached', '100.00'),
       targetExecution('exceeded', 'cat-exceeded', 'Exceeded', '110.00'),
     ]))
-    render(<FinancialCalendarBudgetSummary familyId="family-1" competence="2026-10-01" onNavigateToBudgets={vi.fn()} />)
+    render(<FinancialCalendarBudgetSummary workspaceId="family-1" competence="2026-10-01" onNavigateToBudgets={vi.fn()} />)
     expect((await screen.findAllByText('Orçamento excedido')).length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText(/300,00/)).toBeTruthy()
     const names = screen.getAllByRole('listitem').map((item) => item.textContent)
@@ -49,7 +49,7 @@ describe('FinancialCalendarBudgetSummary', () => {
   it('informa ausência de orçamento e permite navegar preservando competência', async () => {
     vi.mocked(listBudgets).mockResolvedValue([])
     const navigate = vi.fn()
-    render(<FinancialCalendarBudgetSummary familyId="family-1" competence="2026-11-01" onNavigateToBudgets={navigate} />)
+    render(<FinancialCalendarBudgetSummary workspaceId="family-1" competence="2026-11-01" onNavigateToBudgets={navigate} />)
     expect(await screen.findByText('Nenhum orçamento definido para esta competência.')).toBeTruthy()
     screen.getByRole('button', { name: 'Ir para Orçamentos' }).click()
     expect(navigate).toHaveBeenCalledWith('2026-11')

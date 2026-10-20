@@ -37,7 +37,7 @@ public sealed record CreditCardStatementAgentShadowResult(CreditCardPdfPreviewAc
     CreditCardStatementAgentShadowPreview? Preview, IDictionary<string, string[]>? Errors);
 public interface ICreditCardStatementAgentShadowService
 {
-    Task<CreditCardStatementAgentShadowResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf, long length,
+    Task<CreditCardStatementAgentShadowResult> PreviewAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf, long length,
         string fileName, string? competence, string? password, CancellationToken cancellationToken);
 }
 

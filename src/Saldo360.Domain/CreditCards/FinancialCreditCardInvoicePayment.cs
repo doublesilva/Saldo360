@@ -8,7 +8,7 @@ public sealed class FinancialCreditCardInvoicePayment : Entity
 {
     private FinancialCreditCardInvoicePayment() { }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid InvoiceId { get; private init; }
     public Guid FinancialAccountId { get; private init; }
     public Guid TransactionId { get; private init; }
@@ -21,9 +21,9 @@ public sealed class FinancialCreditCardInvoicePayment : Entity
     public DateTimeOffset? CancelledAt { get; private set; }
     public Guid? CancelledByUserId { get; private set; }
 
-    public static FinancialCreditCardInvoicePayment Create(Guid familyId, Guid invoiceId, Guid accountId, Guid transactionId, Guid operationId, DateOnly paymentDate, decimal amount, Guid userId, DateTimeOffset now) => new()
+    public static FinancialCreditCardInvoicePayment Create(Guid workspaceId, Guid invoiceId, Guid accountId, Guid transactionId, Guid operationId, DateOnly paymentDate, decimal amount, Guid userId, DateTimeOffset now) => new()
     {
-        FamilyId = familyId, InvoiceId = invoiceId, FinancialAccountId = accountId, TransactionId = transactionId, OperationId = operationId,
+        WorkspaceId = workspaceId, InvoiceId = invoiceId, FinancialAccountId = accountId, TransactionId = transactionId, OperationId = operationId,
         PaymentDate = paymentDate, Amount = amount, CreatedAt = now, CreatedByUserId = userId,
         Status = FinancialCreditCardInvoicePaymentStatus.Active,
     };

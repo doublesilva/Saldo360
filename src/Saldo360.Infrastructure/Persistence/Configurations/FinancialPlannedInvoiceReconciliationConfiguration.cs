@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.CreditCards;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Planning;
 using Saldo360.Domain.Users;
 
@@ -18,20 +18,20 @@ internal sealed class FinancialPlannedInvoiceReconciliationConfiguration : IEnti
         });
         builder.HasKey(item => item.Id);
         builder.Property(item => item.Id).ValueGeneratedNever();
-        builder.HasIndex(item => new { item.FamilyId, item.PlannedTransactionId })
+        builder.HasIndex(item => new { item.WorkspaceId, item.PlannedTransactionId })
             .HasFilter("removed_at IS NULL").IsUnique();
-        builder.HasIndex(item => new { item.FamilyId, item.CreditCardInvoiceId })
+        builder.HasIndex(item => new { item.WorkspaceId, item.CreditCardInvoiceId })
             .HasFilter("removed_at IS NULL").IsUnique();
-        builder.HasIndex(item => new { item.FamilyId, item.CreatedAt });
-        builder.HasOne<Family>().WithMany().HasForeignKey(item => item.FamilyId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(item => new { item.WorkspaceId, item.CreatedAt });
+        builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(item => item.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<FinancialPlannedTransaction>().WithMany()
-            .HasForeignKey(item => new { item.FamilyId, item.PlannedTransactionId })
-            .HasPrincipalKey(item => new { item.FamilyId, item.Id })
+            .HasForeignKey(item => new { item.WorkspaceId, item.PlannedTransactionId })
+            .HasPrincipalKey(item => new { item.WorkspaceId, item.Id })
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_reconciliations_planned_same_family");
         builder.HasOne<FinancialCreditCardInvoice>().WithMany()
-            .HasForeignKey(item => new { item.FamilyId, item.CreditCardInvoiceId })
-            .HasPrincipalKey(item => new { item.FamilyId, item.Id })
+            .HasForeignKey(item => new { item.WorkspaceId, item.CreditCardInvoiceId })
+            .HasPrincipalKey(item => new { item.WorkspaceId, item.Id })
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_reconciliations_invoices_same_family");
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);

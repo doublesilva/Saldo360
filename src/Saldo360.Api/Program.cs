@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using System.Text.Json.Serialization;
 using Saldo360.Api.Accounts;
+using Saldo360.Api.Workspaces;
 using Saldo360.Api.Categories;
 using Saldo360.Api.Transactions;
 using Saldo360.Api.Transfers;
@@ -75,6 +76,7 @@ Saldo360.Api.ServiceAccounts.ServiceAccountEndpoints.MapServiceAccountEndpoints(
 app.MapFamilyEndpoints();
 app.MapFamilyInvitationEndpoints();
 app.MapFinancialAccountEndpoints();
+app.MapFinancialWorkspaceEndpoints();
 app.MapFinancialCategoryEndpoints();
 app.MapFinancialTransactionEndpoints();
 app.MapFinancialTransferEndpoints();

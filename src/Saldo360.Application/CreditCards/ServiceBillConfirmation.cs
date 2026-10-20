@@ -13,7 +13,7 @@ public sealed record ServiceBillConfirmationStoreResult(ServiceBillConfirmationS
 
 public interface IServiceBillConfirmationRepository
 {
-    Task<ServiceBillConfirmationStoreResult> ConfirmAsync(Guid familyId, Guid documentId, Guid userId, Guid occurrenceId,
+    Task<ServiceBillConfirmationStoreResult> ConfirmAsync(Guid workspaceId, Guid documentId, Guid userId, Guid occurrenceId,
         Guid recurrenceId, string competence, decimal confirmedAmount, DateTimeOffset now, CancellationToken cancellationToken);
 }
 
@@ -21,12 +21,12 @@ public sealed class ServiceBillConfirmationService(IServiceBillRecurringMatchPre
     IServiceBillConfirmationRepository repository, ServiceBillReconciliationOptions options, TimeProvider clock)
 {
     public async Task<(FinancialDocumentClassificationAccess Access, ServiceBillConfirmationResult? Result,
-        IDictionary<string, string[]>? Errors)> ConfirmAsync(Guid familyId, Guid documentId, Guid userId, string? password,
+        IDictionary<string, string[]>? Errors)> ConfirmAsync(Guid workspaceId, Guid documentId, Guid userId, string? password,
         CancellationToken cancellationToken)
     {
         if (!options.Enabled || !options.ConfirmationEnabled)
             return Invalid("feature", "A confirmação de contas de serviço está desabilitada.");
-        var reviewed = await preview.PreviewAsync(familyId, documentId, userId, password, cancellationToken);
+        var reviewed = await preview.PreviewAsync(workspaceId, documentId, userId, password, cancellationToken);
         if (reviewed.Access != FinancialDocumentClassificationAccess.Allowed || reviewed.Preview is null)
             return (reviewed.Access, null, reviewed.Errors);
         var extraction = reviewed.Preview.Extraction;
@@ -37,7 +37,7 @@ public sealed class ServiceBillConfirmationService(IServiceBillRecurringMatchPre
                 System.Globalization.CultureInfo.InvariantCulture, out var amount) || amount <= 0 || Money.Validate(amount, "O valor confirmado") is not null)
             return Invalid("document", "O documento não possui extração e associação confiáveis para confirmação.");
 
-        var stored = await repository.ConfirmAsync(familyId, documentId, userId, occurrenceId, recurrenceId, competence,
+        var stored = await repository.ConfirmAsync(workspaceId, documentId, userId, occurrenceId, recurrenceId, competence,
             amount, clock.GetUtcNow(), cancellationToken);
         if (stored.Status == ServiceBillConfirmationStoreStatus.Invalid)
             return Invalid("document", "A ocorrência deixou de ser elegível para confirmação.");

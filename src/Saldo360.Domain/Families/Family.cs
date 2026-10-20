@@ -3,7 +3,8 @@ using Saldo360.Domain.Common;
 namespace Saldo360.Domain.Families;
 
 /// <summary>
-/// Núcleo familiar: a unidade do orçamento conjunto. Nasce com exatamente um membro, o criador, como Owner.
+/// Núcleo social opcional. Não concede acesso aos workspaces pessoais.
+/// Nasce com exatamente um membro, o criador, como Owner social.
 /// Não há limite de membros.
 /// </summary>
 public sealed class Family : Entity

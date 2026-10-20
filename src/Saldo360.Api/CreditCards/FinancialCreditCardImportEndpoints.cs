@@ -8,16 +8,16 @@ public static class FinancialCreditCardImportEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialCreditCardImportEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/families/{familyId:guid}/credit-cards/{cardId:guid}/imports").RequireAuthorization();
+        var group = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/credit-cards/{cardId:guid}/imports").RequireAuthorization();
         group.MapPost("/confirm", Confirm).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
-    private static async Task<IResult> Confirm(Guid familyId, Guid cardId, ConfirmationRequest? request, CurrentUser user, FinancialCreditCardImportService service, CancellationToken cancellationToken)
+    private static async Task<IResult> Confirm(Guid workspaceId, Guid cardId, ConfirmationRequest? request, CurrentUser user, FinancialCreditCardImportService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         var input = request is null ? null : new CreditCardImportConfirmation(request.ImportId, request.Confirm, request.Items?.Select(item => item.ToInput()).ToList());
-        var result = await service.ConfirmAsync(familyId, cardId, userId, input, cancellationToken);
+        var result = await service.ConfirmAsync(workspaceId, cardId, userId, input, cancellationToken);
         return result.Access switch
         {
             CreditCardImportAccess.NotFound => Results.NotFound(),

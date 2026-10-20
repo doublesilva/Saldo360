@@ -70,7 +70,7 @@ export function toUserMessage(error: unknown): string {
     : normalized.kind === 'authentication'
       ? 'Sua sessão expirou. Entre novamente para continuar.'
       : normalized.kind === 'authorization'
-        ? 'Você não tem permissão para executar esta operação nesta família.'
+        ? 'Você não tem permissão para executar esta operação neste orçamento.'
         : normalized.kind === 'notFound'
           ? 'O recurso solicitado não foi encontrado ou não está mais disponível.'
           : normalized.kind === 'dependency'

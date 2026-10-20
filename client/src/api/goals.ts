@@ -1,12 +1,12 @@
 import { CSRF_HEADER, getCsrfToken } from './csrf'
 import { requestJson } from './apiErrors'
 export type GoalStatus='Active'|'Paused'|'Completed'|'Archived'
-export interface FinancialGoal { id:string; familyId:string; name:string; description:string|null; goalType:string; targetAmount:string; targetDate:string|null; priority:string; status:GoalStatus; currency:string; createdAt:string; updatedAt:string; completedAt:string|null; archivedAt:string|null }
-export interface GoalAllocation { id:string; familyId:string; goalId:string; financialAccountId:string; operationType:'Contribution'|'Withdrawal'; amount:string; effectiveDate:string; operationId:string; description:string|null; createdAt:string; cancelledAt:string|null }
+export interface FinancialGoal { id:string; workspaceId:string; name:string; description:string|null; goalType:string; targetAmount:string; targetDate:string|null; priority:string; status:GoalStatus; currency:string; createdAt:string; updatedAt:string; completedAt:string|null; archivedAt:string|null }
+export interface GoalAllocation { id:string; workspaceId:string; goalId:string; financialAccountId:string; operationType:'Contribution'|'Withdrawal'; amount:string; effectiveDate:string; operationId:string; description:string|null; createdAt:string; cancelledAt:string|null }
 export interface GoalProgress { goalId:string; targetAmount:string; allocatedAmount:string; remainingToTarget:string; progressPercentage:string; isFunded:boolean }
 export interface GoalAvailability { financialAccountId:string; realizedBalance:string; allocatedAmount:string; unallocatedBalance:string }
 export interface GoalSummary { allocatedToGoals:string; realizedBalance:string; unallocatedRealizedBalance:string; activeGoals:number; completedGoals:number; pausedGoals:number; coverageComplete:boolean; accounts:GoalAvailability[] }
-const base=(f:string,id?:string)=>`/api/families/${encodeURIComponent(f)}/financial-goals${id?`/${encodeURIComponent(id)}`:''}`
+const base=(f:string,id?:string)=>`/api/financial-workspaces/${encodeURIComponent(f)}/financial-goals${id?`/${encodeURIComponent(id)}`:''}`
 const headers={Accept:'application/json'}
 async function mutate<T>(url:string,body?:unknown,method='POST'){const r=await fetch(url,{method,headers:{...headers,'Content-Type':'application/json',[CSRF_HEADER]:await getCsrfToken()},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok)throw new Error(`Falha na operação (HTTP ${r.status}).`);return (r.status===204?undefined:await r.json()) as T}
 export async function listGoals(f:string,includeArchived=false,signal?:AbortSignal){const r=await fetch(`${base(f)}?includeArchived=${includeArchived}`,{signal,headers});if(!r.ok)throw new Error(`Falha ao carregar objetivos (HTTP ${r.status}).`);return await r.json() as FinancialGoal[]}

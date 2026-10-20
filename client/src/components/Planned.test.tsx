@@ -121,7 +121,7 @@ function fill(fields: Partial<Record<'Conta' | 'Categoria' | 'Descrição' | 'Va
 
 async function openNewForm(options?: Parameters<typeof mockApi>[0]) {
   const calls = mockApi(options)
-  render(<Planned familyId="f1" />)
+  render(<Planned workspaceId="f1" />)
   await screen.findByText('Aluguel de outubro')
   fireEvent.click(screen.getByRole('button', { name: 'Nova previsão' }))
   await screen.findByLabelText('Conta')
@@ -140,7 +140,7 @@ describe('isOverdue', () => {
 describe('Planned — lista', () => {
   it('mostra data prevista, valor exato, explica que não afeta o saldo e destaca só a vencida', async () => {
     const calls = mockApi()
-    render(<Planned familyId="f1" />)
+    render(<Planned workspaceId="f1" />)
 
     const overdue = (await screen.findByText('Aluguel de outubro')).closest('li')!
     expect(within(overdue).getByText('Vencida')).toBeTruthy()
@@ -156,13 +156,13 @@ describe('Planned — lista', () => {
     expect(screen.getByText('Vence hoje').closest('li')!.textContent).toMatch(/R\$\s0,10/)
 
     expect(screen.getByText(/não afetam o saldo realizado/)).toBeTruthy()
-    expect(listCalls(calls)[0].url).toBe('/api/families/f1/planned-transactions?page=1&pageSize=20')
+    expect(listCalls(calls)[0].url).toBe('/api/financial-workspaces/f1/planned-transactions?page=1&pageSize=20')
     expect(calls.some((c) => c.url.includes('/balance') || c.url.includes('/transactions'))).toBe(false)
   })
 
   it('mostra canceladas só sob pedido, sem "Vencida" e sem ações', async () => {
     const calls = mockApi()
-    render(<Planned familyId="f1" />)
+    render(<Planned workspaceId="f1" />)
     await screen.findByText('Aluguel de outubro')
     expect(screen.queryByText('Cancelada antiga')).toBeNull()
 
@@ -177,7 +177,7 @@ describe('Planned — lista', () => {
 
   it('filtra por período da data prevista, tipo, conta e categoria, e pagina', async () => {
     const calls = mockApi({ page: { totalCount: 45 } })
-    render(<Planned familyId="f1" />)
+    render(<Planned workspaceId="f1" />)
     expect(await screen.findByText(/Página 1 de 3 · 45 previsões/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Próxima' }))
@@ -204,7 +204,7 @@ describe('Planned — lista', () => {
   it('cancelar pede confirmação e usa o endpoint de cancelamento com CSRF', async () => {
     const calls = mockApi()
     const confirm = vi.spyOn(window, 'confirm')
-    render(<Planned familyId="f1" />)
+    render(<Planned workspaceId="f1" />)
     const item = (await screen.findByText('Aluguel de outubro')).closest('li')!
 
     confirm.mockReturnValueOnce(false)
@@ -216,7 +216,7 @@ describe('Planned — lista', () => {
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1))
     expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('não poderá mais ser editado'))
-    expect(writes(calls)[0].url).toBe('/api/families/f1/planned-transactions/p1/cancel')
+    expect(writes(calls)[0].url).toBe('/api/financial-workspaces/f1/planned-transactions/p1/cancel')
     expect((writes(calls)[0].init!.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
   })
 })
@@ -231,7 +231,7 @@ describe('Planned — formulário', () => {
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1))
     const post = writes(calls)[0]
-    expect(post.url).toBe('/api/families/f1/planned-transactions')
+    expect(post.url).toBe('/api/financial-workspaces/f1/planned-transactions')
     expect(JSON.parse(String(post.init!.body))).toEqual({
       accountId: itau.id,
       categoryId: salario.id,
@@ -298,7 +298,7 @@ describe('Planned — formulário', () => {
 
   it('edição mantém conta e categoria inativas e reenvia o valor exato', async () => {
     const calls = mockApi()
-    render(<Planned familyId="f1" />)
+    render(<Planned workspaceId="f1" />)
     const item = (await screen.findByText('Aluguel de outubro')).closest('li')!
     fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
     await screen.findByLabelText('Conta')
@@ -311,7 +311,7 @@ describe('Planned — formulário', () => {
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1))
     const put = writes(calls)[0]
-    expect(put.url).toBe('/api/families/f1/planned-transactions/p1')
+    expect(put.url).toBe('/api/financial-workspaces/f1/planned-transactions/p1')
     expect(JSON.parse(String(put.init!.body))).toEqual({
       accountId: antiga.id,
       categoryId: lazer.id,
@@ -324,7 +324,7 @@ describe('Planned — formulário', () => {
 
   it('edição do valor máximo preserva todos os centavos', async () => {
     const calls = mockApi()
-    render(<Planned familyId="f1" />)
+    render(<Planned workspaceId="f1" />)
     const item = (await screen.findByText('Salário de novembro')).closest('li')!
     fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
     await screen.findByLabelText('Conta')
@@ -338,7 +338,7 @@ describe('Planned — formulário', () => {
 
   it('exibe o 409 de previsão cancelada', async () => {
     mockApi({ saveStatus: 409, saveBody: { title: 'Previsão cancelada não pode ser editada.' } })
-    render(<Planned familyId="f1" />)
+    render(<Planned workspaceId="f1" />)
     const item = (await screen.findByText('Aluguel de outubro')).closest('li')!
     fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
     await screen.findByLabelText('Conta')
@@ -400,7 +400,7 @@ describe('Planned — realização', () => {
     const calls = mockRealization()
     const onChanged = vi.fn()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<Planned familyId="f1" onChanged={onChanged} />)
+    render(<Planned workspaceId="f1" onChanged={onChanged} />)
     const item = (await screen.findByText('Aluguel de outubro')).closest('li')!
 
     fireEvent.click(within(item).getByRole('button', { name: 'Realizar' }))
@@ -414,7 +414,7 @@ describe('Planned — realização', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
     expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/por R\$\s1\.850,50 em .*valor previsto \(R\$\s1\.800,00\) é mantido/))
     const post = realizeCalls(calls)[0]
-    expect(post.url).toBe('/api/families/f1/planned-transactions/p1/realize')
+    expect(post.url).toBe('/api/financial-workspaces/f1/planned-transactions/p1/realize')
     expect((post.init!.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
     expect(JSON.parse(String(post.init!.body))).toEqual({ amount: '1850.5', transactionDate: shift(-1) })
     expect(await screen.findByText('Aluguel de outubro')).toBeTruthy() // volta à lista
@@ -423,7 +423,7 @@ describe('Planned — realização', () => {
   it('não envia sem confirmação nem com valor/data inválidos', async () => {
     const calls = mockRealization()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    render(<Planned familyId="f1" />)
+    render(<Planned workspaceId="f1" />)
     fireEvent.click(within((await screen.findByText('Aluguel de outubro')).closest('li')!).getByRole('button', { name: 'Realizar' }))
 
     fireEvent.change(screen.getByLabelText('Data efetiva'), { target: { value: shift(1) } })
@@ -448,7 +448,7 @@ describe('Planned — realização', () => {
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const onChanged = vi.fn()
-    render(<Planned familyId="f1" onChanged={onChanged} />)
+    render(<Planned workspaceId="f1" onChanged={onChanged} />)
     fireEvent.click(within((await screen.findByText('Aluguel de outubro')).closest('li')!).getByRole('button', { name: 'Realizar' }))
     fireEvent.click(screen.getByRole('button', { name: 'Realizar' }))
 
@@ -458,7 +458,7 @@ describe('Planned — realização', () => {
 
   it('realizadas aparecem só sob pedido, com previsto e efetivo separados, sem "Vencida" nem ações, e acesso ao lançamento', async () => {
     const calls = mockRealization()
-    render(<Planned familyId="f1" />)
+    render(<Planned workspaceId="f1" />)
     await screen.findByText('Aluguel de outubro')
     expect(screen.queryByText('Aluguel de setembro')).toBeNull()
 
@@ -475,16 +475,16 @@ describe('Planned — realização', () => {
 
     fireEvent.click(within(item).getByRole('button', { name: 'Ver lançamento' }))
     expect(await within(item).findByText(/Lançamento efetivo: Aluguel de setembro · R\$\s210,00 · 10\/09\/2026 · Itaú PF · Aluguel/)).toBeTruthy()
-    expect(calls.some((c) => c.url === '/api/families/f1/transactions/t-efetivo')).toBe(true)
+    expect(calls.some((c) => c.url === '/api/financial-workspaces/f1/transactions/t-efetivo')).toBe(true)
   })
 
   it('recarrega quando outra seção muda as finanças (refreshKey)', async () => {
     const calls = mockRealization()
-    const { rerender } = render(<Planned familyId="f1" refreshKey={0} />)
+    const { rerender } = render(<Planned workspaceId="f1" refreshKey={0} />)
     await screen.findByText('Aluguel de outubro')
     const before = calls.filter((c) => c.url.includes('/planned-transactions?')).length
 
-    rerender(<Planned familyId="f1" refreshKey={1} />)
+    rerender(<Planned workspaceId="f1" refreshKey={1} />)
 
     await waitFor(() => expect(calls.filter((c) => c.url.includes('/planned-transactions?')).length).toBe(before + 1))
   })
@@ -495,7 +495,7 @@ describe('Planned — avisa a projeção', () => {
     mockApi()
     const onChanged = vi.fn()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<Planned familyId="f1" onChanged={onChanged} />)
+    render(<Planned workspaceId="f1" onChanged={onChanged} />)
     await screen.findByText('Aluguel de outubro')
 
     fireEvent.click(screen.getByRole('button', { name: 'Nova previsão' }))

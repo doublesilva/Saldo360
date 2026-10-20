@@ -6,19 +6,19 @@ namespace Saldo360.Application.CreditCards;
 
 public interface IFinancialDocumentStorage
 {
-    Task<string> SaveAsync(Guid familyId, Guid documentId, Stream content, CancellationToken cancellationToken);
+    Task<string> SaveAsync(Guid workspaceId, Guid documentId, Stream content, CancellationToken cancellationToken);
     Task<Stream?> OpenReadAsync(string reference, CancellationToken cancellationToken);
     Task DeleteAsync(string reference, CancellationToken cancellationToken);
 }
 
 public interface IFinancialDocumentInboxRepository
 {
-    Task<bool> CanAccessFamilyAsync(Guid familyId, Guid userId, CancellationToken cancellationToken);
-    Task<bool> FamilyExistsAsync(Guid familyId, CancellationToken cancellationToken);
-    Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid familyId, string hash, CancellationToken cancellationToken);
-    Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid familyId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken);
-    Task<FinancialDocumentInboxItem?> GetAsync(Guid familyId, Guid id, Guid userId, CancellationToken cancellationToken);
-    Task<IReadOnlyList<FinancialDocumentInboxItem>> ListAsync(Guid familyId, Guid userId, CancellationToken cancellationToken);
+    Task<bool> CanAccessWorkspaceAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken);
+    Task<bool> WorkspaceExistsAsync(Guid workspaceId, CancellationToken cancellationToken);
+    Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid workspaceId, string hash, CancellationToken cancellationToken);
+    Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid workspaceId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken);
+    Task<FinancialDocumentInboxItem?> GetAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<FinancialDocumentInboxItem>> ListAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken);
     Task<bool> TryAddAsync(FinancialDocumentInboxItem item, CancellationToken cancellationToken);
     Task SaveAsync(CancellationToken cancellationToken);
 }
@@ -43,23 +43,23 @@ public sealed class FinancialDocumentInboxService(
     IFinancialDocumentAnalysisRouter analysisRouter,
     TimeProvider clock)
 {
-    public async Task<FinancialDocumentInboxReceiveResult> ReceiveAsync(Guid familyId, Guid userId, Stream content, long length,
+    public async Task<FinancialDocumentInboxReceiveResult> ReceiveAsync(Guid workspaceId, Guid userId, Stream content, long length,
         string fileName, string contentType, FinancialDocumentSource source, string? externalSourceId, Guid? selectedCardId,
         string? password, CancellationToken cancellationToken) =>
-        await ReceiveCoreAsync(familyId, userId, true, content, length, fileName, contentType, source, externalSourceId, selectedCardId, password, null, cancellationToken);
+        await ReceiveCoreAsync(workspaceId, userId, true, content, length, fileName, contentType, source, externalSourceId, selectedCardId, password, null, cancellationToken);
 
-    public async Task<FinancialDocumentInboxReceiveResult> ReceiveAutomationAsync(Guid familyId, Stream content, long length,
+    public async Task<FinancialDocumentInboxReceiveResult> ReceiveAutomationAsync(Guid workspaceId, Stream content, long length,
         string fileName, string contentType, string externalSourceId, DateTimeOffset receivedAt, CancellationToken cancellationToken) =>
-        await ReceiveCoreAsync(familyId, null, false, content, length, fileName, contentType, FinancialDocumentSource.Email,
+        await ReceiveCoreAsync(workspaceId, null, false, content, length, fileName, contentType, FinancialDocumentSource.Email,
             externalSourceId, null, null, receivedAt, cancellationToken);
 
-    private async Task<FinancialDocumentInboxReceiveResult> ReceiveCoreAsync(Guid familyId, Guid? userId, bool requireMembership, Stream content, long length,
+    private async Task<FinancialDocumentInboxReceiveResult> ReceiveCoreAsync(Guid workspaceId, Guid? userId, bool requireMembership, Stream content, long length,
         string fileName, string contentType, FinancialDocumentSource source, string? externalSourceId, Guid? selectedCardId,
         string? password, DateTimeOffset? receivedAt, CancellationToken cancellationToken)
     {
         var authorized = requireMembership
-            ? userId is { } memberId && await repository.CanAccessFamilyAsync(familyId, memberId, cancellationToken)
-            : await repository.FamilyExistsAsync(familyId, cancellationToken);
+            ? userId is { } memberId && await repository.CanAccessWorkspaceAsync(workspaceId, memberId, cancellationToken)
+            : await repository.WorkspaceExistsAsync(workspaceId, cancellationToken);
         if (!authorized) return new("NotFound", null);
         if (length <= 0 || length > CreditCardPdfPreviewService.MaxFileBytes || !fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             return Invalid("file", length <= 0 ? "O arquivo PDF está vazio." : length > CreditCardPdfPreviewService.MaxFileBytes ? "O arquivo excede o limite de 10 MB." : "O arquivo deve ter extensão .pdf.");
@@ -70,23 +70,23 @@ public sealed class FinancialDocumentInboxService(
         using var buffer = new MemoryStream((int)length);
         await content.CopyToAsync(buffer, cancellationToken);
         var hash = Convert.ToHexStringLower(SHA256.HashData(buffer.ToArray()));
-        if (!string.IsNullOrWhiteSpace(externalSourceId) && await repository.FindByExternalIdAsync(familyId, source, externalSourceId.Trim(), cancellationToken) is { } external)
+        if (!string.IsNullOrWhiteSpace(externalSourceId) && await repository.FindByExternalIdAsync(workspaceId, source, externalSourceId.Trim(), cancellationToken) is { } external)
             return external.ContentHash == hash ? new("AlreadyExists", Map(external)) : new("Conflict", Map(external));
-        if (await repository.FindByHashAsync(familyId, hash, cancellationToken) is { } known) return new("AlreadyExists", Map(known));
+        if (await repository.FindByHashAsync(workspaceId, hash, cancellationToken) is { } known) return new("AlreadyExists", Map(known));
 
         var id = Guid.NewGuid();
         buffer.Position = 0;
-        var reference = await storage.SaveAsync(familyId, id, buffer, cancellationToken);
+        var reference = await storage.SaveAsync(workspaceId, id, buffer, cancellationToken);
         var now = clock.GetUtcNow();
-        var item = FinancialDocumentInboxItem.Create(id, familyId, source, externalSourceId, safeFileName, hash,
+        var item = FinancialDocumentInboxItem.Create(id, workspaceId, source, externalSourceId, safeFileName, hash,
             "application/pdf", reference, receivedAt ?? now, now);
         try
         {
             if (!await repository.TryAddAsync(item, cancellationToken))
             {
                 await storage.DeleteAsync(reference, CancellationToken.None);
-                var concurrent = await repository.FindByHashAsync(familyId, hash, cancellationToken)
-                    ?? (!string.IsNullOrWhiteSpace(externalSourceId) ? await repository.FindByExternalIdAsync(familyId, source, externalSourceId.Trim(), cancellationToken) : null);
+                var concurrent = await repository.FindByHashAsync(workspaceId, hash, cancellationToken)
+                    ?? (!string.IsNullOrWhiteSpace(externalSourceId) ? await repository.FindByExternalIdAsync(workspaceId, source, externalSourceId.Trim(), cancellationToken) : null);
                 return concurrent is null ? new("Conflict", null) : new(concurrent.ContentHash == hash ? "AlreadyExists" : "Conflict", Map(concurrent));
             }
         }
@@ -128,7 +128,7 @@ public sealed class FinancialDocumentInboxService(
                 }
             }
             var preview = extractor.Parse(document, item.OriginalFileName, null, null);
-            var resolution = await resolver.ResolveAsync(item.FamilyId, preview.Statement.Issuer, preview.Statement.CardLastDigits, null, cancellationToken);
+            var resolution = await resolver.ResolveAsync(item.WorkspaceId, preview.Statement.Issuer, preview.Statement.CardLastDigits, null, cancellationToken);
             var cardId = resolution.Status == CreditCardStatementResolutionStatus.Matched ? resolution.CardId : null;
             var ready = preview.Parser != "Generic" && preview.Reconciliation?.Status == "Reconciled" && cardId is not null;
             item.CompleteAnalysis(preview.Parser, preview.Statement.Competence, cardId,
@@ -149,23 +149,23 @@ public sealed class FinancialDocumentInboxService(
         }
     }
 
-    public async Task<FinancialDocumentInboxDto?> ReprocessAsync(Guid familyId, Guid id, Guid userId, Guid? selectedCardId, string? password, CancellationToken cancellationToken)
+    public async Task<FinancialDocumentInboxDto?> ReprocessAsync(Guid workspaceId, Guid id, Guid userId, Guid? selectedCardId, string? password, CancellationToken cancellationToken)
     {
-        var item = await repository.GetAsync(familyId, id, userId, cancellationToken);
+        var item = await repository.GetAsync(workspaceId, id, userId, cancellationToken);
         if (item is null) return null;
         await ProcessCoreAsync(item, userId, selectedCardId ?? item.CreditCardId, password, cancellationToken);
         return Map(item);
     }
 
-    public async Task<IReadOnlyList<FinancialDocumentInboxDto>?> ListAsync(Guid familyId, Guid userId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<FinancialDocumentInboxDto>?> ListAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken)
     {
-        if (!await repository.CanAccessFamilyAsync(familyId, userId, cancellationToken)) return null;
-        return (await repository.ListAsync(familyId, userId, cancellationToken)).Select(Map).ToList();
+        if (!await repository.CanAccessWorkspaceAsync(workspaceId, userId, cancellationToken)) return null;
+        return (await repository.ListAsync(workspaceId, userId, cancellationToken)).Select(Map).ToList();
     }
 
-    public async Task<FinancialDocumentInboxDto?> IgnoreAsync(Guid familyId, Guid id, Guid userId, CancellationToken cancellationToken)
+    public async Task<FinancialDocumentInboxDto?> IgnoreAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken cancellationToken)
     {
-        var item = await repository.GetAsync(familyId, id, userId, cancellationToken); if (item is null) return null;
+        var item = await repository.GetAsync(workspaceId, id, userId, cancellationToken); if (item is null) return null;
         item.Ignore(clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return Map(item);
     }
 
@@ -196,7 +196,7 @@ public sealed class FinancialDocumentInboxService(
             CreditCardPdfPreview preview;
             if (selectedCardId is { } cardId)
             {
-                var result = await previewService.PreviewAsync(item.FamilyId, cardId, userId, stored, stored.Length,
+                var result = await previewService.PreviewAsync(item.WorkspaceId, cardId, userId, stored, stored.Length,
                     item.OriginalFileName, null, null, null, password, cancellationToken);
                 if (result.Access != CreditCardPdfPreviewAccess.Allowed) { item.Fail("PdfAnalysisFailed", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
                 preview = result.Preview!;
@@ -207,7 +207,7 @@ public sealed class FinancialDocumentInboxService(
                 var document = classifiedDocument ?? await extractor.ExtractAsync(stored, CreditCardPdfPreviewService.MaxPages, passwords, cancellationToken);
                 if (document.Pages.Count == 0 || document.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) { item.Fail("TextUnavailable", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
                 preview = extractor.Parse(document, item.OriginalFileName, null, null);
-                var resolution = await resolver.ResolveAsync(item.FamilyId, preview.Statement.Issuer, preview.Statement.CardLastDigits, userId, cancellationToken);
+                var resolution = await resolver.ResolveAsync(item.WorkspaceId, preview.Statement.Issuer, preview.Statement.CardLastDigits, userId, cancellationToken);
                 selectedCardId = resolution.Status == CreditCardStatementResolutionStatus.Matched ? resolution.CardId : null;
             }
             var ready = preview.Parser != "Generic" && preview.Reconciliation?.Status == "Reconciled" && selectedCardId is not null;
@@ -245,15 +245,15 @@ public sealed class FinancialDocumentInboxReviewService(
     IFinancialDocumentStorage storage,
     ICreditCardPdfPreReconciliationService preReconciliation)
 {
-    public async Task<CreditCardPdfPreReconciliationResult> ReviewAsync(Guid familyId, Guid inboxItemId, Guid cardId,
+    public async Task<CreditCardPdfPreReconciliationResult> ReviewAsync(Guid workspaceId, Guid inboxItemId, Guid cardId,
         Guid userId, string? password, CancellationToken cancellationToken)
     {
-        var item = await repository.GetAsync(familyId, inboxItemId, userId, cancellationToken);
+        var item = await repository.GetAsync(workspaceId, inboxItemId, userId, cancellationToken);
         if (item is null) return new(CreditCardPdfPreviewAccess.NotFound, null, null);
         await using var content = await storage.OpenReadAsync(item.StorageReference, cancellationToken);
         if (content is null) return new(CreditCardPdfPreviewAccess.Invalid, null,
             new Dictionary<string, string[]> { ["document"] = ["O documento armazenado não está disponível."] });
-        return await preReconciliation.PreReconcileAsync(familyId, cardId, userId, content, content.Length,
+        return await preReconciliation.PreReconcileAsync(workspaceId, cardId, userId, content, content.Length,
             item.OriginalFileName, null, item.Competence, null, password, cancellationToken);
     }
 }
@@ -264,15 +264,15 @@ public sealed class FinancialDocumentInboxConfirmationService(
     CreditCardPdfConfirmationService confirmation,
     TimeProvider clock)
 {
-    public async Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(Guid familyId, Guid inboxItemId, Guid cardId, Guid userId,
+    public async Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(Guid workspaceId, Guid inboxItemId, Guid cardId, Guid userId,
         string? password, CreditCardPdfConfirmationInput input, CancellationToken cancellationToken)
     {
-        var item = await repository.GetAsync(familyId, inboxItemId, userId, cancellationToken);
+        var item = await repository.GetAsync(workspaceId, inboxItemId, userId, cancellationToken);
         if (item is null) return new(CreditCardPdfConfirmationAccess.NotFound);
         await using var content = await storage.OpenReadAsync(item.StorageReference, cancellationToken);
         if (content is null) return new(CreditCardPdfConfirmationAccess.Invalid, null,
             new Dictionary<string, string[]> { ["document"] = ["O documento armazenado não está disponível."] });
-        var result = await confirmation.ConfirmAsync(familyId, cardId, userId, content, content.Length, item.OriginalFileName,
+        var result = await confirmation.ConfirmAsync(workspaceId, cardId, userId, content, content.Length, item.OriginalFileName,
             null, item.Competence, null, password, input, cancellationToken);
         if (result.Access == CreditCardPdfConfirmationAccess.Allowed)
         {

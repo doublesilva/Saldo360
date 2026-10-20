@@ -26,7 +26,7 @@ public sealed record CreditCardPdfTrustedConfirmation(
 
 public interface ICreditCardPdfConfirmationRepository
 {
-    Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(Guid familyId, Guid cardId, Guid userId, CreditCardPdfTrustedConfirmation confirmation, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(Guid workspaceId, Guid cardId, Guid userId, CreditCardPdfTrustedConfirmation confirmation, DateTimeOffset now, CancellationToken cancellationToken);
 }
 
 public sealed class CreditCardPdfConfirmationService(
@@ -35,13 +35,13 @@ public sealed class CreditCardPdfConfirmationService(
     TimeProvider clock)
 {
     public async Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(
-        Guid familyId, Guid cardId, Guid userId, Stream pdf, long length, string fileName,
+        Guid workspaceId, Guid cardId, Guid userId, Stream pdf, long length, string fileName,
         string? issuerProfile, string? competence, string? dateFormat, string? password,
         CreditCardPdfConfirmationInput? input, CancellationToken cancellationToken)
     {
         if (input is null || !input.Confirm) return Invalid("confirm", "A confirmação explícita é obrigatória.");
         if (string.IsNullOrWhiteSpace(input.DocumentId)) return Invalid("documentId", "Informe o documentId revisado.");
-        var preview = await preReconciliation.PreReconcileAsync(familyId, cardId, userId, pdf, length, fileName, issuerProfile, competence, dateFormat, password, cancellationToken);
+        var preview = await preReconciliation.PreReconcileAsync(workspaceId, cardId, userId, pdf, length, fileName, issuerProfile, competence, dateFormat, password, cancellationToken);
         if (preview.Access == CreditCardPdfPreviewAccess.NotFound) return new(CreditCardPdfConfirmationAccess.NotFound);
         if (preview.Access == CreditCardPdfPreviewAccess.Invalid) return new(CreditCardPdfConfirmationAccess.Invalid, null, preview.Errors);
         var report = preview.Report!;
@@ -75,7 +75,7 @@ public sealed class CreditCardPdfConfirmationService(
         var confirmation = new CreditCardPdfTrustedConfirmation(documentHash, decisionHash, report.Parser,
             report.Statement.Competence, decimal.Parse(report.Reconciliation.OfficialTotal, CultureInfo.InvariantCulture),
             report.Destination.InvoiceId.Value, trusted);
-        return await repository.ConfirmAsync(familyId, cardId, userId, confirmation, clock.GetUtcNow(), cancellationToken);
+        return await repository.ConfirmAsync(workspaceId, cardId, userId, confirmation, clock.GetUtcNow(), cancellationToken);
     }
 
     private static CreditCardPdfConfirmationOperationResult Invalid(string field, string message) =>

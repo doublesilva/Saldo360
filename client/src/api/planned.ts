@@ -93,8 +93,8 @@ export type SavePlannedResult = { ok: true; planned: PlannedTransaction } | { ok
 
 const jsonHeaders = { Accept: 'application/json' }
 
-function plannedUrl(familyId: string, plannedId?: string): string {
-  const base = `/api/families/${encodeURIComponent(familyId)}/planned-transactions`
+function plannedUrl(workspaceId: string, plannedId?: string): string {
+  const base = `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/planned-transactions`
   return plannedId ? `${base}/${encodeURIComponent(plannedId)}` : base
 }
 
@@ -104,7 +104,7 @@ export function isOverdue(planned: PlannedTransaction, today: string): boolean {
 }
 
 export async function listPlanned(
-  familyId: string,
+  workspaceId: string,
   filters: PlannedFilters,
   page: number,
   signal?: AbortSignal,
@@ -119,7 +119,7 @@ export async function listPlanned(
   if (filters.includeRealized) query.set('includeRealized', 'true')
   if (filters.includeCancelled) query.set('includeCancelled', 'true')
 
-  const response = await fetch(`${plannedUrl(familyId)}?${query}`, { signal, headers: jsonHeaders })
+  const response = await fetch(`${plannedUrl(workspaceId)}?${query}`, { signal, headers: jsonHeaders })
   if (response.status === 400) {
     const problem = (await response.json().catch(() => ({}))) as { errors?: Record<string, string[]> }
     throw new Error(Object.values(problem.errors ?? {}).flat()[0] ?? 'Filtros inválidos.')
@@ -129,8 +129,8 @@ export async function listPlanned(
 }
 
 /** Uma previsão (inclusive realizada ou cancelada), carregada para exibição/edição. */
-export async function getPlanned(familyId: string, id: string, signal?: AbortSignal): Promise<PlannedTransaction> {
-  const response = await fetch(plannedUrl(familyId, id), { signal, headers: jsonHeaders })
+export async function getPlanned(workspaceId: string, id: string, signal?: AbortSignal): Promise<PlannedTransaction> {
+  const response = await fetch(plannedUrl(workspaceId, id), { signal, headers: jsonHeaders })
   if (!response.ok) throw new Error(`Falha ao carregar a previsão (HTTP ${response.status}).`)
   return (await response.json()) as PlannedTransaction
 }
@@ -151,21 +151,21 @@ async function write(method: 'POST' | 'PUT', url: string, body: unknown, expecte
     const problem = (await response.json().catch(() => ({}))) as { title?: string }
     return { ok: false, errors: { form: [problem.title ?? 'Previsão cancelada não pode ser editada.'] } }
   }
-  if (response.status === 404) throw new Error('Previsão ou família não encontrada.')
+  if (response.status === 404) throw new Error('Previsão ou orçamento não encontrado.')
   throw new Error(`Falha ao salvar a previsão (HTTP ${response.status}).`)
 }
 
-export function createPlanned(familyId: string, input: PlannedInput): Promise<SavePlannedResult> {
-  return write('POST', plannedUrl(familyId), input, 201)
+export function createPlanned(workspaceId: string, input: PlannedInput): Promise<SavePlannedResult> {
+  return write('POST', plannedUrl(workspaceId), input, 201)
 }
 
-export function updatePlanned(familyId: string, id: string, input: PlannedInput): Promise<SavePlannedResult> {
-  return write('PUT', plannedUrl(familyId, id), input, 200)
+export function updatePlanned(workspaceId: string, id: string, input: PlannedInput): Promise<SavePlannedResult> {
+  return write('PUT', plannedUrl(workspaceId, id), input, 200)
 }
 
 /** Cancela sem excluir; repetir é seguro (idempotente). */
-export function cancelPlanned(familyId: string, id: string): Promise<SavePlannedResult> {
-  return write('POST', `${plannedUrl(familyId, id)}/cancel`, undefined, 200)
+export function cancelPlanned(workspaceId: string, id: string): Promise<SavePlannedResult> {
+  return write('POST', `${plannedUrl(workspaceId, id)}/cancel`, undefined, 200)
 }
 
 /**
@@ -173,8 +173,8 @@ export function cancelPlanned(familyId: string, id: string): Promise<SavePlanned
  * repetição com os mesmos dados (devolve o existente). 409 (cancelada ou já realizada com outros dados) e 400
  * viram erros para exibir.
  */
-export async function realizePlanned(familyId: string, id: string, input: RealizeInput): Promise<RealizeResult> {
-  const response = await fetch(`${plannedUrl(familyId, id)}/realize`, {
+export async function realizePlanned(workspaceId: string, id: string, input: RealizeInput): Promise<RealizeResult> {
+  const response = await fetch(`${plannedUrl(workspaceId, id)}/realize`, {
     method: 'POST',
     headers: { ...jsonHeaders, 'Content-Type': 'application/json', [CSRF_HEADER]: await getCsrfToken() },
     body: JSON.stringify(input),
@@ -191,6 +191,6 @@ export async function realizePlanned(familyId: string, id: string, input: Realiz
     const problem = (await response.json().catch(() => ({}))) as { title?: string }
     return { ok: false, errors: { form: [problem.title ?? 'Não foi possível realizar a previsão.'] } }
   }
-  if (response.status === 404) throw new Error('Previsão ou família não encontrada.')
+  if (response.status === 404) throw new Error('Previsão ou orçamento não encontrado.')
   throw new Error(`Falha ao realizar a previsão (HTTP ${response.status}).`)
 }

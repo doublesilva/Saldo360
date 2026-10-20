@@ -16,7 +16,7 @@ import {
   type FinancialAccount,
   type FinancialScope,
 } from '../api/accounts'
-import type { FamilyMember } from '../api/families'
+type ResponsibleUserOption = { userId: string; displayName: string; isCurrentUser: boolean }
 import { endOfMonth, todayInSaoPaulo } from '../dates'
 import { decimalToInput, formatBrlDecimal, formatDate, isNegativeDecimal, parseAmount } from '../money'
 
@@ -35,12 +35,12 @@ type ListState =
  * seção: os saldos realizados são consultados de novo.
  */
 export function Accounts({
-  familyId,
+  workspaceId,
   members,
   balanceVersion = 0,
 }: {
-  familyId: string
-  members: FamilyMember[]
+  workspaceId: string
+  members: ResponsibleUserOption[]
   balanceVersion?: number
 }) {
   const [list, setList] = useState<ListState>({ kind: 'loading' })
@@ -55,13 +55,13 @@ export function Accounts({
 
   useEffect(() => {
     const controller = new AbortController()
-    listAccounts(familyId, includeInactive, controller.signal)
+    listAccounts(workspaceId, includeInactive, controller.signal)
       .then((accounts) => setList({ kind: 'loaded', accounts }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setList({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, includeInactive, reloadKey])
+  }, [workspaceId, includeInactive, reloadKey])
 
   const reload = () => setReloadKey((n) => n + 1)
 
@@ -79,7 +79,7 @@ export function Accounts({
     setTogglingId(account.id)
     setToggleError(null)
     try {
-      const result = await updateAccount(familyId, account.id, toInput(account), !account.isActive)
+      const result = await updateAccount(workspaceId, account.id, toInput(account), !account.isActive)
       if (!result.ok) setToggleError(Object.values(result.errors).flat()[0] ?? 'Não foi possível alterar a situação.')
       reload()
     } catch (error: unknown) {
@@ -92,7 +92,7 @@ export function Accounts({
   if (editing !== null) {
     return (
       <AccountForm
-        familyId={familyId}
+        workspaceId={workspaceId}
         members={members}
         account={editing === 'new' ? null : editing}
         onSaved={handleSaved}
@@ -167,9 +167,9 @@ export function Accounts({
                 </div>
               </dl>
               <OpeningBalanceSummary account={account} />
-              <RealizedBalance familyId={familyId} accountId={account.id} refreshKey={`${reloadKey}:${balanceVersion}`} />
+              <RealizedBalance workspaceId={workspaceId} accountId={account.id} refreshKey={`${reloadKey}:${balanceVersion}`} />
               <ProjectedBalance
-                familyId={familyId}
+                workspaceId={workspaceId}
                 accountId={account.id}
                 through={through}
                 refreshKey={`${reloadKey}:${balanceVersion}`}
@@ -221,12 +221,12 @@ type ProjectionState = { kind: 'loading' } | { kind: 'loaded'; projection: Accou
  * aqui. Indisponível nunca aparece como zero.
  */
 function ProjectedBalance({
-  familyId,
+  workspaceId,
   accountId,
   through,
   refreshKey,
 }: {
-  familyId: string
+  workspaceId: string
   accountId: string
   through: string
   refreshKey: string
@@ -235,13 +235,13 @@ function ProjectedBalance({
 
   useEffect(() => {
     const controller = new AbortController()
-    getAccountProjection(familyId, accountId, through, controller.signal)
+    getAccountProjection(workspaceId, accountId, through, controller.signal)
       .then((projection) => setState({ kind: 'loaded', projection }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setState({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, accountId, through, refreshKey])
+  }, [workspaceId, accountId, through, refreshKey])
 
   if (state.kind === 'loading') return <p className="account__projection meta">Calculando saldo projetado…</p>
   if (state.kind === 'error') return <p className="account__projection status status--down">{state.message}</p>
@@ -288,18 +288,18 @@ type BalanceState = { kind: 'loading' } | { kind: 'loaded'; balance: AccountBala
  * data de referência). Os valores chegam como texto decimal e são só formatados: nada é somado aqui.
  * Indisponível nunca aparece como zero.
  */
-function RealizedBalance({ familyId, accountId, refreshKey }: { familyId: string; accountId: string; refreshKey: string }) {
+function RealizedBalance({ workspaceId, accountId, refreshKey }: { workspaceId: string; accountId: string; refreshKey: string }) {
   const [state, setState] = useState<BalanceState>({ kind: 'loading' })
 
   useEffect(() => {
     const controller = new AbortController()
-    getAccountBalance(familyId, accountId, controller.signal)
+    getAccountBalance(workspaceId, accountId, controller.signal)
       .then((balance) => setState({ kind: 'loaded', balance }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setState({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, accountId, refreshKey])
+  }, [workspaceId, accountId, refreshKey])
 
   if (state.kind === 'loading') return <p className="account__balance meta">Calculando saldo realizado…</p>
   if (state.kind === 'error') return <p className="account__balance status status--down">{state.message}</p>
@@ -344,20 +344,20 @@ const emptyInput: AccountInput = {
   institution: null,
   type: 'Checking',
   financialScope: 'PF',
-  responsibleMemberId: null,
+  responsibleUserId: null,
   openingBalance: null,
   openingBalanceDate: null,
 }
 
 function AccountForm({
-  familyId,
+  workspaceId,
   members,
   account,
   onSaved,
   onCancel,
 }: {
-  familyId: string
-  members: FamilyMember[]
+  workspaceId: string
+  members: ResponsibleUserOption[]
   account: FinancialAccount | null
   onSaved: () => void
   onCancel: () => void
@@ -401,8 +401,8 @@ function AccountForm({
         openingBalanceDate: date,
       }
       const result = account
-        ? await updateAccount(familyId, account.id, payload, account.isActive)
-        : await createAccount(familyId, payload)
+        ? await updateAccount(workspaceId, account.id, payload, account.isActive)
+        : await createAccount(workspaceId, payload)
       if (result.ok) onSaved()
       else setErrors(result.errors)
     } catch (error: unknown) {
@@ -472,18 +472,18 @@ function AccountForm({
       <label htmlFor="account-responsible">Responsável</label>
       <select
         id="account-responsible"
-        value={input.responsibleMemberId ?? ''}
-        onChange={(event) => set('responsibleMemberId', event.target.value || null)}
+        value={input.responsibleUserId ?? ''}
+        onChange={(event) => set('responsibleUserId', event.target.value || null)}
       >
         <option value="">Conjunta</option>
         {members.map((member) => (
-          <option key={member.memberId} value={member.memberId}>
+          <option key={member.userId} value={member.userId}>
             {member.displayName}
             {member.isCurrentUser ? ' (você)' : ''}
           </option>
         ))}
       </select>
-      {fieldError('responsibleMemberId')}
+      {fieldError('responsibleUserId')}
 
       <fieldset className="opening-balance" aria-describedby="account-opening-help">
         <legend>Saldo inicial (opcional)</legend>

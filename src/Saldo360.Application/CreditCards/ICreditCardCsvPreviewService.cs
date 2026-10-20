@@ -3,7 +3,7 @@ namespace Saldo360.Application.CreditCards;
 public interface ICreditCardCsvPreviewService
 {
     Task<CreditCardCsvPreviewResult> PreviewAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid cardId,
         Guid userId,
         Stream csv,

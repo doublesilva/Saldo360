@@ -13,7 +13,7 @@ export const accountTypeLabels: Record<AccountType, string> = {
 }
 
 export interface AccountResponsible {
-  memberId: string
+  userId: string
   displayName: string
 }
 
@@ -47,7 +47,7 @@ export interface AccountInput {
   institution: string | null
   type: AccountType
   financialScope: FinancialScope
-  responsibleMemberId: string | null
+  responsibleUserId: string | null
   /** Texto decimal exato ("-1234.56"). Valor e data juntos ou ambos null. */
   openingBalance: string | null
   openingBalanceDate: string | null
@@ -59,13 +59,13 @@ export type SaveAccountResult =
 
 const jsonHeaders = { Accept: 'application/json' }
 
-function accountsUrl(familyId: string, accountId?: string): string {
-  const base = `/api/families/${encodeURIComponent(familyId)}/accounts`
+function accountsUrl(workspaceId: string, accountId?: string): string {
+  const base = `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/accounts`
   return accountId ? `${base}/${encodeURIComponent(accountId)}` : base
 }
 
-export async function listAccounts(familyId: string, includeInactive: boolean, signal?: AbortSignal): Promise<FinancialAccount[]> {
-  const url = includeInactive ? `${accountsUrl(familyId)}?includeInactive=true` : accountsUrl(familyId)
+export async function listAccounts(workspaceId: string, includeInactive: boolean, signal?: AbortSignal): Promise<FinancialAccount[]> {
+  const url = includeInactive ? `${accountsUrl(workspaceId)}?includeInactive=true` : accountsUrl(workspaceId)
   const response = await fetch(url, { signal, headers: jsonHeaders })
   if (!response.ok) throw new Error(`Falha ao carregar as contas (HTTP ${response.status}).`)
   return (await response.json()) as FinancialAccount[]
@@ -83,22 +83,22 @@ async function send(method: 'POST' | 'PUT', url: string, body: unknown, expected
     const problem = (await response.json().catch(() => ({}))) as { errors?: Record<string, string[]> }
     if (problem.errors) return { ok: false, errors: problem.errors }
   }
-  if (response.status === 404) throw new Error('Conta ou família não encontrada.')
+  if (response.status === 404) throw new Error('Conta ou orçamento não encontrado.')
   throw new Error(`Falha ao salvar a conta (HTTP ${response.status}).`)
 }
 
-export function createAccount(familyId: string, input: AccountInput): Promise<SaveAccountResult> {
-  return send('POST', accountsUrl(familyId), input, 201)
+export function createAccount(workspaceId: string, input: AccountInput): Promise<SaveAccountResult> {
+  return send('POST', accountsUrl(workspaceId), input, 201)
 }
 
 /** PUT completo: campos cadastrais e situação (ativa/inativa). */
 export function updateAccount(
-  familyId: string,
+  workspaceId: string,
   accountId: string,
   input: AccountInput,
   isActive: boolean,
 ): Promise<SaveAccountResult> {
-  return send('PUT', accountsUrl(familyId, accountId), { ...input, isActive }, 200)
+  return send('PUT', accountsUrl(workspaceId, accountId), { ...input, isActive }, 200)
 }
 
 export function toInput(account: FinancialAccount): AccountInput {
@@ -107,7 +107,7 @@ export function toInput(account: FinancialAccount): AccountInput {
     institution: account.institution,
     type: account.type,
     financialScope: account.financialScope,
-    responsibleMemberId: account.responsible?.memberId ?? null,
+    responsibleUserId: account.responsible?.userId ?? null,
     openingBalance: account.openingBalance,
     openingBalanceDate: account.openingBalanceDate,
   }
@@ -134,8 +134,8 @@ export interface AccountBalance {
 }
 
 /** Saldo realizado até hoje (America/Sao_Paulo, definido pela API). */
-export async function getAccountBalance(familyId: string, accountId: string, signal?: AbortSignal): Promise<AccountBalance> {
-  const response = await fetch(`${accountsUrl(familyId, accountId)}/balance`, { signal, headers: jsonHeaders })
+export async function getAccountBalance(workspaceId: string, accountId: string, signal?: AbortSignal): Promise<AccountBalance> {
+  const response = await fetch(`${accountsUrl(workspaceId, accountId)}/balance`, { signal, headers: jsonHeaders })
   if (!response.ok) throw new Error(`Falha ao calcular o saldo (HTTP ${response.status}).`)
   return (await response.json()) as AccountBalance
 }
@@ -160,13 +160,13 @@ export interface AccountProjection {
 }
 
 export async function getAccountProjection(
-  familyId: string,
+  workspaceId: string,
   accountId: string,
   through: string,
   signal?: AbortSignal,
 ): Promise<AccountProjection> {
   const query = new URLSearchParams({ through })
-  const response = await fetch(`${accountsUrl(familyId, accountId)}/projection?${query}`, { signal, headers: jsonHeaders })
+  const response = await fetch(`${accountsUrl(workspaceId, accountId)}/projection?${query}`, { signal, headers: jsonHeaders })
   if (response.status === 400) {
     const problem = (await response.json().catch(() => ({}))) as { errors?: Record<string, string[]> }
     throw new Error(Object.values(problem.errors ?? {}).flat()[0] ?? 'Data-alvo inválida.')

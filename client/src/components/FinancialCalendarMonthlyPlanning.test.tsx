@@ -60,7 +60,7 @@ describe('FinancialCalendarMonthlyPlanning', () => {
     data.months[0] = { ...data.months[0], periodKind: 'Current', budgetStatus: 'Exceeded', budgetTarget: '100.00', budgetConsumption: '120.01', cardPayments: '30.01', creditCardOutstanding: '40.02', creditCardProjectionComplete: false }
     data.months[1] = { ...data.months[1], periodKind: 'Future', budgetStatus: 'LimitReached' }
     vi.stubGlobal('fetch', vi.fn(async () => Response.json(data)))
-    render(<FinancialCalendarMonthlyPlanning familyId="family-1" from="2026-12" accountId="" onSelectMonth={vi.fn()} />)
+    render(<FinancialCalendarMonthlyPlanning workspaceId="family-1" from="2026-12" accountId="" onSelectMonth={vi.fn()} />)
     const summary = await screen.findByRole('region', { name: 'Resumo dos seis meses' })
     expect(within(summary).getByText(/123,45/)).toBeTruthy()
     expect(within(summary).getByText(/987,65/)).toBeTruthy()
@@ -79,7 +79,7 @@ describe('FinancialCalendarMonthlyPlanning', () => {
       return Response.json(projection())
     }))
 
-    render(<FinancialCalendarMonthlyPlanning familyId="family-1" from="2026-12" accountId="" onSelectMonth={() => {}} />)
+    render(<FinancialCalendarMonthlyPlanning workspaceId="family-1" from="2026-12" accountId="" onSelectMonth={() => {}} />)
     expect(screen.getByText('Calculando planejamento financeiro…')).toBeTruthy()
     expect(await screen.findAllByRole('article')).toHaveLength(6)
     const december = screen.getByRole('button', { name: /Dezembro de 2026/ }).closest('article')!
@@ -95,7 +95,7 @@ describe('FinancialCalendarMonthlyPlanning', () => {
   it('seleciona a competência para abrir o calendário mensal', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json(projection())))
     const select = vi.fn()
-    render(<FinancialCalendarMonthlyPlanning familyId="family-1" from="2026-12" accountId="" onSelectMonth={select} />)
+    render(<FinancialCalendarMonthlyPlanning workspaceId="family-1" from="2026-12" accountId="" onSelectMonth={select} />)
     fireEvent.click(await screen.findByRole('button', { name: /Janeiro de 2027/ }))
     expect(select).toHaveBeenCalledWith('2027-01')
   })
@@ -111,10 +111,10 @@ describe('FinancialCalendarMonthlyPlanning', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     const view = render(
-      <FinancialCalendarMonthlyPlanning familyId="family-1" from="2026-12" accountId="acc-1" onSelectMonth={() => {}} />,
+      <FinancialCalendarMonthlyPlanning workspaceId="family-1" from="2026-12" accountId="acc-1" onSelectMonth={() => {}} />,
     )
     view.rerender(
-      <FinancialCalendarMonthlyPlanning familyId="family-1" from="2026-12" accountId="acc-2" onSelectMonth={() => {}} />,
+      <FinancialCalendarMonthlyPlanning workspaceId="family-1" from="2026-12" accountId="acc-2" onSelectMonth={() => {}} />,
     )
     expect(await screen.findAllByRole('article')).toHaveLength(1)
     resolveOld(Response.json(projection()))
@@ -125,7 +125,7 @@ describe('FinancialCalendarMonthlyPlanning', () => {
 
   it('apresenta erro da API sem inventar valores', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 503 })))
-    render(<FinancialCalendarMonthlyPlanning familyId="family-1" from="2026-12" accountId="" onSelectMonth={() => {}} />)
+    render(<FinancialCalendarMonthlyPlanning workspaceId="family-1" from="2026-12" accountId="" onSelectMonth={() => {}} />)
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('HTTP 503')
     expect(screen.queryByRole('article')).toBeNull()

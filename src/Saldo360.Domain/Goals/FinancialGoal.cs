@@ -11,7 +11,7 @@ public sealed class FinancialGoal : Entity
     public const int NameMaxLength = 160;
     public const int DescriptionMaxLength = 1000;
     private FinancialGoal() { Name = string.Empty; Currency = "BRL"; }
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public string Name { get; private set; }
     public string? Description { get; private set; }
     public FinancialGoalType GoalType { get; private set; }
@@ -25,8 +25,8 @@ public sealed class FinancialGoal : Entity
     public DateTimeOffset? CompletedAt { get; private set; }
     public DateTimeOffset? ArchivedAt { get; private set; }
 
-    public static FinancialGoal Create(Guid familyId, FinancialGoalDetails details, DateTimeOffset now) =>
-        new FinancialGoal() { FamilyId = familyId, Status = FinancialGoalStatus.Active, CreatedAt = now, UpdatedAt = now }.Apply(details);
+    public static FinancialGoal Create(Guid workspaceId, FinancialGoalDetails details, DateTimeOffset now) =>
+        new FinancialGoal() { WorkspaceId = workspaceId, Status = FinancialGoalStatus.Active, CreatedAt = now, UpdatedAt = now }.Apply(details);
 
     public void Update(FinancialGoalDetails details, DateTimeOffset now)
     {

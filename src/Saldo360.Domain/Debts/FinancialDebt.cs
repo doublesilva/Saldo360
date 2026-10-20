@@ -13,7 +13,7 @@ public sealed class FinancialDebt : Entity
     public const int DescriptionMaxLength = 1000;
     public const int LenderNameMaxLength = 160;
     private FinancialDebt() { Name = string.Empty; Currency = "BRL"; }
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public string Name { get; private set; }
     public string? Description { get; private set; }
     public DebtType DebtType { get; private set; }
@@ -37,7 +37,7 @@ public sealed class FinancialDebt : Entity
     public DateTimeOffset UpdatedAt { get; private set; }
     public DateTimeOffset? ArchivedAt { get; private set; }
 
-    public static FinancialDebt Create(Guid familyId, DebtDetails details, DateTimeOffset now) => new FinancialDebt { FamilyId = familyId, Status = DebtStatus.Active, CreatedAt = now, UpdatedAt = now }.Apply(details);
+    public static FinancialDebt Create(Guid workspaceId, DebtDetails details, DateTimeOffset now) => new FinancialDebt { WorkspaceId = workspaceId, Status = DebtStatus.Active, CreatedAt = now, UpdatedAt = now }.Apply(details);
     public void Update(DebtDetails details, DateTimeOffset now) { if (Status == DebtStatus.Archived) throw new InvalidOperationException("Dívida arquivada não pode ser editada."); Apply(details); UpdatedAt = now; }
     public void Suspend(DateTimeOffset now) { if (Status == DebtStatus.Active) { Status = DebtStatus.Suspended; UpdatedAt = now; } }
     public void Resume(DateTimeOffset now) { if (Status == DebtStatus.Suspended) { Status = DebtStatus.Active; UpdatedAt = now; } }

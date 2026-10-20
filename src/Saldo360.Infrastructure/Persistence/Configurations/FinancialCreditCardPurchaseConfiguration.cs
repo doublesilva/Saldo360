@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.CreditCards;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Users;
 
 namespace Saldo360.Infrastructure.Persistence.Configurations;
@@ -23,11 +23,11 @@ internal sealed class FinancialCreditCardPurchaseConfiguration : IEntityTypeConf
         builder.Property(p => p.Description).HasMaxLength(FinancialCreditCardPurchase.DescriptionMaxLength).IsRequired();
         builder.Property(p => p.TotalAmount).HasColumnType("numeric"); builder.Property(p => p.PurchaseDate).HasColumnType("date");
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
-        builder.HasIndex(p => new { p.FamilyId, p.CreditCardId, p.PurchaseDate });
-        builder.HasAlternateKey(p => new { p.FamilyId, p.Id });
-        builder.HasOne<Family>().WithMany().HasForeignKey(p => p.FamilyId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialCreditCard>().WithMany().HasForeignKey(p => new { p.FamilyId, p.CreditCardId }).HasPrincipalKey(c => new { c.FamilyId, c.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_purchases_cards_same_family");
-        builder.HasOne<FinancialCategory>().WithMany().HasForeignKey(p => new { p.FamilyId, p.CategoryId }).HasPrincipalKey(c => new { c.FamilyId, c.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_purchases_categories_same_family");
+        builder.HasIndex(p => new { p.WorkspaceId, p.CreditCardId, p.PurchaseDate });
+        builder.HasAlternateKey(p => new { p.WorkspaceId, p.Id });
+        builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(p => p.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialCreditCard>().WithMany().HasForeignKey(p => new { p.WorkspaceId, p.CreditCardId }).HasPrincipalKey(c => new { c.WorkspaceId, c.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_purchases_cards_same_family");
+        builder.HasOne<FinancialCategory>().WithMany().HasForeignKey(p => new { p.WorkspaceId, p.CategoryId }).HasPrincipalKey(c => new { c.WorkspaceId, c.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_purchases_categories_same_family");
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(p => p.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(p => p.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(p => p.CancelledByUserId).OnDelete(DeleteBehavior.Restrict);
@@ -45,8 +45,8 @@ internal sealed class FinancialCreditCardPurchaseConfiguration : IEntityTypeConf
         });
         builder.HasKey(i => i.Id); builder.Property(i => i.Id).ValueGeneratedNever();
         builder.Property(i => i.Amount).HasColumnType("numeric"); builder.Property(i => i.Status).HasConversion<string>().HasMaxLength(20);
-        builder.HasIndex(i => new { i.FamilyId, i.PurchaseId, i.InstallmentNumber }).IsUnique();
-        builder.HasOne<FinancialCreditCardPurchase>().WithMany(p => p.Installments).HasForeignKey(i => new { i.FamilyId, i.PurchaseId }).HasPrincipalKey(p => new { p.FamilyId, p.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_installments_purchases_same_family");
-        builder.HasOne<FinancialCreditCardInvoice>().WithMany().HasForeignKey(i => new { i.FamilyId, i.InvoiceId }).HasPrincipalKey(invoice => new { invoice.FamilyId, invoice.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_installments_invoices_same_family");
+        builder.HasIndex(i => new { i.WorkspaceId, i.PurchaseId, i.InstallmentNumber }).IsUnique();
+        builder.HasOne<FinancialCreditCardPurchase>().WithMany(p => p.Installments).HasForeignKey(i => new { i.WorkspaceId, i.PurchaseId }).HasPrincipalKey(p => new { p.WorkspaceId, p.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_installments_purchases_same_family");
+        builder.HasOne<FinancialCreditCardInvoice>().WithMany().HasForeignKey(i => new { i.WorkspaceId, i.InvoiceId }).HasPrincipalKey(invoice => new { invoice.WorkspaceId, invoice.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_credit_card_installments_invoices_same_family");
     }
 }

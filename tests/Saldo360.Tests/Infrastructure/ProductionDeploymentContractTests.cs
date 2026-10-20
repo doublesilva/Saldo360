@@ -14,6 +14,15 @@ public sealed class ProductionDeploymentContractTests
     }
 
     [Fact]
+    public void CollectorDestinationRequiresExplicitWorkspaceWithoutFamilyFallback()
+    {
+        var compose = File.ReadAllText(Path.Combine(RepositoryRoot, "docker-compose.production.yml"));
+        Assert.Equal(6, Count(compose, "FINANCIAL_WORKSPACE_ID:?"));
+        Assert.DoesNotContain("__FamilyId:", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("FINANCIAL_WORKSPACE_ID:-", compose, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CandidateNeverReceivesActiveApiAlias()
     {
         var script = File.ReadAllText(Path.Combine(RepositoryRoot, "deploy", "server", "deploy-saldo360"));

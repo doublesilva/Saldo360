@@ -6,10 +6,10 @@ public sealed class CreditCardStatementAgentPreviewService(
     ICreditCardPdfPasswordProvider passwords,
     ICreditCardStatementExtractionOrchestrator orchestrator) : ICreditCardStatementAgentPreviewService
 {
-    public async Task<CreditCardStatementAgentPreviewResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf,
+    public async Task<CreditCardStatementAgentPreviewResult> PreviewAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
         long length, string fileName, string? competence, string? password, CancellationToken cancellationToken)
     {
-        var card = await context.GetAsync(familyId, cardId, userId, cancellationToken);
+        var card = await context.GetAsync(workspaceId, cardId, userId, cancellationToken);
         if (card is null) return new(CreditCardPdfPreviewAccess.NotFound, null, null);
         if (length <= 0) return Invalid("file", "O arquivo PDF está vazio.");
         if (length > CreditCardPdfPreviewService.MaxFileBytes) return Invalid("file", "O arquivo excede o limite de 10 MB.");

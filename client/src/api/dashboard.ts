@@ -19,10 +19,10 @@ export interface DashboardIndicators { realizedBalance: string | null; projected
 export interface DashboardAlert { code: string; severity: DashboardAlertSeverity; title: string; description: string; competence: string | null; amount: string | null; sourceId: string | null; context: string | null; referenceDate: string }
 export interface FinancialDashboardResponse { competence: string; months: number; position: DashboardPosition; cashFlow: DashboardCashFlow; obligations: DashboardObligations; budgets: DashboardBudgets; creditCards: DashboardCreditCards; debts: DashboardDebts; goals: DashboardGoals; monthlyProjection: DashboardMonthlyProjection[]; coverage: DashboardCoverage; indicators: DashboardIndicators; alerts: DashboardAlert[]; asOf: string }
 
-export async function getFinancialDashboard(familyId: string, competence?: string, months = 6, signal?: AbortSignal): Promise<FinancialDashboardResponse> {
+export async function getFinancialDashboard(workspaceId: string, competence?: string, months = 6, signal?: AbortSignal): Promise<FinancialDashboardResponse> {
   const query = new URLSearchParams({ months: String(months) })
   if (competence) query.set('competence', competence)
-  const response = await fetch(`/api/families/${encodeURIComponent(familyId)}/financial-dashboard?${query}`, { signal, headers: { Accept: 'application/json' } })
+  const response = await fetch(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-dashboard?${query}`, { signal, headers: { Accept: 'application/json' } })
   if (!response.ok) throw new Error(`Falha ao carregar o painel financeiro (HTTP ${response.status}).`)
   return await response.json() as FinancialDashboardResponse
 }

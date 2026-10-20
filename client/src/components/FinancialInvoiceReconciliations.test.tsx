@@ -12,7 +12,7 @@ const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON
 
 function mockApi(link: unknown[] = []) {
   vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
-    if (init?.method === 'POST') return json({ id: 'link-2', familyId: 'family-1', plannedTransactionId: 'planned-1', creditCardInvoiceId: 'invoice-1', createdAt: '2026-10-01T00:00:00Z', removedAt: null }, 201)
+    if (init?.method === 'POST') return json({ id: 'link-2', workspaceId: 'family-1', plannedTransactionId: 'planned-1', creditCardInvoiceId: 'invoice-1', createdAt: '2026-10-01T00:00:00Z', removedAt: null }, 201)
     if (init?.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }))
     if (url.includes('/invoice-reconciliations/')) return json(link)
     if (url.includes('/planned-transactions?')) return json({ items: [planned], page: 1, pageSize: 100, totalCount: 1 })
@@ -26,7 +26,7 @@ function mockApi(link: unknown[] = []) {
 describe('FinancialInvoiceReconciliations', () => {
   it('apresenta estado vazio e mantém a navegação acessível', async () => {
     mockApi([])
-    render(<FinancialInvoiceReconciliations familyId="family-1" />)
+    render(<FinancialInvoiceReconciliations workspaceId="family-1" />)
     expect(await screen.findByText('Nenhuma conciliação ativa.')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Nova conciliação' })).toBeTruthy()
   })
@@ -34,7 +34,7 @@ describe('FinancialInvoiceReconciliations', () => {
   it('revisa valores divergentes e cria o vínculo sem converter valores', async () => {
     const changed = vi.fn()
     mockApi([])
-    render(<FinancialInvoiceReconciliations familyId="family-1" onChanged={changed} />)
+    render(<FinancialInvoiceReconciliations workspaceId="family-1" onChanged={changed} />)
     await screen.findByText('Nenhuma conciliação ativa.')
     fireEvent.change(screen.getByLabelText('Previsão de despesa'), { target: { value: 'planned-1' } })
     fireEvent.change(screen.getByLabelText('Fatura com saldo devido'), { target: { value: 'invoice-1' } })
@@ -49,8 +49,8 @@ describe('FinancialInvoiceReconciliations', () => {
   it('lista vínculo ativo e exige confirmação para desfazer', async () => {
     const changed = vi.fn()
     vi.stubGlobal('confirm', vi.fn(() => true))
-    mockApi([{ id: 'link-1', familyId: 'family-1', plannedTransactionId: 'planned-1', creditCardInvoiceId: 'invoice-1', createdAt: '2026-10-01T00:00:00Z', removedAt: null }])
-    render(<FinancialInvoiceReconciliations familyId="family-1" onChanged={changed} />)
+    mockApi([{ id: 'link-1', workspaceId: 'family-1', plannedTransactionId: 'planned-1', creditCardInvoiceId: 'invoice-1', createdAt: '2026-10-01T00:00:00Z', removedAt: null }])
+    render(<FinancialInvoiceReconciliations workspaceId="family-1" onChanged={changed} />)
     expect(await screen.findByText('Fatura prevista')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Desfazer vínculo' }))
     await waitFor(() => expect(changed).toHaveBeenCalled())

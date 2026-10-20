@@ -8,27 +8,27 @@ public sealed record ServiceAccountBindingResult(string Status, Guid? BindingId,
 
 public interface IServiceAccountBindingRepository
 {
-    Task<ServiceAccountBindingStoreResult> CreateAsync(Guid familyId, Guid documentId, Guid userId, string documentType,
+    Task<ServiceAccountBindingStoreResult> CreateAsync(Guid workspaceId, Guid documentId, Guid userId, string documentType,
         string issuerNormalized, string? accountHash, string? accountMasked, string? serviceHash, string? serviceMasked,
         DateTimeOffset now, CancellationToken cancellationToken);
-    Task<ServiceAccountBindingStoreResult> GetAsync(Guid familyId, Guid documentId, Guid userId, CancellationToken cancellationToken);
+    Task<ServiceAccountBindingStoreResult> GetAsync(Guid workspaceId, Guid documentId, Guid userId, CancellationToken cancellationToken);
 }
 
 public sealed class ServiceAccountBindingService(ServiceBillPreviewService extraction, IServiceAccountBindingRepository repository,
     ServiceBillReconciliationOptions options, TimeProvider clock)
 {
-    public async Task<ServiceAccountBindingResult?> GetAsync(Guid familyId, Guid documentId, Guid userId, CancellationToken cancellationToken)
+    public async Task<ServiceAccountBindingResult?> GetAsync(Guid workspaceId, Guid documentId, Guid userId, CancellationToken cancellationToken)
     {
-        var stored = await repository.GetAsync(familyId, documentId, userId, cancellationToken);
+        var stored = await repository.GetAsync(workspaceId, documentId, userId, cancellationToken);
         return stored.Status == ServiceAccountBindingStoreStatus.AlreadyExists
             ? new(stored.Status.ToString(), stored.BindingId, string.Empty, stored.AccountReferenceMasked, stored.ServiceReferenceMasked) : null;
     }
     public async Task<(FinancialDocumentClassificationAccess Access, ServiceAccountBindingResult? Result,
-        IDictionary<string, string[]>? Errors)> CreateAsync(Guid familyId, Guid documentId, Guid userId, string? password,
+        IDictionary<string, string[]>? Errors)> CreateAsync(Guid workspaceId, Guid documentId, Guid userId, string? password,
         CancellationToken cancellationToken)
     {
         if (!options.Enabled || !options.BindingEnabled) return Invalid("feature", "O vínculo de conta de serviço está desabilitado.");
-        var preview = await extraction.PreviewAsync(familyId, documentId, userId, password, cancellationToken);
+        var preview = await extraction.PreviewAsync(workspaceId, documentId, userId, password, cancellationToken);
         if (preview.Access != FinancialDocumentClassificationAccess.Allowed || preview.Preview is null)
             return (preview.Access, null, preview.Errors);
         var bill = preview.Preview;
@@ -37,7 +37,7 @@ public sealed class ServiceAccountBindingService(ServiceBillPreviewService extra
         var accountHash = ServiceReferenceIdentity.Hash(bill.Result.AccountReference);
         var serviceHash = ServiceReferenceIdentity.Hash(bill.Result.ServiceReference);
         if (accountHash is null && serviceHash is null) return Invalid("document", "O documento não possui referência identificável.");
-        var stored = await repository.CreateAsync(familyId, documentId, userId, bill.Result.DocumentType,
+        var stored = await repository.CreateAsync(workspaceId, documentId, userId, bill.Result.DocumentType,
             ServiceReferenceIdentity.Normalize(bill.Result.Issuer) ?? string.Empty, accountHash,
             ServiceReferenceIdentity.Mask(bill.Result.AccountReference), serviceHash,
             ServiceReferenceIdentity.Mask(bill.Result.ServiceReference), clock.GetUtcNow(), cancellationToken);

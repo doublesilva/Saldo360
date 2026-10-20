@@ -29,7 +29,7 @@ type LoadState =
   | { kind: 'loaded'; budget: FinancialBudget | null; execution: FinancialBudgetExecution | null }
   | { kind: 'error'; message: string }
 
-export function FinancialBudgetsPage({ familyId, initialCompetence, refreshKey: externalRefreshKey = 0, onNavigateToAgenda }: { familyId: string; initialCompetence?: string; refreshKey?: number; onNavigateToAgenda?: (competence: string) => void }) {
+export function FinancialBudgetsPage({ workspaceId, initialCompetence, refreshKey: externalRefreshKey = 0, onNavigateToAgenda }: { workspaceId: string; initialCompetence?: string; refreshKey?: number; onNavigateToAgenda?: (competence: string) => void }) {
   const [competence, setCompetence] = useState(() => initialCompetence ?? startOfMonth(todayInSaoPaulo()).slice(0, 7))
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [reloadKey, setReloadKey] = useState(0)
@@ -39,8 +39,8 @@ export function FinancialBudgetsPage({ familyId, initialCompetence, refreshKey: 
   useEffect(() => {
     const controller = new AbortController()
     Promise.all([
-      listBudgets(familyId, competence, controller.signal),
-      listCategories(familyId, true, controller.signal),
+      listBudgets(workspaceId, competence, controller.signal),
+      listCategories(workspaceId, true, controller.signal),
     ])
       .then(async ([budgets]) => {
         const budget = budgets.find((item) => !item.isArchived) ?? budgets[0] ?? null
@@ -48,14 +48,14 @@ export function FinancialBudgetsPage({ familyId, initialCompetence, refreshKey: 
           setState({ kind: 'loaded', budget: null, execution: null })
           return
         }
-        const execution = await getBudgetExecution(familyId, budget.id, controller.signal)
+        const execution = await getBudgetExecution(workspaceId, budget.id, controller.signal)
         setState({ kind: 'loaded', budget, execution })
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setState({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, competence, reloadKey, externalRefreshKey])
+  }, [workspaceId, competence, reloadKey, externalRefreshKey])
 
   const moveMonth = (offset: number) => {
     setState({ kind: 'loading' })
@@ -95,7 +95,7 @@ export function FinancialBudgetsPage({ familyId, initialCompetence, refreshKey: 
           <p>Nenhum orçamento definido para esta competência.</p>
           {showBudgetForm ? (
             <BudgetCreateForm
-              familyId={familyId}
+              workspaceId={workspaceId}
               competence={competence}
               onDone={() => { setShowBudgetForm(false); refresh() }}
               onCancel={() => setShowBudgetForm(false)}
@@ -107,7 +107,7 @@ export function FinancialBudgetsPage({ familyId, initialCompetence, refreshKey: 
       )}
       {state.kind === 'loaded' && state.budget && state.execution && (
         <BudgetContent
-          familyId={familyId}
+          workspaceId={workspaceId}
           budget={state.budget}
           execution={state.execution}
           onChanged={refresh}
@@ -118,14 +118,14 @@ export function FinancialBudgetsPage({ familyId, initialCompetence, refreshKey: 
   )
 }
 
-function BudgetCreateForm({ familyId, competence, onDone, onCancel }: { familyId: string; competence: string; onDone: () => void; onCancel: () => void }) {
+function BudgetCreateForm({ workspaceId, competence, onDone, onCancel }: { workspaceId: string; competence: string; onDone: () => void; onCancel: () => void }) {
   const [description, setDescription] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError(null)
     try {
-      const result = await createBudget(familyId, competence, description)
+      const result = await createBudget(workspaceId, competence, description)
       if (result.ok) onDone(); else setError(firstError(result.errors))
     } catch (failure: unknown) { setError(errorMessage(failure)) } finally { setBusy(false) }
   }
@@ -138,14 +138,14 @@ function BudgetCreateForm({ familyId, competence, onDone, onCancel }: { familyId
 }
 
 function BudgetContent({
-  familyId, budget, execution, onChanged, onNotice,
-}: { familyId: string; budget: FinancialBudget; execution: FinancialBudgetExecution; onChanged: () => void; onNotice: (notice: string | null) => void }) {
+  workspaceId, budget, execution, onChanged, onNotice,
+}: { workspaceId: string; budget: FinancialBudget; execution: FinancialBudgetExecution; onChanged: () => void; onNotice: (notice: string | null) => void }) {
   const [categories, setCategories] = useState<FinancialCategory[]>([])
   useEffect(() => {
     const controller = new AbortController()
-    listCategories(familyId, true, controller.signal).then(setCategories).catch(() => undefined)
+    listCategories(workspaceId, true, controller.signal).then(setCategories).catch(() => undefined)
     return () => controller.abort()
-  }, [familyId])
+  }, [workspaceId])
   const activeTargets = useMemo(() => budget.targets.filter((target) => !target.isArchived), [budget.targets])
   const availableCategories = categories.filter((category) => category.type === 'Expense' && !budget.targets.some((target) => target.category.id === category.id))
   const archived = budget.isArchived
@@ -154,7 +154,7 @@ function BudgetContent({
       <div><h4>{budget.description || `Orçamento de ${formatMonthYear(`${budget.competence}-01`)}`}</h4><span className="meta">Competência {budget.competence}</span></div>
       {!archived && <button type="button" onClick={() => {
         if (window.confirm('Arquivar este orçamento? O histórico será preservado e ele não poderá ser recriado automaticamente nesta competência.')) {
-          void archiveBudget(familyId, budget.id).then((result) => result.ok ? onChanged() : onNotice(result.message))
+          void archiveBudget(workspaceId, budget.id).then((result) => result.ok ? onChanged() : onNotice(result.message))
         }
       }}>Arquivar orçamento</button>}
     </div>
@@ -170,10 +170,10 @@ function BudgetContent({
         }).map((item) => {
           const target = budget.targets.find((candidate) => candidate.id === item.targetId)
           if (!target) return null
-          return <BudgetTargetCard key={item.targetId} target={target} execution={item} familyId={familyId} budgetId={budget.id} onChanged={onChanged} onNotice={onNotice} />
+          return <BudgetTargetCard key={item.targetId} target={target} execution={item} workspaceId={workspaceId} budgetId={budget.id} onChanged={onChanged} onNotice={onNotice} />
         })}
       </div>
-      {!archived && <BudgetTargetForm familyId={familyId} budgetId={budget.id} categories={availableCategories} onDone={onChanged} onError={onNotice} />}
+      {!archived && <BudgetTargetForm workspaceId={workspaceId} budgetId={budget.id} categories={availableCategories} onDone={onChanged} onError={onNotice} />}
     </section>
   </>
 }
@@ -206,7 +206,7 @@ function summaryLabel(key: string) {
   return ({ planned: 'Planejado', realized: 'Realizado', committed: 'Comprometido', projectedConsumption: 'Consumo projetado', available: 'Disponível', exceededAmount: 'Excedente' } as Record<string, string>)[key]
 }
 
-function BudgetTargetCard({ target, execution, familyId, budgetId, onChanged, onNotice }: { target: FinancialBudgetTarget; execution: FinancialBudgetExecution['targets'][number]; familyId: string; budgetId: string; onChanged: () => void; onNotice: (notice: string | null) => void }) {
+function BudgetTargetCard({ target, execution, workspaceId, budgetId, onChanged, onNotice }: { target: FinancialBudgetTarget; execution: FinancialBudgetExecution['targets'][number]; workspaceId: string; budgetId: string; onChanged: () => void; onNotice: (notice: string | null) => void }) {
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const percentage = execution.consumptionPercentage === null ? null : Number.parseFloat(execution.consumptionPercentage)
@@ -215,18 +215,18 @@ function BudgetTargetCard({ target, execution, familyId, budgetId, onChanged, on
     <div className="budget-target__values"><span>Realizado <strong>{formatBrlDecimal(execution.realized)}</strong></span><span>Comprometido <strong>{formatBrlDecimal(execution.committed)}</strong></span><span>Projetado <strong>{formatBrlDecimal(execution.projectedConsumption)}</strong></span><span>Disponível <strong>{formatBrlDecimal(execution.available)}</strong></span></div>
     <div className="budget-progress" aria-label={percentage === null ? 'Consumo sem referência percentual' : `Consumo de ${execution.consumptionPercentage}%`}><div className="budget-progress__bar" style={{ width: percentage === null ? '0%' : `${Math.min(100, Math.max(0, percentage))}%` }} /><span>{execution.consumptionPercentage === null ? 'Sem referência' : `${execution.consumptionPercentage}% consumido`}</span></div>
     <p className="budget-target__alert"><span aria-hidden="true">{statusIcon(execution.status)}</span> {execution.alertMessage}</p>
-    {editing ? <BudgetTargetEditForm familyId={familyId} budgetId={budgetId} target={target} onDone={() => { setEditing(false); onChanged() }} onCancel={() => setEditing(false)} onError={onNotice} /> : <div className="budget-target__actions"><button type="button" onClick={() => setEditing(true)}>Editar</button><button type="button" disabled={busy} onClick={() => { if (window.confirm(`Arquivar a meta de ${target.category.name} (${formatBrlDecimal(target.plannedAmount)})? Isso retira a meta dos totais, sem cancelar despesas.`)) { setBusy(true); void archiveBudgetTarget(familyId, budgetId, target.id).then((result) => result.ok ? onChanged() : onNotice(result.message)).finally(() => setBusy(false)) } }}>Arquivar meta</button></div>}
+    {editing ? <BudgetTargetEditForm workspaceId={workspaceId} budgetId={budgetId} target={target} onDone={() => { setEditing(false); onChanged() }} onCancel={() => setEditing(false)} onError={onNotice} /> : <div className="budget-target__actions"><button type="button" onClick={() => setEditing(true)}>Editar</button><button type="button" disabled={busy} onClick={() => { if (window.confirm(`Arquivar a meta de ${target.category.name} (${formatBrlDecimal(target.plannedAmount)})? Isso retira a meta dos totais, sem cancelar despesas.`)) { setBusy(true); void archiveBudgetTarget(workspaceId, budgetId, target.id).then((result) => result.ok ? onChanged() : onNotice(result.message)).finally(() => setBusy(false)) } }}>Arquivar meta</button></div>}
   </article>
 }
 
-function BudgetTargetForm({ familyId, budgetId, categories, onDone, onError }: { familyId: string; budgetId: string; categories: FinancialCategory[]; onDone: () => void; onError: (message: string) => void }) {
+function BudgetTargetForm({ workspaceId, budgetId, categories, onDone, onError }: { workspaceId: string; budgetId: string; categories: FinancialCategory[]; onDone: () => void; onError: (message: string) => void }) {
   const [categoryId, setCategoryId] = useState(''); const [amount, setAmount] = useState(''); const [busy, setBusy] = useState(false)
-  const submit = async (event: FormEvent) => { event.preventDefault(); const parsed = parseAmount(amount, 'O valor planejado'); if (!categoryId) return onError('Selecione uma categoria de despesa.'); if (parsed.kind !== 'ok') return onError(parsed.kind === 'invalid' ? parsed.message : 'Informe o valor planejado.'); setBusy(true); const category = categories.find((item) => item.id === categoryId); if (!category) return setBusy(false); const result = await addBudgetTarget(familyId, budgetId, categoryId, parsed.text, category.name); if (result.ok) { setAmount(''); setCategoryId(''); onDone() } else onError(firstError(result.errors)); setBusy(false) }
+  const submit = async (event: FormEvent) => { event.preventDefault(); const parsed = parseAmount(amount, 'O valor planejado'); if (!categoryId) return onError('Selecione uma categoria de despesa.'); if (parsed.kind !== 'ok') return onError(parsed.kind === 'invalid' ? parsed.message : 'Informe o valor planejado.'); setBusy(true); const category = categories.find((item) => item.id === categoryId); if (!category) return setBusy(false); const result = await addBudgetTarget(workspaceId, budgetId, categoryId, parsed.text, category.name); if (result.ok) { setAmount(''); setCategoryId(''); onDone() } else onError(firstError(result.errors)); setBusy(false) }
   return <form className="budget-target-form" onSubmit={submit} noValidate><h5>Adicionar meta</h5><label htmlFor="budget-target-category">Categoria de despesa</label><select id="budget-target-category" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Selecione…</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}{!category.isActive ? ' (inativa)' : ''}</option>)}</select><label htmlFor="budget-target-amount">Valor planejado</label><input id="budget-target-amount" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0,00" /><button type="submit" className="button--primary" disabled={busy || categories.length === 0}>{busy ? 'Adicionando…' : 'Adicionar meta'}</button>{categories.length === 0 && <p className="meta">Não há categorias de despesa elegíveis.</p>}</form>
 }
 
-function BudgetTargetEditForm({ familyId, budgetId, target, onDone, onCancel, onError }: { familyId: string; budgetId: string; target: FinancialBudgetTarget; onDone: () => void; onCancel: () => void; onError: (message: string) => void }) {
+function BudgetTargetEditForm({ workspaceId, budgetId, target, onDone, onCancel, onError }: { workspaceId: string; budgetId: string; target: FinancialBudgetTarget; onDone: () => void; onCancel: () => void; onError: (message: string) => void }) {
   const [amount, setAmount] = useState(() => decimalToInput(target.plannedAmount)); const [busy, setBusy] = useState(false)
-  const submit = async (event: FormEvent) => { event.preventDefault(); const parsed = parseAmount(amount, 'O valor planejado'); if (parsed.kind !== 'ok') return onError(parsed.kind === 'invalid' ? parsed.message : 'Informe o valor planejado.'); setBusy(true); const result = await updateBudgetTarget(familyId, budgetId, target.id, target.name, parsed.text); if (result.ok) onDone(); else onError(firstError(result.errors)); setBusy(false) }
+  const submit = async (event: FormEvent) => { event.preventDefault(); const parsed = parseAmount(amount, 'O valor planejado'); if (parsed.kind !== 'ok') return onError(parsed.kind === 'invalid' ? parsed.message : 'Informe o valor planejado.'); setBusy(true); const result = await updateBudgetTarget(workspaceId, budgetId, target.id, target.name, parsed.text); if (result.ok) onDone(); else onError(firstError(result.errors)); setBusy(false) }
   return <form className="budget-target-edit" onSubmit={submit}><label htmlFor={`target-${target.id}`}>Valor planejado</label><input id={`target-${target.id}`} inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} /><button type="submit" className="button--primary" disabled={busy}>Salvar</button><button type="button" onClick={onCancel} disabled={busy}>Cancelar</button></form>
 }

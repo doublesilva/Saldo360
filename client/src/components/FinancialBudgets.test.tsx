@@ -46,7 +46,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.use
 describe('FinancialBudgetsPage', () => {
   it('seleciona o mês de São Paulo, mostra resumo e navega entre competências', async () => {
     const calls = mockApi()
-    render(<FinancialBudgetsPage familyId="family-1" />)
+    render(<FinancialBudgetsPage workspaceId="family-1" />)
     expect(await screen.findByText('Outubro')).toBeTruthy()
     expect(screen.getAllByText(/500,00/).length).toBeGreaterThan(0)
     expect(screen.getByText('50.00%')).toBeTruthy()
@@ -56,7 +56,7 @@ describe('FinancialBudgetsPage', () => {
 
   it('mostra estado vazio e cria orçamento da competência sem criar metas', async () => {
     const calls = mockApi({ budgets: [] })
-    render(<FinancialBudgetsPage familyId="family-1" />)
+    render(<FinancialBudgetsPage workspaceId="family-1" />)
     expect(await screen.findByText('Nenhum orçamento definido para esta competência.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Criar orçamento' }))
     fireEvent.change(screen.getByLabelText('Descrição (opcional)'), { target: { value: 'Novo mês' } })
@@ -68,7 +68,7 @@ describe('FinancialBudgetsPage', () => {
 
   it('exibe inativa, oferece somente despesas elegíveis e envia centavos exatos ao adicionar meta', async () => {
     const calls = mockApi()
-    render(<FinancialBudgetsPage familyId="family-1" />)
+    render(<FinancialBudgetsPage workspaceId="family-1" />)
     await screen.findByText('Moradia')
     expect(await screen.findByRole('option', { name: /Academia.*inativa/ })).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Categoria de despesa'), { target: { value: inactive.id } })
@@ -83,7 +83,7 @@ describe('FinancialBudgetsPage', () => {
   it('edita a meta e arquiva com confirmação explicando o impacto', async () => {
     const calls = mockApi()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<FinancialBudgetsPage familyId="family-1" />)
+    render(<FinancialBudgetsPage workspaceId="family-1" />)
     const card = (await screen.findByText('Moradia')).closest('article')!
     fireEvent.click(within(card).getByRole('button', { name: 'Editar' }))
     fireEvent.change(within(card).getByLabelText('Valor planejado'), { target: { value: '900,00' } })
@@ -99,7 +99,7 @@ describe('FinancialBudgetsPage', () => {
   it('trata percentual nulo e excedente sem recalcular valores', async () => {
     const over = { ...execution, total: { ...execution.total, planned: '0.00', realized: '10.00', committed: '5.00', projectedConsumption: '15.00', available: '-15.00', exceededAmount: '15.00', consumptionPercentage: null, status: 'Exceeded' as const, alertMessage: 'O consumo projetado ultrapassou o orçamento.', exceededCount: 1 }, targets: [{ ...execution.targets[0], planned: '0.00', realized: '10.00', committed: '5.00', projectedConsumption: '15.00', available: '-15.00', exceededAmount: '15.00', consumptionPercentage: null, status: 'Exceeded' as const, alertMessage: 'O consumo projetado ultrapassou o orçamento.' }] }
     mockApi({ execution: over })
-    render(<FinancialBudgetsPage familyId="family-1" />)
+    render(<FinancialBudgetsPage workspaceId="family-1" />)
     expect((await screen.findAllByText('Sem referência')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('Orçamento excedido').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText(/15,00/).length).toBeGreaterThan(0)
@@ -107,7 +107,7 @@ describe('FinancialBudgetsPage', () => {
 
   it('mostra conflito de criação devolvido pela API', async () => {
     mockApi({ budgets: [], saveStatus: 409 })
-    render(<FinancialBudgetsPage familyId="family-1" />)
+    render(<FinancialBudgetsPage workspaceId="family-1" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Criar orçamento' }))
     fireEvent.click(screen.getByRole('button', { name: 'Criar orçamento' }))
     expect(await screen.findByText(/Já existe um orçamento/)).toBeTruthy()

@@ -10,12 +10,12 @@ public static class FinancialDashboardEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialDashboardEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/families/{familyId:guid}/financial-dashboard", Get).RequireAuthorization();
+        app.MapGet("/api/financial-workspaces/{workspaceId:guid}/financial-dashboard", Get).RequireAuthorization();
         return app;
     }
 
     private static async Task<IResult> Get(
-        Guid familyId,
+        Guid workspaceId,
         string? competence,
         int? months,
         CurrentUser currentUser,
@@ -39,7 +39,7 @@ public static class FinancialDashboardEndpoints
         var horizon = months ?? 6;
         if (horizon is < 1 or > 12) errors["months"] = ["A quantidade de meses deve estar entre 1 e 12."];
         if (errors.Count > 0) return Results.ValidationProblem(errors);
-        var result = await service.GetAsync(familyId, userId, month, horizon, cancellationToken);
+        var result = await service.GetAsync(workspaceId, userId, month, horizon, cancellationToken);
         return result switch
         {
             { NotFound: true } => Results.NotFound(),

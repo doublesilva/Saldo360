@@ -9,17 +9,17 @@ public sealed record CreditCardStatementCandidate(Guid CardId, string Issuer, st
 
 public interface ICreditCardStatementResolutionRepository
 {
-    Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid familyId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid workspaceId, CancellationToken cancellationToken);
 }
 
 public sealed class CreditCardStatementResolver(ICreditCardStatementResolutionRepository repository)
 {
-    public async Task<CreditCardStatementResolution> ResolveAsync(Guid familyId, string? issuer, string? lastFourDigits, Guid? holderUserId, CancellationToken cancellationToken)
+    public async Task<CreditCardStatementResolution> ResolveAsync(Guid workspaceId, string? issuer, string? lastFourDigits, Guid? holderUserId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(lastFourDigits) || lastFourDigits.Length != 4 || lastFourDigits.Any(character => character is < '0' or > '9') || string.IsNullOrWhiteSpace(issuer))
             return new(CreditCardStatementResolutionStatus.InsufficientEvidence);
         var issuerKey = NormalizeIssuer(issuer);
-        var candidates = (await repository.ListActiveAsync(familyId, cancellationToken))
+        var candidates = (await repository.ListActiveAsync(workspaceId, cancellationToken))
             .Where(card => card.LastFourDigits == lastFourDigits && NormalizeIssuer(card.Issuer) == issuerKey)
             .Where(card => holderUserId is null || card.HolderUserId == holderUserId)
             .ToList();

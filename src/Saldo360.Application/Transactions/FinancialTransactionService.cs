@@ -1,4 +1,4 @@
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Application.Planning;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
@@ -13,7 +13,7 @@ namespace Saldo360.Application.Transactions;
 /// de uma inexistente. Lançamento que realiza uma previsão não é editável, e cancelá-lo reabre a previsão.
 /// </summary>
 public sealed class FinancialTransactionService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialTransactionRepository transactions,
     IFinancialPlannedTransactionRepository planned,
     TimeProvider timeProvider)
@@ -22,34 +22,34 @@ public sealed class FinancialTransactionService(
     public const int MaxPageSize = 100;
 
     public async Task<TransactionResult> CreateAsync(
-        Guid familyId, Guid userId, TransactionInput input, CancellationToken cancellationToken)
+        Guid workspaceId, Guid userId, TransactionInput input, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
         {
             return TransactionResult.NotFound;
         }
 
-        var (details, errors) = await ValidateAsync(familyId, input, current: null, cancellationToken);
+        var (details, errors) = await ValidateAsync(workspaceId, input, current: null, cancellationToken);
         if (details is null)
         {
             return TransactionResult.Invalid(errors);
         }
 
-        var transaction = FinancialTransaction.Create(familyId, details, userId, timeProvider.GetUtcNow());
+        var transaction = FinancialTransaction.Create(workspaceId, details, userId, timeProvider.GetUtcNow());
         await transactions.AddAsync(transaction, cancellationToken);
-        return TransactionResult.Ok((await transactions.GetAsync(familyId, transaction.Id, cancellationToken))!);
+        return TransactionResult.Ok((await transactions.GetAsync(workspaceId, transaction.Id, cancellationToken))!);
     }
 
     public async Task<FinancialTransactionDto?> GetAsync(
-        Guid familyId, Guid transactionId, Guid userId, CancellationToken cancellationToken) =>
-        await IsParticipantAsync(familyId, userId, cancellationToken)
-            ? await transactions.GetAsync(familyId, transactionId, cancellationToken)
+        Guid workspaceId, Guid transactionId, Guid userId, CancellationToken cancellationToken) =>
+        await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            ? await transactions.GetAsync(workspaceId, transactionId, cancellationToken)
             : null;
 
     public async Task<TransactionListResult> ListAsync(
-        Guid familyId, Guid userId, TransactionQuery query, CancellationToken cancellationToken)
+        Guid workspaceId, Guid userId, TransactionQuery query, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
         {
             return TransactionListResult.NotFoundResult;
         }
@@ -92,15 +92,15 @@ public sealed class FinancialTransactionService(
 
         var filter = new TransactionFilter(
             query.From, query.To, query.AccountId, query.CategoryId, type, query.IncludeCancelled, page, pageSize);
-        return new TransactionListResult(await transactions.ListAsync(familyId, filter, cancellationToken), null, false);
+        return new TransactionListResult(await transactions.ListAsync(workspaceId, filter, cancellationToken), null, false);
     }
 
     /// <summary>Substitui os dados. Família, criador e cancelamento não mudam; cancelado dá 409.</summary>
     public async Task<TransactionResult> UpdateAsync(
-        Guid familyId, Guid transactionId, Guid userId, TransactionInput input, CancellationToken cancellationToken)
+        Guid workspaceId, Guid transactionId, Guid userId, TransactionInput input, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
-            || await transactions.FindAsync(familyId, transactionId, cancellationToken) is not { } transaction)
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            || await transactions.FindAsync(workspaceId, transactionId, cancellationToken) is not { } transaction)
         {
             return TransactionResult.NotFound;
         }
@@ -115,7 +115,7 @@ public sealed class FinancialTransactionService(
             return TransactionResult.Linked;
         }
 
-        var (details, errors) = await ValidateAsync(familyId, input, transaction, cancellationToken);
+        var (details, errors) = await ValidateAsync(workspaceId, input, transaction, cancellationToken);
         if (details is null)
         {
             return TransactionResult.Invalid(errors);
@@ -123,15 +123,15 @@ public sealed class FinancialTransactionService(
 
         transaction.Update(details, userId, timeProvider.GetUtcNow());
         await transactions.SaveChangesAsync(cancellationToken);
-        return TransactionResult.Ok((await transactions.GetAsync(familyId, transaction.Id, cancellationToken))!);
+        return TransactionResult.Ok((await transactions.GetAsync(workspaceId, transaction.Id, cancellationToken))!);
     }
 
     /// <summary>Cancela preservando o registro. Idempotente: cancelar de novo devolve o mesmo estado.</summary>
     public async Task<TransactionResult> CancelAsync(
-        Guid familyId, Guid transactionId, Guid userId, CancellationToken cancellationToken)
+        Guid workspaceId, Guid transactionId, Guid userId, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken)
-            || await transactions.GetLinkAsync(familyId, transactionId, cancellationToken) is not { } link)
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            || await transactions.GetLinkAsync(workspaceId, transactionId, cancellationToken) is not { } link)
         {
             return TransactionResult.NotFound;
         }
@@ -142,26 +142,26 @@ public sealed class FinancialTransactionService(
             // editar e cancelar a previsão. Como "realizada" é derivado do lançamento ativo, a previsão volta a
             // pendente nesta mesma transação. O lançamento é carregado só depois do bloqueio (dados atuais), então
             // repetir o cancelamento de um lançamento antigo não toca uma realização nova.
-            await planned.RunLockedAsync(familyId, plannedId, async _ =>
+            await planned.RunLockedAsync(workspaceId, plannedId, async _ =>
             {
-                var linked = await transactions.FindAsync(familyId, transactionId, cancellationToken);
+                var linked = await transactions.FindAsync(workspaceId, transactionId, cancellationToken);
                 return linked!.Cancel(userId, timeProvider.GetUtcNow());
             }, cancellationToken);
         }
-        else if (await transactions.FindAsync(familyId, transactionId, cancellationToken) is { } transaction
+        else if (await transactions.FindAsync(workspaceId, transactionId, cancellationToken) is { } transaction
             && transaction.Cancel(userId, timeProvider.GetUtcNow()))
         {
             await transactions.SaveChangesAsync(cancellationToken);
         }
 
-        return TransactionResult.Ok((await transactions.GetAsync(familyId, transactionId, cancellationToken))!);
+        return TransactionResult.Ok((await transactions.GetAsync(workspaceId, transactionId, cancellationToken))!);
     }
 
-    private async Task<bool> IsParticipantAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>
-        await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is not null;
+    private async Task<bool> IsParticipantAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>
+        await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is not null;
 
     private async Task<(TransactionDetails? Details, Dictionary<string, string[]> Errors)> ValidateAsync(
-        Guid familyId, TransactionInput input, FinancialTransaction? current, CancellationToken cancellationToken)
+        Guid workspaceId, TransactionInput input, FinancialTransaction? current, CancellationToken cancellationToken)
     {
         var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
         var details = TransactionDetails.TryCreate(
@@ -169,7 +169,7 @@ public sealed class FinancialTransactionService(
             today, out var errors);
 
         await ReferenceRules.ValidateAsync(
-            transactions, familyId, input.AccountId, input.CategoryId, input.Type, current?.AccountId, current?.CategoryId,
+            transactions, workspaceId, input.AccountId, input.CategoryId, input.Type, current?.AccountId, current?.CategoryId,
             errors, cancellationToken);
 
         return (errors.Count == 0 ? details : null, errors);

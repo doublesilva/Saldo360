@@ -20,14 +20,14 @@ vi.mock('../api/debts', () => api)
 vi.mock('./FinancialDebtReconciliation', () => ({ FinancialDebtReconciliation: () => null }))
 
 const debt: FinancialDebt = {
-  id: 'debt-1', familyId: 'family-1', name: 'Financiamento', description: null, debtType: 'Loan', lenderName: 'Banco',
+  id: 'debt-1', workspaceId: 'family-1', name: 'Financiamento', description: null, debtType: 'Loan', lenderName: 'Banco',
   responsibleAccountId: 'account-1', originalPrincipal: '1200.00', outstandingPrincipal: '800.00', outstandingBalance: null,
   balanceReferenceDate: null, contractDate: '2026-01-01', firstDueDate: '2026-02-10', installmentCount: 3,
   paidInstallmentCount: 1, installmentAmount: '400.00', interestRate: null, interestRatePeriod: null, amortizationMethod: null,
   status: 'Active', currency: 'BRL', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', archivedAt: null,
 }
 const installment: DebtInstallment = {
-  id: 'installment-1', familyId: 'family-1', debtId: debt.id, installmentNumber: 2, dueDate: '2026-03-10', scheduledAmount: '400.00',
+  id: 'installment-1', workspaceId: 'family-1', debtId: debt.id, installmentNumber: 2, dueDate: '2026-03-10', scheduledAmount: '400.00',
   categoryId: null, principalComponent: '390.00', interestComponent: '10.00', insuranceComponent: null, otherChargesComponent: null,
   paidAmount: '0.00', remainingAmount: '400.00', status: 'Pending', createdAt: '2026-01-01T00:00:00Z',
 }
@@ -49,7 +49,7 @@ describe('FinancialDebts', () => {
 
   it('cadastra uma dívida preservando campos opcionais nulos', async () => {
     api.listDebts.mockResolvedValueOnce([])
-    render(<FinancialDebts familyId="family-1" />)
+    render(<FinancialDebts workspaceId="family-1" />)
     fireEvent.click(screen.getByRole('button', { name: 'Nova dívida' }))
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Curso' } })
     fireEvent.change(screen.getByLabelText('Principal original'), { target: { value: '1234.56' } })
@@ -59,7 +59,7 @@ describe('FinancialDebts', () => {
   })
 
   it('permite editar a dívida sem converter valores monetários para number', async () => {
-    render(<FinancialDebts familyId="family-1" />)
+    render(<FinancialDebts workspaceId="family-1" />)
     fireEvent.click(await screen.findByText('Financiamento'))
     fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
     const amount = screen.getByLabelText('Principal original')
@@ -72,7 +72,7 @@ describe('FinancialDebts', () => {
   it('preserva a operação após resultado incerto e impede envios simultâneos', async () => {
     let rejectFirst!: (error: unknown) => void
     api.createPayment.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject })).mockResolvedValueOnce({ id: 'payment-1' })
-    render(<FinancialDebts familyId="family-1" />)
+    render(<FinancialDebts workspaceId="family-1" />)
     fireEvent.click(await screen.findByText('Financiamento'))
     const row = await screen.findByText(/nominal 400\.00/)
     const container = row.closest('li') as HTMLElement
@@ -95,7 +95,7 @@ describe('FinancialDebts', () => {
       return Promise.reject(new ApiRequestError('Resultado incerto.', 'timeout', undefined, true))
     })
     api.listPayments.mockImplementation(() => Promise.resolve(operationId ? [{ id: 'payment-1', operationId }] : []))
-    render(<FinancialDebts familyId="family-1" />)
+    render(<FinancialDebts workspaceId="family-1" />)
     fireEvent.click(await screen.findByText('Financiamento'))
     const row = await screen.findByText(/nominal 400\.00/)
     fireEvent.click(within(row.closest('li') as HTMLElement).getByRole('button', { name: 'Registrar pagamento' }))

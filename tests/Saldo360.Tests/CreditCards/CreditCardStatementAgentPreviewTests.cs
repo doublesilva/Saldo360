@@ -116,7 +116,7 @@ public sealed class CreditCardStatementAgentPreviewTests
     }
     private sealed class FakeContext : ICreditCardPdfContextRepository
     {
-        public Task<CreditCardPdfContext?> GetAsync(Guid familyId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
+        public Task<CreditCardPdfContext?> GetAsync(Guid workspaceId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
             Task.FromResult<CreditCardPdfContext?>(new("Banco", null, "1234"));
     }
     private sealed class FakePasswords : ICreditCardPdfPasswordProvider

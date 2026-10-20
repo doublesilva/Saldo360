@@ -12,10 +12,10 @@ public sealed class FinancialDocumentClassificationPreviewService(
     ICreditCardPdfTextExtractor extractor,
     IFinancialDocumentClassifier classifier)
 {
-    public async Task<FinancialDocumentClassificationPreviewResult> PreviewAsync(Guid familyId, Guid id, Guid userId, string? password, CancellationToken cancellationToken)
+    public async Task<FinancialDocumentClassificationPreviewResult> PreviewAsync(Guid workspaceId, Guid id, Guid userId, string? password, CancellationToken cancellationToken)
     {
         if (password?.Length > 128) return Invalid("password", "A senha excede o limite permitido.");
-        var item = await repository.GetAsync(familyId, id, userId, cancellationToken);
+        var item = await repository.GetAsync(workspaceId, id, userId, cancellationToken);
         if (item is null) return new(FinancialDocumentClassificationAccess.NotFound);
         await using var content = await storage.OpenReadAsync(item.StorageReference, cancellationToken);
         if (content is null) return Invalid("document", "O documento armazenado não está disponível.");

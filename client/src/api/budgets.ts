@@ -72,8 +72,8 @@ export type BudgetSaveResult =
 
 const jsonHeaders = { Accept: 'application/json' }
 
-function budgetsUrl(familyId: string, budgetId?: string): string {
-  const base = `/api/families/${encodeURIComponent(familyId)}/budgets`
+function budgetsUrl(workspaceId: string, budgetId?: string): string {
+  const base = `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/budgets`
   return budgetId ? `${base}/${encodeURIComponent(budgetId)}` : base
 }
 
@@ -82,8 +82,8 @@ async function readProblem(response: Response): Promise<Record<string, string[]>
   return body.errors ?? { general: [body.title ?? `Falha na API (HTTP ${response.status}).`] }
 }
 
-export async function listBudgets(familyId: string, competence: string, signal?: AbortSignal): Promise<FinancialBudget[]> {
-  const response = await fetch(`${budgetsUrl(familyId)}?competence=${encodeURIComponent(competence)}`, {
+export async function listBudgets(workspaceId: string, competence: string, signal?: AbortSignal): Promise<FinancialBudget[]> {
+  const response = await fetch(`${budgetsUrl(workspaceId)}?competence=${encodeURIComponent(competence)}`, {
     signal,
     headers: jsonHeaders,
   })
@@ -91,18 +91,18 @@ export async function listBudgets(familyId: string, competence: string, signal?:
   return (await response.json()) as FinancialBudget[]
 }
 
-export async function getBudget(familyId: string, budgetId: string, signal?: AbortSignal): Promise<FinancialBudget> {
-  const response = await fetch(budgetsUrl(familyId, budgetId), { signal, headers: jsonHeaders })
+export async function getBudget(workspaceId: string, budgetId: string, signal?: AbortSignal): Promise<FinancialBudget> {
+  const response = await fetch(budgetsUrl(workspaceId, budgetId), { signal, headers: jsonHeaders })
   if (!response.ok) throw new Error(`Falha ao carregar o orçamento (HTTP ${response.status}).`)
   return (await response.json()) as FinancialBudget
 }
 
 export async function getBudgetExecution(
-  familyId: string,
+  workspaceId: string,
   budgetId: string,
   signal?: AbortSignal,
 ): Promise<FinancialBudgetExecution> {
-  const response = await fetch(`${budgetsUrl(familyId, budgetId)}/execution`, { signal, headers: jsonHeaders })
+  const response = await fetch(`${budgetsUrl(workspaceId, budgetId)}/execution`, { signal, headers: jsonHeaders })
   if (!response.ok) throw new Error(`Falha ao carregar a execução do orçamento (HTTP ${response.status}).`)
   return (await response.json()) as FinancialBudgetExecution
 }
@@ -116,28 +116,28 @@ async function writeBudget(method: 'POST' | 'PUT', url: string, body: unknown, e
   if (response.status === expected) return { ok: true, budget: (await response.json()) as FinancialBudget }
   if (response.status === 400) return { ok: false, errors: await readProblem(response) }
   if (response.status === 409) return { ok: false, errors: await readProblem(response), conflict: true }
-  if (response.status === 404) throw new Error('Orçamento ou família não encontrada.')
+  if (response.status === 404) throw new Error('Orçamento não encontrado.')
   throw new Error(`Falha ao salvar o orçamento (HTTP ${response.status}).`)
 }
 
-export function createBudget(familyId: string, competence: string, description?: string): Promise<BudgetSaveResult> {
-  return writeBudget('POST', budgetsUrl(familyId), { competence, description: description || null }, 201)
+export function createBudget(workspaceId: string, competence: string, description?: string): Promise<BudgetSaveResult> {
+  return writeBudget('POST', budgetsUrl(workspaceId), { competence, description: description || null }, 201)
 }
 
-export function updateBudget(familyId: string, budgetId: string, description: string): Promise<BudgetSaveResult> {
-  return writeBudget('PUT', budgetsUrl(familyId, budgetId), { description }, 200)
+export function updateBudget(workspaceId: string, budgetId: string, description: string): Promise<BudgetSaveResult> {
+  return writeBudget('PUT', budgetsUrl(workspaceId, budgetId), { description }, 200)
 }
 
 export type TargetSaveResult = BudgetSaveResult
 
 export function addBudgetTarget(
-  familyId: string,
+  workspaceId: string,
   budgetId: string,
   categoryId: string,
   plannedAmount: string,
   name: string,
 ): Promise<TargetSaveResult> {
-  return writeBudget('POST', `${budgetsUrl(familyId, budgetId)}/targets`, {
+  return writeBudget('POST', `${budgetsUrl(workspaceId, budgetId)}/targets`, {
     categoryId,
     plannedAmount,
     name,
@@ -146,13 +146,13 @@ export function addBudgetTarget(
 }
 
 export function updateBudgetTarget(
-  familyId: string,
+  workspaceId: string,
   budgetId: string,
   targetId: string,
   name: string,
   plannedAmount: string,
 ): Promise<TargetSaveResult> {
-  return writeBudget('PUT', `${budgetsUrl(familyId, budgetId)}/targets/${encodeURIComponent(targetId)}`, {
+  return writeBudget('PUT', `${budgetsUrl(workspaceId, budgetId)}/targets/${encodeURIComponent(targetId)}`, {
     name,
     plannedAmount,
   }, 200)
@@ -169,10 +169,10 @@ async function archive(url: string, what: string): Promise<{ ok: true } | { ok: 
   return { ok: false, message: `Falha ao arquivar ${what} (HTTP ${response.status}).` }
 }
 
-export function archiveBudget(familyId: string, budgetId: string) {
-  return archive(budgetsUrl(familyId, budgetId), 'o orçamento')
+export function archiveBudget(workspaceId: string, budgetId: string) {
+  return archive(budgetsUrl(workspaceId, budgetId), 'o orçamento')
 }
 
-export function archiveBudgetTarget(familyId: string, budgetId: string, targetId: string) {
-  return archive(`${budgetsUrl(familyId, budgetId)}/targets/${encodeURIComponent(targetId)}`, 'a meta')
+export function archiveBudgetTarget(workspaceId: string, budgetId: string, targetId: string) {
+  return archive(`${budgetsUrl(workspaceId, budgetId)}/targets/${encodeURIComponent(targetId)}`, 'a meta')
 }

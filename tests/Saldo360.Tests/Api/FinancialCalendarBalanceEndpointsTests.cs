@@ -9,9 +9,9 @@ namespace Saldo360.Tests.Api;
 public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
-    private string _member = null!;
+    private string _ownerSecondSession = null!;
     private string _outsider = null!;
-    private FamilyDto _family = null!;
+    private WorkspaceDto _family = null!;
     private Guid _income;
     private Guid _expense;
 
@@ -20,10 +20,10 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
     private async Task ArrangeAsync()
     {
         _owner = await SignInAsync("dona");
-        _member = await SignInAsync("membro");
+        _ownerSecondSession = _owner;
         _outsider = await SignInAsync("estranho");
-        var created = await CreateFamilyAsync(_owner);
-        _family = await JoinByInvitationAsync(_owner, created.Id, _member);
+        var created = await CreateWorkspaceAsync(_owner);
+        _family = created;
         _income = await CreateCategoryAsync("Salário", "Income");
         _expense = await CreateCategoryAsync("Aluguel", "Expense");
     }
@@ -146,19 +146,19 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
         var account = await CreateAccountAsync("Itaú", "100.00", Today.AddDays(-1));
 
         Assert.Equal(HttpStatusCode.BadRequest,
-            (await SendAsync(HttpMethod.Get, $"/api/families/{_family.Id}/financial-calendar/balances", _owner)).StatusCode);
+            (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_family.Id}/financial-calendar/balances", _owner)).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,
             (await SendAsync(HttpMethod.Get,
-                $"/api/families/{_family.Id}/financial-calendar/balances?from=14/10/2026&through=2026-10-15", _owner)).StatusCode);
+                $"/api/financial-workspaces/{_family.Id}/financial-calendar/balances?from=14/10/2026&through=2026-10-15", _owner)).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,
             (await SendAsync(HttpMethod.Get, Url(null, Today, Today.AddDays(-1)), _owner)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await SendAsync(HttpMethod.Get, Url(account, Today, Today), _outsider)).StatusCode);
 
-        var outsiderFamily = await CreateFamilyAsync(_outsider, "Outra família");
+        var outsiderFamily = await CreateWorkspaceAsync(_outsider, "Outra família");
         var outsiderAccountResponse = await SendWithCsrfAsync(
             HttpMethod.Post,
-            $"/api/families/{outsiderFamily.Id}/accounts",
+            $"/api/financial-workspaces/{outsiderFamily.Id}/accounts",
             _outsider,
             new
             {
@@ -235,12 +235,12 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
     }
 
     private string Url(Guid? account, DateOnly from, DateOnly through) =>
-        $"/api/families/{_family.Id}/financial-calendar/balances?from={from:yyyy-MM-dd}&through={through:yyyy-MM-dd}"
+        $"/api/financial-workspaces/{_family.Id}/financial-calendar/balances?from={from:yyyy-MM-dd}&through={through:yyyy-MM-dd}"
         + (account is { } id ? $"&accountId={id}" : string.Empty);
 
     private async Task<BalancesDto> BalancesAsync(Guid? account, DateOnly from, DateOnly through)
     {
-        var response = await SendAsync(HttpMethod.Get, Url(account, from, through), _member);
+        var response = await SendAsync(HttpMethod.Get, Url(account, from, through), _ownerSecondSession);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await ReadAsync<BalancesDto>(response);
     }
@@ -248,14 +248,14 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
     private async Task<JsonDocument> ProjectionAsync(Guid account, DateOnly through)
     {
         var response = await SendAsync(HttpMethod.Get,
-            $"/api/families/{_family.Id}/accounts/{account}/projection?through={through:yyyy-MM-dd}", _member);
+            $"/api/financial-workspaces/{_family.Id}/accounts/{account}/projection?through={through:yyyy-MM-dd}", _ownerSecondSession);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
     }
 
     private async Task<Guid> CreateAccountAsync(string name, string? openingBalance, DateOnly? openingBalanceDate)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/accounts", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/accounts", _owner,
             new { name, type = "Checking", financialScope = "PF", openingBalance, openingBalanceDate });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -263,7 +263,7 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
 
     private async Task<Guid> CreateCategoryAsync(string name, string type)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/categories", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/categories", _owner,
             new { name, type });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -272,7 +272,7 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
     private async Task CreateTransactionAsync(
         Guid accountId, Guid categoryId, string type, string amount, DateOnly date, string description)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transactions", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transactions", _owner,
             new { accountId, categoryId, type, amount, transactionDate = date, description });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
@@ -280,7 +280,7 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
     private async Task<Guid> CreatePlannedAsync(
         Guid accountId, Guid categoryId, string type, string amount, DateOnly dueDate, string description)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/planned-transactions", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/planned-transactions", _owner,
             new { accountId, categoryId, type, amount, dueDate, description });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -289,7 +289,7 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
     private async Task<Guid> RealizeAsync(Guid plannedId, string amount, DateOnly date)
     {
         var response = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/planned-transactions/{plannedId}/realize", _member,
+            $"/api/financial-workspaces/{_family.Id}/planned-transactions/{plannedId}/realize", _ownerSecondSession,
             new { amount, transactionDate = date });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
@@ -298,13 +298,13 @@ public sealed class FinancialCalendarBalanceEndpointsTests(PostgresFixture postg
     private async Task CancelTransactionAsync(Guid transactionId)
     {
         var response = await SendWithCsrfAsync(HttpMethod.Post,
-            $"/api/families/{_family.Id}/transactions/{transactionId}/cancel", _member);
+            $"/api/financial-workspaces/{_family.Id}/transactions/{transactionId}/cancel", _ownerSecondSession);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     private async Task CreateTransferAsync(Guid source, Guid destination, string amount, DateOnly date)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/transfers", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/transfers", _owner,
             new
             {
                 sourceAccountId = source,

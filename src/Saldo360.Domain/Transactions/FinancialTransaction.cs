@@ -27,7 +27,7 @@ public sealed class FinancialTransaction : Entity
         Currency = DefaultCurrency;
     }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
 
     public Guid AccountId { get; private set; }
 
@@ -64,23 +64,23 @@ public sealed class FinancialTransaction : Entity
     /// <summary>Previsão realizada por este lançamento (mesma família); null = lançamento avulso. Imutável.</summary>
     public Guid? PlannedTransactionId { get; private init; }
 
-    public static FinancialTransaction Create(Guid familyId, TransactionDetails details, Guid createdByUserId, DateTimeOffset now) =>
-        Create(familyId, details, plannedTransactionId: null, createdByUserId, now);
+    public static FinancialTransaction Create(Guid workspaceId, TransactionDetails details, Guid createdByUserId, DateTimeOffset now) =>
+        Create(workspaceId, details, plannedTransactionId: null, createdByUserId, now);
 
-    public static FinancialTransaction CreateInvoicePayment(Guid familyId, Guid accountId, string description, decimal amount, DateOnly date, Guid createdByUserId, DateTimeOffset now) =>
+    public static FinancialTransaction CreateInvoicePayment(Guid workspaceId, Guid accountId, string description, decimal amount, DateOnly date, Guid createdByUserId, DateTimeOffset now) =>
         new FinancialTransaction
         {
-            FamilyId = familyId, CreatedAt = now, CreatedByUserId = createdByUserId,
+            WorkspaceId = workspaceId, CreatedAt = now, CreatedByUserId = createdByUserId,
             Origin = FinancialTransactionOrigin.CreditCardInvoicePayment,
             CategoryId = null,
             AccountId = accountId, Type = CategoryType.Expense, Description = description,
             Amount = amount, TransactionDate = date, Currency = DefaultCurrency,
         };
 
-    public static FinancialTransaction CreateDebtInstallmentPayment(Guid familyId, Guid accountId, string description, decimal amount, DateOnly date, Guid createdByUserId, DateTimeOffset now) =>
+    public static FinancialTransaction CreateDebtInstallmentPayment(Guid workspaceId, Guid accountId, string description, decimal amount, DateOnly date, Guid createdByUserId, DateTimeOffset now) =>
         new FinancialTransaction
         {
-            FamilyId = familyId, CreatedAt = now, CreatedByUserId = createdByUserId,
+            WorkspaceId = workspaceId, CreatedAt = now, CreatedByUserId = createdByUserId,
             Origin = FinancialTransactionOrigin.DebtInstallmentPayment,
             CategoryId = null, AccountId = accountId, Type = CategoryType.Expense,
             Description = description, Amount = amount, TransactionDate = date, Currency = DefaultCurrency,
@@ -88,15 +88,15 @@ public sealed class FinancialTransaction : Entity
 
     /// <summary>Lançamento efetivo que realiza a previsão <paramref name="plannedTransactionId"/>.</summary>
     public static FinancialTransaction CreateRealization(
-        Guid familyId, TransactionDetails details, Guid plannedTransactionId, Guid createdByUserId, DateTimeOffset now) =>
-        Create(familyId, details, (Guid?)plannedTransactionId, createdByUserId, now);
+        Guid workspaceId, TransactionDetails details, Guid plannedTransactionId, Guid createdByUserId, DateTimeOffset now) =>
+        Create(workspaceId, details, (Guid?)plannedTransactionId, createdByUserId, now);
 
     private static FinancialTransaction Create(
-        Guid familyId, TransactionDetails details, Guid? plannedTransactionId, Guid createdByUserId, DateTimeOffset now)
+        Guid workspaceId, TransactionDetails details, Guid? plannedTransactionId, Guid createdByUserId, DateTimeOffset now)
     {
         var transaction = new FinancialTransaction
         {
-            FamilyId = familyId,
+            WorkspaceId = workspaceId,
             PlannedTransactionId = plannedTransactionId,
             CreatedAt = now,
             CreatedByUserId = createdByUserId,

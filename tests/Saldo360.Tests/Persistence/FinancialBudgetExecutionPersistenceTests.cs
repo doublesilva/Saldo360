@@ -1,3 +1,4 @@
+using Saldo360.Domain.Workspaces;
 using System.Data;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,7 @@ using Saldo360.Domain.Families;
 using Saldo360.Domain.Planning;
 using Saldo360.Domain.Transactions;
 using Saldo360.Infrastructure.Budgets;
-using Saldo360.Infrastructure.Families;
+using Saldo360.Infrastructure.Workspaces;
 using Saldo360.Infrastructure.Persistence;
 using Saldo360.Infrastructure.Users;
 using Saldo360.Tests.Support;
@@ -22,7 +23,7 @@ public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture pos
     private static readonly DateOnly Competence = new(2026, 10, 1);
     private string _connection = null!;
     private Guid _user;
-    private Family _family = null!;
+    private FinancialWorkspace _family = null!;
     private FinancialAccount _account = null!;
     private FinancialCategory _category = null!;
     private FinancialBudget _budget = null!;
@@ -34,8 +35,8 @@ public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture pos
         await using var db = Db();
         _user = await new UserDirectory(db, TimeProvider.System)
             .ResolveAsync("https://auth.test.invalid", "budget-execution", "A", CancellationToken.None);
-        _family = Family.Create("Família", _user, DateTimeOffset.UtcNow);
-        await new FamilyRepository(db).AddAsync(_family, CancellationToken.None);
+        _family = FinancialWorkspace.CreatePersonal(_user, DateTimeOffset.UtcNow);
+        await new FinancialWorkspaceRepository(db).AddAsync(_family, CancellationToken.None);
         _account = FinancialAccount.Create(_family.Id,
             AccountDetails.TryCreate("Conta", null, nameof(AccountType.Checking), nameof(FinancialScope.PF), null,
                 0m, Competence, out _ )!, _user, DateTimeOffset.UtcNow);

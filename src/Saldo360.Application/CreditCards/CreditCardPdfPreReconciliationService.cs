@@ -8,7 +8,7 @@ public sealed class CreditCardPdfPreReconciliationService(
     ICreditCardPdfPreReconciliationRepository repository) : ICreditCardPdfPreReconciliationService
 {
     public async Task<CreditCardPdfPreReconciliationResult> PreReconcileAsync(
-        Guid familyId, Guid cardId, Guid userId, Stream pdf, long length, string fileName,
+        Guid workspaceId, Guid cardId, Guid userId, Stream pdf, long length, string fileName,
         string? issuerProfile, string? competence, string? dateFormat, string? password,
         CancellationToken cancellationToken)
     {
@@ -22,17 +22,17 @@ public sealed class CreditCardPdfPreReconciliationService(
         content.Position = 0;
 
         var previewResult = await previewService.PreviewAsync(
-            familyId, cardId, userId, content, bytes.LongLength, fileName,
+            workspaceId, cardId, userId, content, bytes.LongLength, fileName,
             issuerProfile, competence, dateFormat, password, cancellationToken);
         if (previewResult.Access != CreditCardPdfPreviewAccess.Allowed)
             return new(previewResult.Access, null, previewResult.Errors);
 
         var preview = previewResult.Preview!;
         var snapshot = await repository.GetSnapshotAsync(
-            familyId, cardId, userId, preview.Statement.Competence, cancellationToken);
+            workspaceId, cardId, userId, preview.Statement.Competence, cancellationToken);
         if (snapshot is null) return new(CreditCardPdfPreviewAccess.NotFound, null, null);
 
-        var destination = ValidateDestination(familyId, cardId, userId, preview.Statement, snapshot);
+        var destination = ValidateDestination(workspaceId, cardId, userId, preview.Statement, snapshot);
         var destinationConflict = destination.Invoice == "Conflict";
         var items = preview.Items.Select(item => Classify(hash, item, snapshot.Operations, destinationConflict)).ToList();
         var counts = new CreditCardPdfPreReconciliationCounts(
@@ -68,7 +68,7 @@ public sealed class CreditCardPdfPreReconciliationService(
     }
 
     private static CreditCardPdfDestinationValidation ValidateDestination(
-        Guid familyId, Guid cardId, Guid userId, CreditCardPdfPreviewStatement statement,
+        Guid workspaceId, Guid cardId, Guid userId, CreditCardPdfPreviewStatement statement,
         CreditCardPdfPreReconciliationSnapshot snapshot)
     {
         var notes = new List<string>();
@@ -89,7 +89,7 @@ public sealed class CreditCardPdfPreReconciliationService(
             : statement.CardLastDigits == snapshot.LastFourDigits ? "Validated" : "Conflict";
         if (cardIdentity == "NeedsReview") notes.Add("O documento ou o cadastro não fornece um único final de cartão para validação automática.");
         if (cardIdentity == "Conflict") notes.Add("O final de cartão do documento diverge do cartão selecionado.");
-        return new(familyId, cardId, "Validated", "Validated", holder, cardIdentity, invoice, snapshot.Invoice?.Id, notes);
+        return new(workspaceId, cardId, "Validated", "Validated", holder, cardIdentity, invoice, snapshot.Invoice?.Id, notes);
     }
 
     private static CreditCardPdfPreReconciliationItem Classify(

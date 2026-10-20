@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Planning;
 using Saldo360.Domain.Users;
 
@@ -43,27 +43,27 @@ internal sealed class FinancialPlannedTransactionConfiguration : IEntityTypeConf
         builder.Property(planned => planned.Currency).HasMaxLength(3).IsFixedLength();
 
         // Listagem: data prevista crescente e Id crescente (ordem estável), sempre filtrada por família.
-        builder.HasIndex(planned => new { planned.FamilyId, planned.DueDate, planned.Id });
+        builder.HasIndex(planned => new { planned.WorkspaceId, planned.DueDate, planned.Id });
 
         // Restrict em todas as FKs: nada apaga previsões por cascata (histórico preservado).
-        builder.HasOne<Family>()
+        builder.HasOne<FinancialWorkspace>()
             .WithMany()
-            .HasForeignKey(planned => planned.FamilyId)
+            .HasForeignKey(planned => planned.WorkspaceId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // (family_id, account_id) → financial_accounts (family_id, id): conta da MESMA família.
+        // (workspace_id, account_id) → financial_accounts (workspace_id, id): conta da MESMA família.
         builder.HasOne<FinancialAccount>()
             .WithMany()
-            .HasForeignKey(planned => new { planned.FamilyId, planned.AccountId })
-            .HasPrincipalKey(account => new { account.FamilyId, account.Id })
+            .HasForeignKey(planned => new { planned.WorkspaceId, planned.AccountId })
+            .HasPrincipalKey(account => new { account.WorkspaceId, account.Id })
             .HasConstraintName("fk_financial_planned_transactions_accounts_same_family")
             .OnDelete(DeleteBehavior.Restrict);
 
-        // (family_id, category_id, type) → financial_categories (family_id, id, type): MESMA família e MESMO tipo.
+        // (workspace_id, category_id, type) → financial_categories (workspace_id, id, type): MESMA família e MESMO tipo.
         builder.HasOne<FinancialCategory>()
             .WithMany()
-            .HasForeignKey(planned => new { planned.FamilyId, planned.CategoryId, planned.Type })
-            .HasPrincipalKey(category => new { category.FamilyId, category.Id, category.Type })
+            .HasForeignKey(planned => new { planned.WorkspaceId, planned.CategoryId, planned.Type })
+            .HasPrincipalKey(category => new { category.WorkspaceId, category.Id, category.Type })
             .HasConstraintName("fk_financial_planned_transactions_categories_same_family_type")
             .OnDelete(DeleteBehavior.Restrict);
 

@@ -5,7 +5,7 @@ namespace Saldo360.Tests.CreditCards;
 
 public sealed class FinancialEmailCollectorTests
 {
-    private static readonly Guid FamilyId = Guid.NewGuid();
+    private static readonly Guid WorkspaceId = Guid.NewGuid();
     private static readonly Guid UserId = Guid.NewGuid();
 
     [Fact]
@@ -43,7 +43,7 @@ public sealed class FinancialEmailCollectorTests
         source.Add("before", new(2026, 10, 1, 2, 59, 59, TimeSpan.Zero), ("outside-a", "outside.pdf", "application/pdf", Pdf(1)));
         source.Add("after", new(2026, 11, 1, 3, 0, 0, TimeSpan.Zero), ("outside-b", "outside.pdf", "application/pdf", Pdf(2)));
         var fixture = Create(source, Preview("Generic", "NeedsReview", null), schedulerEnabled: false);
-        var checkpoint = await fixture.Checkpoints.GetOrCreateAsync(FamilyId, "Bills", default);
+        var checkpoint = await fixture.Checkpoints.GetOrCreateAsync(WorkspaceId, "Bills", default);
         checkpoint.Complete(new(2026, 12, 20, 12, 0, 0, TimeSpan.Zero), new(2026, 12, 20, 12, 0, 0, TimeSpan.Zero), "Success", 7, 1, 1, 1, 0, 0, 0);
         var snapshot = System.Text.Json.JsonSerializer.Serialize(checkpoint);
         fixture.Checkpoints.ForbidAccess = true;
@@ -84,7 +84,7 @@ public sealed class FinancialEmailCollectorTests
     {
         var source = new FakeEmailSource(); source.Add("m", new(2026, 10, 15, 12, 0, 0, TimeSpan.Zero), ("sensitive-attachment", "bill.pdf", "application/pdf", Pdf(1)));
         var fixture = Create(source, Preview("Generic", "NeedsReview", null));
-        var checkpoint = await fixture.Checkpoints.GetOrCreateAsync(FamilyId, "Bills", default);
+        var checkpoint = await fixture.Checkpoints.GetOrCreateAsync(WorkspaceId, "Bills", default);
         var prior = new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.Zero);
         checkpoint.Complete(prior, prior, "Success", 0, 0, 0, 0, 0, 0, 0);
         await fixture.Collector.RunAsync("Bills", UserId, false, default);
@@ -227,7 +227,7 @@ public sealed class FinancialEmailCollectorTests
         var inbox = new FinancialDocumentInboxService(inboxRepository, storage, extractor, new UnusedPreview(), resolver,
             new FinancialDocumentClassificationOptions(), new FakeDocumentClassifier(), new FinancialDocumentAnalysisRouter(), TimeProvider.System);
         var options = new FinancialEmailImportOptions { Enabled = schedulerEnabled, LookbackDays = 7, MaxMessages = 20,
-            Sources = [new() { Name = "Bills", FamilyId = FamilyId, Query = "has:attachment filename:pdf", Enabled = true, CollectionMode = mode, AllowedLinkHosts = ["dmae.example"], AllowedLinkPathPrefixes = ["/contas/"] }] };
+            Sources = [new() { Name = "Bills", WorkspaceId = WorkspaceId, Query = "has:attachment filename:pdf", Enabled = true, CollectionMode = mode, AllowedLinkHosts = ["dmae.example"], AllowedLinkPathPrefixes = ["/contas/"] }] };
         var checkpoints = new FakeCheckpoints();
         var downloader = new FakeLinkedDownloader();
         return new(new(options, source, new FinancialEmailLinkExtractor(), downloader, checkpoints, inboxRepository, inbox, TimeProvider.System), inboxRepository, downloader, checkpoints);
@@ -265,19 +265,19 @@ public sealed class FinancialEmailCollectorTests
     private sealed class FakeInboxRepository : IFinancialDocumentInboxRepository
     {
         public List<FinancialDocumentInboxItem> Items { get; } = [];
-        public Task<bool> CanAccessFamilyAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) => Task.FromResult(familyId == FamilyId && userId == UserId);
-        public Task<bool> FamilyExistsAsync(Guid familyId, CancellationToken cancellationToken) => Task.FromResult(familyId == FamilyId);
-        public Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid familyId, string hash, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.FamilyId == familyId && item.ContentHash == hash));
-        public Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid familyId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.FamilyId == familyId && item.Source == source && item.ExternalSourceId == externalId));
-        public Task<FinancialDocumentInboxItem?> GetAsync(Guid familyId, Guid id, Guid userId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.Id == id));
-        public Task<IReadOnlyList<FinancialDocumentInboxItem>> ListAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialDocumentInboxItem>>(Items);
+        public Task<bool> CanAccessWorkspaceAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) => Task.FromResult(workspaceId == WorkspaceId && userId == UserId);
+        public Task<bool> WorkspaceExistsAsync(Guid workspaceId, CancellationToken cancellationToken) => Task.FromResult(workspaceId == WorkspaceId);
+        public Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid workspaceId, string hash, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.WorkspaceId == workspaceId && item.ContentHash == hash));
+        public Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid workspaceId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.WorkspaceId == workspaceId && item.Source == source && item.ExternalSourceId == externalId));
+        public Task<FinancialDocumentInboxItem?> GetAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken cancellationToken) => Task.FromResult(Items.SingleOrDefault(item => item.Id == id));
+        public Task<IReadOnlyList<FinancialDocumentInboxItem>> ListAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialDocumentInboxItem>>(Items);
         public Task<bool> TryAddAsync(FinancialDocumentInboxItem item, CancellationToken cancellationToken) { Items.Add(item); return Task.FromResult(true); }
         public Task SaveAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
     private sealed class FakeStorage : IFinancialDocumentStorage
     {
         private readonly Dictionary<string, byte[]> values = [];
-        public async Task<string> SaveAsync(Guid familyId, Guid documentId, Stream content, CancellationToken cancellationToken) { using var memory = new MemoryStream(); await content.CopyToAsync(memory, cancellationToken); var key = documentId.ToString("N"); values[key] = memory.ToArray(); return key; }
+        public async Task<string> SaveAsync(Guid workspaceId, Guid documentId, Stream content, CancellationToken cancellationToken) { using var memory = new MemoryStream(); await content.CopyToAsync(memory, cancellationToken); var key = documentId.ToString("N"); values[key] = memory.ToArray(); return key; }
         public Task<Stream?> OpenReadAsync(string reference, CancellationToken cancellationToken) => Task.FromResult<Stream?>(new MemoryStream(values[reference]));
         public Task DeleteAsync(string reference, CancellationToken cancellationToken) { values.Remove(reference); return Task.CompletedTask; }
     }
@@ -286,17 +286,17 @@ public sealed class FinancialEmailCollectorTests
         public Task<CreditCardPdfExtractedDocument> ExtractAsync(Stream pdf, int maxPages, IReadOnlyList<string> passwords, CancellationToken cancellationToken) => failure is { } value ? throw new CreditCardPdfReadException(value) : Task.FromResult(new CreditCardPdfExtractedDocument([new(1, "text")]));
         public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat) => preview!;
     }
-    private sealed class EmptyResolutionRepository : ICreditCardStatementResolutionRepository { public Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid familyId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CreditCardStatementCandidate>>([]); }
+    private sealed class EmptyResolutionRepository : ICreditCardStatementResolutionRepository { public Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid workspaceId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CreditCardStatementCandidate>>([]); }
     private sealed class FakeDocumentClassifier : IFinancialDocumentClassifier { public Task<FinancialDocumentClassificationResult> ClassifyAsync(FinancialDocumentClassificationRequest request, CancellationToken cancellationToken) => Task.FromResult(new FinancialDocumentClassificationResult("Unknown", "Low", [], "Unknown")); }
-    private sealed class UnusedPreview : ICreditCardPdfPreviewService { public Task<CreditCardPdfPreviewResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) => throw new NotSupportedException(); }
+    private sealed class UnusedPreview : ICreditCardPdfPreviewService { public Task<CreditCardPdfPreviewResult> PreviewAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) => throw new NotSupportedException(); }
     private sealed class FakeCheckpoints : IFinancialEmailCollectorCheckpointRepository
     {
         public bool ForbidAccess { get; set; }
         public int Saves { get; private set; }
         private FinancialEmailCollectorCheckpoint? value;
-        public Task<FinancialEmailCollectorCheckpoint> GetOrCreateAsync(Guid familyId, string profileName, CancellationToken cancellationToken)
-        { if (ForbidAccess) throw new InvalidOperationException("Checkpoint forbidden"); return Task.FromResult(value ??= FinancialEmailCollectorCheckpoint.Create(familyId, profileName)); }
-        public Task<IReadOnlyList<FinancialEmailCollectorCheckpoint>> ListAsync(IReadOnlyCollection<Guid> familyIds, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailCollectorCheckpoint>>(value is null ? [] : [value]);
+        public Task<FinancialEmailCollectorCheckpoint> GetOrCreateAsync(Guid workspaceId, string profileName, CancellationToken cancellationToken)
+        { if (ForbidAccess) throw new InvalidOperationException("Checkpoint forbidden"); return Task.FromResult(value ??= FinancialEmailCollectorCheckpoint.Create(workspaceId, profileName)); }
+        public Task<IReadOnlyList<FinancialEmailCollectorCheckpoint>> ListAsync(IReadOnlyCollection<Guid> workspaceIds, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailCollectorCheckpoint>>(value is null ? [] : [value]);
         public Task SaveAsync(CancellationToken cancellationToken) { if (ForbidAccess) throw new InvalidOperationException("Checkpoint forbidden"); Saves++; return Task.CompletedTask; }
     }
 }

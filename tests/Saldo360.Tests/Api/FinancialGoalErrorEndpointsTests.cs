@@ -12,19 +12,19 @@ public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) :
     public async Task Contribution_StandardizesValidationConflictAndIdempotency_WithoutDuplicateAllocation()
     {
         var owner = await SignInAsync("goal-error-owner");
-        var family = await CreateFamilyAsync(owner, "Família Objetivos Erros");
+        var family = await CreateWorkspaceAsync(owner, "Família Objetivos Erros");
         var accountId = await CreateAccountAsync(family.Id, owner, "100.00");
         var goalId = await CreateGoalAsync(family.Id, owner);
         var today = TodayInSaoPaulo();
 
-        var invalid = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/financial-goals/{goalId}/contributions", owner,
+        var invalid = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/financial-goals/{goalId}/contributions", owner,
             new { operationId = Guid.Empty, financialAccountId = accountId, amount = "abc", effectiveDate = today });
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
         using var invalidBody = JsonDocument.Parse(await invalid.Content.ReadAsStringAsync());
         AssertProblem(invalidBody.RootElement, 400, "VALIDATION_ERROR");
         Assert.True(invalidBody.RootElement.GetProperty("errors").TryGetProperty("amount", out _));
 
-        var conflict = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/financial-goals/{goalId}/contributions", owner,
+        var conflict = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/financial-goals/{goalId}/contributions", owner,
             new { operationId = Guid.NewGuid(), financialAccountId = accountId, amount = "1100.00", effectiveDate = today });
         Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
         using var conflictBody = JsonDocument.Parse(await conflict.Content.ReadAsStringAsync());
@@ -32,7 +32,7 @@ public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) :
 
         var operationId = Guid.NewGuid();
         var payload = new { operationId, financialAccountId = accountId, amount = "50.00", effectiveDate = today };
-        var contributionUrl = $"/api/families/{family.Id}/financial-goals/{goalId}/contributions";
+        var contributionUrl = $"/api/financial-workspaces/{family.Id}/financial-goals/{goalId}/contributions";
         var concurrent = await Task.WhenAll(
             SendWithCsrfAsync(HttpMethod.Post, contributionUrl, owner, payload),
             SendWithCsrfAsync(HttpMethod.Post, contributionUrl, owner, payload));
@@ -43,7 +43,7 @@ public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) :
             JsonDocument.Parse(await first.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid(),
             JsonDocument.Parse(await replay.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid());
 
-        var duplicate = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/financial-goals/{goalId}/contributions", owner,
+        var duplicate = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/financial-goals/{goalId}/contributions", owner,
             new { operationId, financialAccountId = accountId, amount = "40.00", effectiveDate = today });
         Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
         using var duplicateBody = JsonDocument.Parse(await duplicate.Content.ReadAsStringAsync());
@@ -51,14 +51,14 @@ public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) :
 
         var withdrawalOperationId = Guid.NewGuid();
         var withdrawalPayload = new { operationId = withdrawalOperationId, financialAccountId = accountId, amount = "10.00", effectiveDate = today };
-        var withdrawalUrl = $"/api/families/{family.Id}/financial-goals/{goalId}/withdrawals";
+        var withdrawalUrl = $"/api/financial-workspaces/{family.Id}/financial-goals/{goalId}/withdrawals";
         var withdrawals = await Task.WhenAll(
             SendWithCsrfAsync(HttpMethod.Post, withdrawalUrl, owner, withdrawalPayload),
             SendWithCsrfAsync(HttpMethod.Post, withdrawalUrl, owner, withdrawalPayload));
         Assert.All(withdrawals, response => Assert.Equal(HttpStatusCode.Created, response.StatusCode));
         var withdrawalId = JsonDocument.Parse(await withdrawals[0].Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
         Assert.Equal(withdrawalId, JsonDocument.Parse(await withdrawals[1].Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid());
-        var cancelUrl = $"/api/families/{family.Id}/financial-goals/{goalId}/allocations/{withdrawalId}/cancel";
+        var cancelUrl = $"/api/financial-workspaces/{family.Id}/financial-goals/{goalId}/allocations/{withdrawalId}/cancel";
         Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post, cancelUrl, owner)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post, cancelUrl, owner)).StatusCode);
         var withdrawalAfterCancel = await SendWithCsrfAsync(HttpMethod.Post, withdrawalUrl, owner, withdrawalPayload);
@@ -87,27 +87,27 @@ public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) :
     {
         var owner = await SignInAsync("goal-hidden-owner");
         var outsider = await SignInAsync("goal-hidden-outsider");
-        var family = await CreateFamilyAsync(owner, "Família Objetivo Oculto");
+        var family = await CreateWorkspaceAsync(owner, "Família Objetivo Oculto");
         var accountId = await CreateAccountAsync(family.Id, owner, "100.00");
         var goalId = await CreateGoalAsync(family.Id, owner);
 
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/financial-goals/{goalId}/contributions", outsider,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/financial-goals/{goalId}/contributions", outsider,
             new { operationId = Guid.NewGuid(), financialAccountId = accountId, amount = "10.00", effectiveDate = TodayInSaoPaulo() });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         AssertProblem(body.RootElement, 404, "RESOURCE_NOT_FOUND");
     }
 
-    private async Task<Guid> CreateAccountAsync(Guid familyId, string owner, string openingBalance)
+    private async Task<Guid> CreateAccountAsync(Guid workspaceId, string owner, string openingBalance)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/accounts", owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/accounts", owner,
             new { name = "Conta objetivos", type = "Checking", financialScope = "PF", openingBalance, openingBalanceDate = TodayInSaoPaulo() });
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
     }
 
-    private async Task<Guid> CreateGoalAsync(Guid familyId, string owner)
+    private async Task<Guid> CreateGoalAsync(Guid workspaceId, string owner)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/financial-goals", owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/financial-goals", owner,
             new { name = "Reserva", goalType = "EmergencyFund", targetAmount = "1000.00", priority = "High" });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();

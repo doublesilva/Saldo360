@@ -10,7 +10,7 @@ public sealed class FinancialBudgetTarget : Entity
 
     private FinancialBudgetTarget() { Name = string.Empty; }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid BudgetId { get; private init; }
     public string Name { get; private set; }
     public decimal PlannedAmount { get; private set; }
@@ -26,9 +26,9 @@ public sealed class FinancialBudgetTarget : Entity
     public Guid? ArchivedByUserId { get; private set; }
 
     public static FinancialBudgetTarget Create(
-        Guid familyId, Guid budgetId, string name, decimal amount, Guid categoryId, Guid userId, DateTimeOffset now) => new()
+        Guid workspaceId, Guid budgetId, string name, decimal amount, Guid categoryId, Guid userId, DateTimeOffset now) => new()
         {
-            FamilyId = familyId,
+            WorkspaceId = workspaceId,
             BudgetId = budgetId,
             Name = name,
             PlannedAmount = amount,

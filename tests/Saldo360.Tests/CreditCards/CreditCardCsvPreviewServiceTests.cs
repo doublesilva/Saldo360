@@ -1,3 +1,5 @@
+using Saldo360.Application.Workspaces;
+using Saldo360.Domain.Workspaces;
 using System.Text;
 using Saldo360.Application.CreditCards;
 using Saldo360.Application.Families;
@@ -57,32 +59,33 @@ public sealed class CreditCardCsvPreviewServiceTests
             request ?? new(null, null, null, null, null, null, null, null, null, null, null), CancellationToken.None);
     }
 
-    private sealed class FakeFamily : IFamilyRepository
+    private sealed class FakeFamily : IFinancialWorkspaceRepository
     {
         public Task AddAsync(Saldo360.Domain.Families.Family family, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<IReadOnlyList<FamilySummary>> ListForUserAsync(Guid userId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FamilySummary>>([]);
-        public Task<FamilyDetails?> FindForMemberAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) => Task.FromResult<FamilyDetails?>(null);
-        public Task<FamilyRole?> GetMemberRoleAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) => Task.FromResult<FamilyRole?>(FamilyRole.Owner);
+        public Task<FamilyDetails?> FindForMemberAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) => Task.FromResult<FamilyDetails?>(null);
+        public Task<FinancialWorkspace> EnsurePersonalAsync(Guid user, DateTimeOffset now, CancellationToken ct) => throw new NotSupportedException();
+        public Task<FinancialWorkspaceRole?> GetOwnerRoleAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) => Task.FromResult<FinancialWorkspaceRole?>(FinancialWorkspaceRole.Owner);
     }
 
     private sealed class FakePurchase : IFinancialCreditCardPurchaseRepository
     {
         public static int SaveCalls { get; set; }
         public Task AddAsync(FinancialCreditCardPurchase purchase, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task<FinancialCreditCardPurchase?> FindAsync(Guid familyId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardPurchase?>(null);
-        public Task<FinancialCreditCardPurchaseDto?> GetAsync(Guid familyId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardPurchaseDto?>(null);
-        public Task<IReadOnlyList<FinancialCreditCardPurchaseDto>> ListAsync(Guid familyId, Guid cardId, DateOnly? from, DateOnly? through, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialCreditCardPurchaseDto>>([]);
+        public Task<FinancialCreditCardPurchase?> FindAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardPurchase?>(null);
+        public Task<FinancialCreditCardPurchaseDto?> GetAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardPurchaseDto?>(null);
+        public Task<IReadOnlyList<FinancialCreditCardPurchaseDto>> ListAsync(Guid workspaceId, Guid cardId, DateOnly? from, DateOnly? through, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialCreditCardPurchaseDto>>([]);
         public Task SaveChangesAsync(CancellationToken cancellationToken) { SaveCalls++; return Task.CompletedTask; }
-        public Task<CreditCardCalendarConfig?> GetCardCalendarAsync(Guid familyId, Guid cardId, CancellationToken cancellationToken) => Task.FromResult<CreditCardCalendarConfig?>(null);
-        public Task<FinancialCreditCardInvoice?> FindInvoiceAsync(Guid familyId, Guid cardId, DateOnly closingDate, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardInvoice?>(null);
+        public Task<CreditCardCalendarConfig?> GetCardCalendarAsync(Guid workspaceId, Guid cardId, CancellationToken cancellationToken) => Task.FromResult<CreditCardCalendarConfig?>(null);
+        public Task<FinancialCreditCardInvoice?> FindInvoiceAsync(Guid workspaceId, Guid cardId, DateOnly closingDate, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardInvoice?>(null);
         public Task AddInvoiceAsync(FinancialCreditCardInvoice invoice, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ListInvoicesAsync(Guid familyId, Guid cardId, string from, string through, DateOnly today, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialCreditCardInvoiceDto>>([]);
-        public Task<FinancialCreditCardInvoiceDto?> GetInvoiceAsync(Guid familyId, Guid cardId, Guid invoiceId, DateOnly today, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardInvoiceDto?>(null);
-        public Task<bool> CanCancelAsync(Guid familyId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => Task.FromResult(false);
-        public Task<bool> HasActiveReconciliationAsync(Guid familyId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => Task.FromResult(false);
-        public Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ProjectInvoicesAsync(Guid familyId, Guid cardId, string from, int months, DateOnly today, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialCreditCardInvoiceDto>>([]);
-        public Task<FinancialCreditCardLimitDto?> GetLimitAsync(Guid familyId, Guid cardId, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardLimitDto?>(null);
-        public Task<bool> IsActiveCardAsync(Guid familyId, Guid cardId, CancellationToken cancellationToken) => Task.FromResult(true);
-        public Task<bool> IsExpenseCategoryAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken) => Task.FromResult(true);
+        public Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ListInvoicesAsync(Guid workspaceId, Guid cardId, string from, string through, DateOnly today, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialCreditCardInvoiceDto>>([]);
+        public Task<FinancialCreditCardInvoiceDto?> GetInvoiceAsync(Guid workspaceId, Guid cardId, Guid invoiceId, DateOnly today, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardInvoiceDto?>(null);
+        public Task<bool> CanCancelAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<bool> HasActiveReconciliationAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ProjectInvoicesAsync(Guid workspaceId, Guid cardId, string from, int months, DateOnly today, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialCreditCardInvoiceDto>>([]);
+        public Task<FinancialCreditCardLimitDto?> GetLimitAsync(Guid workspaceId, Guid cardId, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardLimitDto?>(null);
+        public Task<bool> IsActiveCardAsync(Guid workspaceId, Guid cardId, CancellationToken cancellationToken) => Task.FromResult(true);
+        public Task<bool> IsExpenseCategoryAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) => Task.FromResult(true);
     }
 }

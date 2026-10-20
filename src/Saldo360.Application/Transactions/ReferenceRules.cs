@@ -6,10 +6,10 @@ namespace Saldo360.Application.Transactions;
 public interface IReferenceLookup
 {
     /// <summary>A conta, se pertencer à família; null caso contrário (inexistente ou de outra família).</summary>
-    Task<AccountState?> GetAccountStateAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken);
+    Task<AccountState?> GetAccountStateAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken);
 
     /// <summary>A categoria, se pertencer à família; null caso contrário.</summary>
-    Task<CategoryState?> GetCategoryStateAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken);
+    Task<CategoryState?> GetCategoryStateAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -25,12 +25,12 @@ public static class ReferenceRules
     /// <param name="currentAccountId">Conta atual do registro editado (null na criação).</param>
     /// <param name="currentCategoryId">Categoria atual do registro editado (null na criação).</param>
     public static async Task ValidateAsync(
-        IReferenceLookup lookup, Guid familyId, Guid? accountId, Guid? categoryId, string? type,
+        IReferenceLookup lookup, Guid workspaceId, Guid? accountId, Guid? categoryId, string? type,
         Guid? currentAccountId, Guid? currentCategoryId, Dictionary<string, string[]> errors, CancellationToken cancellationToken)
     {
         if (accountId is { } account && !errors.ContainsKey(AccountField))
         {
-            var state = await lookup.GetAccountStateAsync(familyId, account, cancellationToken);
+            var state = await lookup.GetAccountStateAsync(workspaceId, account, cancellationToken);
             if (state is null)
             {
                 errors[AccountField] = ["Conta inválida."];
@@ -43,7 +43,7 @@ public static class ReferenceRules
 
         if (categoryId is { } category && !errors.ContainsKey(CategoryField))
         {
-            var state = await lookup.GetCategoryStateAsync(familyId, category, cancellationToken);
+            var state = await lookup.GetCategoryStateAsync(workspaceId, category, cancellationToken);
             if (state is null)
             {
                 errors[CategoryField] = ["Categoria inválida."];

@@ -1,3 +1,4 @@
+using Saldo360.Domain.Workspaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -5,7 +6,7 @@ using Npgsql;
 using Saldo360.Domain.Budgets;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Families;
-using Saldo360.Infrastructure.Families;
+using Saldo360.Infrastructure.Workspaces;
 using Saldo360.Infrastructure.Persistence;
 using Saldo360.Infrastructure.Persistence.Configurations;
 using Saldo360.Infrastructure.Users;
@@ -19,8 +20,8 @@ public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : 
     private const string PreviousMigration = "20261012215544_AddPlannedTransactionRealization";
     private string _connection = null!;
     private Guid _user;
-    private Family _familyA = null!;
-    private Family _familyB = null!;
+    private FinancialWorkspace _familyA = null!;
+    private FinancialWorkspace _familyB = null!;
     private FinancialCategory _expenseA = null!;
     private FinancialCategory _expenseB = null!;
 
@@ -31,9 +32,9 @@ public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : 
         var users = new UserDirectory(db, TimeProvider.System);
         _user = await users.ResolveAsync("https://auth.test.invalid", "budget-persistence-a", "A", CancellationToken.None);
         var userB = await users.ResolveAsync("https://auth.test.invalid", "budget-persistence-b", "B", CancellationToken.None);
-        _familyA = Family.Create("Família A", _user, DateTimeOffset.UtcNow);
-        _familyB = Family.Create("Família B", userB, DateTimeOffset.UtcNow);
-        var families = new FamilyRepository(db);
+        _familyA = FinancialWorkspace.CreatePersonal(_user, DateTimeOffset.UtcNow);
+        _familyB = FinancialWorkspace.CreatePersonal(userB, DateTimeOffset.UtcNow);
+        var families = new FinancialWorkspaceRepository(db);
         await families.AddAsync(_familyA, CancellationToken.None);
         await families.AddAsync(_familyB, CancellationToken.None);
         _expenseA = FinancialCategory.Create(_familyA.Id, "Moradia", CategoryType.Expense, _user, DateTimeOffset.UtcNow);
@@ -114,7 +115,7 @@ public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : 
     {
         await using (var db = Db())
         {
-            await db.GetService<IMigrator>().MigrateAsync(PreviousMigration);
+            await HistoricalFinancialSchema.PrepareAsync(db, PreviousMigration);
             await db.Database.MigrateAsync();
         }
 
@@ -126,10 +127,10 @@ public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : 
     }
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connection);
-    private FinancialBudget Budget(Guid familyId) => FinancialBudget.Create(
-        familyId, new DateOnly(2026, 10, 1), null, _user, DateTimeOffset.UtcNow);
+    private FinancialBudget Budget(Guid workspaceId) => FinancialBudget.Create(
+        workspaceId, new DateOnly(2026, 10, 1), null, _user, DateTimeOffset.UtcNow);
     private FinancialBudgetTarget Target(FinancialBudget budget, Guid categoryId) => FinancialBudgetTarget.Create(
-        budget.FamilyId, budget.Id, "Meta", 100m, categoryId, _user, DateTimeOffset.UtcNow);
+        budget.WorkspaceId, budget.Id, "Meta", 100m, categoryId, _user, DateTimeOffset.UtcNow);
 
     private async Task AddBudgetAsync(FinancialBudget budget)
     {

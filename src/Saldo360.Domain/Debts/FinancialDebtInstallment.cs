@@ -5,7 +5,7 @@ namespace Saldo360.Domain.Debts;
 public sealed class FinancialDebtInstallment : Entity
 {
     private FinancialDebtInstallment() { }
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid DebtId { get; private init; }
     public Guid? CategoryId { get; private init; }
     public int InstallmentNumber { get; private init; }
@@ -17,8 +17,8 @@ public sealed class FinancialDebtInstallment : Entity
     public decimal? OtherChargesComponent { get; private init; }
     public DateTimeOffset CreatedAt { get; private init; }
     public DateTimeOffset? CancelledAt { get; private set; }
-    public static FinancialDebtInstallment Create(Guid familyId, Guid debtId, InstallmentDetails d, DateTimeOffset now) => new()
-    { FamilyId=familyId, DebtId=debtId, InstallmentNumber=d.InstallmentNumber, DueDate=d.DueDate, ScheduledAmount=d.ScheduledAmount,
+    public static FinancialDebtInstallment Create(Guid workspaceId, Guid debtId, InstallmentDetails d, DateTimeOffset now) => new()
+    { WorkspaceId=workspaceId, DebtId=debtId, InstallmentNumber=d.InstallmentNumber, DueDate=d.DueDate, ScheduledAmount=d.ScheduledAmount,
       CategoryId=d.CategoryId,
       PrincipalComponent=d.PrincipalComponent, InterestComponent=d.InterestComponent, InsuranceComponent=d.InsuranceComponent,
       OtherChargesComponent=d.OtherChargesComponent, CreatedAt=now };

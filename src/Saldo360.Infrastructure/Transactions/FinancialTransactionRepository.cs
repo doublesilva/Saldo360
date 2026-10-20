@@ -13,18 +13,18 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public Task<FinancialTransaction?> FindAsync(Guid familyId, Guid transactionId, CancellationToken cancellationToken) =>
-        db.FinancialTransactions.SingleOrDefaultAsync(t => t.Id == transactionId && t.FamilyId == familyId, cancellationToken);
+    public Task<FinancialTransaction?> FindAsync(Guid workspaceId, Guid transactionId, CancellationToken cancellationToken) =>
+        db.FinancialTransactions.SingleOrDefaultAsync(t => t.Id == transactionId && t.WorkspaceId == workspaceId, cancellationToken);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken) => db.SaveChangesAsync(cancellationToken);
 
-    public Task<FinancialTransactionDto?> GetAsync(Guid familyId, Guid transactionId, CancellationToken cancellationToken) =>
-        Project(db.FinancialTransactions.Where(t => t.FamilyId == familyId && t.Id == transactionId))
+    public Task<FinancialTransactionDto?> GetAsync(Guid workspaceId, Guid transactionId, CancellationToken cancellationToken) =>
+        Project(db.FinancialTransactions.Where(t => t.WorkspaceId == workspaceId && t.Id == transactionId))
             .SingleOrDefaultAsync(cancellationToken);
 
-    public async Task<TransactionPage> ListAsync(Guid familyId, TransactionFilter filter, CancellationToken cancellationToken)
+    public async Task<TransactionPage> ListAsync(Guid workspaceId, TransactionFilter filter, CancellationToken cancellationToken)
     {
-        var query = db.FinancialTransactions.Where(t => t.FamilyId == familyId);
+        var query = db.FinancialTransactions.Where(t => t.WorkspaceId == workspaceId);
         if (!filter.IncludeCancelled)
         {
             query = query.Where(t => !t.IsCancelled);
@@ -63,22 +63,22 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
         return new TransactionPage(items, filter.Page, filter.PageSize, total);
     }
 
-    public Task<TransactionLink?> GetLinkAsync(Guid familyId, Guid transactionId, CancellationToken cancellationToken) =>
+    public Task<TransactionLink?> GetLinkAsync(Guid workspaceId, Guid transactionId, CancellationToken cancellationToken) =>
         db.FinancialTransactions
             .AsNoTracking()
-            .Where(t => t.FamilyId == familyId && t.Id == transactionId)
+            .Where(t => t.WorkspaceId == workspaceId && t.Id == transactionId)
             .Select(t => new TransactionLink(t.PlannedTransactionId))
             .SingleOrDefaultAsync(cancellationToken);
 
-    public Task<AccountState?> GetAccountStateAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken) =>
+    public Task<AccountState?> GetAccountStateAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken) =>
         db.FinancialAccounts
-            .Where(a => a.FamilyId == familyId && a.Id == accountId)
+            .Where(a => a.WorkspaceId == workspaceId && a.Id == accountId)
             .Select(a => new AccountState(a.IsActive))
             .SingleOrDefaultAsync(cancellationToken);
 
-    public Task<CategoryState?> GetCategoryStateAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken) =>
+    public Task<CategoryState?> GetCategoryStateAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) =>
         db.FinancialCategories
-            .Where(c => c.FamilyId == familyId && c.Id == categoryId)
+            .Where(c => c.WorkspaceId == workspaceId && c.Id == categoryId)
             .Select(c => new CategoryState(c.Type, c.IsActive))
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -86,8 +86,8 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
     // decrescente e Id decrescente, estável entre páginas.
     private IQueryable<FinancialTransactionDto> Project(IQueryable<FinancialTransaction> transactions) =>
         from t in transactions.AsNoTracking()
-        join a in db.FinancialAccounts on new { t.FamilyId, Id = t.AccountId } equals new { a.FamilyId, a.Id }
-        join category in db.FinancialCategories on new { t.FamilyId, Id = t.CategoryId } equals new { category.FamilyId, Id = (Guid?)category.Id } into categories
+        join a in db.FinancialAccounts on new { t.WorkspaceId, Id = t.AccountId } equals new { a.WorkspaceId, a.Id }
+        join category in db.FinancialCategories on new { t.WorkspaceId, Id = t.CategoryId } equals new { category.WorkspaceId, Id = (Guid?)category.Id } into categories
         from c in categories.DefaultIfEmpty()
         orderby t.TransactionDate descending, t.Id descending
         select new FinancialTransactionDto(

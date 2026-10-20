@@ -11,21 +11,21 @@ namespace Saldo360.Tests.Api;
 public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
-    private string _member = null!;
+    private string _ownerSecondSession = null!;
     private string _outsider = null!;
-    private FamilyDto _family = null!;
-    private FamilyDto _otherFamily = null!;
+    private WorkspaceDto _family = null!;
+    private WorkspaceDto _otherFamily = null!;
 
-    private string CategoriesUrl => $"/api/families/{_family.Id}/categories";
+    private string CategoriesUrl => $"/api/financial-workspaces/{_family.Id}/categories";
 
     private async Task ArrangeAsync()
     {
         _owner = await SignInAsync("dona");
-        _member = await SignInAsync("membro");
+        _ownerSecondSession = _owner;
         _outsider = await SignInAsync("estranho");
-        var created = await CreateFamilyAsync(_owner, "Família Silva");
-        _family = await JoinByInvitationAsync(_owner, created.Id, _member);
-        _otherFamily = await CreateFamilyAsync(_outsider, "Família Estranha");
+        var created = await CreateWorkspaceAsync(_owner, "Família Silva");
+        _family = created;
+        _otherFamily = await CreateWorkspaceAsync(_outsider, "Família Estranha");
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
 
         await using var db = Db();
         var stored = await db.FinancialCategories.SingleAsync();
-        Assert.Equal(_family.Id, stored.FamilyId);
+        Assert.Equal(_family.Id, stored.WorkspaceId);
         Assert.Equal(await db.Users.Where(u => u.Subject == "dona").Select(u => u.Id).SingleAsync(), stored.CreatedByUserId);
     }
 
@@ -52,13 +52,13 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
     {
         await ArrangeAsync();
         await CreateAsync(_owner, "Salário", "Income");
-        var created = await CreateAsync(_member, "Mercdo", "Expense");
+        var created = await CreateAsync(_ownerSecondSession, "Mercdo", "Expense");
 
-        var renamed = await SendWithCsrfAsync(HttpMethod.Put, $"{CategoriesUrl}/{created.Id}", _member, new { name = "Mercado", isActive = true });
+        var renamed = await SendWithCsrfAsync(HttpMethod.Put, $"{CategoriesUrl}/{created.Id}", _ownerSecondSession, new { name = "Mercado", isActive = true });
         Assert.Equal(HttpStatusCode.OK, renamed.StatusCode);
 
         var ownerView = await ListAsync(_owner);
-        var memberView = await ListAsync(_member);
+        var memberView = await ListAsync(_ownerSecondSession);
         Assert.Equal([("Salário", "Income"), ("Mercado", "Expense")], ownerView.Select(c => (c.Name, c.Type)));
         Assert.Equal(JsonSerializer.Serialize(ownerView), JsonSerializer.Serialize(memberView));
     }
@@ -70,14 +70,14 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
         var category = await CreateAsync(_owner, "Lazer", "Expense");
         var url = $"{CategoriesUrl}/{category.Id}";
 
-        Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Put, url, _member, new { name = "Lazer", isActive = false })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Put, url, _ownerSecondSession, new { name = "Lazer", isActive = false })).StatusCode);
 
         Assert.Empty(await ListAsync(_owner));
         Assert.False(Assert.Single(await ListAsync(_owner, includeInactive: true)).IsActive);
         Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Get, url, _owner)).StatusCode);
 
         Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Put, url, _owner, new { name = "Lazer", isActive = true })).StatusCode);
-        Assert.True(Assert.Single(await ListAsync(_member)).IsActive);
+        Assert.True(Assert.Single(await ListAsync(_ownerSecondSession)).IsActive);
         await using var db = Db();
         Assert.Equal(1, await db.FinancialCategories.CountAsync());
     }
@@ -91,7 +91,7 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
         await ArrangeAsync();
         await CreateAsync(_owner, "Mercado", "Expense");
 
-        var response = await SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, _member, new { name = duplicate, type = "Expense" });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, _ownerSecondSession, new { name = duplicate, type = "Expense" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Contains("Já existe uma categoria", await response.Content.ReadAsStringAsync());
@@ -120,7 +120,7 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
         Assert.Equal(HttpStatusCode.Created,
             (await SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, _owner, new { name = "Outros", type = "Income" })).StatusCode);
         Assert.Equal(HttpStatusCode.Created,
-            (await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_otherFamily.Id}/categories", _outsider, new { name = "Outros", type = "Expense" })).StatusCode);
+            (await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_otherFamily.Id}/categories", _outsider, new { name = "Outros", type = "Expense" })).StatusCode);
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
         var variants = new[] { "Farmácia", "farmácia", "FARMÁCIA", " Farmácia", "Farmácia ", "fArMáCiA", "Farmácia", "farmácia" };
 
         var responses = await Task.WhenAll(variants.Select((name, i) =>
-            SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, i % 2 == 0 ? _owner : _member, new { name, type = "Expense" })));
+            SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, i % 2 == 0 ? _owner : _ownerSecondSession, new { name, type = "Expense" })));
 
         Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
         Assert.All(responses.Where(r => r.StatusCode != HttpStatusCode.Created), r => Assert.Equal(HttpStatusCode.Conflict, r.StatusCode));
@@ -185,7 +185,7 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
         Assert.Equal(HttpStatusCode.NotFound, (await SendWithCsrfAsync(HttpMethod.Put, $"{CategoriesUrl}/{category.Id}", _outsider, body)).StatusCode);
 
         // Pela rota da própria família, a categoria alheia também não existe.
-        var otherRoute = $"/api/families/{_otherFamily.Id}/categories/{category.Id}";
+        var otherRoute = $"/api/financial-workspaces/{_otherFamily.Id}/categories/{category.Id}";
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, otherRoute, _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await SendWithCsrfAsync(HttpMethod.Put, otherRoute, _outsider, body)).StatusCode);
 
@@ -251,12 +251,12 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
 
         var responses = new[]
         {
-            await SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, _owner, new { name = "A", type = "Expense", familyId = _otherFamily.Id }),
+            await SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, _owner, new { name = "A", type = "Expense", workspaceId = _otherFamily.Id }),
             await SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, _owner, new { name = "B", type = "Expense", isActive = false }),
             await SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, _owner, new { name = "C", type = "Expense", id = Guid.CreateVersion7() }),
             await SendWithCsrfAsync(HttpMethod.Post, CategoriesUrl, _owner, new { name = "D", type = "Expense", createdAt = DateTimeOffset.UtcNow }),
             await SendWithCsrfAsync(HttpMethod.Put, $"{CategoriesUrl}/{category.Id}", _owner, new { name = "E", isActive = true, createdByUserId = Guid.CreateVersion7() }),
-            await SendWithCsrfAsync(HttpMethod.Put, $"{CategoriesUrl}/{category.Id}", _owner, new { name = "F", isActive = true, familyId = _otherFamily.Id }),
+            await SendWithCsrfAsync(HttpMethod.Put, $"{CategoriesUrl}/{category.Id}", _owner, new { name = "F", isActive = true, workspaceId = _otherFamily.Id }),
         };
 
         Assert.All(responses, r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
@@ -295,7 +295,7 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
     [Fact]
     public async Task Endpoints_RequireAuthentication()
     {
-        Assert.Equal(HttpStatusCode.Unauthorized, (await Client.GetAsync($"/api/families/{Guid.CreateVersion7()}/categories")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Client.GetAsync($"/api/financial-workspaces/{Guid.CreateVersion7()}/categories")).StatusCode);
     }
 
     private async Task<CategoryDto> CreateAsync(string session, string name, string type)

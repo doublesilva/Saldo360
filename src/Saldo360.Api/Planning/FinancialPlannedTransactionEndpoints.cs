@@ -12,7 +12,7 @@ public static class FinancialPlannedTransactionEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialPlannedTransactionEndpoints(this IEndpointRouteBuilder app)
     {
-        var planned = app.MapGroup("/api/families/{familyId:guid}/planned-transactions").RequireAuthorization();
+        var planned = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/planned-transactions").RequireAuthorization();
         planned.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         planned.MapGet("/", List);
         planned.MapGet("/{plannedId:guid}", Get);
@@ -23,7 +23,7 @@ public static class FinancialPlannedTransactionEndpoints
     }
 
     private static async Task<IResult> Create(
-        Guid familyId, PlannedTransactionRequest? request, CurrentUser currentUser, FinancialPlannedTransactionService planned,
+        Guid workspaceId, PlannedTransactionRequest? request, CurrentUser currentUser, FinancialPlannedTransactionService planned,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -31,9 +31,9 @@ public static class FinancialPlannedTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await planned.CreateAsync(familyId, userId, ToInput(request), cancellationToken);
+        var result = await planned.CreateAsync(workspaceId, userId, ToInput(request), cancellationToken);
         return ToResponse(result, p => Results.Created(
-            $"/api/families/{familyId}/planned-transactions/{p.Id}", PlannedTransactionResponse.From(p)));
+            $"/api/financial-workspaces/{workspaceId}/planned-transactions/{p.Id}", PlannedTransactionResponse.From(p)));
     }
 
     /// <summary>
@@ -42,7 +42,7 @@ public static class FinancialPlannedTransactionEndpoints
     /// acrescentam realizadas e canceladas. pageSize de 1 a 100.
     /// </summary>
     private static async Task<IResult> List(
-        Guid familyId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
+        Guid workspaceId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
         bool? includeRealized, bool? includeCancelled, int? page, int? pageSize, CurrentUser currentUser,
         FinancialPlannedTransactionService planned, CancellationToken cancellationToken)
     {
@@ -61,7 +61,7 @@ public static class FinancialPlannedTransactionEndpoints
 
         var query = new PlannedTransactionQuery(
             fromDate, toDate, accountId, categoryId, type, includeRealized ?? false, includeCancelled ?? false, page, pageSize);
-        var result = await planned.ListAsync(familyId, userId, query, cancellationToken);
+        var result = await planned.ListAsync(workspaceId, userId, query, cancellationToken);
         return result switch
         {
             { NotFound: true } => Results.NotFound(),
@@ -71,7 +71,7 @@ public static class FinancialPlannedTransactionEndpoints
     }
 
     private static async Task<IResult> Get(
-        Guid familyId, Guid plannedId, CurrentUser currentUser, FinancialPlannedTransactionService planned,
+        Guid workspaceId, Guid plannedId, CurrentUser currentUser, FinancialPlannedTransactionService planned,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -79,14 +79,14 @@ public static class FinancialPlannedTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        return await planned.GetAsync(familyId, plannedId, userId, cancellationToken) is { } dto
+        return await planned.GetAsync(workspaceId, plannedId, userId, cancellationToken) is { } dto
             ? Results.Ok(PlannedTransactionResponse.From(dto))
             : Results.NotFound();
     }
 
     /// <summary>Substitui conta, categoria, tipo, descrição, valor e data prevista. Cancelada não pode ser editada (409).</summary>
     private static async Task<IResult> Update(
-        Guid familyId, Guid plannedId, PlannedTransactionRequest? request, CurrentUser currentUser,
+        Guid workspaceId, Guid plannedId, PlannedTransactionRequest? request, CurrentUser currentUser,
         FinancialPlannedTransactionService planned, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -94,13 +94,13 @@ public static class FinancialPlannedTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await planned.UpdateAsync(familyId, plannedId, userId, ToInput(request), cancellationToken);
+        var result = await planned.UpdateAsync(workspaceId, plannedId, userId, ToInput(request), cancellationToken);
         return ToResponse(result, p => Results.Ok(PlannedTransactionResponse.From(p)));
     }
 
     /// <summary>Cancela sem excluir. Idempotente: cancelar de novo devolve 200 com o mesmo estado.</summary>
     private static async Task<IResult> Cancel(
-        Guid familyId, Guid plannedId, CurrentUser currentUser, FinancialPlannedTransactionService planned,
+        Guid workspaceId, Guid plannedId, CurrentUser currentUser, FinancialPlannedTransactionService planned,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -108,7 +108,7 @@ public static class FinancialPlannedTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await planned.CancelAsync(familyId, plannedId, userId, cancellationToken);
+        var result = await planned.CancelAsync(workspaceId, plannedId, userId, cancellationToken);
         return ToResponse(result, p => Results.Ok(PlannedTransactionResponse.From(p)));
     }
 
@@ -118,7 +118,7 @@ public static class FinancialPlannedTransactionEndpoints
     /// Cancelada, 409. Conta/categoria inativas ou valor/data inválidos, 400.
     /// </summary>
     private static async Task<IResult> Realize(
-        Guid familyId, Guid plannedId, RealizeRequest? request, CurrentUser currentUser,
+        Guid workspaceId, Guid plannedId, RealizeRequest? request, CurrentUser currentUser,
         FinancialPlannedTransactionService planned, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -126,7 +126,7 @@ public static class FinancialPlannedTransactionEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await planned.RealizeAsync(familyId, plannedId, userId, request?.Amount, request?.TransactionDate, cancellationToken);
+        var result = await planned.RealizeAsync(workspaceId, plannedId, userId, request?.Amount, request?.TransactionDate, cancellationToken);
         return result.Access switch
         {
             RealizeAccess.NotFound => Results.NotFound(),
@@ -134,7 +134,7 @@ public static class FinancialPlannedTransactionEndpoints
             RealizeAccess.Conflict => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: result.Message),
             RealizeAccess.Existing => Results.Ok(TransactionResponse.From(result.Transaction!)),
             _ => Results.Created(
-                $"/api/families/{familyId}/transactions/{result.Transaction!.Id}", TransactionResponse.From(result.Transaction)),
+                $"/api/financial-workspaces/{workspaceId}/transactions/{result.Transaction!.Id}", TransactionResponse.From(result.Transaction)),
         };
     }
 

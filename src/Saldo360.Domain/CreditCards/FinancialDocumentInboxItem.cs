@@ -8,7 +8,7 @@ public enum FinancialDocumentInboxStatus { Received, Analyzing, ReadyForReview, 
 public sealed class FinancialDocumentInboxItem : Entity
 {
     private FinancialDocumentInboxItem() { OriginalFileName = ContentHash = ContentType = StorageReference = string.Empty; }
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public FinancialDocumentSource Source { get; private init; }
     public string? ExternalSourceId { get; private init; }
     public string OriginalFileName { get; private init; }
@@ -35,9 +35,9 @@ public sealed class FinancialDocumentInboxItem : Entity
     public DateTimeOffset CreatedAt { get; private init; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    public static FinancialDocumentInboxItem Create(Guid id, Guid familyId, FinancialDocumentSource source,
+    public static FinancialDocumentInboxItem Create(Guid id, Guid workspaceId, FinancialDocumentSource source,
         string? externalSourceId, string fileName, string contentHash, string contentType, string storageReference, DateTimeOffset receivedAt, DateTimeOffset now) =>
-        new() { Id = id, FamilyId = familyId, Source = source, ExternalSourceId = NullIfBlank(externalSourceId),
+        new() { Id = id, WorkspaceId = workspaceId, Source = source, ExternalSourceId = NullIfBlank(externalSourceId),
             OriginalFileName = fileName, ContentHash = contentHash, ContentType = contentType,
             StorageReference = storageReference, ReceivedAt = receivedAt, Status = FinancialDocumentInboxStatus.Received,
             CreatedAt = now, UpdatedAt = now };

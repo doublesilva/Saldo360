@@ -8,7 +8,7 @@ public interface IFinancialCategoryRepository
     Task<bool> TryAddAsync(FinancialCategory category, CancellationToken cancellationToken);
 
     /// <summary>A categoria, se pertencer à família (rastreada para atualização).</summary>
-    Task<FinancialCategory?> FindAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken);
+    Task<FinancialCategory?> FindAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken);
 
     /// <summary>Salva as alterações rastreadas; false se o banco recusar por nome duplicado.</summary>
     Task<bool> TrySaveChangesAsync(CancellationToken cancellationToken);
@@ -18,10 +18,10 @@ public interface IFinancialCategoryRepository
     /// maiúsculas de minúsculas. Verificação prévia: a garantia final é o índice único do banco.
     /// </summary>
     Task<bool> NameExistsAsync(
-        Guid familyId, CategoryType type, string name, Guid? exceptCategoryId, CancellationToken cancellationToken);
+        Guid workspaceId, CategoryType type, string name, Guid? exceptCategoryId, CancellationToken cancellationToken);
 
     /// <summary>Ativas primeiro; depois receitas antes de despesas; depois por nome.</summary>
-    Task<IReadOnlyList<FinancialCategoryDto>> ListAsync(Guid familyId, bool includeInactive, CancellationToken cancellationToken);
+    Task<IReadOnlyList<FinancialCategoryDto>> ListAsync(Guid workspaceId, bool includeInactive, CancellationToken cancellationToken);
 
-    Task<FinancialCategoryDto?> GetAsync(Guid familyId, Guid categoryId, CancellationToken cancellationToken);
+    Task<FinancialCategoryDto?> GetAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken);
 }

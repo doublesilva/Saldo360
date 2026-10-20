@@ -20,17 +20,17 @@ export type SaveCategoryResult =
 
 const jsonHeaders = { Accept: 'application/json' }
 
-function categoriesUrl(familyId: string, categoryId?: string): string {
-  const base = `/api/families/${encodeURIComponent(familyId)}/categories`
+function categoriesUrl(workspaceId: string, categoryId?: string): string {
+  const base = `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/categories`
   return categoryId ? `${base}/${encodeURIComponent(categoryId)}` : base
 }
 
 export async function listCategories(
-  familyId: string,
+  workspaceId: string,
   includeInactive: boolean,
   signal?: AbortSignal,
 ): Promise<FinancialCategory[]> {
-  const url = includeInactive ? `${categoriesUrl(familyId)}?includeInactive=true` : categoriesUrl(familyId)
+  const url = includeInactive ? `${categoriesUrl(workspaceId)}?includeInactive=true` : categoriesUrl(workspaceId)
   const response = await fetch(url, { signal, headers: jsonHeaders })
   if (!response.ok) throw new Error(`Falha ao carregar as categorias (HTTP ${response.status}).`)
   return (await response.json()) as FinancialCategory[]
@@ -52,20 +52,20 @@ async function send(method: 'POST' | 'PUT', url: string, body: unknown, expected
     const problem = (await response.json().catch(() => ({}))) as { title?: string }
     return { ok: false, errors: { name: [problem.title ?? 'Já existe uma categoria com esse nome e tipo.'] } }
   }
-  if (response.status === 404) throw new Error('Categoria ou família não encontrada.')
+  if (response.status === 404) throw new Error('Categoria ou orçamento não encontrado.')
   throw new Error(`Falha ao salvar a categoria (HTTP ${response.status}).`)
 }
 
-export function createCategory(familyId: string, name: string, type: CategoryType): Promise<SaveCategoryResult> {
-  return send('POST', categoriesUrl(familyId), { name, type }, 201)
+export function createCategory(workspaceId: string, name: string, type: CategoryType): Promise<SaveCategoryResult> {
+  return send('POST', categoriesUrl(workspaceId), { name, type }, 201)
 }
 
 /** Renomeia e/ou ativa/desativa. O tipo não é enviado: é imutável. */
 export function updateCategory(
-  familyId: string,
+  workspaceId: string,
   categoryId: string,
   name: string,
   isActive: boolean,
 ): Promise<SaveCategoryResult> {
-  return send('PUT', categoriesUrl(familyId, categoryId), { name, isActive }, 200)
+  return send('PUT', categoriesUrl(workspaceId, categoryId), { name, isActive }, 200)
 }

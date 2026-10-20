@@ -7,19 +7,19 @@ public interface IFinancialAccountRepository
     Task AddAsync(FinancialAccount account, CancellationToken cancellationToken);
 
     /// <summary>A conta, se pertencer à família (rastreada para atualização).</summary>
-    Task<FinancialAccount?> FindAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken);
+    Task<FinancialAccount?> FindAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken);
 
     Task SaveChangesAsync(CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<FinancialAccountDto>> ListAsync(Guid familyId, bool includeInactive, CancellationToken cancellationToken);
+    Task<IReadOnlyList<FinancialAccountDto>> ListAsync(Guid workspaceId, bool includeInactive, CancellationToken cancellationToken);
 
-    Task<FinancialAccountDto?> GetAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken);
+    Task<FinancialAccountDto?> GetAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken);
 
-    /// <summary>Se o vínculo (FamilyMember.Id) pertence à família.</summary>
-    Task<bool> IsMemberOfFamilyAsync(Guid familyId, Guid memberId, CancellationToken cancellationToken);
+    /// <summary>Verifica se o usuário indicado é o proprietário do workspace pessoal.</summary>
+    Task<bool> IsWorkspaceOwnerAsync(Guid workspaceId, Guid memberId, CancellationToken cancellationToken);
 
     /// <summary>Saldo inicial configurado da conta (ativa ou não), se ela pertencer à família; null caso contrário.</summary>
-    Task<AccountOpeningBalance?> GetOpeningBalanceAsync(Guid familyId, Guid accountId, CancellationToken cancellationToken);
+    Task<AccountOpeningBalance?> GetOpeningBalanceAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Somas não canceladas da conta com <paramref name="from"/> ≤ data ≤ <paramref name="to"/>: receitas e despesas
@@ -27,7 +27,7 @@ public interface IFinancialAccountRepository
     /// movimentações. Sem movimentações no período, todas são zero.
     /// </summary>
     Task<AccountTotals> SumMovementsAsync(
-        Guid familyId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken);
+        Guid workspaceId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken);
 
     /// <summary>
     /// Somas das previsões PENDENTES da conta com DueDate ≤ <paramref name="through"/>, separando vencidas
@@ -35,9 +35,9 @@ public interface IFinancialAccountRepository
     /// lançamento efetivo ativo. Não filtra pela data do saldo inicial nem pela situação de conta/categoria.
     /// </summary>
     Task<PlannedTotals> SumPendingPlannedAsync(
-        Guid familyId, Guid accountId, DateOnly baseDate, DateOnly through, CancellationToken cancellationToken);
+        Guid workspaceId, Guid accountId, DateOnly baseDate, DateOnly through, CancellationToken cancellationToken);
 
-    Task<CreditCardProjectionTotals> SumCreditCardObligationsAsync(Guid familyId, Guid accountId, DateOnly through, CancellationToken cancellationToken);
+    Task<CreditCardProjectionTotals> SumCreditCardObligationsAsync(Guid workspaceId, Guid accountId, DateOnly through, CancellationToken cancellationToken);
 
     /// <summary>
     /// Executa <paramref name="read"/> numa transação somente leitura REPEATABLE READ: todas as consultas enxergam o

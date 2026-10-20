@@ -9,7 +9,7 @@ public static class FinancialDocumentInboxEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialDocumentInboxEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/families/{familyId:guid}/financial-documents/inbox").RequireAuthorization();
+        var group = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/financial-documents/inbox").RequireAuthorization();
         group.MapGet("/", List);
         group.MapPost("/", Receive).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/reanalyze", Reanalyze).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -24,62 +24,62 @@ public static class FinancialDocumentInboxEndpoints
         group.MapPost("/{id:guid}/confirm", Confirm).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
-    private static async Task<IResult> GetServiceAccountBinding(Guid familyId, Guid id, CurrentUser user,
+    private static async Task<IResult> GetServiceAccountBinding(Guid workspaceId, Guid id, CurrentUser user,
         ServiceAccountBindingService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        return await service.GetAsync(familyId, id, userId, cancellationToken) is { } result ? Results.Ok(result) : Results.NotFound();
+        return await service.GetAsync(workspaceId, id, userId, cancellationToken) is { } result ? Results.Ok(result) : Results.NotFound();
     }
-    private static async Task<IResult> ServiceAccountBinding(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
+    private static async Task<IResult> ServiceAccountBinding(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user,
         ServiceAccountBindingService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         IFormCollection? form = request.HasFormContentType ? await request.ReadFormAsync(cancellationToken) : null;
-        var result = await service.CreateAsync(familyId, id, userId, form?["password"], cancellationToken);
+        var result = await service.CreateAsync(workspaceId, id, userId, form?["password"], cancellationToken);
         if (result.Access == FinancialDocumentClassificationAccess.NotFound) return Results.NotFound();
         if (result.Access == FinancialDocumentClassificationAccess.Invalid) return Results.ValidationProblem(result.Errors!);
         return result.Result?.Status == "Conflict"
             ? Results.Conflict(new { message = "A referência já está vinculada a outra recorrência.", result = result.Result })
             : Results.Ok(result.Result);
     }
-    private static async Task<IResult> ServiceBillConfirm(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
+    private static async Task<IResult> ServiceBillConfirm(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user,
         ServiceBillConfirmationService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         IFormCollection? form = request.HasFormContentType ? await request.ReadFormAsync(cancellationToken) : null;
-        var result = await service.ConfirmAsync(familyId, id, userId, form?["password"], cancellationToken);
+        var result = await service.ConfirmAsync(workspaceId, id, userId, form?["password"], cancellationToken);
         if (result.Access == FinancialDocumentClassificationAccess.NotFound) return Results.NotFound();
         if (result.Access == FinancialDocumentClassificationAccess.Invalid) return Results.ValidationProblem(result.Errors!);
         return result.Result?.Status == "Conflict"
             ? Results.Conflict(new { message = "O documento ou a ocorrência já possui confirmação conflitante.", result = result.Result })
             : Results.Ok(result.Result);
     }
-    private static async Task<IResult> ServiceBillMatchPreview(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
+    private static async Task<IResult> ServiceBillMatchPreview(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user,
         ServiceBillRecurringMatchPreviewService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         IFormCollection? form = request.HasFormContentType ? await request.ReadFormAsync(cancellationToken) : null;
-        var result = await service.PreviewAsync(familyId, id, userId, form?["password"], cancellationToken);
+        var result = await service.PreviewAsync(workspaceId, id, userId, form?["password"], cancellationToken);
         return result.Access switch { FinancialDocumentClassificationAccess.NotFound => Results.NotFound(),
             FinancialDocumentClassificationAccess.Invalid => Results.ValidationProblem(result.Errors!), _ => Results.Ok(result.Preview) };
     }
 
-    private static async Task<IResult> ServiceBillPreview(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
+    private static async Task<IResult> ServiceBillPreview(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user,
         ServiceBillPreviewService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         IFormCollection? form = request.HasFormContentType ? await request.ReadFormAsync(cancellationToken) : null;
-        var result = await service.PreviewAsync(familyId, id, userId, form?["password"], cancellationToken);
+        var result = await service.PreviewAsync(workspaceId, id, userId, form?["password"], cancellationToken);
         return result.Access switch { FinancialDocumentClassificationAccess.NotFound => Results.NotFound(),
             FinancialDocumentClassificationAccess.Invalid => Results.ValidationProblem(result.Errors!), _ => Results.Ok(result.Preview) };
     }
 
-    private static async Task<IResult> ClassifyPreview(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
+    private static async Task<IResult> ClassifyPreview(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user,
         FinancialDocumentClassificationPreviewService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         IFormCollection? form = request.HasFormContentType ? await request.ReadFormAsync(cancellationToken) : null;
-        var result = await service.PreviewAsync(familyId, id, userId, form?["password"], cancellationToken);
+        var result = await service.PreviewAsync(workspaceId, id, userId, form?["password"], cancellationToken);
         return result.Access switch
         {
             FinancialDocumentClassificationAccess.NotFound => Results.NotFound(),
@@ -88,14 +88,14 @@ public static class FinancialDocumentInboxEndpoints
         };
     }
 
-    private static async Task<IResult> PreReconcile(Guid familyId, Guid id, HttpRequest request, CurrentUser user,
+    private static async Task<IResult> PreReconcile(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user,
         FinancialDocumentInboxReviewService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         if (!request.HasFormContentType) return Validation("request", "Envie a revisão usando multipart/form-data.");
         var form = await request.ReadFormAsync(cancellationToken);
         if (!Guid.TryParse(form["creditCardId"], out var cardId)) return Validation("creditCardId", "Informe o cartão selecionado.");
-        var result = await service.ReviewAsync(familyId, id, cardId, userId, form["password"], cancellationToken);
+        var result = await service.ReviewAsync(workspaceId, id, cardId, userId, form["password"], cancellationToken);
         return result.Access switch
         {
             CreditCardPdfPreviewAccess.NotFound => Results.NotFound(),
@@ -104,13 +104,13 @@ public static class FinancialDocumentInboxEndpoints
         };
     }
 
-    private static async Task<IResult> List(Guid familyId, CurrentUser user, FinancialDocumentInboxService service, CancellationToken cancellationToken)
+    private static async Task<IResult> List(Guid workspaceId, CurrentUser user, FinancialDocumentInboxService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        return await service.ListAsync(familyId, userId, cancellationToken) is { } items ? Results.Ok(items) : Results.NotFound();
+        return await service.ListAsync(workspaceId, userId, cancellationToken) is { } items ? Results.Ok(items) : Results.NotFound();
     }
 
-    private static async Task<IResult> Receive(Guid familyId, HttpRequest request, CurrentUser user, FinancialDocumentInboxService service, CancellationToken cancellationToken)
+    private static async Task<IResult> Receive(Guid workspaceId, HttpRequest request, CurrentUser user, FinancialDocumentInboxService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         if (!request.HasFormContentType) return Validation("file", "Envie o arquivo usando multipart/form-data.");
@@ -118,26 +118,26 @@ public static class FinancialDocumentInboxEndpoints
         if (file is null) return Validation("file", "Informe um arquivo PDF.");
         var cardId = Guid.TryParse(form["creditCardId"], out var parsedCardId) ? parsedCardId : (Guid?)null;
         await using var stream = file.OpenReadStream();
-        var result = await service.ReceiveAsync(familyId, userId, stream, file.Length, file.FileName, file.ContentType,
+        var result = await service.ReceiveAsync(workspaceId, userId, stream, file.Length, file.FileName, file.ContentType,
             FinancialDocumentSource.Manual, form["externalSourceId"], cardId, form["password"], cancellationToken);
         return result.Result switch { "NotFound" => Results.NotFound(), "Invalid" => Results.ValidationProblem(result.Errors!),
-            "Conflict" => Results.Conflict(result.Item), "Created" => Results.Created($"/api/families/{familyId}/financial-documents/inbox/{result.Item!.Id}", result.Item), _ => Results.Ok(result.Item) };
+            "Conflict" => Results.Conflict(result.Item), "Created" => Results.Created($"/api/financial-workspaces/{workspaceId}/financial-documents/inbox/{result.Item!.Id}", result.Item), _ => Results.Ok(result.Item) };
     }
 
-    private static async Task<IResult> Reanalyze(Guid familyId, Guid id, HttpRequest request, CurrentUser user, FinancialDocumentInboxService service, CancellationToken cancellationToken)
+    private static async Task<IResult> Reanalyze(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user, FinancialDocumentInboxService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         IFormCollection? form = request.HasFormContentType ? await request.ReadFormAsync(cancellationToken) : null;
         var cardId = Guid.TryParse(form?["creditCardId"], out var parsedCardId) ? parsedCardId : (Guid?)null;
-        return await service.ReprocessAsync(familyId, id, userId, cardId, form?["password"], cancellationToken) is { } item ? Results.Ok(item) : Results.NotFound();
+        return await service.ReprocessAsync(workspaceId, id, userId, cardId, form?["password"], cancellationToken) is { } item ? Results.Ok(item) : Results.NotFound();
     }
 
-    private static async Task<IResult> Ignore(Guid familyId, Guid id, CurrentUser user, FinancialDocumentInboxService service, CancellationToken cancellationToken)
+    private static async Task<IResult> Ignore(Guid workspaceId, Guid id, CurrentUser user, FinancialDocumentInboxService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
-        return await service.IgnoreAsync(familyId, id, userId, cancellationToken) is { } item ? Results.Ok(item) : Results.NotFound();
+        return await service.IgnoreAsync(workspaceId, id, userId, cancellationToken) is { } item ? Results.Ok(item) : Results.NotFound();
     }
-    private static async Task<IResult> Confirm(Guid familyId, Guid id, HttpRequest request, CurrentUser user, FinancialDocumentInboxConfirmationService service, CancellationToken cancellationToken)
+    private static async Task<IResult> Confirm(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user, FinancialDocumentInboxConfirmationService service, CancellationToken cancellationToken)
     {
         if (await user.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         if (!request.HasFormContentType) return Validation("request", "Envie a confirmação usando multipart/form-data.");
@@ -147,7 +147,7 @@ public static class FinancialDocumentInboxEndpoints
         try { categories = string.IsNullOrWhiteSpace(form["categories"]) ? [] : JsonSerializer.Deserialize<List<CreditCardPdfCategoryDecision>>(form["categories"]!, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? []; }
         catch (JsonException) { return Validation("categories", "Informe decisões de categoria em JSON válido."); }
         var input = new CreditCardPdfConfirmationInput(bool.TryParse(form["confirm"], out var confirm) && confirm, form["documentId"]!, categories);
-        var result = await service.ConfirmAsync(familyId, id, cardId, userId, form["password"], input, cancellationToken);
+        var result = await service.ConfirmAsync(workspaceId, id, cardId, userId, form["password"], input, cancellationToken);
         return result.Access switch { CreditCardPdfConfirmationAccess.NotFound => Results.NotFound(),
             CreditCardPdfConfirmationAccess.Invalid => Results.ValidationProblem(result.Errors!),
             CreditCardPdfConfirmationAccess.Conflict => Results.Conflict(new { message = result.Message }), _ => Results.Ok(result.Result) };

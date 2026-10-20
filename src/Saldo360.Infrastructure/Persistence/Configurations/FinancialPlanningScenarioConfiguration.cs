@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Planning;
 
@@ -22,11 +22,11 @@ internal sealed class FinancialPlanningScenarioConfiguration : IEntityTypeConfig
         builder.Property(x => x.Description).HasMaxLength(FinancialPlanningScenario.DescriptionMaxLength);
         builder.Property(x => x.StartMonth).HasColumnType("date");
         builder.Property(x => x.Status).HasConversion<int>();
-        builder.HasAlternateKey(x => new { x.FamilyId, x.Id });
-        builder.HasIndex(x => new { x.FamilyId, x.Status, x.StartMonth });
-        builder.HasIndex(x => new { x.FamilyId, x.Name }).IsUnique().HasDatabaseName(UniqueNameIndex);
-        builder.HasOne<Family>().WithMany().HasForeignKey(x => x.FamilyId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialAccount>().WithMany().HasForeignKey(x => new { x.FamilyId, x.RecoveryAccountId })
-            .HasPrincipalKey(x => new { x.FamilyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        builder.HasAlternateKey(x => new { x.WorkspaceId, x.Id });
+        builder.HasIndex(x => new { x.WorkspaceId, x.Status, x.StartMonth });
+        builder.HasIndex(x => new { x.WorkspaceId, x.Name }).IsUnique().HasDatabaseName(UniqueNameIndex);
+        builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialAccount>().WithMany().HasForeignKey(x => new { x.WorkspaceId, x.RecoveryAccountId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.Id }).OnDelete(DeleteBehavior.Restrict);
     }
 }

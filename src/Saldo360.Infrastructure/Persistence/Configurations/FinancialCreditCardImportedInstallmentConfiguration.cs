@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.CreditCards;
-using Saldo360.Domain.Families;
+using Saldo360.Domain.Workspaces;
 using Saldo360.Domain.Users;
 
 namespace Saldo360.Infrastructure.Persistence.Configurations;
@@ -23,14 +23,14 @@ internal sealed class FinancialCreditCardImportedInstallmentConfiguration : IEnt
         builder.Property(item => item.Description).HasMaxLength(200).IsRequired(); builder.Property(item => item.ExternalId).HasMaxLength(200);
         builder.Property(item => item.Amount).HasColumnType("numeric"); builder.Property(item => item.TransactionDate).HasColumnType("date");
         builder.Property(item => item.Status).HasConversion<string>().HasMaxLength(20);
-        builder.HasIndex(item => new { item.FamilyId, item.CreditCardId, item.ImportId, item.RowNumber }).IsUnique();
-        builder.HasIndex(item => new { item.FamilyId, item.CreditCardId, item.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL AND status = 'Active'");
-        builder.HasIndex(item => new { item.FamilyId, item.LinkedInstallmentId }).IsUnique().HasFilter("linked_installment_id IS NOT NULL AND status = 'Active'");
-        builder.HasOne<Family>().WithMany().HasForeignKey(item => item.FamilyId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialCreditCard>().WithMany().HasForeignKey(item => new { item.FamilyId, item.CreditCardId }).HasPrincipalKey(card => new { card.FamilyId, card.Id }).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialCreditCardInvoice>().WithMany().HasForeignKey(item => new { item.FamilyId, item.InvoiceId }).HasPrincipalKey(invoice => new { invoice.FamilyId, invoice.Id }).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialCreditCardInstallment>().WithMany().HasForeignKey(item => new { item.FamilyId, item.LinkedInstallmentId }).HasPrincipalKey(installment => new { installment.FamilyId, installment.Id }).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<FinancialCategory>().WithMany().HasForeignKey(item => new { item.FamilyId, item.CategoryId }).HasPrincipalKey(category => new { category.FamilyId, category.Id }).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(item => new { item.WorkspaceId, item.CreditCardId, item.ImportId, item.RowNumber }).IsUnique();
+        builder.HasIndex(item => new { item.WorkspaceId, item.CreditCardId, item.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL AND status = 'Active'");
+        builder.HasIndex(item => new { item.WorkspaceId, item.LinkedInstallmentId }).IsUnique().HasFilter("linked_installment_id IS NOT NULL AND status = 'Active'");
+        builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(item => item.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialCreditCard>().WithMany().HasForeignKey(item => new { item.WorkspaceId, item.CreditCardId }).HasPrincipalKey(card => new { card.WorkspaceId, card.Id }).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialCreditCardInvoice>().WithMany().HasForeignKey(item => new { item.WorkspaceId, item.InvoiceId }).HasPrincipalKey(invoice => new { invoice.WorkspaceId, invoice.Id }).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialCreditCardInstallment>().WithMany().HasForeignKey(item => new { item.WorkspaceId, item.LinkedInstallmentId }).HasPrincipalKey(installment => new { installment.WorkspaceId, installment.Id }).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<FinancialCategory>().WithMany().HasForeignKey(item => new { item.WorkspaceId, item.CategoryId }).HasPrincipalKey(category => new { category.WorkspaceId, category.Id }).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.CancelledByUserId).OnDelete(DeleteBehavior.Restrict);
     }

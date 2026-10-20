@@ -35,12 +35,12 @@ type LoadedData = {
   accounts: FinancialAccount[]
 }
 
-async function loadAllPending(familyId: string, signal: AbortSignal): Promise<PlannedTransaction[]> {
+async function loadAllPending(workspaceId: string, signal: AbortSignal): Promise<PlannedTransaction[]> {
   const result: PlannedTransaction[] = []
   let page = 1
   let total = 0
   do {
-    const loaded = await listPlanned(familyId, {
+    const loaded = await listPlanned(workspaceId, {
       from: '', to: '', accountId: '', categoryId: '', type: 'Expense', includeRealized: false, includeCancelled: false,
     }, page, signal, 100)
     result.push(...loaded.items)
@@ -50,18 +50,18 @@ async function loadAllPending(familyId: string, signal: AbortSignal): Promise<Pl
   return result
 }
 
-async function loadData(familyId: string, signal: AbortSignal): Promise<LoadedData> {
+async function loadData(workspaceId: string, signal: AbortSignal): Promise<LoadedData> {
   const [links, planned, cards, accounts] = await Promise.all([
-    listInvoiceReconciliations(familyId, signal),
-    loadAllPending(familyId, signal),
-    listCreditCards(familyId, true, signal),
-    listAccounts(familyId, true, signal),
+    listInvoiceReconciliations(workspaceId, signal),
+    loadAllPending(workspaceId, signal),
+    listCreditCards(workspaceId, true, signal),
+    listAccounts(workspaceId, true, signal),
   ])
-  const invoiceLists = await Promise.all(cards.map((card) => listInvoices(familyId, card.id, '2000-01', '2100-12', signal)))
+  const invoiceLists = await Promise.all(cards.map((card) => listInvoices(workspaceId, card.id, '2000-01', '2100-12', signal)))
   return { links, planned, invoices: invoiceLists.flat(), cards, accounts }
 }
 
-export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onChanged }: { familyId: string; refreshKey?: number; onChanged?: () => void }) {
+export function FinancialInvoiceReconciliations({ workspaceId, refreshKey = 0, onChanged }: { workspaceId: string; refreshKey?: number; onChanged?: () => void }) {
   const [data, setData] = useState<LoadedData | null>(null)
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
@@ -73,11 +73,11 @@ export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onCh
     const controller = new AbortController()
     setData(null)
     setError(null)
-    loadData(familyId, controller.signal)
+    loadData(workspaceId, controller.signal)
       .then(setData)
       .catch((failure: unknown) => { if (!controller.signal.aborted) setError(failure) })
     return () => controller.abort()
-  }, [familyId, refreshKey])
+  }, [workspaceId, refreshKey])
 
   const activeLinks = useMemo(() => data?.links.filter((item) => item.removedAt === null) ?? [], [data])
   const removedLinks = useMemo(() => data?.links.filter((item) => item.removedAt !== null) ?? [], [data])
@@ -108,13 +108,13 @@ export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onCh
     if (!selectedPlanned || !selectedInvoice || !compatible) return
     setBusy(true); setError(null)
     try {
-      const result = await createInvoiceReconciliation(familyId, { plannedTransactionId: selectedPlanned.id, creditCardInvoiceId: selectedInvoice.id })
+      const result = await createInvoiceReconciliation(workspaceId, { plannedTransactionId: selectedPlanned.id, creditCardInvoiceId: selectedInvoice.id })
       if (!result.ok) { setError(firstError(result.errors)); return }
       setSelectedPlannedId(''); setSelectedInvoiceId(''); setReview(false); refresh()
     } catch (failure) {
       if (normalizeRequestError(failure).resultUncertain) {
         try {
-          const links = await listInvoiceReconciliations(familyId)
+          const links = await listInvoiceReconciliations(workspaceId)
           if (links.some((link) => link.removedAt === null && link.plannedTransactionId === selectedPlanned.id && link.creditCardInvoiceId === selectedInvoice.id)) {
             setSelectedPlannedId(''); setSelectedInvoiceId(''); setReview(false); refresh(); return
           }
@@ -128,13 +128,13 @@ export function FinancialInvoiceReconciliations({ familyId, refreshKey = 0, onCh
     if (!window.confirm(`Desfazer o vínculo entre "${view.planned.description}" e a fatura ${view.invoice.competence}? A previsão voltará a participar separadamente das projeções.`)) return
     setBusy(true); setError(null)
     try {
-      const result = await removeInvoiceReconciliation(familyId, view.link.id)
+      const result = await removeInvoiceReconciliation(workspaceId, view.link.id)
       if (!result.ok) { setError(result.message); return }
       refresh()
     } catch (failure) {
       if (normalizeRequestError(failure).resultUncertain) {
         try {
-          const links = await listInvoiceReconciliations(familyId)
+          const links = await listInvoiceReconciliations(workspaceId)
           if (links.some((link) => link.id === view.link.id && link.removedAt !== null)) { refresh(); return }
         } catch { /* A leitura também falhou; o usuário poderá consultar novamente. */ }
       }

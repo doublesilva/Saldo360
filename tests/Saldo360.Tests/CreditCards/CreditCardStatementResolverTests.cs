@@ -51,6 +51,6 @@ public sealed class CreditCardStatementResolverTests
 
     private sealed class FakeRepository(IReadOnlyList<CreditCardStatementCandidate> cards) : ICreditCardStatementResolutionRepository
     {
-        public Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid familyId, CancellationToken cancellationToken) => Task.FromResult(cards);
+        public Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid workspaceId, CancellationToken cancellationToken) => Task.FromResult(cards);
     }
 }

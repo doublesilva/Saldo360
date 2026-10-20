@@ -83,7 +83,7 @@ public sealed class CreditCardPdfConfirmationRepositoryTests(PostgresFixture pos
         var component = Component("existing", "Fee", "Debit", "5.00", "AlreadyExists");
         await using (var db = Db())
         {
-            var adjustment = FinancialCreditCardInvoiceAdjustment.Create(context.FamilyId, context.CardId, context.InvoiceId,
+            var adjustment = FinancialCreditCardInvoiceAdjustment.Create(context.WorkspaceId, context.CardId, context.InvoiceId,
                 FinancialCreditCardInvoiceAdjustmentType.Fee, FinancialCreditCardInvoiceAdjustmentNature.Debit,
                 new(2026, 9, 1), "Fee", 5m, component.ComponentId, null, context.UserId, DateTimeOffset.UtcNow);
             db.Add(adjustment); await db.SaveChangesAsync();
@@ -100,12 +100,12 @@ public sealed class CreditCardPdfConfirmationRepositoryTests(PostgresFixture pos
     {
         var session = await SignInAsync(subject);
         var me = await GetMeAsync(session);
-        var family = await CreateFamilyAsync(session, "Família PDF confirm");
+        var family = await CreateWorkspaceAsync(session, "Família PDF confirm");
         await using var identityDb = Db();
         var userId = await identityDb.Users.Where(user => user.Issuer == me.Issuer && user.Subject == me.Subject).Select(user => user.Id).SingleAsync();
-        var categoryResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/categories", session, new { name = "Compras", type = "Expense" });
+        var categoryResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/categories", session, new { name = "Compras", type = "Expense" });
         var categoryId = (await ReadAsync<JsonElement>(categoryResponse)).GetProperty("id").GetGuid();
-        var cardResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/credit-cards", session, new { name = "Cartão", issuer = "Itau", holderUserId = userId, creditLimit = "1000.00", closingDay = 10, dueDay = 20, defaultPaymentAccountId = (Guid?)null });
+        var cardResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/credit-cards", session, new { name = "Cartão", issuer = "Itau", holderUserId = userId, creditLimit = "1000.00", closingDay = 10, dueDay = 20, defaultPaymentAccountId = (Guid?)null });
         var cardId = (await ReadAsync<JsonElement>(cardResponse)).GetProperty("id").GetGuid();
         await using var db = Db();
         var invoice = FinancialCreditCardInvoice.Create(family.Id, cardId, "2026-09", new(2026, 8, 11), new(2026, 9, 10), new(2026, 9, 20), DateTimeOffset.UtcNow);
@@ -116,12 +116,12 @@ public sealed class CreditCardPdfConfirmationRepositoryTests(PostgresFixture pos
     private async Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(TestContext context, CreditCardPdfTrustedConfirmation confirmation)
     {
         await using var db = Db();
-        return await new CreditCardPdfConfirmationRepository(db).ConfirmAsync(context.FamilyId, context.CardId, context.UserId, confirmation, DateTimeOffset.UtcNow, CancellationToken.None);
+        return await new CreditCardPdfConfirmationRepository(db).ConfirmAsync(context.WorkspaceId, context.CardId, context.UserId, confirmation, DateTimeOffset.UtcNow, CancellationToken.None);
     }
 
     private static CreditCardPdfTrustedConfirmation Confirmation(TestContext context, string documentHash, string decisionHash, IReadOnlyList<CreditCardPdfTrustedComponent> items, decimal official) =>
         new(documentHash, decisionHash, "ItauMastercard", "2026-09", official, context.InvoiceId, items);
     private static CreditCardPdfTrustedComponent Component(string id, string type, string nature, string amount, string classification, Guid? category = null) =>
         new($"pdf:hash:p1:r{id}", Math.Abs(id.GetHashCode()), type, nature, new(2026, 9, 1), type, decimal.Parse(amount, System.Globalization.CultureInfo.InvariantCulture), classification, null, category);
-    private sealed record TestContext(Guid FamilyId, Guid CardId, Guid InvoiceId, Guid UserId, Guid CategoryId);
+    private sealed record TestContext(Guid WorkspaceId, Guid CardId, Guid InvoiceId, Guid UserId, Guid CategoryId);
 }

@@ -1,18 +1,18 @@
 using System.Globalization;
 using System.Text;
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 
 namespace Saldo360.Application.CreditCards;
 
 public sealed class CreditCardCsvPreviewService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialCreditCardPurchaseRepository purchases) : ICreditCardCsvPreviewService
 {
     public const long MaxFileBytes = 5 * 1024 * 1024;
     public const int MaxRows = 10_000;
 
     public async Task<CreditCardCsvPreviewResult> PreviewAsync(
-        Guid familyId,
+        Guid workspaceId,
         Guid cardId,
         Guid userId,
         Stream csv,
@@ -20,8 +20,8 @@ public sealed class CreditCardCsvPreviewService(
         CreditCardCsvPreviewRequest request,
         CancellationToken cancellationToken)
     {
-        if (await families.GetMemberRoleAsync(familyId, userId, cancellationToken).ConfigureAwait(false) is null
-            || !await purchases.IsActiveCardAsync(familyId, cardId, cancellationToken).ConfigureAwait(false))
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken).ConfigureAwait(false) is null
+            || !await purchases.IsActiveCardAsync(workspaceId, cardId, cancellationToken).ConfigureAwait(false))
             return new(CreditCardCsvPreviewAccess.NotFound, null, null);
         if (length > MaxFileBytes)
             return Invalid("file", $"O arquivo excede o limite de {MaxFileBytes / (1024 * 1024)} MB.");

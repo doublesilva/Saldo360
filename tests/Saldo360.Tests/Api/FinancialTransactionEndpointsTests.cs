@@ -14,10 +14,10 @@ namespace Saldo360.Tests.Api;
 public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
-    private string _member = null!;
+    private string _ownerSecondSession = null!;
     private string _outsider = null!;
-    private FamilyDto _family = null!;
-    private FamilyDto _otherFamily = null!;
+    private WorkspaceDto _family = null!;
+    private WorkspaceDto _otherFamily = null!;
     private Guid _itau;
     private Guid _nubank;
     private Guid _salario;
@@ -27,16 +27,16 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
 
     private static DateOnly Today => BusinessCalendar.Today(DateTimeOffset.UtcNow);
 
-    private string TransactionsUrl => $"/api/families/{_family.Id}/transactions";
+    private string TransactionsUrl => $"/api/financial-workspaces/{_family.Id}/transactions";
 
     private async Task ArrangeAsync()
     {
         _owner = await SignInAsync("dona");
-        _member = await SignInAsync("membro");
+        _ownerSecondSession = _owner;
         _outsider = await SignInAsync("estranho");
-        var created = await CreateFamilyAsync(_owner, "Família Silva");
-        _family = await JoinByInvitationAsync(_owner, created.Id, _member);
-        _otherFamily = await CreateFamilyAsync(_outsider, "Família Estranha");
+        var created = await CreateWorkspaceAsync(_owner, "Família Silva");
+        _family = created;
+        _otherFamily = await CreateWorkspaceAsync(_outsider, "Família Estranha");
 
         _itau = await CreateAccountAsync(_owner, _family.Id, "Itaú PF");
         _nubank = await CreateAccountAsync(_owner, _family.Id, "Nubank");
@@ -53,7 +53,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
 
         var income = await SendRawAsync(HttpMethod.Post, TransactionsUrl, _owner,
             $$"""{ "accountId": "{{_itau}}", "categoryId": "{{_salario}}", "type": "Income", "description": "  Salário outubro ", "amount": "5432.10", "transactionDate": "2026-10-05" }""");
-        var expense = await SendRawAsync(HttpMethod.Post, TransactionsUrl, _member,
+        var expense = await SendRawAsync(HttpMethod.Post, TransactionsUrl, _ownerSecondSession,
             $$"""{ "accountId": "{{_itau}}", "categoryId": "{{_mercado}}", "type": "Expense", "description": "Feira", "amount": 0.01, "transactionDate": "2026-10-06" }""");
 
         Assert.Equal(HttpStatusCode.Created, income.StatusCode);
@@ -64,7 +64,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
             (created.Type, created.Amount, created.TransactionDate, created.Description, created.Currency, created.IsCancelled));
         Assert.Equal((_itau, "Itaú PF", _salario, "Salário"), (created.Account.Id, created.Account.Name, created.Category.Id, created.Category.Name));
 
-        var reloaded = await ReadAsync<TransactionDto>(await SendAsync(HttpMethod.Get, $"{TransactionsUrl}/{created.Id}", _member));
+        var reloaded = await ReadAsync<TransactionDto>(await SendAsync(HttpMethod.Get, $"{TransactionsUrl}/{created.Id}", _ownerSecondSession));
         Assert.Equal(("5432.10", new DateOnly(2026, 10, 5)), (reloaded.Amount, reloaded.TransactionDate));
 
         await using var db = Db();
@@ -72,7 +72,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
             "SELECT type || ' ' || amount::text || ' ' || transaction_date::text AS \"Value\" FROM financial_transactions ORDER BY transaction_date").ToListAsync();
         Assert.Equal(["Income 5432.10 2026-10-05", "Expense 0.01 2026-10-06"], texts);
         var stored = await db.FinancialTransactions.SingleAsync(t => t.Id == created.Id);
-        Assert.Equal(_family.Id, stored.FamilyId);
+        Assert.Equal(_family.Id, stored.WorkspaceId);
         Assert.Equal(await UserIdAsync("dona"), stored.CreatedByUserId);
         Assert.Null(stored.UpdatedAt);
     }
@@ -195,23 +195,23 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
         await UpdateCategoryAsync(otherCategory, "Feira livre", isActive: false);
         var url = $"{TransactionsUrl}/{created.Id}";
 
-        var listed = Assert.Single((await ListAsync(_member)).Items);
+        var listed = Assert.Single((await ListAsync(_ownerSecondSession)).Items);
         Assert.Equal((false, false), (listed.Account.IsActive, listed.Category.IsActive));
         Assert.Equal("Itaú PF", listed.Account.Name);
 
-        var kept = await SendWithCsrfAsync(HttpMethod.Put, url, _member, Body(_itau, _mercado, "Expense", description: "Feira do sábado", amount: 87.35m));
+        var kept = await SendWithCsrfAsync(HttpMethod.Put, url, _ownerSecondSession, Body(_itau, _mercado, "Expense", description: "Feira do sábado", amount: 87.35m));
         Assert.Equal(HttpStatusCode.OK, kept.StatusCode);
         var keptDto = await ReadAsync<TransactionDto>(kept);
         Assert.Equal(("Feira do sábado", "87.35", false, false),
             (keptDto.Description, keptDto.Amount, keptDto.Account.IsActive, keptDto.Category.IsActive));
 
-        await AssertValidationErrorAsync(await SendWithCsrfAsync(HttpMethod.Put, url, _member, Body(_nubank, _mercado, "Expense")), "accountId");
-        await AssertValidationErrorAsync(await SendWithCsrfAsync(HttpMethod.Put, url, _member, Body(_itau, otherCategory, "Expense")), "categoryId");
+        await AssertValidationErrorAsync(await SendWithCsrfAsync(HttpMethod.Put, url, _ownerSecondSession, Body(_nubank, _mercado, "Expense")), "accountId");
+        await AssertValidationErrorAsync(await SendWithCsrfAsync(HttpMethod.Put, url, _ownerSecondSession, Body(_itau, otherCategory, "Expense")), "categoryId");
 
         await using var db = Db();
         var stored = await db.FinancialTransactions.SingleAsync();
         Assert.Equal((_itau, _mercado, 87.35m, "Feira do sábado"), (stored.AccountId, stored.CategoryId, stored.Amount, stored.Description));
-        Assert.Equal(await UserIdAsync("membro"), stored.UpdatedByUserId);
+        Assert.Equal(await UserIdAsync("dona"), stored.UpdatedByUserId);
         Assert.NotNull(stored.UpdatedAt);
         Assert.Equal(await UserIdAsync("dona"), stored.CreatedByUserId);
     }
@@ -236,7 +236,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
         var created = await ReadAsync<TransactionDto>(await PostAsync(_owner, Body(_itau, _mercado, "Expense")));
         var url = $"{TransactionsUrl}/{created.Id}";
 
-        var first = await SendWithCsrfAsync(HttpMethod.Post, $"{url}/cancel", _member);
+        var first = await SendWithCsrfAsync(HttpMethod.Post, $"{url}/cancel", _ownerSecondSession);
         var second = await SendWithCsrfAsync(HttpMethod.Post, $"{url}/cancel", _owner);
 
         Assert.Equal((HttpStatusCode.OK, HttpStatusCode.OK), (first.StatusCode, second.StatusCode));
@@ -253,7 +253,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
 
         await using var db = Db();
         var stored = await db.FinancialTransactions.SingleAsync();
-        Assert.Equal((true, "Compra", await UserIdAsync("membro")), (stored.IsCancelled, stored.Description, stored.CancelledByUserId));
+        Assert.Equal((true, "Compra", await UserIdAsync("dona")), (stored.IsCancelled, stored.Description, stored.CancelledByUserId));
     }
 
     [Fact]
@@ -267,18 +267,18 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
 
         var responses = new[]
         {
-            await SendRawAsync(HttpMethod.Post, TransactionsUrl, _owner, $$"""{ {{fields}}, "familyId": "{{_otherFamily.Id}}" }"""),
+            await SendRawAsync(HttpMethod.Post, TransactionsUrl, _owner, $$"""{ {{fields}}, "workspaceId": "{{_otherFamily.Id}}" }"""),
             await SendRawAsync(HttpMethod.Post, TransactionsUrl, _owner, $$"""{ {{fields}}, "isCancelled": true }"""),
             await SendRawAsync(HttpMethod.Post, TransactionsUrl, _owner, $$"""{ {{fields}}, "currency": "USD" }"""),
             await SendRawAsync(HttpMethod.Put, url, _owner, $$"""{ {{fields}}, "isCancelled": true }"""),
             await SendRawAsync(HttpMethod.Put, url, _owner, $$"""{ {{fields}}, "createdByUserId": "{{Guid.CreateVersion7()}}" }"""),
-            await SendRawAsync(HttpMethod.Put, url, _owner, $$"""{ {{fields}}, "familyId": "{{_otherFamily.Id}}" }"""),
+            await SendRawAsync(HttpMethod.Put, url, _owner, $$"""{ {{fields}}, "workspaceId": "{{_otherFamily.Id}}" }"""),
         };
 
         Assert.All(responses, r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
         await using var db = Db();
         var stored = await db.FinancialTransactions.SingleAsync();
-        Assert.Equal((_family.Id, false, "Compra"), (stored.FamilyId, stored.IsCancelled, stored.Description));
+        Assert.Equal((_family.Id, false, "Compra"), (stored.WorkspaceId, stored.IsCancelled, stored.Description));
     }
 
     [Fact]
@@ -287,7 +287,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
         await ArrangeAsync();
         var created = await ReadAsync<TransactionDto>(await PostAsync(_owner, Body(_itau, _mercado, "Expense")));
         var url = $"{TransactionsUrl}/{created.Id}";
-        var otherRoute = $"/api/families/{_otherFamily.Id}/transactions/{created.Id}";
+        var otherRoute = $"/api/financial-workspaces/{_otherFamily.Id}/transactions/{created.Id}";
 
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, TransactionsUrl, _outsider)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, url, _outsider)).StatusCode);
@@ -339,17 +339,17 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
         await AddAsync(_nubank, _mercado, "Expense", new DateOnly(2026, 9, 10));
         await AddAsync(_nubank, _mercado, "Expense", new DateOnly(2026, 9, 10));
         await AddAsync(_itau, _mercado, "Expense", new DateOnly(2026, 10, 1));
-        var foreign = await ReadAsync<TransactionDto>(await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_otherFamily.Id}/transactions",
+        var foreign = await ReadAsync<TransactionDto>(await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_otherFamily.Id}/transactions",
             _outsider, Body(_foreignAccount, _foreignCategory, "Expense", date: new DateOnly(2026, 9, 10))));
 
         // Ordem: data decrescente, depois Id decrescente (Guid v7 crescente na criação).
         var expected = ids.OrderByDescending(x => x.Date).ThenByDescending(x => x.Id.ToString()).Select(x => x.Id).ToList();
-        var pages = new[] { await ListAsync(_member, "pageSize=2&page=1"), await ListAsync(_member, "pageSize=2&page=2"), await ListAsync(_member, "pageSize=2&page=3") };
+        var pages = new[] { await ListAsync(_ownerSecondSession, "pageSize=2&page=1"), await ListAsync(_ownerSecondSession, "pageSize=2&page=2"), await ListAsync(_ownerSecondSession, "pageSize=2&page=3") };
         Assert.All(pages, p => Assert.Equal(5, p.TotalCount));
         Assert.Equal([2, 2, 1], pages.Select(p => p.Items.Count));
         Assert.Equal(expected, pages.SelectMany(p => p.Items).Select(t => t.Id));
         Assert.DoesNotContain(foreign.Id, pages.SelectMany(p => p.Items).Select(t => t.Id));
-        Assert.Empty((await ListAsync(_member, "page=4&pageSize=2")).Items);
+        Assert.Empty((await ListAsync(_ownerSecondSession, "page=4&pageSize=2")).Items);
 
         Assert.Equal(3, (await ListAsync(_owner, "from=2026-09-10&to=2026-09-10")).TotalCount);
         Assert.Equal(4, (await ListAsync(_owner, "from=2026-09-05")).TotalCount);
@@ -388,7 +388,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
 
         var body = await (await SendAsync(HttpMethod.Get, TransactionsUrl, _owner)).Content.ReadAsStringAsync();
 
-        foreach (var forbidden in new[] { "familyId", "createdBy", "updatedBy", "cancelledBy", "userId", _family.Id.ToString() })
+        foreach (var forbidden in new[] { "workspaceId", "createdBy", "updatedBy", "cancelledBy", "userId", _family.Id.ToString() })
         {
             Assert.DoesNotContain(forbidden, body, StringComparison.OrdinalIgnoreCase);
         }
@@ -408,16 +408,16 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
         var id = await AssertAmountStringAsync(created, amount);
         var url = $"{TransactionsUrl}/{id}";
 
-        await AssertAmountStringAsync(await SendAsync(HttpMethod.Get, url, _member), amount);
+        await AssertAmountStringAsync(await SendAsync(HttpMethod.Get, url, _ownerSecondSession), amount);
 
-        using (var list = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, TransactionsUrl, _member)).Content.ReadAsStringAsync()))
+        using (var list = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, TransactionsUrl, _ownerSecondSession)).Content.ReadAsStringAsync()))
         {
             var item = list.RootElement.GetProperty("items")[0].GetProperty("amount");
             Assert.Equal((JsonValueKind.String, amount), (item.ValueKind, item.GetString()));
         }
 
         // Edita só a descrição, reenviando o valor exatamente como veio da resposta.
-        var edited = await SendWithCsrfAsync(HttpMethod.Put, url, _member, body with { description = "Compra corrigida" });
+        var edited = await SendWithCsrfAsync(HttpMethod.Put, url, _ownerSecondSession, body with { description = "Compra corrigida" });
         Assert.Equal(HttpStatusCode.OK, edited.StatusCode);
         await AssertAmountStringAsync(edited, amount);
 
@@ -431,7 +431,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     [Fact]
     public async Task Endpoints_RequireAuthentication()
     {
-        Assert.Equal(HttpStatusCode.Unauthorized, (await Client.GetAsync($"/api/families/{Guid.CreateVersion7()}/transactions")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Client.GetAsync($"/api/financial-workspaces/{Guid.CreateVersion7()}/transactions")).StatusCode);
     }
 
     private static object Body(
@@ -441,25 +441,25 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     private Task<HttpResponseMessage> PostAsync(string session, object body) =>
         SendWithCsrfAsync(HttpMethod.Post, TransactionsUrl, session, body);
 
-    private async Task<PageDto> ListAsync(string session, string query = "", Guid? familyId = null)
+    private async Task<PageDto> ListAsync(string session, string query = "", Guid? workspaceId = null)
     {
-        var url = $"/api/families/{familyId ?? _family.Id}/transactions" + (query.Length > 0 ? $"?{query}" : string.Empty);
+        var url = $"/api/financial-workspaces/{workspaceId ?? _family.Id}/transactions" + (query.Length > 0 ? $"?{query}" : string.Empty);
         var response = await SendAsync(HttpMethod.Get, url, session);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await ReadAsync<PageDto>(response);
     }
 
-    private async Task<Guid> CreateAccountAsync(string session, Guid familyId, string name)
+    private async Task<Guid> CreateAccountAsync(string session, Guid workspaceId, string name)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/accounts", session,
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/accounts", session,
             new { name, type = "Checking", financialScope = "PF" });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
     }
 
-    private async Task<Guid> CreateCategoryAsync(string session, Guid familyId, string name, string type)
+    private async Task<Guid> CreateCategoryAsync(string session, Guid workspaceId, string name, string type)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{familyId}/categories", session, new { name, type });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspaceId}/categories", session, new { name, type });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
     }
@@ -467,14 +467,14 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     private async Task UpdateAccountAsync(
         Guid accountId, string name, bool isActive, decimal? openingBalance = null, string? openingBalanceDate = null)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Put, $"/api/families/{_family.Id}/accounts/{accountId}", _owner,
+        var response = await SendWithCsrfAsync(HttpMethod.Put, $"/api/financial-workspaces/{_family.Id}/accounts/{accountId}", _owner,
             new { name, type = "Checking", financialScope = "PF", openingBalance, openingBalanceDate, isActive });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     private async Task UpdateCategoryAsync(Guid categoryId, string name, bool isActive)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Put, $"/api/families/{_family.Id}/categories/{categoryId}", _owner, new { name, isActive });
+        var response = await SendWithCsrfAsync(HttpMethod.Put, $"/api/financial-workspaces/{_family.Id}/categories/{categoryId}", _owner, new { name, isActive });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 

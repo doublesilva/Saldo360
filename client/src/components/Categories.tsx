@@ -30,20 +30,20 @@ const sections: { type: CategoryType; title: string; singular: string }[] = [
  * Categorias da família, separadas em receitas e despesas. Todos os integrantes veem e editam as mesmas.
  * Nada é criado automaticamente: a lista começa vazia.
  */
-export function Categories({ familyId }: { familyId: string }) {
+export function Categories({ workspaceId }: { workspaceId: string }) {
   const [list, setList] = useState<ListState>({ kind: 'loading' })
   const [includeInactive, setIncludeInactive] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
-    listCategories(familyId, includeInactive, controller.signal)
+    listCategories(workspaceId, includeInactive, controller.signal)
       .then((categories) => setList({ kind: 'loaded', categories }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setList({ kind: 'error', message: errorMessage(error) })
       })
     return () => controller.abort()
-  }, [familyId, includeInactive, reloadKey])
+  }, [workspaceId, includeInactive, reloadKey])
 
   const reload = () => setReloadKey((n) => n + 1)
 
@@ -63,7 +63,7 @@ export function Categories({ familyId }: { familyId: string }) {
           {sections.map((section) => (
             <CategorySection
               key={section.type}
-              familyId={familyId}
+              workspaceId={workspaceId}
               {...section}
               categories={list.categories.filter((category) => category.type === section.type)}
               includeInactive={includeInactive}
@@ -77,7 +77,7 @@ export function Categories({ familyId }: { familyId: string }) {
 }
 
 function CategorySection({
-  familyId,
+  workspaceId,
   type,
   title,
   singular,
@@ -85,7 +85,7 @@ function CategorySection({
   includeInactive,
   onChanged,
 }: {
-  familyId: string
+  workspaceId: string
   type: CategoryType
   title: string
   singular: string
@@ -111,7 +111,7 @@ function CategorySection({
     setBusy(true)
     setError(null)
     try {
-      const result = await createCategory(familyId, trimmed, type)
+      const result = await createCategory(workspaceId, trimmed, type)
       if (result.ok) {
         setName('')
         onChanged()
@@ -131,7 +131,7 @@ function CategorySection({
 
     setItemError(null)
     try {
-      const result = await updateCategory(familyId, category.id, category.name, !category.isActive)
+      const result = await updateCategory(workspaceId, category.id, category.name, !category.isActive)
       if (!result.ok) setItemError(firstError(result.errors))
       onChanged()
     } catch (failure: unknown) {
@@ -180,7 +180,7 @@ function CategorySection({
             renamingId === category.id ? (
               <li key={category.id} className="category">
                 <RenameForm
-                  familyId={familyId}
+                  workspaceId={workspaceId}
                   category={category}
                   onDone={() => {
                     setRenamingId(null)
@@ -213,12 +213,12 @@ function CategorySection({
 }
 
 function RenameForm({
-  familyId,
+  workspaceId,
   category,
   onDone,
   onCancel,
 }: {
-  familyId: string
+  workspaceId: string
   category: FinancialCategory
   onDone: () => void
   onCancel: () => void
@@ -239,7 +239,7 @@ function RenameForm({
     setBusy(true)
     setError(null)
     try {
-      const result = await updateCategory(familyId, category.id, trimmed, category.isActive)
+      const result = await updateCategory(workspaceId, category.id, trimmed, category.isActive)
       if (result.ok) onDone()
       else setError(firstError(result.errors))
     } catch (failure: unknown) {

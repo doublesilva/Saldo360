@@ -1,23 +1,23 @@
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Common;
 
 namespace Saldo360.Application.CreditCards;
 
 public sealed class FinancialPlannedInvoiceReconciliationService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialPlannedInvoiceReconciliationRepository reconciliations,
     TimeProvider timeProvider)
 {
     public async Task<IReadOnlyList<FinancialPlannedInvoiceReconciliationDto>?> ListAsync(
-        Guid familyId, Guid userId, Guid? invoiceId, Guid? plannedTransactionId, CancellationToken cancellationToken) =>
-        await IsParticipantAsync(familyId, userId, cancellationToken)
-            ? await reconciliations.ListAsync(familyId, invoiceId, plannedTransactionId, cancellationToken)
+        Guid workspaceId, Guid userId, Guid? invoiceId, Guid? plannedTransactionId, CancellationToken cancellationToken) =>
+        await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            ? await reconciliations.ListAsync(workspaceId, invoiceId, plannedTransactionId, cancellationToken)
             : null;
 
     public async Task<FinancialPlannedInvoiceReconciliationResult> CreateAsync(
-        Guid familyId, Guid userId, FinancialPlannedInvoiceReconciliationInput input, CancellationToken cancellationToken)
+        Guid workspaceId, Guid userId, FinancialPlannedInvoiceReconciliationInput input, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(familyId, userId, cancellationToken))
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
             return new(FinancialPlannedInvoiceReconciliationAccess.NotFound, null, null);
 
         var errors = new Dictionary<string, string[]>();
@@ -28,10 +28,10 @@ public sealed class FinancialPlannedInvoiceReconciliationService(
         if (errors.Count > 0)
             return new(FinancialPlannedInvoiceReconciliationAccess.Invalid, null, errors);
 
-        if (await reconciliations.FindActiveAsync(familyId, input.PlannedTransactionId!.Value, input.CreditCardInvoiceId!.Value, cancellationToken) is { } existing)
+        if (await reconciliations.FindActiveAsync(workspaceId, input.PlannedTransactionId!.Value, input.CreditCardInvoiceId!.Value, cancellationToken) is { } existing)
             return new(FinancialPlannedInvoiceReconciliationAccess.Allowed, existing, null);
 
-        var eligibility = await reconciliations.GetEligibilityAsync(familyId, input.PlannedTransactionId!.Value, input.CreditCardInvoiceId!.Value, cancellationToken);
+        var eligibility = await reconciliations.GetEligibilityAsync(workspaceId, input.PlannedTransactionId!.Value, input.CreditCardInvoiceId!.Value, cancellationToken);
         if (eligibility is null || !eligibility.PlannedExists || !eligibility.InvoiceExists)
             return new(FinancialPlannedInvoiceReconciliationAccess.NotFound, null, null);
         if (!eligibility.PlannedEligible)
@@ -45,19 +45,19 @@ public sealed class FinancialPlannedInvoiceReconciliationService(
         if (eligibility.InvoiceAlreadyLinked)
             return Conflict("A fatura já possui uma conciliação ativa.");
 
-        var created = await reconciliations.CreateAsync(familyId, input.PlannedTransactionId.Value, input.CreditCardInvoiceId.Value, userId, timeProvider.GetUtcNow(), cancellationToken);
+        var created = await reconciliations.CreateAsync(workspaceId, input.PlannedTransactionId.Value, input.CreditCardInvoiceId.Value, userId, timeProvider.GetUtcNow(), cancellationToken);
         if (created is not null) return new(FinancialPlannedInvoiceReconciliationAccess.Allowed, created, null);
-        return await reconciliations.FindActiveAsync(familyId, input.PlannedTransactionId.Value, input.CreditCardInvoiceId.Value, cancellationToken) is { } concurrent
+        return await reconciliations.FindActiveAsync(workspaceId, input.PlannedTransactionId.Value, input.CreditCardInvoiceId.Value, cancellationToken) is { } concurrent
             ? new(FinancialPlannedInvoiceReconciliationAccess.Allowed, concurrent, null)
             : Conflict("A previsão ou a fatura foi conciliada por outra operação.");
     }
 
-    public async Task<bool> RemoveAsync(Guid familyId, Guid id, Guid userId, CancellationToken cancellationToken) =>
-        await IsParticipantAsync(familyId, userId, cancellationToken)
-        && await reconciliations.RemoveAsync(familyId, id, userId, timeProvider.GetUtcNow(), cancellationToken);
+    public async Task<bool> RemoveAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken cancellationToken) =>
+        await IsParticipantAsync(workspaceId, userId, cancellationToken)
+        && await reconciliations.RemoveAsync(workspaceId, id, userId, timeProvider.GetUtcNow(), cancellationToken);
 
-    private async Task<bool> IsParticipantAsync(Guid familyId, Guid userId, CancellationToken cancellationToken) =>
-        await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is not null;
+    private async Task<bool> IsParticipantAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>
+        await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is not null;
 
     private static FinancialPlannedInvoiceReconciliationResult Invalid(string field, string message) =>
         new(FinancialPlannedInvoiceReconciliationAccess.Invalid, null, new Dictionary<string, string[]> { [field] = [message] });

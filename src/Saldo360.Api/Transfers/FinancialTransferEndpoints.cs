@@ -10,7 +10,7 @@ public static class FinancialTransferEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialTransferEndpoints(this IEndpointRouteBuilder app)
     {
-        var transfers = app.MapGroup("/api/families/{familyId:guid}/transfers").RequireAuthorization();
+        var transfers = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/transfers").RequireAuthorization();
         transfers.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         transfers.MapGet("/", List);
         transfers.MapGet("/{transferId:guid}", Get);
@@ -19,7 +19,7 @@ public static class FinancialTransferEndpoints
     }
 
     private static async Task<IResult> Create(
-        Guid familyId, TransferRequest? request, CurrentUser currentUser, FinancialTransferService transfers,
+        Guid workspaceId, TransferRequest? request, CurrentUser currentUser, FinancialTransferService transfers,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -29,8 +29,8 @@ public static class FinancialTransferEndpoints
 
         var input = new TransferInput(
             request?.SourceAccountId, request?.DestinationAccountId, request?.Amount, request?.TransferDate, request?.Description);
-        var result = await transfers.CreateAsync(familyId, userId, input, cancellationToken);
-        return ToResponse(result, t => Results.Created($"/api/families/{familyId}/transfers/{t.Id}", TransferResponse.From(t)));
+        var result = await transfers.CreateAsync(workspaceId, userId, input, cancellationToken);
+        return ToResponse(result, t => Results.Created($"/api/financial-workspaces/{workspaceId}/transfers/{t.Id}", TransferResponse.From(t)));
     }
 
     /// <summary>
@@ -38,7 +38,7 @@ public static class FinancialTransferEndpoints
     /// accountId (origem OU destino). Canceladas só com includeCancelled=true. pageSize de 1 a 100.
     /// </summary>
     private static async Task<IResult> List(
-        Guid familyId, string? from, string? to, Guid? accountId, bool? includeCancelled, int? page, int? pageSize,
+        Guid workspaceId, string? from, string? to, Guid? accountId, bool? includeCancelled, int? page, int? pageSize,
         CurrentUser currentUser, FinancialTransferService transfers, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -55,7 +55,7 @@ public static class FinancialTransferEndpoints
         }
 
         var query = new TransferQuery(fromDate, toDate, accountId, includeCancelled ?? false, page, pageSize);
-        var result = await transfers.ListAsync(familyId, userId, query, cancellationToken);
+        var result = await transfers.ListAsync(workspaceId, userId, query, cancellationToken);
         return result switch
         {
             { NotFound: true } => Results.NotFound(),
@@ -66,7 +66,7 @@ public static class FinancialTransferEndpoints
     }
 
     private static async Task<IResult> Get(
-        Guid familyId, Guid transferId, CurrentUser currentUser, FinancialTransferService transfers,
+        Guid workspaceId, Guid transferId, CurrentUser currentUser, FinancialTransferService transfers,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -74,14 +74,14 @@ public static class FinancialTransferEndpoints
             return Results.Unauthorized();
         }
 
-        return await transfers.GetAsync(familyId, transferId, userId, cancellationToken) is { } transfer
+        return await transfers.GetAsync(workspaceId, transferId, userId, cancellationToken) is { } transfer
             ? Results.Ok(TransferResponse.From(transfer))
             : Results.NotFound();
     }
 
     /// <summary>Cancela sem excluir. Idempotente: cancelar de novo devolve 200 com o mesmo estado.</summary>
     private static async Task<IResult> Cancel(
-        Guid familyId, Guid transferId, CurrentUser currentUser, FinancialTransferService transfers,
+        Guid workspaceId, Guid transferId, CurrentUser currentUser, FinancialTransferService transfers,
         CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -89,7 +89,7 @@ public static class FinancialTransferEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await transfers.CancelAsync(familyId, transferId, userId, cancellationToken);
+        var result = await transfers.CancelAsync(workspaceId, transferId, userId, cancellationToken);
         return ToResponse(result, t => Results.Ok(TransferResponse.From(t)));
     }
 

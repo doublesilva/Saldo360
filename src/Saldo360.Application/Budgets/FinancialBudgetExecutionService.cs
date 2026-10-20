@@ -1,19 +1,19 @@
-using Saldo360.Application.Families;
+using Saldo360.Application.Workspaces;
 
 namespace Saldo360.Application.Budgets;
 
 public sealed class FinancialBudgetExecutionService(
-    IFamilyRepository families,
+    IFinancialWorkspaceRepository workspaces,
     IFinancialBudgetExecutionRepository executions)
 {
     public const int PercentageScale = 2;
     public const decimal ApproachingThreshold = 0.80m;
 
     public async Task<FinancialBudgetExecutionDto?> GetAsync(
-        Guid familyId, Guid budgetId, Guid userId, CancellationToken cancellationToken)
+        Guid workspaceId, Guid budgetId, Guid userId, CancellationToken cancellationToken)
     {
-        if (await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is null) return null;
-        var source = await executions.GetAsync(familyId, budgetId, cancellationToken);
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is null) return null;
+        var source = await executions.GetAsync(workspaceId, budgetId, cancellationToken);
         if (source is null) return null;
 
         var targets = source.Targets

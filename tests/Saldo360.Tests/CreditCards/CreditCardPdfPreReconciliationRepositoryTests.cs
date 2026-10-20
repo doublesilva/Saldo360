@@ -15,14 +15,14 @@ public sealed class CreditCardPdfPreReconciliationRepositoryTests(PostgresFixtur
     {
         var session = await SignInAsync("pdf-reconciliation-owner");
         var me = await GetMeAsync(session);
-        var family = await CreateFamilyAsync(session, "Família PDF");
+        var family = await CreateWorkspaceAsync(session, "Família PDF");
         await using var identityDb = Db();
         var userId = await identityDb.Users.Where(user => user.Issuer == me.Issuer && user.Subject == me.Subject).Select(user => user.Id).SingleAsync();
-        var created = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/credit-cards", session,
+        var created = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/credit-cards", session,
             new { name = "Cartão PDF", issuer = "Itau", holderUserId = userId, creditLimit = "1000.00", closingDay = 8, dueDay = 15, defaultPaymentAccountId = (Guid?)null });
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var cardId = (await ReadAsync<JsonElement>(created)).GetProperty("id").GetGuid();
-        var category = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{family.Id}/categories", session,
+        var category = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{family.Id}/categories", session,
             new { name = "Compras", type = "Expense" });
         Assert.Equal(HttpStatusCode.Created, category.StatusCode);
         var categoryId = (await ReadAsync<JsonElement>(category)).GetProperty("id").GetGuid();

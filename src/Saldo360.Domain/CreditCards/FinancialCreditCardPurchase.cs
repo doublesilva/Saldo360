@@ -12,7 +12,7 @@ public sealed class FinancialCreditCardPurchase : Entity
     public const int MaxInstallmentCount = 120;
     private readonly List<FinancialCreditCardInstallment> installments = [];
     private FinancialCreditCardPurchase() { Description = string.Empty; }
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid CreditCardId { get; private init; }
     public Guid CategoryId { get; private init; }
     public string Description { get; private init; }
@@ -28,13 +28,13 @@ public sealed class FinancialCreditCardPurchase : Entity
     public Guid? CancelledByUserId { get; private set; }
     public IReadOnlyCollection<FinancialCreditCardInstallment> Installments => installments;
 
-    public static FinancialCreditCardPurchase Create(Guid familyId, Guid cardId, Guid categoryId, string description, DateOnly date, decimal total, int count, Guid userId, DateTimeOffset now)
+    public static FinancialCreditCardPurchase Create(Guid workspaceId, Guid cardId, Guid categoryId, string description, DateOnly date, decimal total, int count, Guid userId, DateTimeOffset now)
     {
-        var purchase = new FinancialCreditCardPurchase { FamilyId = familyId, CreditCardId = cardId, CategoryId = categoryId, Description = description, PurchaseDate = date, TotalAmount = total, InstallmentCount = count, Status = CreditCardPurchaseStatus.Active, CreatedAt = now, UpdatedAt = now, CreatedByUserId = userId, UpdatedByUserId = userId };
+        var purchase = new FinancialCreditCardPurchase { WorkspaceId = workspaceId, CreditCardId = cardId, CategoryId = categoryId, Description = description, PurchaseDate = date, TotalAmount = total, InstallmentCount = count, Status = CreditCardPurchaseStatus.Active, CreatedAt = now, UpdatedAt = now, CreatedByUserId = userId, UpdatedByUserId = userId };
         var totalCents = decimal.ToInt64(total * 100m);
         var baseCents = totalCents / count;
         var remainder = totalCents % count;
-        for (var number = 1; number <= count; number++) purchase.installments.Add(FinancialCreditCardInstallment.Create(familyId, purchase.Id, number, baseCents + (number <= remainder ? 1 : 0), now));
+        for (var number = 1; number <= count; number++) purchase.installments.Add(FinancialCreditCardInstallment.Create(workspaceId, purchase.Id, number, baseCents + (number <= remainder ? 1 : 0), now));
         return purchase;
     }
 
@@ -49,14 +49,14 @@ public sealed class FinancialCreditCardPurchase : Entity
 public sealed class FinancialCreditCardInstallment : Entity
 {
     private FinancialCreditCardInstallment() { }
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid PurchaseId { get; private init; }
     public Guid? InvoiceId { get; private set; }
     public int InstallmentNumber { get; private init; }
     public decimal Amount { get; private init; }
     public CreditCardInstallmentStatus Status { get; private set; }
     public DateTimeOffset CreatedAt { get; private init; }
-    internal static FinancialCreditCardInstallment Create(Guid familyId, Guid purchaseId, int number, long cents, DateTimeOffset now) => new() { FamilyId = familyId, PurchaseId = purchaseId, InstallmentNumber = number, Amount = cents / 100m, Status = CreditCardInstallmentStatus.Active, CreatedAt = now };
+    internal static FinancialCreditCardInstallment Create(Guid workspaceId, Guid purchaseId, int number, long cents, DateTimeOffset now) => new() { WorkspaceId = workspaceId, PurchaseId = purchaseId, InstallmentNumber = number, Amount = cents / 100m, Status = CreditCardInstallmentStatus.Active, CreatedAt = now };
     internal void Cancel() => Status = CreditCardInstallmentStatus.Cancelled;
     public void AssignInvoice(Guid invoiceId) => InvoiceId = invoiceId;
 }

@@ -7,7 +7,7 @@ public sealed class FinancialPlannedInvoiceReconciliation : Entity
 {
     private FinancialPlannedInvoiceReconciliation() { }
 
-    public Guid FamilyId { get; private init; }
+    public Guid WorkspaceId { get; private init; }
     public Guid PlannedTransactionId { get; private init; }
     public Guid CreditCardInvoiceId { get; private init; }
     public DateTimeOffset CreatedAt { get; private init; }
@@ -16,9 +16,9 @@ public sealed class FinancialPlannedInvoiceReconciliation : Entity
     public Guid? RemovedByUserId { get; private set; }
 
     public static FinancialPlannedInvoiceReconciliation Create(
-        Guid familyId, Guid plannedTransactionId, Guid invoiceId, Guid userId, DateTimeOffset now) => new()
+        Guid workspaceId, Guid plannedTransactionId, Guid invoiceId, Guid userId, DateTimeOffset now) => new()
     {
-        FamilyId = familyId,
+        WorkspaceId = workspaceId,
         PlannedTransactionId = plannedTransactionId,
         CreditCardInvoiceId = invoiceId,
         CreatedAt = now,

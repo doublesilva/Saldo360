@@ -12,7 +12,7 @@ export interface TransferAccount {
 }
 
 /**
- * Transferência já realizada entre contas da família: um único registro com origem e destino, sem categoria.
+ * Transferência já realizada entre contas do orçamento: um único registro com origem e destino, sem categoria.
  * amount vem como texto decimal exato ("500.00"): só é formatado, nunca convertido para number.
  */
 export interface FinancialTransfer {
@@ -61,13 +61,13 @@ export type SaveTransferResult =
 
 const jsonHeaders = { Accept: 'application/json' }
 
-function transfersUrl(familyId: string, transferId?: string): string {
-  const base = `/api/families/${encodeURIComponent(familyId)}/transfers`
+function transfersUrl(workspaceId: string, transferId?: string): string {
+  const base = `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/transfers`
   return transferId ? `${base}/${encodeURIComponent(transferId)}` : base
 }
 
 export async function listTransfers(
-  familyId: string,
+  workspaceId: string,
   filters: TransferFilters,
   page: number,
   signal?: AbortSignal,
@@ -78,7 +78,7 @@ export async function listTransfers(
   if (filters.accountId) query.set('accountId', filters.accountId)
   if (filters.includeCancelled) query.set('includeCancelled', 'true')
 
-  const response = await fetch(`${transfersUrl(familyId)}?${query}`, { signal, headers: jsonHeaders })
+  const response = await fetch(`${transfersUrl(workspaceId)}?${query}`, { signal, headers: jsonHeaders })
   if (response.status === 400) {
     const problem = (await response.json().catch(() => ({}))) as { errors?: Record<string, string[]> }
     throw new Error(Object.values(problem.errors ?? {}).flat()[0] ?? 'Filtros inválidos.')
@@ -99,15 +99,15 @@ async function post(url: string, body: unknown, expected: number): Promise<SaveT
     const problem = (await response.json().catch(() => ({}))) as { errors?: Record<string, string[]> }
     if (problem.errors) return { ok: false, errors: problem.errors }
   }
-  if (response.status === 404) throw new Error('Transferência ou família não encontrada.')
+  if (response.status === 404) throw new Error('Transferência ou orçamento não encontrado.')
   throw new Error(`Falha ao salvar a transferência (HTTP ${response.status}).`)
 }
 
-export function createTransfer(familyId: string, input: TransferInput): Promise<SaveTransferResult> {
-  return post(transfersUrl(familyId), input, 201)
+export function createTransfer(workspaceId: string, input: TransferInput): Promise<SaveTransferResult> {
+  return post(transfersUrl(workspaceId), input, 201)
 }
 
 /** Cancela sem excluir; repetir é seguro (idempotente). */
-export function cancelTransfer(familyId: string, transferId: string): Promise<SaveTransferResult> {
-  return post(`${transfersUrl(familyId, transferId)}/cancel`, undefined, 200)
+export function cancelTransfer(workspaceId: string, transferId: string): Promise<SaveTransferResult> {
+  return post(`${transfersUrl(workspaceId, transferId)}/cancel`, undefined, 200)
 }
