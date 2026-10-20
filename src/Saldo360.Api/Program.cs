@@ -67,6 +67,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 });
 
 app.MapAuthEndpoints();
+Saldo360.Api.ServiceAccounts.ServiceAccountEndpoints.MapServiceAccountEndpoints(app);
 app.MapFamilyEndpoints();
 app.MapFamilyInvitationEndpoints();
 app.MapFinancialAccountEndpoints();

@@ -53,6 +53,8 @@ public static class DependencyInjection
         services.AddSingleton<IFinancialDocumentAnalysisRouter, FinancialDocumentAnalysisRouter>();
         services.AddScoped<IServiceBillExtractor, CompositeServiceBillExtractor>();
         services.AddScoped<ServiceBillPreviewService>();
+        services.AddScoped<Saldo360.Application.ServiceAccounts.ServiceAccountService>();
+        services.AddScoped<Saldo360.Application.ServiceAccounts.IServiceAccountResolver, Saldo360.Application.ServiceAccounts.ServiceAccountResolver>();
         services.AddScoped<IServiceBillRecurringMatchService, ServiceBillRecurringMatchService>();
         services.AddScoped<ServiceBillRecurringMatchPreviewService>();
         services.AddScoped<IServiceBillRecurringMatchPreviewService>(provider => provider.GetRequiredService<ServiceBillRecurringMatchPreviewService>());

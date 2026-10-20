@@ -2,7 +2,8 @@ namespace Saldo360.Application.CreditCards;
 
 public sealed record ServiceBillPreviewResult(FinancialDocumentClassificationAccess Access, ServiceBillExtractionOutput? Preview = null, IDictionary<string, string[]>? Errors = null);
 public sealed class ServiceBillPreviewService(IFinancialDocumentInboxRepository repository, IFinancialDocumentStorage storage,
-    ICreditCardPdfTextExtractor pdfExtractor, IServiceBillExtractor extractor, ServiceBillExtractionOptions options)
+    ICreditCardPdfTextExtractor pdfExtractor, IServiceBillExtractor extractor, ServiceBillExtractionOptions options,
+    Saldo360.Application.ServiceAccounts.IServiceAccountResolver? resolver = null)
 {
     public async Task<ServiceBillPreviewResult> PreviewAsync(Guid familyId, Guid id, Guid userId, string? password, CancellationToken cancellationToken)
     {
@@ -19,7 +20,9 @@ public sealed class ServiceBillPreviewService(IFinancialDocumentInboxRepository 
             var document = await pdfExtractor.ExtractAsync(content, CreditCardPdfPreviewService.MaxPages, passwords, cancellationToken);
             if (document.Pages.Count == 0 || document.Pages.All(page => string.IsNullOrWhiteSpace(page.Text)))
                 return new(FinancialDocumentClassificationAccess.Allowed, new(new(item.DocumentType, null, null, null, null, null, null, "Low", "Unknown", "InsufficientEvidence"), "Rejected"));
-            return new(FinancialDocumentClassificationAccess.Allowed, await extractor.ExtractAsync(new(item.OriginalFileName, document, item.DocumentType), cancellationToken));
+            var extracted = await extractor.ExtractAsync(new(item.OriginalFileName, document, item.DocumentType), cancellationToken);
+            if (resolver is not null) extracted = await resolver.EnrichAsync(userId, extracted, cancellationToken);
+            return new(FinancialDocumentClassificationAccess.Allowed, extracted);
         }
         catch (CreditCardPdfReadException exception)
         {

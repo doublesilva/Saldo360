@@ -20,6 +20,8 @@ namespace Saldo360.Infrastructure.Persistence;
 public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> options)
     : DbContext(options), IDataProtectionKeyContext
 {
+    public DbSet<Saldo360.Domain.ServiceAccounts.ServiceAccount> ServiceAccounts => Set<Saldo360.Domain.ServiceAccounts.ServiceAccount>();
+    public DbSet<Saldo360.Domain.ServiceAccounts.ServiceAccountIdentifier> ServiceAccountIdentifiers => Set<Saldo360.Domain.ServiceAccounts.ServiceAccountIdentifier>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
 
     /// <summary>Chaves do Data Protection, compartilhadas entre instâncias e reinícios da API.</summary>

@@ -2658,6 +2658,133 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("financial_recurrence_materializations", (string)null);
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.ServiceAccounts.ServiceAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("display_name");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Issuer")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("issuer");
+
+                    b.Property<string>("ServiceType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("service_type");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_service_accounts");
+
+                    b.HasAlternateKey("Id", "UserId", "ServiceType")
+                        .HasName("ak_service_accounts_id_user_id_service_type");
+
+                    b.HasIndex("UserId", "ServiceType", "IsActive")
+                        .HasDatabaseName("ix_service_accounts_user_id_service_type_is_active");
+
+                    b.ToTable("service_accounts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_service_accounts_names", "btrim(issuer) <> '' AND btrim(display_name) <> ''");
+
+                            t.HasCheckConstraint("ck_service_accounts_type", "service_type IN ('Electricity','Water','Telecom')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.ServiceAccounts.ServiceAccountIdentifier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("LookupHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("lookup_hash");
+
+                    b.Property<string>("MaskedValue")
+                        .IsRequired()
+                        .HasMaxLength(84)
+                        .HasColumnType("character varying(84)")
+                        .HasColumnName("masked_value");
+
+                    b.Property<byte[]>("ProtectedNormalizedValue")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("protected_normalized_value");
+
+                    b.Property<Guid>("ServiceAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("service_account_id");
+
+                    b.Property<string>("ServiceType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("service_type");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("type");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_service_account_identifiers");
+
+                    b.HasIndex("ServiceAccountId", "UserId", "ServiceType")
+                        .HasDatabaseName("ix_service_account_identifiers_service_account_id_user_id_serv");
+
+                    b.HasIndex("UserId", "ServiceType", "Type", "LookupHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_service_identifiers_owner_type_hash_active")
+                        .HasFilter("is_active AND type <> 'Keyword'");
+
+                    b.ToTable("service_account_identifiers", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_service_identifiers_protection", "octet_length(protected_normalized_value) > 0 AND lookup_hash ~ '^[0-9a-f]{64}$' AND btrim(masked_value) <> ''");
+
+                            t.HasCheckConstraint("ck_service_identifiers_type", "type IN ('UtilityCustomerNumber','CustomerCode','InstallationNumber','ContractNumber','Keyword')");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3774,6 +3901,27 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_recurrence_materializations_financial_recurrences");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.ServiceAccounts.ServiceAccount", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_service_accounts_application_users_user_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.ServiceAccounts.ServiceAccountIdentifier", b =>
+                {
+                    b.HasOne("Saldo360.Domain.ServiceAccounts.ServiceAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceAccountId", "UserId", "ServiceType")
+                        .HasPrincipalKey("Id", "UserId", "ServiceType")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_service_account_identifiers_service_accounts_service_accoun");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialTransaction", b =>

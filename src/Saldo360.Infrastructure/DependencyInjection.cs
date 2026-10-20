@@ -145,6 +145,8 @@ public static class DependencyInjection
         services.AddScoped<IServiceBillRecurringCandidateRepository, ServiceBillRecurringCandidateRepository>();
         services.AddScoped<IServiceBillConfirmationRepository, ServiceBillConfirmationRepository>();
         services.AddScoped<IServiceAccountBindingRepository, ServiceAccountBindingRepository>();
+        services.AddScoped<Saldo360.Application.ServiceAccounts.IServiceAccountRepository, Saldo360.Infrastructure.ServiceAccounts.ServiceAccountRepository>();
+        services.AddSingleton<Saldo360.Application.ServiceAccounts.IServiceAccountIdentifierProtection, Saldo360.Infrastructure.ServiceAccounts.ServiceAccountIdentifierProtection>();
         services.AddSingleton<LlmCreditCardStatementExtractorAgent>();
         services.AddSingleton<ParserBackedCreditCardStatementExtractorAgent>();
         services.AddSingleton<IParserBackedCreditCardStatementExtractorAgent>(provider => provider.GetRequiredService<ParserBackedCreditCardStatementExtractorAgent>());

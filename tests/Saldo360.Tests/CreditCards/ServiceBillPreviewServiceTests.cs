@@ -27,6 +27,29 @@ public sealed class ServiceBillPreviewServiceTests
         Assert.Equal(0, repository.SaveCalls); Assert.Equal(FinancialDocumentInboxStatus.Received, item.Status);
     }
 
+    [Fact]
+    public async Task PreviewPassesAuthenticatedUserToResolverWithoutSavingInbox()
+    {
+        var item = Item("WaterBill"); var repository = new Repository(item); var resolver = new TrackingResolver();
+        var service = new ServiceBillPreviewService(repository, new Storage(), new Extractor(), new BillExtractor(), new() { Enabled = true }, resolver);
+        var result = await service.PreviewAsync(FamilyId, item.Id, UserId, null, CancellationToken.None);
+        Assert.Equal(UserId, resolver.UserId);
+        Assert.Equal("RegisteredServiceAccountIdentifier", result.Preview!.Result.IssuerSource);
+        Assert.Equal(0, repository.SaveCalls);
+    }
+
+    private sealed class TrackingResolver : Saldo360.Application.ServiceAccounts.IServiceAccountResolver
+    {
+        public Guid UserId { get; private set; }
+        public Task<Saldo360.Application.ServiceAccounts.ServiceAccountResolution> ResolveAsync(Guid userId, Saldo360.Domain.ServiceAccounts.ServiceType type,
+            IReadOnlyList<Saldo360.Application.ServiceAccounts.ExtractedServiceIdentifier> identifiers, CancellationToken ct) => throw new NotSupportedException();
+        public Task<ServiceBillExtractionOutput> EnrichAsync(Guid userId, ServiceBillExtractionOutput extraction, CancellationToken ct)
+        {
+            UserId = userId;
+            return Task.FromResult(extraction with { Result = extraction.Result with { Issuer = "DMAE", IssuerSource = "RegisteredServiceAccountIdentifier" } });
+        }
+    }
+
     private static FinancialDocumentInboxItem Item(string type) { var item = FinancialDocumentInboxItem.Create(Guid.NewGuid(), FamilyId, FinancialDocumentSource.Email, null, "bill.pdf", "hash", "application/pdf", "object", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow); item.ApplyClassification(type, "High", "Deterministic", null, DateTimeOffset.UtcNow); return item; }
     private sealed class BillExtractor : IServiceBillExtractor { public Task<ServiceBillExtractionOutput> ExtractAsync(ServiceBillExtractionRequest request, CancellationToken cancellationToken) => Task.FromResult(new ServiceBillExtractionOutput(new(request.DocumentType, null, "2026-10", "2026-10-20", "10.00", null, null, "High", "Deterministic", null), "Reliable")); }
     private sealed class Extractor(CreditCardPdfReadFailure? failure = null) : ICreditCardPdfTextExtractor

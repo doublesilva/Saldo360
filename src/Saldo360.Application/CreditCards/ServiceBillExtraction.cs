@@ -10,7 +10,16 @@ namespace Saldo360.Application.CreditCards;
 public enum ServiceBillExtractionSource { Deterministic, Agent, Unknown }
 public enum ServiceBillExtractionAssessment { Reliable, NeedsReview, Rejected }
 public sealed record ServiceBillExtractionResult(string DocumentType, string? Issuer, string? Competence, string? DueDate,
-    string? TotalAmount, string? AccountReference, string? ServiceReference, string Confidence, string ExtractionSource, string? FailureCode);
+    string? TotalAmount, [property: JsonIgnore] string? AccountReference, [property: JsonIgnore] string? ServiceReference, string Confidence, string ExtractionSource, string? FailureCode)
+{
+    [JsonPropertyName("accountReference")] public string? MaskedAccountReference => ServiceReferenceIdentity.Mask(AccountReference);
+    [JsonPropertyName("serviceReference")] public string? MaskedServiceReference => ServiceReferenceIdentity.Mask(ServiceReference);
+    public string IssuerSource { get; init; } = "Unknown";
+    public string? IssuerExtracted { get; init; }
+    public Guid? ResolvedServiceAccountId { get; init; }
+    public string? IssuerResolutionState { get; init; }
+    public IReadOnlyList<Saldo360.Application.ServiceAccounts.ExtractedServiceIdentifier> Identifiers { get; init; } = [];
+}
 public sealed record ServiceBillExtractionOutput(ServiceBillExtractionResult Result, string Assessment);
 public sealed record ServiceBillExtractionRequest(string FileName, CreditCardPdfExtractedDocument Document, string DocumentType);
 public interface IServiceBillExtractor { Task<ServiceBillExtractionOutput> ExtractAsync(ServiceBillExtractionRequest request, CancellationToken cancellationToken); }
@@ -45,13 +54,16 @@ public sealed class CompositeServiceBillExtractor(ServiceBillExtractionOptions o
     {
         if (!Supported.Contains(request.DocumentType)) return Rejected(request.DocumentType, "UnsupportedDocumentType");
         var deterministic = ExtractDeterministic(request);
+        deterministic = deterministic with { Identifiers = Saldo360.Application.ServiceAccounts.ServiceBillIdentifiers.Extract(request.Document),
+            IssuerExtracted = deterministic.Issuer, IssuerSource = deterministic.Issuer is null ? "Unknown" : "DeterministicText" };
         if (Assess(deterministic) == ServiceBillExtractionAssessment.Reliable || !options.AgentEnabled)
             return new(deterministic, Assess(deterministic).ToString());
         try
         {
             var json = await agent.ExtractAsync(request, cancellationToken);
             if (!ServiceBillExtractionSchema.TryValidate(json, request.DocumentType, out var result)) return Rejected(request.DocumentType, "InvalidAgentResponse");
-            return new(result!, Assess(result!).ToString());
+            result = result! with { Identifiers = deterministic.Identifiers, IssuerExtracted = result.Issuer, IssuerSource = result.Issuer is null ? "Unknown" : "AgentText" };
+            return new(result, Assess(result).ToString());
         }
         catch (CreditCardStatementAgentUnavailableException) { return Rejected(request.DocumentType, "ExtractionProviderUnavailable"); }
     }
