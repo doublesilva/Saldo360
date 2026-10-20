@@ -33,6 +33,7 @@ services:
       Authentication__Oidc__Authority: https://auth.home.doublesilva.com
       Authentication__Oidc__ClientId: saldo360
       Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret
+      ServiceAccounts__IdentifierHmacKeyFile: /run/secrets/service-account-identifier-hmac-key
       Authentication__Oidc__BackchannelCaCertificatePath: /usr/local/share/ca-certificates/caddy-local-root.crt
       FinancialEmailImport__Gmail__ClientIdFile: /etc/saldo360/secrets/gmail/client-id
       FinancialEmailImport__Gmail__ClientSecretFile: /etc/saldo360/secrets/gmail/client-secret
@@ -92,6 +93,7 @@ services:
       ReverseProxy__AllowedHosts__0: ${SALDO360_PUBLIC_HOST:?Defina SALDO360_PUBLIC_HOST no .env}
     volumes:
       - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
+      - /etc/saldo360/secrets/service-account-identifier-hmac-key:/run/secrets/service-account-identifier-hmac-key:ro
       - /etc/saldo360/secrets/gmail:/etc/saldo360/secrets/gmail:ro
       - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro
       - /var/lib/saldo360/financial-documents:/var/lib/saldo360/financial-documents:rw
@@ -127,9 +129,11 @@ services:
       Authentication__Oidc__Authority: https://auth.home.doublesilva.com
       Authentication__Oidc__ClientId: saldo360
       Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret
+      ServiceAccounts__IdentifierHmacKeyFile: /run/secrets/service-account-identifier-hmac-key
       Authentication__Oidc__BackchannelCaCertificatePath: /usr/local/share/ca-certificates/caddy-local-root.crt
     volumes:
       - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
+      - /etc/saldo360/secrets/service-account-identifier-hmac-key:/run/secrets/service-account-identifier-hmac-key:ro
       - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro
     depends_on:
       postgres:

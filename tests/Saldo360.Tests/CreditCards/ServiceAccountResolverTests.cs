@@ -129,6 +129,20 @@ public sealed class ServiceAccountResolverTests
         Assert.Equal("ProtectionUnavailable", await service.AddIdentifierAsync(owner, account.Id, ServiceIdentifierType.CustomerCode, "ABC-123", default));
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("invalid-base64")]
+    [InlineData("AQID")]
+    public void ProductionRejectsMissingOrInvalidHmacKey(string? key)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["ServiceAccounts:IdentifierHmacKey"] = key }).Build();
+        var crypto = new ServiceAccountIdentifierProtection(new EphemeralDataProtectionProvider(), config);
+        Assert.Throws<InvalidOperationException>(() => crypto.ValidateEnvironment("Production"));
+        crypto.ValidateEnvironment("Testing");
+        Protection().ValidateEnvironment("Production");
+    }
+
     [Fact]
     public void LegacyReferencesAreMaskedInPublicJson()
     {

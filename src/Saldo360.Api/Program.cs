@@ -39,6 +39,10 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var app = builder.Build();
 
+((Saldo360.Infrastructure.ServiceAccounts.ServiceAccountIdentifierProtection)app.Services
+    .GetRequiredService<Saldo360.Application.ServiceAccounts.IServiceAccountIdentifierProtection>())
+    .ValidateEnvironment(app.Environment.EnvironmentName);
+
 // Antes da autenticação: o callback OIDC é montado com o esquema e o host públicos do proxy confiável.
 app.UseForwardedHeaders();
 

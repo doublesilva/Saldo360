@@ -43,6 +43,12 @@ internal sealed class ServiceAccountRepository(Saldo360DbContext db) : IServiceA
 
 public sealed class ServiceAccountIdentifierProtection(IDataProtectionProvider provider, IConfiguration configuration) : IServiceAccountIdentifierProtection
 {
+    public void ValidateEnvironment(string environmentName)
+    {
+        if (string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase) && !IsConfigured)
+            throw new InvalidOperationException("Service account identifier protection must be configured before Production startup.");
+    }
+
     private byte[]? ReadKey()
     {
         try
@@ -51,7 +57,9 @@ public sealed class ServiceAccountIdentifierProtection(IDataProtectionProvider p
             var raw = string.IsNullOrWhiteSpace(file) ? configuration["ServiceAccounts:IdentifierHmacKey"] : File.ReadAllText(file);
             if (string.IsNullOrWhiteSpace(raw)) return null;
             var key = Convert.FromBase64String(raw.Trim());
-            return key.Length == 32 ? key : null;
+            if (key.Length == 32) return key;
+            CryptographicOperations.ZeroMemory(key);
+            return null;
         }
         catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException) { return null; }
     }
