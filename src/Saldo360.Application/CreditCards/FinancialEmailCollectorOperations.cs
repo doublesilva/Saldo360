@@ -13,6 +13,23 @@ public sealed class FinancialEmailCollectorRunner(
     IFinancialDocumentInboxRepository inbox,
     TimeProvider clock)
 {
+    public async Task<FinancialEmailCollectorResult?> RunHistoricalAsync(string profileName, Guid userId, bool dryRun, FinancialEmailHistoricalWindow window, CancellationToken cancellationToken)
+    {
+        var profile = options.Sources.SingleOrDefault(p => p.Enabled && string.Equals(p.Name, profileName, StringComparison.OrdinalIgnoreCase));
+        if (userId == Guid.Empty || profile is null || !await inbox.CanAccessFamilyAsync(profile.FamilyId, userId, cancellationToken)) return null;
+        await using var lease = await distributedLock.TryAcquireAsync(profile.FamilyId, profile.Name, cancellationToken);
+        if (lease is null) return window.Annotate(new(profile.Name, dryRun, "SkippedAlreadyRunning", 0, 0, 0, 0, 0, 0, 0, 0, 0, [], []));
+        var started = clock.GetUtcNow();
+        try { return await collector.RunHistoricalAsync(profile.Name, userId, dryRun, window, cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            // Historical failures must never create, start or fail an incremental checkpoint.
+            return window.Annotate(new(profile.Name, dryRun, "Failed", (long)(clock.GetUtcNow() - started).TotalMilliseconds,
+                0, 0, 0, 0, 0, 0, 0, 1, [], [new("collector", null, "ProviderUnavailable")]));
+        }
+    }
+
     public async Task<FinancialEmailCollectorResult?> RunAsync(string profileName, Guid? userId, bool dryRun, CancellationToken cancellationToken)
     {
         var profile = options.Sources.SingleOrDefault(item => item.Enabled && string.Equals(item.Name, profileName, StringComparison.OrdinalIgnoreCase));

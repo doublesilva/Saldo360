@@ -43,6 +43,10 @@ Nenhuma credencial real é versionada. Service accounts só são apropriadas qua
 
 ## Busca incremental
 
+A busca histórica manual com janela explícita utiliza uma rota separada e nunca consulta ou altera
+checkpoints. Contratos, limites e procedimento de revisão estão em
+[T15.6.15 — Busca histórica Gmail](T15.6.15-busca-historica-gmail.md).
+
 Cada perfil possui família, nome e query explícitos. O checkpoint persiste a data da mensagem mais recente concluída e os contadores da última execução. No bootstrap, a busca fica limitada por `LookbackDays`; toda execução limita `MaxMessages`. A query configurada recebe `after:{epoch}` com uma sobreposição conservadora de cinco minutos nas execuções seguintes. A identidade Gmail e a Inbox continuam sendo a defesa definitiva contra reprocessamento nas fronteiras do cursor. Se houver falha no lote, o cursor não avança, permitindo nova tentativa sem perder mensagens posteriores.
 
 Anexos `application/pdf` ou com extensão `.pdf` case-insensitive, positivos e até 10 MB, são candidatos. Isso contempla o Itaú observado com MIME `application/octet-stream`. Depois do download, os primeiros bytes devem conter `%PDF-`; extensão e MIME sozinhos não autorizam a Inbox. Os anexos são processados sequencialmente. Imagens, ZIP e planilhas são ignorados; links somente são considerados nos perfis que habilitam explicitamente `Links` ou `AttachmentsAndLinks`.

@@ -8,6 +8,23 @@ namespace Saldo360.Tests.CreditCards;
 public sealed class GmailFinancialEmailSourceTests
 {
     [Fact]
+    public async Task HistoricalQuerySendsBothEpochBoundsAndDryBodyNeverDownloadsAttachment()
+    {
+        var gmail = new RecordingHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal)
+            ? "{\"messages\":[]}"
+            : "{\"payload\":{\"mimeType\":\"text/html\",\"body\":{\"attachmentId\":\"must-not-download\",\"size\":100}}}");
+        var source = new GmailFinancialEmailSource(new FakeHttpClientFactory(gmail, new RecordingHandler(_ => "{\"access_token\":\"test-token\",\"expires_in\":3600}")),
+            new FinancialEmailImportOptions { Gmail = new() { Mailbox = "mailbox@example.invalid", ClientId = "client", ClientSecret = "test", RefreshToken = "test" } });
+        var window = FinancialEmailHistoricalWindow.Create("2026-10-01", "2026-10-31");
+        await source.SearchAsync(window.BoundQuery("profile-query"), window.StartUtc.AddSeconds(-1), 50, default);
+        var query = Uri.UnescapeDataString(gmail.Requests[0].Uri.Query);
+        Assert.Contains("before:" + window.EndExclusiveUtc.ToUnixTimeSeconds(), query);
+        Assert.Contains("after:" + window.StartUtc.AddSeconds(-1).ToUnixTimeSeconds(), query);
+        await Assert.ThrowsAsync<InvalidDataException>(() => source.GetBodyWithoutAttachmentDownloadsAsync("m1", default));
+        Assert.DoesNotContain(gmail.Requests, r => r.Uri.AbsolutePath.Contains("/attachments/", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task UsesOfficialReadOnlyEndpointsAndDecodesAttachment()
     {
         var gmail = new RecordingHandler(request => request.RequestUri!.AbsolutePath switch

@@ -35,10 +35,16 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
     }
 
     public async Task<FinancialEmailBody> GetBodyAsync(string messageId, CancellationToken cancellationToken)
+        => await ReadBodyAsync(messageId, cancellationToken, true);
+
+    public async Task<FinancialEmailBody> GetBodyWithoutAttachmentDownloadsAsync(string messageId, CancellationToken cancellationToken)
+        => await ReadBodyAsync(messageId, cancellationToken, false);
+
+    private async Task<FinancialEmailBody> ReadBodyAsync(string messageId, CancellationToken cancellationToken, bool allowAttachmentDownloads)
     {
         var message = await GetMessageAsync(messageId, cancellationToken);
         var html = new List<string>(); var plain = new List<string>();
-        await VisitBodiesAsync(messageId, message.Payload, html, plain, cancellationToken);
+        await VisitBodiesAsync(messageId, message.Payload, html, plain, cancellationToken, allowAttachmentDownloads);
         return new(html.Count == 0 ? null : string.Join("\n", html), plain.Count == 0 ? null : string.Join("\n", plain));
     }
 
@@ -90,7 +96,7 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
         if (!string.IsNullOrWhiteSpace(part.Body?.AttachmentId)) result.Add(new(part.Body.AttachmentId, part.PartId, part.FileName ?? string.Empty, part.MimeType ?? "application/octet-stream", part.Body.Size));
         foreach (var child in part.Parts ?? []) Visit(child, result);
     }
-    private async Task VisitBodiesAsync(string messageId, GmailPart? part, List<string> html, List<string> plain, CancellationToken cancellationToken)
+    private async Task VisitBodiesAsync(string messageId, GmailPart? part, List<string> html, List<string> plain, CancellationToken cancellationToken, bool allowAttachmentDownloads)
     {
         if (part is null) return;
         if (string.Equals(part.MimeType, "text/html", StringComparison.OrdinalIgnoreCase) || string.Equals(part.MimeType, "text/plain", StringComparison.OrdinalIgnoreCase))
@@ -99,6 +105,7 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
             if (!string.IsNullOrWhiteSpace(part.Body?.Data)) bytes = DecodeBase64Url(part.Body.Data);
             else if (!string.IsNullOrWhiteSpace(part.Body?.AttachmentId))
             {
+                if (!allowAttachmentDownloads) throw new InvalidDataException("Corpo indisponível sem download de anexo; revisão necessária.");
                 await using var stream = await OpenAttachmentAsync(messageId, part.Body.AttachmentId, cancellationToken);
                 using var memory = new MemoryStream(); await stream.CopyToAsync(memory, cancellationToken); bytes = memory.ToArray();
             }
@@ -108,7 +115,7 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
                 if (string.Equals(part.MimeType, "text/html", StringComparison.OrdinalIgnoreCase)) html.Add(value); else plain.Add(value);
             }
         }
-        foreach (var child in part.Parts ?? []) await VisitBodiesAsync(messageId, child, html, plain, cancellationToken);
+        foreach (var child in part.Parts ?? []) await VisitBodiesAsync(messageId, child, html, plain, cancellationToken, allowAttachmentDownloads);
     }
     private static byte[] DecodeBase64Url(string value) { var normalized = value.Replace('-', '+').Replace('_', '/'); normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4) % 4, '='); return Convert.FromBase64String(normalized); }
 

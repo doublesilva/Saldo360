@@ -42,6 +42,7 @@ public interface IFinancialEmailSource
     Task<IReadOnlyList<FinancialEmailAttachment>> ListAttachmentsAsync(string messageId, CancellationToken cancellationToken);
     Task<Stream> OpenAttachmentAsync(string messageId, string attachmentId, CancellationToken cancellationToken);
     Task<FinancialEmailBody> GetBodyAsync(string messageId, CancellationToken cancellationToken);
+    Task<FinancialEmailBody> GetBodyWithoutAttachmentDownloadsAsync(string messageId, CancellationToken cancellationToken) => GetBodyAsync(messageId, cancellationToken);
 }
 public interface IFinancialEmailCollectorCheckpointRepository
 {
@@ -54,6 +55,19 @@ public sealed record FinancialEmailCollectorResult(string Profile, bool DryRun, 
     int AttachmentsScanned, int CandidateAttachments, int AcceptedDocuments, int Duplicates, int NeedsReview, int Failures,
     IReadOnlyList<string> CandidateExternalIds, IReadOnlyList<FinancialEmailCollectorError> Errors)
 {
+    public string Mode { get; init; } = "Incremental";
+    public string? WindowFrom { get; init; }
+    public string? WindowThrough { get; init; }
+    public string? WindowTimeZone { get; init; }
+    public int? MessageLimit { get; init; }
+    public bool MessageLimitReached { get; init; }
+    public int? ExistingIdentityCandidates { get; init; }
+    public int MessagesFound => MessagesScanned;
+    public int MetadataInspected => AttachmentsScanned + LinksScanned;
+    public int CandidatesFound => CandidateAttachments + CandidateLinks;
+    public int AttachmentCandidates => CandidateAttachments;
+    public int LinkCandidates => CandidateLinks;
+    public int RejectedCandidates { get; init; }
     public int LinksScanned { get; init; }
     public int CandidateLinks { get; init; }
     public int RejectedLinks { get; init; }
@@ -62,6 +76,8 @@ public sealed record FinancialEmailCollectorResult(string Profile, bool DryRun, 
 
 public interface IFinancialEmailCollector
 {
+    Task<FinancialEmailCollectorResult?> RunHistoricalAsync(string profileName, Guid userId, bool dryRun, FinancialEmailHistoricalWindow window, CancellationToken cancellationToken)
+        => throw new NotSupportedException("Historical scan unavailable.");
     Task<FinancialEmailCollectorResult?> RunAsync(string profileName, Guid userId, bool dryRun, CancellationToken cancellationToken);
     Task<FinancialEmailCollectorResult?> RunScheduledAsync(string profileName, CancellationToken cancellationToken);
 }
@@ -86,6 +102,14 @@ public sealed class FinancialEmailCollector(
         return await RunCoreAsync(profile, dryRun, cancellationToken);
     }
 
+    public async Task<FinancialEmailCollectorResult?> RunHistoricalAsync(string profileName, Guid userId, bool dryRun, FinancialEmailHistoricalWindow window, CancellationToken cancellationToken)
+    {
+        var profile = options.Sources.SingleOrDefault(p => p.Enabled && string.Equals(p.Name, profileName, StringComparison.OrdinalIgnoreCase));
+        if (userId == Guid.Empty || !string.Equals(options.Provider, "Gmail", StringComparison.OrdinalIgnoreCase) || profile is null
+            || !await inboxRepository.CanAccessFamilyAsync(profile.FamilyId, userId, cancellationToken)) return null;
+        return await RunCoreAsync(profile, dryRun, cancellationToken, window);
+    }
+
     public async Task<FinancialEmailCollectorResult?> RunScheduledAsync(string profileName, CancellationToken cancellationToken)
     {
         var profile = options.Sources.SingleOrDefault(candidate => candidate.Enabled && string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase));
@@ -94,16 +118,18 @@ public sealed class FinancialEmailCollector(
         return await RunCoreAsync(profile, false, cancellationToken);
     }
 
-    private async Task<FinancialEmailCollectorResult> RunCoreAsync(FinancialEmailImportProfile profile, bool dryRun, CancellationToken cancellationToken)
+    private async Task<FinancialEmailCollectorResult> RunCoreAsync(FinancialEmailImportProfile profile, bool dryRun, CancellationToken cancellationToken, FinancialEmailHistoricalWindow? window = null)
     {
-        var checkpoint = await checkpoints.GetOrCreateAsync(profile.FamilyId, profile.Name, cancellationToken);
+        var checkpoint = window is null ? await checkpoints.GetOrCreateAsync(profile.FamilyId, profile.Name, cancellationToken) : null;
         var started = clock.GetUtcNow();
-        if (!dryRun) { checkpoint.Start(started); await checkpoints.SaveAsync(cancellationToken); }
-        var after = checkpoint.LastMessageAt?.AddMinutes(-5) ?? started.AddDays(-Math.Clamp(options.LookbackDays, 1, 90));
-        var messages = await source.SearchAsync(profile.Query, after, Math.Clamp(options.MaxMessages, 1, 500), cancellationToken);
+        if (!dryRun && checkpoint is not null) { checkpoint.Start(started); await checkpoints.SaveAsync(cancellationToken); }
+        var after = window?.StartUtc.AddSeconds(-1) ?? checkpoint?.LastMessageAt?.AddMinutes(-5) ?? started.AddDays(-Math.Clamp(options.LookbackDays, 1, 90));
+        var rawMessages = await source.SearchAsync(window?.BoundQuery(profile.Query) ?? profile.Query, after, window?.MaxMessages ?? Math.Clamp(options.MaxMessages, 1, 500), cancellationToken);
+        var messages = window is null ? rawMessages : rawMessages.Where(m => m.ReceivedAt >= window.StartUtc && m.ReceivedAt < window.EndExclusiveUtc).ToList();
         var attachmentsScanned = 0; var candidates = 0; var candidateMessages = 0; var accepted = 0; var duplicates = 0; var review = 0; var failures = 0;
         var linksScanned = 0; var candidateLinks = 0; var rejectedLinks = 0; var linkedDownloads = 0;
         var ids = new List<string>(); var errors = new List<FinancialEmailCollectorError>();
+        var existingIdentities = 0; var rejectedAttachments = 0;
         foreach (var message in messages.OrderBy(item => item.ReceivedAt))
         {
             var hasCandidate = false;
@@ -115,31 +141,40 @@ public sealed class FinancialEmailCollector(
                 foreach (var attachment in attachments)
                 {
                     attachmentsScanned++;
-                    if (!IsPdf(attachment) || attachment.Size <= 0 || attachment.Size > CreditCardPdfPreviewService.MaxFileBytes) continue;
+                    if (!IsPdf(attachment) || attachment.Size <= 0 || attachment.Size > CreditCardPdfPreviewService.MaxFileBytes) { rejectedAttachments++; continue; }
                     hasCandidate = true; candidates++;
                     var externalId = GmailAttachmentIdentity.Create(message.Id, attachment.PartId); ids.Add(externalId);
+                    var existing = window is not null && await inboxRepository.FindByExternalIdAsync(profile.FamilyId, FinancialDocumentSource.Email, externalId, cancellationToken) is not null;
+                    if (existing) existingIdentities++;
                     if (dryRun) continue;
+                    if (existing) { duplicates++; continue; }
                     try
                     {
                         await using var downloaded = await source.OpenAttachmentAsync(message.Id, attachment.Id, cancellationToken);
                         using var content = new MemoryStream(); await downloaded.CopyToAsync(content, cancellationToken);
-                        if (content.Length is <= 0 or > CreditCardPdfPreviewService.MaxFileBytes || !HasPdfSignature(content)) { failures++; errors.Add(new(message.Id, attachment.Id, "InvalidPdfContent")); continue; }
+                        if (content.Length is <= 0 or > CreditCardPdfPreviewService.MaxFileBytes || !HasPdfSignature(content)) { failures++; errors.Add(new(message.Id, $"part:{attachment.PartId}", "InvalidPdfContent")); continue; }
                         content.Position = 0;
                         Count(await inbox.ReceiveAutomationAsync(profile.FamilyId, content, content.Length, attachment.FileName, attachment.ContentType, externalId, message.ReceivedAt, cancellationToken));
                     }
-                    catch (Exception exception) when (exception is not OperationCanceledException) { failures++; errors.Add(new(message.Id, attachment.Id, "AttachmentProcessingFailed")); }
+                    catch (Exception exception) when (exception is not OperationCanceledException) { failures++; errors.Add(new(message.Id, $"part:{attachment.PartId}", "AttachmentProcessingFailed")); }
                 }
             }
             if (profile.CollectionMode is FinancialEmailCollectionMode.Links or FinancialEmailCollectionMode.AttachmentsAndLinks)
             {
                 try
                 {
-                    var extraction = linkExtractor.Extract(profile, await source.GetBodyAsync(message.Id, cancellationToken));
+                    var body = window is not null && dryRun
+                        ? await source.GetBodyWithoutAttachmentDownloadsAsync(message.Id, cancellationToken)
+                        : await source.GetBodyAsync(message.Id, cancellationToken);
+                    var extraction = linkExtractor.Extract(profile, body);
                     linksScanned += extraction.Scanned; rejectedLinks += extraction.Rejected; candidateLinks += extraction.Candidates.Count;
                     foreach (var link in extraction.Candidates)
                     {
                         hasCandidate = true; var externalId = GmailLinkedDocumentIdentity.Create(message.Id, link.Ordinal); ids.Add(externalId);
+                        var existing = window is not null && await inboxRepository.FindByExternalIdAsync(profile.FamilyId, FinancialDocumentSource.Email, externalId, cancellationToken) is not null;
+                        if (existing) existingIdentities++;
                         if (dryRun) continue;
+                        if (existing) { duplicates++; continue; }
                         try
                         {
                             var document = await linkedDocumentDownloader.DownloadAsync(profile, link.Url, cancellationToken); linkedDownloads++;
@@ -160,7 +195,7 @@ public sealed class FinancialEmailCollector(
                 else { failures++; errors.Add(new(message.Id, null, result.Result)); }
             }
         }
-        if (!dryRun)
+        if (!dryRun && checkpoint is not null)
         {
             DateTimeOffset? newestSafeMessage = failures > 0 || messages.Count == 0 ? null : messages.Max(item => item.ReceivedAt);
             var completed = clock.GetUtcNow();
@@ -169,9 +204,12 @@ public sealed class FinancialEmailCollector(
             await checkpoints.SaveAsync(cancellationToken);
         }
         var ended = clock.GetUtcNow();
-        return new(profile.Name, dryRun, failures == 0 ? "Success" : "PartialFailure", (long)(ended - started).TotalMilliseconds,
+        var result = new FinancialEmailCollectorResult(profile.Name, dryRun, failures == 0 ? "Success" : "PartialFailure", (long)(ended - started).TotalMilliseconds,
             messages.Count, candidateMessages, attachmentsScanned, candidates, accepted, duplicates, review, failures, ids, errors)
-            { LinksScanned = linksScanned, CandidateLinks = candidateLinks, RejectedLinks = rejectedLinks, LinkedDocumentsDownloaded = linkedDownloads };
+            { LinksScanned = linksScanned, CandidateLinks = candidateLinks, RejectedLinks = rejectedLinks, LinkedDocumentsDownloaded = linkedDownloads,
+                RejectedCandidates = rejectedAttachments + rejectedLinks, ExistingIdentityCandidates = window is null ? null : existingIdentities,
+                MessageLimitReached = window is not null && rawMessages.Count >= window.MaxMessages };
+        return window?.Annotate(result) ?? result;
     }
     private static bool IsPdf(FinancialEmailAttachment attachment) =>
         string.Equals(attachment.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase)

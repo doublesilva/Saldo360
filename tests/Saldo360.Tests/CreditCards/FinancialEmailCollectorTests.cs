@@ -9,6 +9,94 @@ public sealed class FinancialEmailCollectorTests
     private static readonly Guid UserId = Guid.NewGuid();
 
     [Fact]
+    public async Task HistoricalIncludesLocalMidnightAndLastInstantButExcludesAdjacentDays()
+    {
+        var window = FinancialEmailHistoricalWindow.Create("2026-10-01", "2026-10-31");
+        var source = new FakeEmailSource();
+        source.Add("start", window.StartUtc, ("a", "a.pdf", "application/pdf", Pdf(1)));
+        source.Add("last", window.EndExclusiveUtc.AddTicks(-1), ("b", "b.pdf", "application/pdf", Pdf(2)));
+        source.Add("too-early", window.StartUtc.AddTicks(-1), ("c", "c.pdf", "application/pdf", Pdf(3)));
+        source.Add("too-late", window.EndExclusiveUtc, ("d", "d.pdf", "application/pdf", Pdf(4)));
+        var fixture = Create(source, Preview("Generic", "NeedsReview", null)); fixture.Checkpoints.ForbidAccess = true;
+        var result = await fixture.Collector.RunHistoricalAsync("Bills", UserId, true, window, default);
+        Assert.Equal(2, result!.MessagesFound); Assert.Equal(2, result.CandidatesFound); Assert.Equal(0, source.Downloads);
+        Assert.False(result.MessageLimitReached); Assert.Empty(fixture.Inbox.Items);
+        Assert.Null(await fixture.Collector.RunHistoricalAsync("Bills", Guid.NewGuid(), true, window, default));
+    }
+
+    [Fact]
+    public async Task HistoricalSignalsLimitedCoverageWithoutChangingCheckpoint()
+    {
+        var source = new FakeEmailSource();
+        foreach (var id in new[] { "one", "two", "three" }) source.Add(id, new(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        var fixture = Create(source, Preview("Generic", "NeedsReview", null)); fixture.Checkpoints.ForbidAccess = true;
+        var result = await fixture.Collector.RunHistoricalAsync("Bills", UserId, true, FinancialEmailHistoricalWindow.Create("2026-10-01", "2026-10-31", 2), default);
+        Assert.Equal(2, result!.MessagesFound); Assert.True(result.MessageLimitReached); Assert.Equal(2, result.MessageLimit);
+        Assert.Equal(0, fixture.Checkpoints.Saves);
+    }
+
+    [Fact]
+    public async Task HistoricalFindsEarlierMessagesAndNeverTouchesCheckpointIncludingRepeatedRealRuns()
+    {
+        var source = new FakeEmailSource();
+        source.Add("october", new(2026, 10, 15, 12, 0, 0, TimeSpan.Zero), ("private-download-id", "bill.pdf", "application/pdf", Pdf(8)));
+        source.Add("before", new(2026, 10, 1, 2, 59, 59, TimeSpan.Zero), ("outside-a", "outside.pdf", "application/pdf", Pdf(1)));
+        source.Add("after", new(2026, 11, 1, 3, 0, 0, TimeSpan.Zero), ("outside-b", "outside.pdf", "application/pdf", Pdf(2)));
+        var fixture = Create(source, Preview("Generic", "NeedsReview", null), schedulerEnabled: false);
+        var checkpoint = await fixture.Checkpoints.GetOrCreateAsync(FamilyId, "Bills", default);
+        checkpoint.Complete(new(2026, 12, 20, 12, 0, 0, TimeSpan.Zero), new(2026, 12, 20, 12, 0, 0, TimeSpan.Zero), "Success", 7, 1, 1, 1, 0, 0, 0);
+        var snapshot = System.Text.Json.JsonSerializer.Serialize(checkpoint);
+        fixture.Checkpoints.ForbidAccess = true;
+        var window = FinancialEmailHistoricalWindow.Create("2026-10-01", "2026-10-31");
+        var dry = await fixture.Collector.RunHistoricalAsync("Bills", UserId, true, window, default);
+        Assert.Equal(1, dry!.MessagesFound); Assert.Equal(1, dry.CandidatesFound); Assert.Equal(0, source.Downloads); Assert.Empty(fixture.Inbox.Items);
+        Assert.Equal(window.StartUtc.AddSeconds(-1), source.LastAfter); Assert.Contains("before:" + window.EndExclusiveUtc.ToUnixTimeSeconds(), source.LastQuery);
+        Assert.Equal("Historical", dry.Mode); Assert.Equal("2026-10-01", dry.WindowFrom); Assert.Equal("2026-10-31", dry.WindowThrough);
+        var first = await fixture.Collector.RunHistoricalAsync("Bills", UserId, false, window, default);
+        var second = await fixture.Collector.RunHistoricalAsync("Bills", UserId, false, window, default);
+        Assert.Equal(1, first!.AcceptedDocuments); Assert.Equal(1, second!.Duplicates); Assert.Equal(0, second.AcceptedDocuments);
+        var existing = await fixture.Collector.RunHistoricalAsync("Bills", UserId, true, window, default);
+        Assert.Equal(1, existing!.ExistingIdentityCandidates); Assert.Equal(1, source.Downloads); Assert.Single(fixture.Inbox.Items);
+        Assert.Equal(snapshot, System.Text.Json.JsonSerializer.Serialize(checkpoint)); Assert.Equal(0, fixture.Checkpoints.Saves);
+        Assert.DoesNotContain("private-download-id", System.Text.Json.JsonSerializer.Serialize(dry));
+    }
+
+    [Fact]
+    public async Task HistoricalLinksReuseDownloaderAndHashDedupeWithoutCheckpoint()
+    {
+        var source = new FakeEmailSource();
+        source.Add("m1", new(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        source.Add("m2", new(2026, 10, 16, 12, 0, 0, TimeSpan.Zero));
+        foreach (var id in new[] { "m1", "m2" }) source.SetBody(id, "<a href=\"https://dmae.example/contas/bill.pdf?secret=not-returned\">PDF</a>");
+        var fixture = Create(source, Preview("Generic", "NeedsReview", null), mode: FinancialEmailCollectionMode.Links);
+        fixture.Checkpoints.ForbidAccess = true;
+        var window = FinancialEmailHistoricalWindow.Create("2026-10-01", "2026-10-31");
+        var dry = await fixture.Collector.RunHistoricalAsync("Bills", UserId, true, window, default);
+        Assert.Equal(2, dry!.LinkCandidates); Assert.Equal(0, fixture.Downloader.Downloads);
+        var run = await fixture.Collector.RunHistoricalAsync("Bills", UserId, false, window, default);
+        Assert.Equal(1, run!.AcceptedDocuments); Assert.Equal(1, run.Duplicates); Assert.Equal(2, fixture.Downloader.Downloads);
+        Assert.Single(fixture.Inbox.Items); Assert.Equal(0, fixture.Checkpoints.Saves);
+        Assert.DoesNotContain("not-returned", System.Text.Json.JsonSerializer.Serialize(dry));
+    }
+
+    [Fact]
+    public async Task IncrementalStillUsesAndUpdatesCheckpointAndHistoricalFailureDoesNotLeakAttachmentId()
+    {
+        var source = new FakeEmailSource(); source.Add("m", new(2026, 10, 15, 12, 0, 0, TimeSpan.Zero), ("sensitive-attachment", "bill.pdf", "application/pdf", Pdf(1)));
+        var fixture = Create(source, Preview("Generic", "NeedsReview", null));
+        var checkpoint = await fixture.Checkpoints.GetOrCreateAsync(FamilyId, "Bills", default);
+        var prior = new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.Zero);
+        checkpoint.Complete(prior, prior, "Success", 0, 0, 0, 0, 0, 0, 0);
+        await fixture.Collector.RunAsync("Bills", UserId, false, default);
+        Assert.Equal(prior.AddMinutes(-5), source.LastAfter); Assert.Equal("has:attachment filename:pdf", source.LastQuery);
+        Assert.Equal(2, fixture.Checkpoints.Saves); Assert.Equal(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero), checkpoint.LastMessageAt);
+        var failing = Create(source, Preview("Generic", "NeedsReview", null)); failing.Checkpoints.ForbidAccess = true;
+        source.FailAttachmentId = "sensitive-attachment";
+        var result = await failing.Collector.RunHistoricalAsync("Bills", UserId, false, FinancialEmailHistoricalWindow.Create("2026-10-01", "2026-10-31"), default);
+        Assert.Equal(1, result!.Failures); Assert.DoesNotContain("sensitive-attachment", System.Text.Json.JsonSerializer.Serialize(result));
+    }
+
+    [Fact]
     public async Task CollectsMultiplePdfsIndependentlyAndSkipsUnsupportedAttachments()
     {
         var source = new FakeEmailSource();
@@ -142,15 +230,17 @@ public sealed class FinancialEmailCollectorTests
             Sources = [new() { Name = "Bills", FamilyId = FamilyId, Query = "has:attachment filename:pdf", Enabled = true, CollectionMode = mode, AllowedLinkHosts = ["dmae.example"], AllowedLinkPathPrefixes = ["/contas/"] }] };
         var checkpoints = new FakeCheckpoints();
         var downloader = new FakeLinkedDownloader();
-        return new(new(options, source, new FinancialEmailLinkExtractor(), downloader, checkpoints, inboxRepository, inbox, TimeProvider.System), inboxRepository, downloader);
+        return new(new(options, source, new FinancialEmailLinkExtractor(), downloader, checkpoints, inboxRepository, inbox, TimeProvider.System), inboxRepository, downloader, checkpoints);
     }
     private static CreditCardPdfPreview Preview(string parser, string status, string? digits) => new("x.pdf", 1, parser,
         new("Nubank", digits, "2026-10", null, null, "1.00"), new(0, 0, 0, 0), [], []) { Reconciliation = new(status, "1.00", "1.00", "0.00", false) };
     private static byte[] Pdf(byte marker) => [(byte)'%', (byte)'P', (byte)'D', (byte)'F', (byte)'-', marker];
-    private sealed record Fixture(FinancialEmailCollector Collector, FakeInboxRepository Inbox, FakeLinkedDownloader Downloader);
+    private sealed record Fixture(FinancialEmailCollector Collector, FakeInboxRepository Inbox, FakeLinkedDownloader Downloader, FakeCheckpoints Checkpoints);
 
     private sealed class FakeEmailSource : IFinancialEmailSource
     {
+        public string? LastQuery { get; private set; }
+        public DateTimeOffset? LastAfter { get; private set; }
         private readonly List<FinancialEmailMessage> messages = []; private readonly Dictionary<string, List<(FinancialEmailAttachment Meta, byte[] Bytes)>> attachments = []; private readonly Dictionary<string, FinancialEmailBody> bodies = [];
         public string? FailAttachmentId { get; set; } public int Downloads { get; private set; } public List<string> OpenedAttachmentIds { get; } = []; public int Mutations => 0;
         public void Add(string id, DateTimeOffset at, params (string Id, string Name, string Type, byte[] Bytes)[] values) { messages.Add(new(id, at)); attachments[id] = values.Select((v, index) => (new FinancialEmailAttachment(v.Id, $"part-{index + 1}", v.Name, v.Type, v.Bytes.Length), v.Bytes)).ToList(); }
@@ -159,7 +249,8 @@ public sealed class FinancialEmailCollectorTests
             attachments[messageId] = attachments[messageId].Select(item => (item.Meta with { Id = attachmentId }, item.Bytes)).ToList();
         }
         public void SetBody(string messageId, string html) => bodies[messageId] = new(html, null);
-        public Task<IReadOnlyList<FinancialEmailMessage>> SearchAsync(string query, DateTimeOffset after, int maxMessages, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailMessage>>(messages.Take(maxMessages).ToList());
+        public Task<IReadOnlyList<FinancialEmailMessage>> SearchAsync(string query, DateTimeOffset after, int maxMessages, CancellationToken cancellationToken)
+        { LastQuery = query; LastAfter = after; return Task.FromResult<IReadOnlyList<FinancialEmailMessage>>(messages.Take(maxMessages).ToList()); }
         public Task<IReadOnlyList<FinancialEmailAttachment>> ListAttachmentsAsync(string messageId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailAttachment>>(attachments[messageId].Select(item => item.Meta).ToList());
         public Task<Stream> OpenAttachmentAsync(string messageId, string attachmentId, CancellationToken cancellationToken) { Downloads++; OpenedAttachmentIds.Add(attachmentId); if (attachmentId == FailAttachmentId) throw new IOException("synthetic"); return Task.FromResult<Stream>(new MemoryStream(attachments[messageId].Single(item => item.Meta.Id == attachmentId).Bytes)); }
         public Task<FinancialEmailBody> GetBodyAsync(string messageId, CancellationToken cancellationToken) => Task.FromResult(bodies.GetValueOrDefault(messageId) ?? new FinancialEmailBody(null, null));
@@ -200,9 +291,12 @@ public sealed class FinancialEmailCollectorTests
     private sealed class UnusedPreview : ICreditCardPdfPreviewService { public Task<CreditCardPdfPreviewResult> PreviewAsync(Guid familyId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken) => throw new NotSupportedException(); }
     private sealed class FakeCheckpoints : IFinancialEmailCollectorCheckpointRepository
     {
+        public bool ForbidAccess { get; set; }
+        public int Saves { get; private set; }
         private FinancialEmailCollectorCheckpoint? value;
-        public Task<FinancialEmailCollectorCheckpoint> GetOrCreateAsync(Guid familyId, string profileName, CancellationToken cancellationToken) => Task.FromResult(value ??= FinancialEmailCollectorCheckpoint.Create(familyId, profileName));
+        public Task<FinancialEmailCollectorCheckpoint> GetOrCreateAsync(Guid familyId, string profileName, CancellationToken cancellationToken)
+        { if (ForbidAccess) throw new InvalidOperationException("Checkpoint forbidden"); return Task.FromResult(value ??= FinancialEmailCollectorCheckpoint.Create(familyId, profileName)); }
         public Task<IReadOnlyList<FinancialEmailCollectorCheckpoint>> ListAsync(IReadOnlyCollection<Guid> familyIds, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FinancialEmailCollectorCheckpoint>>(value is null ? [] : [value]);
-        public Task SaveAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SaveAsync(CancellationToken cancellationToken) { if (ForbidAccess) throw new InvalidOperationException("Checkpoint forbidden"); Saves++; return Task.CompletedTask; }
     }
 }
