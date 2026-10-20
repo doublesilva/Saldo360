@@ -13,7 +13,8 @@ public sealed class FinancialCalendarMonthlyProjectionService(
         Guid familyId,
         Guid userId,
         FinancialCalendarMonthlyProjectionQuery query,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateOnly? capturedToday = null)
     {
         if (await families.GetMemberRoleAsync(familyId, userId, cancellationToken) is null)
         {
@@ -28,7 +29,10 @@ public sealed class FinancialCalendarMonthlyProjectionService(
             }, false);
         }
 
-        var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
+        if (query.From.Day != 1 || query.From.Year >= 9999)
+            return new(null, new Dictionary<string, string[]> { ["from"] = ["Informe uma competência inicial válida."] }, false);
+
+        var today = capturedToday ?? BusinessCalendar.Today(timeProvider.GetUtcNow());
         var through = query.From.AddMonths(query.Months).AddDays(-1);
         var snapshot = await repository.ReadMonthlyAsync(
             familyId, query.AccountId, query.From, through, today, cancellationToken);
@@ -46,11 +50,14 @@ public sealed class FinancialCalendarMonthlyProjectionService(
             var balances = FinancialCalendarBalanceService.CalculateBalances(
                 new FinancialCalendarBalanceQuery(month, monthThrough, query.AccountId), today, snapshot);
             var realizedTotals = Sum(realized.Where(row => row.Date >= month && row.Date <= monthThrough));
-            var pendingRows = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).Where(row => row.Date >= month && row.Date <= monthThrough).ToList();
+            var pendingRows = (snapshot.Pending ?? []).Concat(snapshot.CreditCardObligations ?? []).Concat(snapshot.DebtObligations ?? []).Where(row => row.Date >= month && row.Date <= monthThrough).ToList();
             var pendingTotals = Sum(pendingRows);
             var overdueTotals = Sum(pendingRows.Where(row => row.Date < today));
             var projectedDays = balances.Days.Where(day => day.Kind == FinancialCalendarBalanceKind.Projected
                 && day.ClosingBalance is not null).ToList();
+            var budget = snapshot.Budgets?.SingleOrDefault(x => x.Competence == month);
+            var budgetStatus = budget is null || budget.Targets.Count == 0 ? "NotDefined" : budget.Targets.Max(x =>
+                Saldo360.Application.Budgets.FinancialBudgetExecutionService.Classify(x.Planned, x.Realized + x.Committed + x.CreditCardCommitted)).ToString();
 
             months.Add(new FinancialCalendarMonthlyProjectionMonth(
                 month,
@@ -66,7 +73,11 @@ public sealed class FinancialCalendarMonthlyProjectionService(
                 projectedDays.FirstOrDefault(day => day.IsNegative)?.Date,
                 balances.UnavailableReason,
                 balances.CreditCardProjectionComplete,
-                (snapshot.CreditCardObligations ?? []).Where(row => row.Date >= month && row.Date <= monthThrough).Sum(row => row.Expense)));
+                (snapshot.CreditCardObligations ?? []).Where(row => row.Date >= month && row.Date <= monthThrough).Sum(row => row.Expense),
+                (snapshot.CardPayments ?? []).Where(row => row.Date >= month && row.Date <= monthThrough).Sum(row => row.Expense),
+                budget?.Targets.Sum(x => x.Planned),
+                budget?.Targets.Sum(x => x.Realized + x.Committed + x.CreditCardCommitted), budgetStatus,
+                monthThrough < today ? "Historical" : month <= today ? "Current" : "Future", balances.DebtProjectionComplete));
         }
 
         return new FinancialCalendarMonthlyProjectionResult(

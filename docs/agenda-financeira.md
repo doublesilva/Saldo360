@@ -213,6 +213,8 @@ Parcelas cadastradas são obrigações distintas dos pagamentos efetivos. A Agen
 
 ## Ações nos compromissos (T07.4)
 
+Para a visão de seis meses e seu contrato agregado, consulte [T07.5](T07.5-planejamento-seis-meses.md).
+
 O GET da Agenda acrescenta `allowedActions` aos campos existentes `source`, `id`, `status`, `origin`,
 `plannedTransactionId`, `recurrenceId`, `occurrenceNumber` e `scheduledDate`. Não há endpoint genérico de comando.
 Previsões pendentes/vencidas oferecem `Realize`, `Edit`, `Cancel`; lançamentos avulsos oferecem `Edit`, `Cancel`;

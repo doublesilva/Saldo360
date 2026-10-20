@@ -211,6 +211,8 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         allCardObligations = allCardObligations || allHistoricalCardObligations || allAdjustmentCardObligations;
 
         IReadOnlyList<FinancialCalendarDailyTotals> periodRealized = [];
+        IReadOnlyList<FinancialCalendarDailyTotals> cardPayments = [];
+        IReadOnlyList<Saldo360.Application.Budgets.FinancialBudgetExecutionSource> budgets = [];
         if (periodFrom is { } firstPeriodDate)
         {
             var periodRows = await (
@@ -227,15 +229,19 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                         Date = daily.Key,
                         Income = daily.Sum(item => item.Type == CategoryType.Income ? item.Amount : 0m),
                         Expense = daily.Sum(item => item.Type == CategoryType.Expense ? item.Amount : 0m),
+                        CardPayments = daily.Sum(item => item.Origin == Saldo360.Domain.Transactions.FinancialTransactionOrigin.CreditCardInvoicePayment ? item.Amount : 0m),
                     })
                 .OrderBy(row => row.Date)
                 .ToListAsync(cancellationToken);
             periodRealized = periodRows
                 .Select(row => new FinancialCalendarDailyTotals(row.Date, row.Income, row.Expense, 0m, 0m))
                 .ToList();
+            cardPayments = periodRows.Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, row.CardPayments, 0m, 0m)).ToList();
+            budgets = await Saldo360.Infrastructure.Budgets.FinancialBudgetExecutionRepository.ReadRangeAsync(
+                db, familyId, firstPeriodDate, through.AddDays(1), null, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations, debtPending, hasUnallocatedDebt);
+        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations, debtPending, hasUnallocatedDebt, cardPayments, budgets);
     }
 }

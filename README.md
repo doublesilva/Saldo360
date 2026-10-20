@@ -126,6 +126,11 @@ O bootstrap, secrets, configuração do Authelia/Caddy, pipeline e procedimento 
 
 ## Endpoints
 
+Planejamento de seis meses: `GET /api/families/{familyId}/financial-planning/six-months?from=yyyy-MM`
+(`from` opcional, padrão mês atual de São Paulo). Retorna seis competências, saldos do motor diário,
+cartões separados como subconjunto das despesas, comparação com metas e resumo calculado no backend.
+Detalhes e limites: [T07.5](docs/T07.5-planejamento-seis-meses.md).
+
 | Método | Caminho | Autenticação | Descrição |
 | --- | --- | --- | --- |
 | GET | `/health` | pública | Saúde da API e do banco. `200` saudável, `503` com falha. |

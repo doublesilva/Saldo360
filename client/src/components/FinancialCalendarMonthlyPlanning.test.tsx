@@ -54,6 +54,24 @@ afterEach(() => {
 })
 
 describe('FinancialCalendarMonthlyPlanning', () => {
+  it('mostra resumo do backend, cartões como subconjunto e comparação com meta sem recalcular dinheiro', async () => {
+    const data = projection()
+    data.summary = { totalIncome: '123.45', totalExpense: '987.65', lowestClosingBalance: '-12.34', lowestBalanceMonth: '2027-01', monthsOverBudget: 1, monthsWithNegativeBalance: 2 }
+    data.months[0] = { ...data.months[0], periodKind: 'Current', budgetStatus: 'Exceeded', budgetTarget: '100.00', budgetConsumption: '120.01', cardPayments: '30.01', creditCardOutstanding: '40.02', creditCardProjectionComplete: false }
+    data.months[1] = { ...data.months[1], periodKind: 'Future', budgetStatus: 'LimitReached' }
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json(data)))
+    render(<FinancialCalendarMonthlyPlanning familyId="family-1" from="2026-12" accountId="" onSelectMonth={vi.fn()} />)
+    const summary = await screen.findByRole('region', { name: 'Resumo dos seis meses' })
+    expect(within(summary).getByText(/123,45/)).toBeTruthy()
+    expect(within(summary).getByText(/987,65/)).toBeTruthy()
+    expect(screen.getByText('Meta ultrapassada')).toBeTruthy()
+    expect(screen.getByText('Meta atingida')).toBeTruthy()
+    expect(screen.getByText(/Mês atual · realizado/)).toBeTruthy()
+    expect(screen.getByText(/Mês futuro · compromissos/)).toBeTruthy()
+    expect(screen.getByText(/Cobertura parcial/)).toBeTruthy()
+    expect(screen.getByText(/40,02/)).toBeTruthy()
+  })
+
   it('renderiza seis competências, valores exatos, vencidas, risco e indisponibilidade', async () => {
     const calls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -71,7 +89,7 @@ describe('FinancialCalendarMonthlyPlanning', () => {
     expect(december.className).toContain('monthly-planning-card--risk')
     expect(screen.getByText(/Saldo indisponível: evolução indisponível/)).toBeTruthy()
     const query = new URL(calls[0], 'http://x').searchParams
-    expect(Object.fromEntries(query)).toEqual({ from: '2026-12', months: '6' })
+    expect(Object.fromEntries(query)).toEqual({ from: '2026-12' })
   })
 
   it('seleciona a competência para abrir o calendário mensal', async () => {

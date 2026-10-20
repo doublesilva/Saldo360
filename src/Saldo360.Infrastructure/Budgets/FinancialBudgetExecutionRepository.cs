@@ -15,22 +15,28 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
         await using var transaction = await db.Database.BeginTransactionAsync(
             IsolationLevel.RepeatableRead, cancellationToken);
         await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
+        var result = await ReadRangeAsync(db, familyId, null, null, budgetId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return result.SingleOrDefault();
+    }
 
-        var budget = await db.FinancialBudgets.AsNoTracking()
-            .Where(item => item.FamilyId == familyId && item.Id == budgetId && !item.IsArchived)
+    internal static async Task<IReadOnlyList<FinancialBudgetExecutionSource>> ReadRangeAsync(
+        Saldo360DbContext db, Guid familyId, DateOnly? from, DateOnly? until, Guid? budgetId, CancellationToken cancellationToken)
+    {
+        var budgets = await db.FinancialBudgets.AsNoTracking()
+            .Where(item => item.FamilyId == familyId && (budgetId == null || item.Id == budgetId) && !item.IsArchived
+                && (from == null || item.Competence >= from) && (until == null || item.Competence < until))
             .Select(item => new { item.Id, item.Competence })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (budget is null)
-        {
-            await transaction.CommitAsync(cancellationToken);
-            return null;
-        }
+            .ToListAsync(cancellationToken);
+        if (budgets.Count == 0) return [];
 
-        var through = budget.Competence.AddMonths(1);
+        var first = budgets.Min(x => x.Competence);
+        var through = budgets.Max(x => x.Competence).AddMonths(1);
+        var budgetIds = budgets.Select(x => x.Id).ToList();
         var targets = await db.FinancialBudgetTargets.AsNoTracking()
-            .Where(item => item.FamilyId == familyId && item.BudgetId == budgetId && !item.IsArchived)
+            .Where(item => item.FamilyId == familyId && budgetIds.Contains(item.BudgetId) && !item.IsArchived)
             .OrderBy(item => item.Id)
-            .Select(item => new { item.Id, item.CategoryId, item.PlannedAmount })
+            .Select(item => new { item.Id, item.BudgetId, item.CategoryId, item.PlannedAmount })
             .ToListAsync(cancellationToken);
         var categoryIds = targets.Select(item => item.CategoryId).ToList();
 
@@ -40,16 +46,16 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                 && categoryIds.Contains(item.CategoryId.Value)
                 && item.Type == CategoryType.Expense
                 && !item.IsCancelled
-                && item.TransactionDate >= budget.Competence
+                && item.TransactionDate >= first
                 && item.TransactionDate < through)
-            .Select(item => new { CategoryId = item.CategoryId!.Value, item.Amount, IsCreditCard = false });
+            .Select(item => new { CategoryId = item.CategoryId!.Value, item.Amount, IsCreditCard = false, Date = item.TransactionDate });
 
         var committed = await db.FinancialPlannedTransactions.AsNoTracking()
             .Where(item => item.FamilyId == familyId
                 && categoryIds.Contains(item.CategoryId)
                 && item.Type == CategoryType.Expense
                 && !item.IsCancelled
-                && item.DueDate >= budget.Competence
+                && item.DueDate >= first
                 && item.DueDate < through
                 && !db.FinancialTransactions.Any(transactionItem =>
                     transactionItem.FamilyId == item.FamilyId
@@ -59,8 +65,8 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                     reconciliation.FamilyId == item.FamilyId
                     && reconciliation.PlannedTransactionId == item.Id
                     && reconciliation.RemovedAt == null))
-            .GroupBy(item => item.CategoryId)
-            .Select(group => new CategoryTotal(group.Key, group.Sum(item => item.Amount)))
+            .GroupBy(item => new { item.CategoryId, item.DueDate.Year, item.DueDate.Month })
+            .Select(group => new CategoryTotal(group.Key.CategoryId, group.Key.Year, group.Key.Month, group.Sum(item => item.Amount)))
             .ToListAsync(cancellationToken);
 
         var creditCardCommitted = from installment in db.FinancialCreditCardInstallments.AsNoTracking()
@@ -68,52 +74,48 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                                          join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
                                          where installment.FamilyId == familyId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
                                             && purchase.FamilyId == familyId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
-                                            && invoice.FamilyId == familyId && invoice.DueDate >= budget.Competence && invoice.DueDate < through
+                                            && invoice.FamilyId == familyId && invoice.DueDate >= first && invoice.DueDate < through
                                             && categoryIds.Contains(purchase.CategoryId)
-                                         select new { CategoryId = purchase.CategoryId, Amount = installment.Amount, IsCreditCard = true };
+                                         select new { CategoryId = purchase.CategoryId, Amount = installment.Amount, IsCreditCard = true, Date = invoice.DueDate };
         var historicalCreditCardCommitted = from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
                                              join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
                                              where item.FamilyId == familyId && item.IsHistorical && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
-                                                && invoice.FamilyId == familyId && invoice.DueDate >= budget.Competence && invoice.DueDate < through
+                                                && invoice.FamilyId == familyId && invoice.DueDate >= first && invoice.DueDate < through
                                                 && item.CategoryId != null && categoryIds.Contains(item.CategoryId.Value)
-                                             select new { CategoryId = item.CategoryId!.Value, Amount = item.Amount, IsCreditCard = true };
+                                             select new { CategoryId = item.CategoryId!.Value, Amount = item.Amount, IsCreditCard = true, Date = invoice.DueDate };
         var debtCommitted = await (from installment in db.FinancialDebtInstallments.AsNoTracking()
                                    join debt in db.FinancialDebts.AsNoTracking() on new { installment.FamilyId, DebtId = installment.DebtId } equals new { debt.FamilyId, DebtId = debt.Id }
                                    where installment.FamilyId == familyId && installment.CategoryId != null && categoryIds.Contains(installment.CategoryId.Value)
-                                      && installment.DueDate >= budget.Competence && installment.DueDate < through && installment.CancelledAt == null
+                                      && installment.DueDate >= first && installment.DueDate < through && installment.CancelledAt == null
                                    let paid = db.FinancialDebtPayments.Where(payment => payment.FamilyId == familyId && payment.InstallmentId == installment.Id && payment.CancelledAt == null).Sum(payment => (decimal?)payment.Amount) ?? 0m
                                    where installment.ScheduledAmount > paid
-                                   select new { CategoryId = installment.CategoryId!.Value, Amount = installment.ScheduledAmount - paid }).ToListAsync(cancellationToken);
+                                   select new { CategoryId = installment.CategoryId!.Value, Amount = installment.ScheduledAmount - paid, Date = installment.DueDate }).ToListAsync(cancellationToken);
         var debtRealized = await (from payment in db.FinancialDebtPayments.AsNoTracking()
                                   join installment in db.FinancialDebtInstallments.AsNoTracking() on new { payment.FamilyId, InstallmentId = payment.InstallmentId } equals new { installment.FamilyId, InstallmentId = installment.Id }
                                   where payment.FamilyId == familyId && payment.CancelledAt == null && installment.CategoryId != null
-                                      && categoryIds.Contains(installment.CategoryId.Value) && payment.PaymentDate >= budget.Competence && payment.PaymentDate < through
-                                  select new { CategoryId = installment.CategoryId!.Value, Amount = payment.Amount }).ToListAsync(cancellationToken);
+                                      && categoryIds.Contains(installment.CategoryId.Value) && payment.PaymentDate >= first && payment.PaymentDate < through
+                                  select new { CategoryId = installment.CategoryId!.Value, Amount = payment.Amount, Date = payment.PaymentDate }).ToListAsync(cancellationToken);
         var consumptionRows = await realized.Concat(creditCardCommitted).Concat(historicalCreditCardCommitted)
-            .GroupBy(item => new { item.CategoryId, item.IsCreditCard })
-            .Select(group => new ConsumptionTotal(group.Key.CategoryId, group.Key.IsCreditCard, group.Sum(item => item.Amount)))
+            .GroupBy(item => new { item.CategoryId, item.IsCreditCard, item.Date.Year, item.Date.Month })
+            .Select(group => new ConsumptionTotal(group.Key.CategoryId, group.Key.IsCreditCard, group.Key.Year, group.Key.Month, group.Sum(item => item.Amount)))
             .ToListAsync(cancellationToken);
 
-        await transaction.CommitAsync(cancellationToken);
-        var realizedByCategory = consumptionRows.Where(item => !item.IsCreditCard).ToDictionary(item => item.CategoryId, item => item.Amount);
-        var committedByCategory = committed.ToDictionary(item => item.CategoryId, item => item.Amount);
-        foreach (var row in debtRealized.GroupBy(item => item.CategoryId)) realizedByCategory[row.Key] = realizedByCategory.GetValueOrDefault(row.Key) + row.Sum(item => item.Amount);
-        foreach (var row in debtCommitted.GroupBy(item => item.CategoryId)) committedByCategory[row.Key] = committedByCategory.GetValueOrDefault(row.Key) + row.Sum(item => item.Amount);
-        var creditCardByCategory = consumptionRows.Where(item => item.IsCreditCard).ToDictionary(item => item.CategoryId, item => item.Amount);
-        return new FinancialBudgetExecutionSource(
+        return budgets.Select(budget => new FinancialBudgetExecutionSource(
             budget.Id,
             budget.Competence,
-            targets.Select(item => new FinancialBudgetExecutionSourceTarget(
+            targets.Where(item => item.BudgetId == budget.Id).Select(item => new FinancialBudgetExecutionSourceTarget(
                 item.Id,
                 item.CategoryId,
                 item.PlannedAmount,
-                realizedByCategory.GetValueOrDefault(item.CategoryId),
-                committedByCategory.GetValueOrDefault(item.CategoryId),
-                creditCardByCategory.GetValueOrDefault(item.CategoryId))).ToList());
+                consumptionRows.Where(x => x.CategoryId == item.CategoryId && !x.IsCreditCard && x.Year == budget.Competence.Year && x.Month == budget.Competence.Month).Sum(x => x.Amount)
+                    + debtRealized.Where(x => x.CategoryId == item.CategoryId && x.Date.Year == budget.Competence.Year && x.Date.Month == budget.Competence.Month).Sum(x => x.Amount),
+                committed.Where(x => x.CategoryId == item.CategoryId && x.Year == budget.Competence.Year && x.Month == budget.Competence.Month).Sum(x => x.Amount)
+                    + debtCommitted.Where(x => x.CategoryId == item.CategoryId && x.Date.Year == budget.Competence.Year && x.Date.Month == budget.Competence.Month).Sum(x => x.Amount),
+                consumptionRows.Where(x => x.CategoryId == item.CategoryId && x.IsCreditCard && x.Year == budget.Competence.Year && x.Month == budget.Competence.Month).Sum(x => x.Amount))).ToList())).ToList();
     }
 
-    private sealed record CategoryTotal(Guid CategoryId, decimal Amount);
+    private sealed record CategoryTotal(Guid CategoryId, int Year, int Month, decimal Amount);
     private sealed record ConsumptionRow(Guid CategoryId, decimal Amount, bool IsCreditCard);
-    private sealed record ConsumptionTotal(Guid CategoryId, bool IsCreditCard, decimal Amount);
+    private sealed record ConsumptionTotal(Guid CategoryId, bool IsCreditCard, int Year, int Month, decimal Amount);
 }
 

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Saldo360.Domain.Common;
 using Saldo360.Tests.Support;
 
@@ -17,6 +18,65 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
 
     private static DateOnly Today => BusinessCalendar.Today(DateTimeOffset.UtcNow);
     private static DateOnly ThisMonth => new(Today.Year, Today.Month, 1);
+
+    [Fact]
+    public async Task SixMonthEndpointDefaultsToBusinessMonth_ValidatesRangeAndMembership()
+    {
+        await ArrangeAsync();
+        await CreateAccountAsync("Synthetic", "100.01", ThisMonth.AddMonths(-1));
+        var url = $"/api/families/{_family.Id}/financial-planning/six-months";
+        var response = await SendAsync(HttpMethod.Get, url, _owner);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(ThisMonth.ToString("yyyy-MM"), result.RootElement.GetProperty("from").GetString());
+        Assert.Equal(6, result.RootElement.GetProperty("months").GetArrayLength());
+        Assert.Equal("100.01", result.RootElement.GetProperty("summary").GetProperty("lowestClosingBalance").GetString());
+        using var yearTurn = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, url + "?from=2026-12", _owner)).Content.ReadAsStringAsync());
+        Assert.Equal("2027-05", yearTurn.RootElement.GetProperty("through").GetString());
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, url + "?from=9999-12", _owner)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, url + "?from=2026-13", _owner)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, url, _outsider)).StatusCode);
+    }
+
+    [Fact]
+    public async Task SixMonthsComparesFrozenCategoryTargetsInBatch_WithoutAddingThemToCashFlow()
+    {
+        await ArrangeAsync();
+        var account = await CreateAccountAsync("Synthetic", "1000.00", ThisMonth.AddMonths(-1));
+        var first = ThisMonth.AddMonths(1);
+        var budgetIds = new List<Guid>();
+        for (var index = 0; index < 2; index++)
+        {
+            var month = first.AddMonths(index);
+            var created = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/budgets", _owner,
+                new { competence = month.ToString("yyyy-MM") });
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            var budget = (await ReadAsync<IdDto>(created)).Id; budgetIds.Add(budget);
+            var target = await SendWithCsrfAsync(HttpMethod.Post, $"/api/families/{_family.Id}/budgets/{budget}/targets", _owner,
+                new { name = "Synthetic", plannedAmount = "100.00", groupingType = "Category", categoryId = _expense });
+            Assert.Equal(HttpStatusCode.Created, target.StatusCode);
+            await CreatePlannedAsync(account, _expense, "Expense", index == 0 ? "120.01" : "100.00", month.AddDays(9), "Synthetic");
+        }
+        var response = await SendAsync(HttpMethod.Get, $"/api/families/{_family.Id}/financial-planning/six-months?from={first:yyyy-MM}", _owner);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var months = result.RootElement.GetProperty("months");
+        Assert.Equal("Exceeded", months[0].GetProperty("budgetStatus").GetString());
+        Assert.Equal("LimitReached", months[1].GetProperty("budgetStatus").GetString());
+        Assert.Equal("100.00", months[0].GetProperty("budgetTarget").GetString());
+        Assert.Equal("120.01", months[0].GetProperty("budgetConsumption").GetString());
+        Assert.Equal("779.99", months[1].GetProperty("closingBalance").GetString());
+        Assert.Equal("NotDefined", months[2].GetProperty("budgetStatus").GetString());
+        Assert.Equal("220.01", result.RootElement.GetProperty("summary").GetProperty("totalExpense").GetString());
+        Assert.Equal(1, result.RootElement.GetProperty("summary").GetProperty("monthsOverBudget").GetInt32());
+        Assert.Equal(JsonValueKind.Null, months[0].GetProperty("fixedExpenses").ValueKind);
+        foreach (var budget in budgetIds)
+        {
+            using var execution = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get,
+                $"/api/families/{_family.Id}/budgets/{budget}/execution", _owner)).Content.ReadAsStringAsync());
+            Assert.Equal("100.00", execution.RootElement.GetProperty("total").GetProperty("planned").GetString());
+        }
+    }
 
     private async Task ArrangeAsync()
     {

@@ -159,7 +159,7 @@ function mockApi(
       const url = String(input)
       calls.push({ url, init })
       if (/\/accounts(?:\?|$)/.test(url)) return Response.json([itau, nubank])
-      if (url.includes('/financial-calendar/monthly-projection?')) return monthly(url)
+      if (url.includes('/financial-planning/six-months?')) return monthly(url)
       if (url.includes('/financial-calendar/balances?')) return balances(url)
       if (url.includes('/financial-calendar?')) return calendar(url)
       throw new Error(`URL inesperada: ${url}`)
@@ -192,7 +192,7 @@ function balanceCalls(calls: Call[]): Call[] {
 }
 
 function monthlyCalls(calls: Call[]): Call[] {
-  return calls.filter((call) => call.url.includes('/financial-calendar/monthly-projection?'))
+  return calls.filter((call) => call.url.includes('/financial-planning/six-months?'))
 }
 
 beforeEach(() => {
@@ -360,7 +360,7 @@ describe('FinancialCalendarPage — navegação e filtros', () => {
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
     fireEvent.click(screen.getByRole('button', { name: 'Próximos meses' }))
     expect(await screen.findAllByRole('article')).toHaveLength(6)
-    await waitFor(() => expect(monthlyCalls(calls).at(-1)!.url).toContain(`from=2026-12&months=6&accountId=${itau.id}`))
+    await waitFor(() => expect(monthlyCalls(calls).at(-1)!.url).toContain(`from=2026-12&accountId=${itau.id}`))
 
     fireEvent.click(screen.getByRole('button', { name: /Janeiro de 2027/ }))
     expect(await screen.findByText('Janeiro de 2027')).toBeTruthy()

@@ -17,7 +17,27 @@ public static class FinancialCalendarEndpoints
         app.MapGet("/api/families/{familyId:guid}/financial-calendar/balances", ListBalances).RequireAuthorization();
         app.MapGet("/api/families/{familyId:guid}/financial-calendar/monthly-projection", ListMonthlyProjection)
             .RequireAuthorization();
+        app.MapGet("/api/families/{familyId:guid}/financial-planning/six-months", ListSixMonths).RequireAuthorization();
         return app;
+    }
+
+    private static async Task<IResult> ListSixMonths(Guid familyId, string? from, Guid? accountId,
+        CurrentUser currentUser, FinancialCalendarMonthlyProjectionService projections, TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        var today = BusinessCalendar.Today(clock.GetUtcNow());
+        var first = new DateOnly(today.Year, today.Month, 1);
+        if (from is not null && (from.Length != 7 || !DateOnly.TryParseExact($"{from}-01", "yyyy-MM-dd",
+            CultureInfo.InvariantCulture, DateTimeStyles.None, out first)))
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["from"] = ["Use uma competência válida no formato yyyy-MM."] });
+        var result = await projections.GetAsync(familyId, userId, new(first, 6, accountId), cancellationToken, today);
+        return result switch
+        {
+            { NotFound: true } => Results.NotFound(),
+            { Errors: { } errors } => Results.ValidationProblem(errors),
+            _ => Results.Ok(FinancialCalendarMonthlyProjectionResponse.Create(result.Projection!)),
+        };
     }
 
     private static async Task<IResult> ListMonthlyProjection(
@@ -263,12 +283,22 @@ public sealed record FinancialCalendarBalanceRiskResponse(
 
 public sealed record FinancialCalendarMonthlyProjectionResponse(
     string From,
-    IReadOnlyList<FinancialCalendarMonthlyProjectionMonthResponse> Months)
+    IReadOnlyList<FinancialCalendarMonthlyProjectionMonthResponse> Months,
+    string Through,
+    FinancialPlanningSummary Summary)
 {
     public static FinancialCalendarMonthlyProjectionResponse Create(FinancialCalendarMonthlyProjection projection) =>
         new(projection.From.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-            projection.Months.Select(FinancialCalendarMonthlyProjectionMonthResponse.From).ToList());
+            projection.Months.Select(FinancialCalendarMonthlyProjectionMonthResponse.From).ToList(),
+            projection.Through.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+            new(Money.Format(projection.TotalIncome), Money.Format(projection.TotalExpense),
+                FinancialCalendarBalancesResponse.Format(projection.LowestClosingBalance),
+                projection.LowestBalanceMonth?.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                projection.MonthsOverBudget, projection.MonthsWithNegativeBalance));
 }
+
+public sealed record FinancialPlanningSummary(string TotalIncome, string TotalExpense, string? LowestClosingBalance,
+    string? LowestBalanceMonth, int MonthsOverBudget, int MonthsWithNegativeBalance);
 
 public sealed record FinancialCalendarMonthlyProjectionMonthResponse(
     string Month,
@@ -284,7 +314,17 @@ public sealed record FinancialCalendarMonthlyProjectionMonthResponse(
     DateOnly? FirstNegativeProjectedDate,
     BalanceUnavailableReason? UnavailableReason,
     bool CreditCardProjectionComplete = true,
-    string? CreditCardOutstanding = null)
+    string? CreditCardOutstanding = null,
+    string CardPayments = "0.00",
+    string TotalIncome = "0.00",
+    string TotalExpense = "0.00",
+    string? BudgetTarget = null,
+    string? BudgetConsumption = null,
+    string BudgetStatus = "NotDefined",
+    string PeriodKind = "Future",
+    string Status = "WithinKnownCommitments",
+    string? FixedExpenses = null,
+    bool DebtProjectionComplete = true)
 {
     public static FinancialCalendarMonthlyProjectionMonthResponse From(
         FinancialCalendarMonthlyProjectionMonth month) => new(
@@ -301,7 +341,10 @@ public sealed record FinancialCalendarMonthlyProjectionMonthResponse(
             month.FirstNegativeProjectedDate,
             month.UnavailableReason,
             month.CreditCardProjectionComplete,
-            FinancialCalendarBalancesResponse.Format(month.CreditCardOutstanding));
+            FinancialCalendarBalancesResponse.Format(month.CreditCardOutstanding), Money.Format(month.CardPayments),
+            Money.Format(month.TotalIncome), Money.Format(month.TotalExpense),
+            FinancialCalendarBalancesResponse.Format(month.BudgetTarget), FinancialCalendarBalancesResponse.Format(month.BudgetConsumption),
+            month.BudgetStatus, month.PeriodKind, month.Status, null, month.DebtProjectionComplete);
 }
 
 public sealed record FinancialCalendarItemResponse(

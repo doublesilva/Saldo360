@@ -94,11 +94,31 @@ export interface FinancialCalendarMonthlyProjectionMonth {
   minimumProjectedBalance: string | null
   firstNegativeProjectedDate: string | null
   unavailableReason: BalanceUnavailableReason | null
+  creditCardOutstanding?: string | null
+  cardPayments?: string
+  creditCardProjectionComplete?: boolean
+  debtProjectionComplete?: boolean
+  fixedExpenses?: string | null
+  budgetTarget?: string | null
+  budgetConsumption?: string | null
+  budgetStatus?: string
+  periodKind?: 'Historical' | 'Current' | 'Future'
+  status?: string
 }
 
 export interface FinancialCalendarMonthlyProjectionResponse {
   from: string
   months: FinancialCalendarMonthlyProjectionMonth[]
+  through?: string
+  summary?: { totalIncome: string; totalExpense: string; lowestClosingBalance: string | null; lowestBalanceMonth: string | null; monthsOverBudget: number; monthsWithNegativeBalance: number }
+}
+
+export async function getSixMonthPlanning(familyId: string, from: string, accountId?: string, signal?: AbortSignal): Promise<FinancialCalendarMonthlyProjectionResponse> {
+  const query = new URLSearchParams({ from })
+  if (accountId) query.set('accountId', accountId)
+  const response = await fetch(`/api/families/${encodeURIComponent(familyId)}/financial-planning/six-months?${query}`, { signal, headers: { Accept: 'application/json' } })
+  if (!response.ok) throw new Error(`Falha ao carregar o planejamento financeiro (HTTP ${response.status}).`)
+  return response.json()
 }
 
 const jsonHeaders = { Accept: 'application/json' }

@@ -4,7 +4,7 @@ import type { CategoryType } from '../api/categories'
 import {
   getFinancialCalendar,
   getFinancialCalendarBalances,
-  getFinancialCalendarMonthlyProjection,
+  getSixMonthPlanning,
   type FinancialCalendarBalanceDay,
   type FinancialCalendarBalanceResponse,
   type FinancialCalendarItem,
@@ -225,7 +225,7 @@ export function FinancialCalendarMonthlyPlanning({
   useEffect(() => {
     const controller = new AbortController()
     const version = ++requestVersion.current
-    getFinancialCalendarMonthlyProjection(familyId, from, 6, accountId || undefined, controller.signal)
+    getSixMonthPlanning(familyId, from, accountId || undefined, controller.signal)
       .then((data) => {
         if (version === requestVersion.current) setProjectionState({ kind: 'loaded', requestKey, data })
       })
@@ -247,6 +247,16 @@ export function FinancialCalendarMonthlyPlanning({
       </div>
       {projection.kind === 'loading' && <p className="status status--pending">Calculando planejamento financeiro…</p>}
       {projection.kind === 'error' && <p className="status status--down" role="alert">{projection.message}</p>}
+      {projection.kind === 'loaded' && projection.data.summary && (
+        <section aria-label="Resumo dos seis meses">
+          <dl className="monthly-planning-card__values">
+            <MonthlyValue label="Receitas no horizonte" value={projection.data.summary.totalIncome} />
+            <MonthlyValue label="Despesas no horizonte (incluem cartões)" value={projection.data.summary.totalExpense} />
+            <MonthlyValue label="Pior saldo final" value={projection.data.summary.lowestClosingBalance} />
+          </dl>
+          <p>Competência com menor fechamento: {projection.data.summary.lowestBalanceMonth ?? 'Não disponível'} · Meses acima da meta: {projection.data.summary.monthsOverBudget} · Meses com saldo negativo: {projection.data.summary.monthsWithNegativeBalance}</p>
+        </section>
+      )}
       {projection.kind === 'loaded' && (
         <div className="monthly-planning__grid">
           {projection.data.months.map((item) => {
@@ -263,9 +273,17 @@ export function FinancialCalendarMonthlyPlanning({
                   <MonthlyValue label="Despesas realizadas" value={item.realizedExpense} />
                   <MonthlyValue label="Receitas pendentes" value={item.pendingIncome} />
                   <MonthlyValue label="Despesas pendentes" value={item.pendingExpense} />
+                  <MonthlyValue label="Cartões pagos (incluídos nas despesas)" value={item.cardPayments ?? null} />
+                  <MonthlyValue label="Cartões ainda devidos (incluídos nas pendências)" value={item.creditCardOutstanding ?? null} />
+                  <MonthlyValue label="Despesas fixas — classificação não disponível" value={item.fixedExpenses ?? null} />
+                  <MonthlyValue label="Meta familiar por categorias" value={item.budgetTarget ?? null} />
+                  <MonthlyValue label="Consumo nas categorias com meta" value={item.budgetConsumption ?? null} />
                   <MonthlyValue label="Saldo de fechamento" value={item.closingBalance} negative={negative} />
                   <MonthlyValue label="Menor saldo projetado" value={item.minimumProjectedBalance} negative={item.minimumProjectedBalance?.startsWith('-')} />
                 </dl>
+                {item.periodKind && <p>{item.periodKind === 'Current' ? 'Mês atual · realizado + pendências restantes' : item.periodKind === 'Future' ? 'Mês futuro · compromissos conhecidos' : 'Mês histórico · realizado'}</p>}
+                <p>{item.budgetStatus === 'Exceeded' ? 'Meta ultrapassada' : item.budgetStatus === 'LimitReached' ? 'Meta atingida' : item.budgetStatus === 'ApproachingLimit' ? 'Próximo da meta' : item.budgetStatus === 'WithinBudget' ? 'Dentro da meta' : 'Sem meta definida'}</p>
+                {(item.creditCardProjectionComplete === false || item.debtProjectionComplete === false) && <p role="status">Cobertura parcial: há obrigações sem conta atribuída.</p>}
                 {item.unavailableReason ? (
                   <p className="monthly-planning-card__status monthly-planning-card__status--unavailable">
                     Saldo indisponível: {balanceUnavailableMessage(item.unavailableReason).toLowerCase()}

@@ -28,7 +28,9 @@ public sealed record FinancialCalendarBalanceSnapshot(
     IReadOnlyList<FinancialCalendarDailyTotals>? CreditCardObligations = null,
     bool HasUnallocatedCreditCardObligations = false,
     IReadOnlyList<FinancialCalendarDailyTotals>? DebtObligations = null,
-    bool HasUnallocatedDebtObligations = false);
+    bool HasUnallocatedDebtObligations = false,
+    IReadOnlyList<FinancialCalendarDailyTotals>? CardPayments = null,
+    IReadOnlyList<Saldo360.Application.Budgets.FinancialBudgetExecutionSource>? Budgets = null);
 
 public sealed record FinancialCalendarBalanceDay(
     DateOnly Date,
