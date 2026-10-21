@@ -120,7 +120,9 @@ services:
   migrate:
     image: saldo360-api:${SALDO360_IMAGE_TAG:?Defina SALDO360_IMAGE_TAG com o SHA imutavel do release}
     profiles: ["migration"]
-    entrypoint: ["/app/efbundle"]
+    # Expand inside the container, not in Compose: preserve the complete connection
+    # (including cutover Options) as one argument; never fall back to design-time settings.
+    entrypoint: ["/bin/sh", "-eu", "-c", 'exec /app/efbundle --connection "$${ConnectionStrings__Saldo360:?Migration connection is required}" "$$@"', "efbundle"]
     group_add:
       - "1654"
     environment:
