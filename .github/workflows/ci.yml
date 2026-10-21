@@ -221,8 +221,9 @@ jobs:
       - name: Validate production compose
         shell: bash
         env:
-          # Synthetic destination for syntax validation only; never a production fallback.
+          # Synthetic cutover values for compose syntax validation only; never production fallbacks.
           FINANCIAL_WORKSPACE_ID: 11111111-1111-4111-8111-111111111111
+          FINANCIAL_WORKSPACE_CUTOVER_PLAN: '[{"family_id":"22222222-2222-4222-8222-222222222222","workspace_id":"11111111-1111-4111-8111-111111111111","owner_user_id":"33333333-3333-4333-8333-333333333333"}]'
         run: |
           cp .env.production.example "$RUNNER_TEMP/saldo360.env"
           sed -i 's/troque-esta-senha-forte/ci-only-not-a-secret/' "$RUNNER_TEMP/saldo360.env"
