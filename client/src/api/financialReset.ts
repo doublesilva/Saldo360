@@ -4,7 +4,22 @@ export interface ResetPreview { workspaceId: string; status: string; counts: Rec
 export interface ResetResult { workspaceId: string; status: 'ResetCompleted' | 'AlreadyEmpty'; deleted: Record<string, number>; pendingFileCleanup: number }
 const path = (id: string) => `/api/financial-workspaces/${encodeURIComponent(id)}/financial-reset`
 async function result<T>(response: Response): Promise<T> {
-  if (!response.ok) throw new Error(response.status === 409 ? 'O orçamento mudou ou está indisponível. Recarregue a prévia antes de continuar.' : `Não foi possível concluir (HTTP ${response.status}). Nenhuma confirmação de sucesso foi recebida; consulte o estado antes de repetir.`)
+  if (!response.ok) {
+    if (response.status === 409) {
+      const body = await response.json().catch(() => null) as { code?: unknown } | null
+      switch (body?.code) {
+        case 'DocumentCutoverRequired':
+          throw new Error('Reset bloqueado (DocumentCutoverRequired): há documentos fora do layout de armazenamento do workspace. É necessário concluir o cutover dos arquivos antes do reset. Nenhum dado financeiro foi removido por esta rejeição.')
+        case 'PersonalOnly':
+          throw new Error('Reset disponível somente para orçamento pessoal (PersonalOnly).')
+        case 'WorkspaceInactive':
+          throw new Error('O orçamento está inativo (WorkspaceInactive). O reset não foi executado.')
+        default:
+          throw new Error('O orçamento mudou ou está indisponível. Recarregue a prévia antes de continuar.')
+      }
+    }
+    throw new Error(`Não foi possível concluir (HTTP ${response.status}). Nenhuma confirmação de sucesso foi recebida; consulte o estado antes de repetir.`)
+  }
   return response.json() as Promise<T>
 }
 export async function previewFinancialReset(id: string, signal?: AbortSignal): Promise<ResetPreview> {
