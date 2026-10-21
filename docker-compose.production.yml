@@ -125,7 +125,7 @@ services:
       - "1654"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Saldo360: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__Saldo360: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Options=-c saldo360.workspace_cutover_plan=${FINANCIAL_WORKSPACE_CUTOVER_PLAN:?Define the approved production workspace cutover plan before migration}"
       Authentication__Oidc__Authority: https://auth.home.doublesilva.com
       Authentication__Oidc__ClientId: saldo360
       Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret

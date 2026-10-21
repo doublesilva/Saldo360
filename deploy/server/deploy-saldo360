@@ -57,6 +57,19 @@ wait_healthy() {
   done
 }
 
+workspace_id="$(sed -n 's/^FINANCIAL_WORKSPACE_ID=//p' "$ENV_FILE" | tail -n1)"
+cutover_plan="$(sed -n 's/^FINANCIAL_WORKSPACE_CUTOVER_PLAN=//p' "$ENV_FILE" | tail -n1)"
+
+if ! [[ "$workspace_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+  echo "FINANCIAL_WORKSPACE_ID ausente ou inválido." >&2
+  exit 1
+fi
+
+if [ -z "$cutover_plan" ]; then
+  echo "FINANCIAL_WORKSPACE_CUTOVER_PLAN ausente." >&2
+  exit 1
+fi
+
 echo "==> Validando compose"
 compose config --quiet
 
