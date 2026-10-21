@@ -15,6 +15,7 @@ public sealed class FinancialWorkspace : Entity
     public DateTimeOffset CreatedAt { get; private init; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public uint Version { get; private set; }
+    public DateTimeOffset? LastFinancialResetAt { get; private set; }
 
     public static FinancialWorkspace CreatePersonal(Guid owner, DateTimeOffset now)
     {

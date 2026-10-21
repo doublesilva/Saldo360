@@ -45,7 +45,8 @@ public sealed class FinancialCalendarBalanceService(
         DateOnly today,
         FinancialCalendarBalanceSnapshot snapshot)
     {
-        var missingOpening = snapshot.Accounts.Any(account =>
+        // An empty workspace has no balance reference; it is not a known zero balance.
+        var missingOpening = snapshot.Accounts.Count == 0 || snapshot.Accounts.Any(account =>
             account.OpeningBalance is null || account.OpeningBalanceDate is null);
         var latestOpeningDate = snapshot.Accounts
             .Where(account => account.OpeningBalanceDate is not null)

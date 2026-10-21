@@ -51,6 +51,8 @@ app.UseMiddleware<RequestObservabilityMiddleware>();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
+app.UseRouting();
+app.UseMiddleware<FinancialWriteMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -77,6 +79,7 @@ app.MapFamilyEndpoints();
 app.MapFamilyInvitationEndpoints();
 app.MapFinancialAccountEndpoints();
 app.MapFinancialWorkspaceEndpoints();
+app.MapFinancialResetEndpoints();
 app.MapFinancialCategoryEndpoints();
 app.MapFinancialTransactionEndpoints();
 app.MapFinancialTransferEndpoints();

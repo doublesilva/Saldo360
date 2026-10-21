@@ -31,7 +31,17 @@ internal sealed class FileSystemFinancialDocumentStorage : IFinancialDocumentSto
         var path = Resolve(reference);
         return Task.FromResult<Stream?>(File.Exists(path) ? new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous) : null);
     }
-    public Task DeleteAsync(string reference, CancellationToken cancellationToken) { var path = Resolve(reference); if (File.Exists(path)) File.Delete(path); return Task.CompletedTask; }
+    public Task DeleteAsync(string reference, CancellationToken cancellationToken)
+    {
+        var path = Resolve(reference);
+        // A lexical prefix check alone must not allow cleanup through a symlink/junction.
+        for (var directory = new DirectoryInfo(Path.GetDirectoryName(path)!); directory is not null &&
+             (directory.FullName.Equals(root, StringComparison.OrdinalIgnoreCase) || directory.FullName.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)); directory = directory.Parent)
+            if (directory.Exists && (directory.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Storage cleanup requires a non-linked directory.");
+        if (File.Exists(path)) File.Delete(path);
+        return Task.CompletedTask;
+    }
     private string Resolve(string reference)
     {
         var path = Path.GetFullPath(Path.Combine(root, reference.Replace('/', Path.DirectorySeparatorChar)));

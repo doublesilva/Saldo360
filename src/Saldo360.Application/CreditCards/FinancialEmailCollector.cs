@@ -95,6 +95,7 @@ public sealed class FinancialEmailCollector(
     public async Task<FinancialEmailCollectorResult?> RunAsync(string profileName, Guid userId, bool dryRun, CancellationToken cancellationToken)
     {
         var profile = options.Sources.SingleOrDefault(candidate => candidate.Enabled && string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase));
+        using var writeScope = Saldo360.Application.Workspaces.FinancialWriteScope.EnterOperation(profile?.WorkspaceId);
         // Enabled controla somente o agendador. A execução manual autenticada permanece
         // disponível para provisionamento, dry-run e recuperação operacional.
         if (!string.Equals(options.Provider, "Gmail", StringComparison.OrdinalIgnoreCase) || profile is null
@@ -105,6 +106,7 @@ public sealed class FinancialEmailCollector(
     public async Task<FinancialEmailCollectorResult?> RunHistoricalAsync(string profileName, Guid userId, bool dryRun, FinancialEmailHistoricalWindow window, CancellationToken cancellationToken)
     {
         var profile = options.Sources.SingleOrDefault(p => p.Enabled && string.Equals(p.Name, profileName, StringComparison.OrdinalIgnoreCase));
+        using var writeScope = Saldo360.Application.Workspaces.FinancialWriteScope.EnterOperation(profile?.WorkspaceId);
         if (userId == Guid.Empty || !string.Equals(options.Provider, "Gmail", StringComparison.OrdinalIgnoreCase) || profile is null
             || !await inboxRepository.CanAccessWorkspaceAsync(profile.WorkspaceId, userId, cancellationToken)) return null;
         return await RunCoreAsync(profile, dryRun, cancellationToken, window);
@@ -113,6 +115,7 @@ public sealed class FinancialEmailCollector(
     public async Task<FinancialEmailCollectorResult?> RunScheduledAsync(string profileName, CancellationToken cancellationToken)
     {
         var profile = options.Sources.SingleOrDefault(candidate => candidate.Enabled && string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase));
+        using var writeScope = Saldo360.Application.Workspaces.FinancialWriteScope.EnterOperation(profile?.WorkspaceId);
         if (!options.Enabled || !string.Equals(options.Provider, "Gmail", StringComparison.OrdinalIgnoreCase) || profile is null
             || !await inboxRepository.WorkspaceExistsAsync(profile.WorkspaceId, cancellationToken)) return null;
         return await RunCoreAsync(profile, false, cancellationToken);

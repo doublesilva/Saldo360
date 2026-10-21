@@ -3059,6 +3059,79 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("application_users", (string)null);
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Workspaces.FinancialResetAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("DeletedEntities")
+                        .HasColumnType("bigint")
+                        .HasColumnName("deleted_entities");
+
+                    b.Property<string>("TraceId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("trace_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_workspace_reset_audit");
+
+                    b.HasIndex("WorkspaceId", "CreatedAt")
+                        .HasDatabaseName("ix_financial_workspace_reset_audit_workspace_id_created_at");
+
+                    b.ToTable("financial_workspace_reset_audit", (string)null);
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Workspaces.FinancialResetFileCleanup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("StorageReference")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("storage_reference");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_workspace_reset_file_cleanup");
+
+                    b.HasIndex("WorkspaceId", "StorageReference")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_workspace_reset_file_cleanup_workspace_id_storage");
+
+                    b.ToTable("financial_workspace_reset_file_cleanup", (string)null);
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Workspaces.FinancialWorkspace", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3072,6 +3145,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
+
+                    b.Property<DateTimeOffset?>("LastFinancialResetAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_financial_reset_at");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -4067,6 +4144,26 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_transfers_source_account_same_family");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Workspaces.FinancialResetAudit", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_workspace_reset_audit_financial_workspaces_worksp");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Workspaces.FinancialResetFileCleanup", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_workspace_reset_file_cleanup_financial_workspaces");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Workspaces.FinancialWorkspace", b =>

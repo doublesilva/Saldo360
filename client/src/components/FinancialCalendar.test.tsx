@@ -435,7 +435,7 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
 
     const navigation = await screen.findByRole('navigation', { name: 'Navegação do orçamento pessoal' })
     expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual([
-      'Visão Geral', 'Agenda', 'Orçamentos', 'Cartões', 'Documentos', 'Recorrências', 'Planejamento', 'Dívidas', 'Objetivos', 'Contas', 'Categorias', 'Lançamentos', 'Transferências', 'Previsões', 'Família (social)',
+      'Visão Geral', 'Agenda', 'Orçamentos', 'Cartões', 'Documentos', 'Recorrências', 'Planejamento', 'Dívidas', 'Objetivos', 'Contas', 'Categorias', 'Lançamentos', 'Transferências', 'Previsões', 'Família (social)', 'Configurações',
     ])
     fireEvent.click(within(navigation).getByRole('button', { name: 'Agenda' }))
 

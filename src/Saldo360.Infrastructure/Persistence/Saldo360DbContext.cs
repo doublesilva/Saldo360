@@ -74,9 +74,25 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialGoal> FinancialGoals => Set<FinancialGoal>();
     public DbSet<FinancialGoalAllocation> FinancialGoalAllocations => Set<FinancialGoalAllocation>();
 
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        // Even a single INSERT needs an explicit transaction so the workspace root is
+        // locked before child row locks, not only when EF happens to batch commands.
+        Database.AutoTransactionBehavior = AutoTransactionBehavior.Always;
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        Database.AutoTransactionBehavior = AutoTransactionBehavior.Always;
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
     /// <summary>Configuração do provedor usada pela API, pelas ferramentas de migration e pelos testes.</summary>
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder builder, string connectionString) =>
-        builder.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();
+        builder.UseNpgsql(connectionString).UseSnakeCaseNamingConvention()
+            .AddInterceptors(new Saldo360.Infrastructure.Workspaces.FinancialWriteConnectionInterceptor(),
+                new Saldo360.Infrastructure.Workspaces.FinancialWriteTransactionInterceptor());
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
