@@ -1,0 +1,38 @@
+# Optional production overlay. Configure only after the normal authenticated bootstrap.
+# A destination is NOT permission to collect: scheduler and every manual profile stay off.
+services:
+  api:
+    environment:
+      FinancialEmailImport__Enabled: "false"
+      FinancialEmailImport__Sources__0__Name: ItauCards
+      FinancialEmailImport__Sources__0__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Configure the real Personal workspace returned by the API}
+      FinancialEmailImport__Sources__0__Query: 'has:attachment subject:"fatura do seu cartão" -subject:"Nu Empresas"'
+      FinancialEmailImport__Sources__0__Enabled: "false"
+      FinancialEmailImport__Sources__0__CollectionMode: Attachments
+      FinancialEmailImport__Sources__1__Name: NuEmpresas
+      FinancialEmailImport__Sources__1__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Configure the real Personal workspace returned by the API}
+      FinancialEmailImport__Sources__1__Query: 'has:attachment subject:"fatura do seu cartão Nu Empresas"'
+      FinancialEmailImport__Sources__1__Enabled: "false"
+      FinancialEmailImport__Sources__1__CollectionMode: Attachments
+      FinancialEmailImport__Sources__2__Name: ZaffariBourbon
+      FinancialEmailImport__Sources__2__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Configure the real Personal workspace returned by the API}
+      FinancialEmailImport__Sources__2__Query: 'Fatura Bourbon has:attachment'
+      FinancialEmailImport__Sources__2__Enabled: "false"
+      FinancialEmailImport__Sources__2__CollectionMode: Attachments
+      FinancialEmailImport__Sources__3__Name: Ceee
+      FinancialEmailImport__Sources__3__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Configure the real Personal workspace returned by the API}
+      FinancialEmailImport__Sources__3__Query: 'has:attachment subject:"fatura ceee" -subject:"738.283.010-94"'
+      FinancialEmailImport__Sources__3__Enabled: "false"
+      FinancialEmailImport__Sources__3__CollectionMode: Attachments
+      FinancialEmailImport__Sources__4__Name: Dmae
+      FinancialEmailImport__Sources__4__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Configure the real Personal workspace returned by the API}
+      FinancialEmailImport__Sources__4__Query: 'dmae conta'
+      FinancialEmailImport__Sources__4__Enabled: "false"
+      FinancialEmailImport__Sources__4__CollectionMode: Links
+      FinancialEmailImport__Sources__4__AllowedLinkHosts__0: dmaeagvrt.procempa.com.br
+      FinancialEmailImport__Sources__4__AllowedLinkPathPrefixes__0: /gsan/
+      FinancialEmailImport__Sources__5__Name: Vivo
+      FinancialEmailImport__Sources__5__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Configure the real Personal workspace returned by the API}
+      FinancialEmailImport__Sources__5__Query: 'has:attachment (subject:"sua conta vivo" OR subject:"fatura vivo")'
+      FinancialEmailImport__Sources__5__Enabled: "false"
+      FinancialEmailImport__Sources__5__CollectionMode: Attachments

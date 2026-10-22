@@ -228,6 +228,8 @@ jobs:
           cp .env.production.example "$RUNNER_TEMP/saldo360.env"
           sed -i 's/troque-esta-senha-forte/ci-only-not-a-secret/' "$RUNNER_TEMP/saldo360.env"
           docker compose --env-file "$RUNNER_TEMP/saldo360.env" -f docker-compose.production.yml config --quiet
+      - name: Validate clean install and optional collector configuration
+        run: bash scripts/ci/test-clean-install-compose.sh
       - name: Validate Linux scripts
         shell: bash
         run: |

@@ -50,43 +50,8 @@ services:
       ServiceBillReconciliation__ConfirmationEnabled: ${SERVICE_BILL_CONFIRMATION_ENABLED:-false}
       ServiceBillReconciliation__BindingEnabled: ${SERVICE_BILL_BINDING_ENABLED:-false}
 
-      FinancialEmailImport__Sources__0__Name: ItauCards
-      FinancialEmailImport__Sources__0__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Define the approved production workspace ID before cutover}
-      FinancialEmailImport__Sources__0__Query: 'has:attachment subject:"fatura do seu cartão" -subject:"Nu Empresas"'
-      FinancialEmailImport__Sources__0__Enabled: "true"
-      FinancialEmailImport__Sources__0__CollectionMode: Attachments
-
-      FinancialEmailImport__Sources__1__Name: NuEmpresas
-      FinancialEmailImport__Sources__1__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Define the approved production workspace ID before cutover}
-      FinancialEmailImport__Sources__1__Query: 'has:attachment subject:"fatura do seu cartão Nu Empresas"'
-      FinancialEmailImport__Sources__1__Enabled: "true"
-      FinancialEmailImport__Sources__1__CollectionMode: Attachments
-
-      FinancialEmailImport__Sources__2__Name: ZaffariBourbon
-      FinancialEmailImport__Sources__2__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Define the approved production workspace ID before cutover}
-      FinancialEmailImport__Sources__2__Query: 'Fatura Bourbon has:attachment'
-      FinancialEmailImport__Sources__2__Enabled: "true"
-      FinancialEmailImport__Sources__2__CollectionMode: Attachments
-
-      FinancialEmailImport__Sources__3__Name: Ceee
-      FinancialEmailImport__Sources__3__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Define the approved production workspace ID before cutover}
-      FinancialEmailImport__Sources__3__Query: 'has:attachment subject:"fatura ceee" -subject:"738.283.010-94"'
-      FinancialEmailImport__Sources__3__Enabled: "true"
-      FinancialEmailImport__Sources__3__CollectionMode: Attachments
-
-      FinancialEmailImport__Sources__4__Name: Dmae
-      FinancialEmailImport__Sources__4__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Define the approved production workspace ID before cutover}
-      FinancialEmailImport__Sources__4__Query: 'dmae conta'
-      FinancialEmailImport__Sources__4__Enabled: "true"
-      FinancialEmailImport__Sources__4__CollectionMode: Links
-      FinancialEmailImport__Sources__4__AllowedLinkHosts__0: dmaeagvrt.procempa.com.br
-      FinancialEmailImport__Sources__4__AllowedLinkPathPrefixes__0: /gsan/
-
-      FinancialEmailImport__Sources__5__Name: Vivo
-      FinancialEmailImport__Sources__5__WorkspaceId: ${FINANCIAL_WORKSPACE_ID:?Define the approved production workspace ID before cutover}
-      FinancialEmailImport__Sources__5__Query: 'has:attachment (subject:"sua conta vivo" OR subject:"fatura vivo")'
-      FinancialEmailImport__Sources__5__Enabled: "true"
-      FinancialEmailImport__Sources__5__CollectionMode: Attachments
+      # Collector profiles are optional: the first Personal is provisioned only after login.
+      # deploy-saldo360 adds docker-compose.collectors.yml only with a real configured ID.
 
       FinancialDocuments__StoragePath: /var/lib/saldo360/financial-documents
       ReverseProxy__KnownNetworks__0: 172.16.0.0/12
@@ -122,12 +87,24 @@ services:
     profiles: ["migration"]
     # Expand inside the container, not in Compose: preserve the complete connection
     # (including cutover Options) as one argument; never fall back to design-time settings.
-    entrypoint: ["/bin/sh", "-eu", "-c", 'exec /app/efbundle --connection "$${ConnectionStrings__Saldo360:?Migration connection is required}" "$$@"', "efbundle"]
+    entrypoint:
+      - /bin/sh
+      - -eu
+      - -c
+      - |
+        connection="$${ConnectionStrings__Saldo360:?Migration connection is required}"
+        if [ -n "$${FINANCIAL_WORKSPACE_CUTOVER_PLAN:-}" ]; then
+          connection="$$connection;Options=-c saldo360.workspace_cutover_plan=$${FINANCIAL_WORKSPACE_CUTOVER_PLAN}"
+        fi
+        exec /app/efbundle --connection "$$connection" "$$@"
+      - efbundle
     group_add:
       - "1654"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Saldo360: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Options=-c saldo360.workspace_cutover_plan=${FINANCIAL_WORKSPACE_CUTOVER_PLAN:?Define the approved production workspace cutover plan before migration}"
+      ConnectionStrings__Saldo360: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      # Optional, used only for an explicitly approved conversion of populated legacy data.
+      FINANCIAL_WORKSPACE_CUTOVER_PLAN: ${FINANCIAL_WORKSPACE_CUTOVER_PLAN:-}
       Authentication__Oidc__Authority: https://auth.home.doublesilva.com
       Authentication__Oidc__ClientId: saldo360
       Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret

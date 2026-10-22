@@ -22,8 +22,9 @@ test -f /etc/homeautomation/certs/caddy-local-root.crt
 
 mkdir -p "$BACKUP_DIR"
 
+compose_files=(-f "$RELEASE/docker-compose.production.yml")
 compose() {
-  docker compose     --env-file "$ENV_FILE"     --project-directory "$RELEASE"     -f "$RELEASE/docker-compose.production.yml"     "$@"
+  docker compose --env-file "$ENV_FILE" --project-directory "$RELEASE" "${compose_files[@]}" "$@"
 }
 
 wait_healthy() {
@@ -58,16 +59,15 @@ wait_healthy() {
 }
 
 workspace_id="$(sed -n 's/^FINANCIAL_WORKSPACE_ID=//p' "$ENV_FILE" | tail -n1)"
-cutover_plan="$(sed -n 's/^FINANCIAL_WORKSPACE_CUTOVER_PLAN=//p' "$ENV_FILE" | tail -n1)"
-
-if ! [[ "$workspace_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
-  echo "FINANCIAL_WORKSPACE_ID ausente ou inválido." >&2
-  exit 1
-fi
-
-if [ -z "$cutover_plan" ]; then
-  echo "FINANCIAL_WORKSPACE_CUTOVER_PLAN ausente." >&2
-  exit 1
+if [ -n "$workspace_id" ]; then
+  if ! [[ "$workspace_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] \
+    || [ "${workspace_id//-/}" = 00000000000000000000000000000000 ]; then
+    echo "FINANCIAL_WORKSPACE_ID inválido; use o ID real provisionado pela API." >&2
+    exit 1
+  fi
+  compose_files+=(-f "$RELEASE/docker-compose.collectors.yml")
+else
+  echo "Coletores sem destino: instalação inicia sem perfis; provisionar Personal após login."
 fi
 
 echo "==> Validando compose"
