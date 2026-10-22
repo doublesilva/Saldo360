@@ -1,10 +1,10 @@
 # T09 — Bootstrap do orçamento a partir da planilha
 
-22/10/2026 — **T09.1 implementada e validada localmente. Domínio pronto para implementar o importador T09; importação não executada**.
+22/10/2026 — **T09.2: importador e dry-run integral implementados; CanExecute=false; importação não executada**.
 
 As seções 1–8 preservam o diagnóstico anterior às extensões. O estado posterior, decisões autorizadas,
-alterações e limites da T09.1 estão nas seções 9–13. Não interpretar o diagnóstico histórico como descrição
-dos novos contratos nem esta implementação local como liberação de importação ou deploy.
+alterações e limites da T09.1 estão nas seções 9–13. A T09.2 está nas seções 14–20. Não interpretar
+encerramentos históricos como estado atual do importador, nem dry-run como liberação de carga ou deploy.
 
 A especificação manda interromper toda a carga diante de ambiguidades estruturais não previstas.
 A leitura da fonte e dos contratos atuais comprovou incompatibilidades de representação; não foi
@@ -343,3 +343,211 @@ Não inferir data original, número ausente, emissor ou conta pagadora para pree
 Não somar totais derivados, não duplicar histórico absorvido pelo saldo-base e não cadastrar parâmetros
 sem correspondência funcional como se estivessem suportados. Nenhuma importação parcial foi autorizada
 por consequência destas extensões. **Parar ao concluir T09.1; não iniciar a carga automaticamente.**
+
+## 14. T09.2 — importador administrativo
+
+Implementado projeto console separado [Saldo360.BudgetBootstrap](../src/Saldo360.BudgetBootstrap/Program.cs),
+com wrapper [import-initial-budget.ps1](../scripts/import-initial-budget.ps1).
+Não há endpoint, DI na API, job ou execução automática em deploy/login/reset.
+A migration T09.1 está integrada ao código, mas **não foi aplicada no servidor**.
+
+Componentes: [snapshot](../src/Saldo360.Application/Bootstrap/SpreadsheetSnapshot.cs),
+[mapper](../src/Saldo360.Application/Bootstrap/BudgetSpreadsheetMapper.cs),
+[grafo de domínio](../src/Saldo360.Infrastructure/Bootstrap/SpreadsheetDomainGraph.cs),
+[preflight/orquestrador](../src/Saldo360.Infrastructure/Bootstrap/BudgetSpreadsheetImporter.cs) e
+[snapshot mínimo do destino](../src/Saldo360.Infrastructure/Bootstrap/ReadOnlyBudgetDestinationSnapshot.cs).
+O grafo valida o conjunto em memória pelas factories/calendário normais, sem DbContext ou motor financeiro novo.
+
+**Nenhum `--execute` foi chamado no ambiente persistente.** Escritas do caminho futuro foram ensaiadas
+somente em PostgreSQL descartável com fonte sintética. Created significa “seria criado”, não gravação.
+
+## 15. Snapshot estável e manifesto privado
+
+Captura nativa em **2026-10-22T18:17:50Z**, após duas leituras iguais dos mesmos ranges e metadados
+conferidos antes/depois. Última alteração declarada pelo Drive: `2026-10-17T15:53:11.534Z`, inalterada na
+conferência final. Esse timestamp não é revisão Google imutável; a reprodução usa o snapshot local congelado.
+
+Ranges: `Parâmetros!A1:D22`, `Metas Mensais!A1:L13`, `Despesas Fixas!A1:L30`, `Lançamentos!A1:Q100`,
+`Histórico compromissos 08-10!A1:J65`, `Movimentos Conta!A1:L10`. Fórmulas, efetivos e bruto numérico são
+separados. Painel/Resumo/totais consolidados não foram fontes de fatos. Não houve edição da planilha nem
+consulta aos documentos/links presentes nas observações.
+
+Hash lógico SHA-256 (JSON UTF-8 compacto com identidade, ranges ordenados, células, fórmulas e bruto;
+exclui timestamps de transporte e apresentação):
+`94332027a04f07feb9f14c729e59662c65f59ec08eefc4a07bd0df6009815c32`.
+
+Artefatos privados sob `.artifacts/budget-bootstrap/`, fora do Git e do contexto Docker:
+
+- `source-20261022.json`: snapshot; SHA-256 físico
+  `9a206d40ec2b4fec4bdd94e8effd1be06da46e09ac9fcdd684ba46276816f609`.
+- `destination-post-validation-20261022.ndjson`: SELECTs finais do destino; SHA-256 físico
+  `d0d8fa972f8bb4905d8787fad54067413c40258a96367c09bb8608f9cf8922b8`.
+- [dry-run-t09-2-final-20261022.json](../.artifacts/budget-bootstrap/dry-run-t09-2-final-20261022.json):
+  relatório definitivo local; SHA-256 físico
+  `762a9b7312a7e27e71fd45769f2f1b3ddf9f7c17a9f307d8fea88cc82266a97f`.
+- `manifest-final-20261022.json`: índice privado dos arquivos, hashes, timestamps e modos.
+
+PlanHash: `4082af2235f688acc4923d64584b2da24ca299ee0bab26943d92e560fe6d1aa8`.
+ReportHash: `a065d8ad99067dfa5d4575815ef8cec794c4da614ee9a97c8115774553491c49`.
+Hash lógico do snapshot de destino:
+`6a01bc479fe9b76103ad5028bd399dcfe61676d3a9420d874d6d18d8cb04d727`.
+
+O relatório integral lista **284 itens**, com ExternalReference, EntityType, descrição em Payload.Name,
+valores/datas/referências, IntendedAction, Status, Reason, SourceLocation e proveniência. Não inclui notas
+originais com UC/Gmail, tokens ou documentos. Hash físico do arquivo não se confunde com hash lógico.
+
+## 16. Dry-run real e mapeamento
+
+Alvo exclusivo: `01a163b9-4b06-74f8-ac02-05bdc7cfb14e`. Modo: **ReadOnlyDestinationSnapshot**.
+O envio da captura completa a um helper remoto foi barrado pela revisão automática por risco de exposição;
+não houve upload nem criação desse helper. A alternativa executada manteve a planilha local e exportou
+somente identidade/schema e contagens do alvo, pelo [leitor SQL](../scripts/read-initial-budget-destination.sql).
+Não apresentar essa modalidade como conexão direta da CLI ao servidor.
+
+As leituras PostgreSQL de **18:41:39Z**, **18:57:38.410016Z** e **19:35:06.984493Z** usaram `REPEATABLE READ READ ONLY`,
+confirmando `transaction_read_only=on`. Todas mostraram Personal ativo, owner persistido válido e inalterado,
+**42 migrations**, todos os cadastros/fatos financeiros vazios, documentos/checkpoints/bindings zero,
+uma auditoria preexistente de reset vazio e zero intenções de cleanup. As contagens permaneceram iguais
+entre as três capturas; a última compõe o relatório definitivo.
+Tabelas T09.1 ausentes são indisponíveis (`-1`), **não zero conhecido**.
+
+| Aggregate planejado | Quantidade | Mapeamento |
+|---|---:|---|
+| Categorias Expense | 10 | Nomes canônicos case-insensitive. |
+| Contas | 2 | Itaú PF -13.826,92 em 08/10; Empresas sem saldo inicial. |
+| Cartões | 4 | Black/Itaú e Nubank com evidência; dois emissores bloqueados. |
+| Recorrências em conta | 11 | AccountId; início/fim e dias explícitos/default 10. |
+| Recorrências em cartão | 6 | CreditCardId; quatro calendários coerentes, duas datas ausentes. |
+| Previsões específicas pendentes | 7 | Estimativa/provisão em metadata; sem realização. |
+| Compras normais | 9 | Cinco parceladas completas + quatro únicas aprovadas. |
+| Parcelas normais | 22 | 18 parceladas + quatro únicas, pelo rateio normal. |
+| Faturas derivadas de compras | 8 | Black/Nubank, nov/2026–fev/2027; nenhum total histórico de outubro. |
+| Parcelas históricas conhecidas | 89 | Sem inventar compra/data/total; 15 dependem do Credicard bloqueado. |
+| Metas agregadas | 48 | Quatro snapshots independentes por competência, por 12 meses. |
+| Proveniências planejadas | 216 | Uma por entidade, inclusive parcelas/faturas; nenhuma persistida. |
+
+As 34 linhas parceladas formam 32 grupos: cinco compras completas + 27 históricos. As 107 ocorrências
+conhecidas são **18 parcelas normais + 89 históricas**, sem duplicar Kalunga/Amazon. Kalunga mantém
+111,78 / 111,76 / 111,76; 7/10 continua 7/10–10/10, não compra nova de quatro parcelas. As cinco compras
+completas são cama, dois presentes, Amazon e Ozempic. Os quatro únicos aprovados ficam nas compras, não no banco.
+
+Recorrências são somente definições, sem materialização automática. Evidências de cobrança: iCloud 05/10,
+ChatGPT 27/09, Kindle 23/09 e Prime sem anúncios 12/09, coerentes com competência outubro no calendário 5/10.
+Claude e manutenção Zaffari não têm dia suficiente; não usar o primeiro dia da competência como cobrança.
+Limite/fechamento/vencimento dos quatro cartões: 10.000 / 5 / 10; sem número, conta pagadora ou titular inventados.
+
+Metas não geram FinancialBudgetTarget por categoria nem somam TotalExpenses aos componentes. RecoveryAmount
+preserva o bruto entregue pela API em metadata e arredonda somente o snapshot para duas casas, AwayFromZero;
+não recalcula pelos gastos. Não se alega recuperar as teclas originalmente digitadas no Google Sheets.
+
+## 17. Status e bloqueios revisáveis
+
+**CanExecute=false. Zero escritas financeiras. Não há autorização de carga parcial.**
+
+| Status | Itens |
+|---|---:|
+| Created (somente plano) | 197 |
+| AlreadyImported | 0 |
+| Unmapped | 67 |
+| Conflict | 0 |
+| Invalid | 20 |
+
+Cinco causas-raiz dos Invalid:
+
+1. `CARD:Credicard`: MissingIssuerEvidence; não inferir banco pela marca.
+2. `CARD:Zaffari/Mercado`: MissingIssuerEvidence; não inferir instituição pelo nome comercial.
+3. `REC-003:recurrence`: MissingChargeDate; competência de Claude + IOF não comprovável.
+4. `REC-ZAF-001:recurrence`: MissingChargeDate; idem para manutenção Zaffari.
+5. Destino: T09.1MigrationNotApplied; código integrado não significa schema implantado.
+
+Os outros 15 Invalid são `PAR-CR-001:installment:4..6`, `PAR-CR-002:installment:4..5` e
+`PAR-CR-003:installment:3..12`, por InvalidCardDependency. Valores/competências estão no plano, sem descarte
+ou transferência para outro cartão. Não há outro Invalid de parsing no relatório definitivo.
+
+As **67 exclusões Unmapped são explicitamente aprovadas pelo escopo**:
+
+- 37 IDs do Histórico já representados em Lançamentos;
+- oito movimentos até 08/10 e quatro lançamentos bancários absorvidos pelo saldo-base;
+- exemplo Ignorar, plano de saúde inativo e controle remoto R$ 33,90: um cada;
+- 15 parâmetros: oito UnsupportedButKnown e sete referências já mapeadas/substituídas/não factuais.
+
+UnsupportedButKnown: valor/hora PJ, horas/dia, reserva tributária percentual, referência percentual de
+recuperação, submeta de parcelas/recorrências, submeta alimentação/imprevistos, provisão de consumo e início.
+Não são despesas/receitas adicionais. Referências incluem metas já capturadas, reserva Solar, saldo inicial
+antigo substituído, mês inicial e horizonte. Parâmetro desconhecido não recebe exclusão aprovada automática.
+Controle remoto mantém NeedsReview com exclusão aprovada e, isoladamente, não impediria CanExecute.
+
+## 18. Interface, proveniência e atomicidade futura
+
+Reprodução local, sempre com **arquivo de saída novo**:
+
+```powershell
+./scripts/import-initial-budget.ps1 --workspace-id 01a163b9-4b06-74f8-ac02-05bdc7cfb14e --source .artifacts/budget-bootstrap/source-20261022.json --destination-snapshot .artifacts/budget-bootstrap/destination-post-validation-20261022.ndjson --dry-run --output .artifacts/budget-bootstrap/novo-dry-run.json
+```
+
+Sem snapshot de destino, exige ConnectionStrings__Saldo360 explícita e força conexão/transação somente
+leitura. Não há fallback, ensure de workspace ou migration automática. Destino não vazio exige inspeção
+direta de proveniência/conteúdo; a modalidade de snapshot nunca alega AlreadyImported só por nome/contagem.
+
+`--execute` está preparado, **não utilizado no ambiente persistente**. Exige relatório executável e seu
+hash aprovado, além de `--fresh-source`: captura posterior à revisão e com até cinco minutos. Mudança de
+SourceId, ModifiedAt ou hash lógico exige novo dry-run. A captura atualizada deve ser refeita pela integração
+nativa somente leitura, não copiada com timestamp editado. A CLI lê snapshots, não autentica no Google
+por conta própria nem declara revisão Google criptograficamente atestada.
+
+O caminho futuro recalcula o plano e revalida diretamente o destino/owner sob o lock de workspace usado
+pelos writers/reset. Só então faz staging de todos os aggregates e proveniências no mesmo DbContext,
+um SaveChanges e uma transação. Falha reverte o conjunto, sem commit individual por aggregate. Não
+materializa recorrências, realiza previsões, paga faturas ou escreve arquivos.
+
+SourceSystem/SourceDocument: BudgetSpreadsheet / Orçamento Diego 2026-2027. IDs de cada linha são mantidos
+com sufixos, inclusive nos pares Kalunga/Amazon. Contas/categorias/cartões sem ID na fonte recebem chaves
+lógicas explícitas `ACCOUNT:...`, `CATEGORY:...`, `CARD:...`; faturas usam cartão/competência derivados de
+compra real. Mesmo conteúdo e entidade inalterada: AlreadyImported; conteúdo/entidade editada/removida ou
+referência fora de W: Conflict. Não deduplicar por descrição+valor nem atualizar dados do usuário silenciosamente.
+
+## 19. Conferências e ausência de efeitos no ambiente
+
+- Histórico não duplicado; movimentos até 08/10 não reimportados; saldo-base PF no plano **-13.826,92**.
+- Nenhum cartão 242; controle remoto excluído; plano de saúde não ativado.
+- Compras não viram FinancialTransaction; nenhum pagamento/transação bancária planejado.
+- Nenhuma fatura histórica artificial, total de Painel/Resumo ou envelope adicional importado.
+- Nenhum aggregate, proveniência, owner ou workspace gravado no servidor. Auditoria preexistente preservada.
+- Somente SELECTs no banco, com read-only confirmado. Sem migration, reset, cutover, PDF, Gmail,
+  reanalysis, confirmação, binding, alteração de flags ou habilitação de automações.
+- Sem commit, push, CI remota ou deploy nesta T09.2. Snapshots/relatórios completos privados locais.
+- Conferência consultiva adicional: API/web/PostgreSQL healthy; seis fontes de coleta e flags de e-mail,
+  classificação, extração, reconciliação, confirmação, binding e agentes consultadas permaneceram false.
+
+## 20. Validação T09.2 e parada
+
+Testes usam fonte sintética, IDs contratuais e casos de borda aprovados, nunca export privado da planilha.
+Cobrem parsing/hash/mudança de fonte, duplicatas, emissores, datas/calendários, conta/cartão, compras
+completas/históricas, Kalunga/7-10, bruto/arredondamento, exclusões, saldo-base, proveniência/idempotência,
+edição de destino, isolamento, zero-write e rollback após falha durante SaveChanges. Snapshot mínimo:
+schema ausente não é vazio; owner/inativo/Shared/destino não vazio bloqueiam.
+
+- Novos testes dirigidos: **34/34**, sem ignorados, em 18 s, com PostgreSQL 17 descartável.
+  Artefato: `.artifacts/t09-2-tests/t09-2-final-directed-v3.trx`.
+- Build Release de toda a solução aprovado, sem warnings/erros. Nenhuma alteração de modelo/migration nova.
+- Frontend: **289/289 em 30 arquivos**, build aprovado e lint sem erros (nove avisos preexistentes).
+- Wrapper PowerShell validado: replay dos mesmos snapshots produziu SourceHash/PlanHash/ReportHash
+  idênticos e os mesmos 284 itens. Manifesto inclui também hashes dos assemblies Release revisados.
+- Diff/whitespace conferidos, incluindo arquivos novos. Snapshots privados continuam ignorados pelo Git.
+- A primeira regressão ampla teve 916/921 aprovados: os 888 casos existentes passaram; cinco falhas
+  dos casos novos decorreram da fixture Amazon ainda sem o descritor explícito de parcela. Fixture corrigida,
+  sem alterar valores da fonte ou flexibilizar as validações. A rodada dirigida final acima passou integralmente.
+- Houve uma tentativa de rebuild dirigido concorrente com esse testhost que parou por lock de DLL no
+  Windows; nenhuma alteração funcional foi feita para contorná-lo. A validação posterior foi serializada.
+- Regressão backend completa: **922/922**, sem ignorados, em **17 min 56 s**;
+  `.artifacts/t09-2-tests/t09-2-final-regression-v2.trx`.
+  O último ajuste, posterior ao início dessa rodada, preserva a descrição da própria linha FUT de Kalunga
+  em vez de repetir o rótulo 1/3 de OUT. Não altera valores/numeração/contagens. Foi revalidado nos mesmos
+  **34/34** casos dirigidos após o ajuste (`t09-2-final-description-directed.trx`, Debug, 34 s).
+  Build Release final da solução novamente aprovado, sem warnings/erros; revalidação final também em
+  **Release: 34/34**, sem ignorados, em 17 s (`t09-2-final-release-directed.trx`).
+  As rodadas se sobrepõem: não somar seus números como testes únicos adicionais.
+
+**Parar na apresentação do dry-run.** Resolver os quatro dados de cartão, revisar/aprovar a implantação
+T09.1 separadamente e produzir novo dry-run executável para autorização explícita. Este relatório,
+com CanExecute=false, **não autoriza `--execute`**.
