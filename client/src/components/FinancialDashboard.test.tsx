@@ -1,26 +1,34 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FinancialDashboard } from './FinancialDashboard'
 
-const dashboard = {
-  competence: '2026-10', months: 6,
-  position: { realizedBalance: '5000.00', accounts: [], consideredAccounts: 1, negativeBalance: '0.00', allocatedToGoals: '0.00', unallocatedRealizedBalance: '5000.00' },
-  cashFlow: { realizedIncome: '5000.00', realizedExpense: '2000.00', pendingIncome: '1500.00', pendingExpense: '800.00' },
-  obligations: { pendingIncome: '1500.00', pendingExpense: '800.00', creditCardOutstanding: '300.00', debtOutstanding: '0.00', pendingItems: 2 },
-  budgets: { targetCount: 2, planned: '3000.00', committed: '800.00', realized: '2000.00', exceededCount: 0, attentionCount: 1 },
-  creditCards: { count: 1, outstanding: '300.00', overdueInvoices: 0, futureInvoices: 1, hasUnallocatedObligations: false, availableLimit: '9700.00' },
-  debts: { activeContracts: 0, overdueInstallments: 0, installmentsDueInHorizon: '0.00', declaredOutstandingBalance: '0.00', unallocatedObligations: 0 },
-  goals: { active: 1, completed: 0, paused: 0, allocated: '500.00', unallocated: '4500.00', coverageComplete: true },
-  monthlyProjection: [{ competence: '2026-10', closingBalance: '5500.00', realizedIncome: '5000.00', realizedExpense: '2000.00', pendingIncome: '1500.00', pendingExpense: '800.00', creditCardOutstanding: '300.00', projectionComplete: true }],
-  coverage: { complete: true, hasUnallocatedCreditCardObligations: false, hasUnallocatedDebtObligations: false, reason: null },
-  indicators: { realizedBalance: '5000.00', projectedBalance: '5500.00', projectedVariation: '500.00', projectedVariationReference: 'realized', realizedNet: '3000.00', pendingNet: '700.00', knownNet: '3700.00', commitment: '1100.00', unallocatedAvailability: '4500.00', trend: 'Improving', nextCommitment: { source: 'PlannedTransaction', id: 'p1', date: '2026-10-20', amount: '800.00', description: 'Internet', accountId: 'a1' }, capacityBeforeNextIncome: { status: 'Unknown', nextIncomeDate: null, nextIncomeAmount: null, projectedBalanceBeforeIncome: null, minimumProjectedBalance: null } },
-  alerts: [{ code: 'budget-attention', severity: 'Warning', title: 'Orçamento próximo do limite', description: 'A categoria está acima de 85%.', competence: '2026-10', amount: '800.00', sourceId: 'b1', context: null, referenceDate: '2026-10-01' }],
-  asOf: '2026-10-16T12:00:00Z',
-}
+import { dashboard, dashboardResponse } from './dashboardFixtures'
 
 describe('FinancialDashboard', () => {
-  beforeEach(() => { vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(dashboard))) })
+  beforeEach(() => { vi.stubGlobal('fetch', vi.fn(async input => dashboardResponse(input))) })
   afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+  it('opens in the current competence of Sao Paulo, not the browser UTC date', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-01T01:30:00Z'))
+    try {
+      render(<FinancialDashboard workspaceId="personal" />)
+      expect((screen.getByLabelText('Competência do dashboard') as HTMLInputElement).value).toBe('2026-10')
+      await screen.findByRole('heading', { name: 'Resumo do mês' })
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining('competence=2026-10'), expect.anything())
+    } finally { vi.useRealTimers() }
+  })
+
+  it('routes all four quick actions to existing modules and prioritizes overdue alerts', async () => {
+    const navigate = vi.fn()
+    vi.mocked(fetch).mockImplementation(async input => dashboardResponse(input, { ...dashboard, alerts: [dashboard.alerts[0], { ...dashboard.alerts[0], code: 'incomplete-coverage', title: 'Cobertura parcial' }, { ...dashboard.alerts[0], code: 'overdue-obligation', title: 'Despesa atrasada' }] }))
+    render(<FinancialDashboard workspaceId="personal" onNavigate={navigate} />)
+    const actions = (await screen.findByRole('heading', { name: 'Ações rápidas' })).closest('section')!
+    for (const label of ['Novo lançamento', 'Transferir', 'Abrir Agenda', 'Ver cartões']) fireEvent.click(within(actions).getByRole('button', { name: label }))
+    expect(navigate.mock.calls.map(([section]) => section)).toEqual(['transactions', 'transfers', 'calendar', 'cards'])
+    const alerts = screen.getByRole('heading', { name: 'Alertas prioritários' }).closest('section')!
+    expect(within(alerts).getAllByRole('listitem')[0].textContent).toContain('Despesa atrasada')
+  })
 
   it('shows four top indicators from the response and a month composition with no invented balance', async () => {
     const { container } = render(<FinancialDashboard workspaceId="personal" />)
@@ -59,13 +67,13 @@ describe('FinancialDashboard', () => {
   it('envia competência e horizonte selecionados e mostra cobertura incompleta', async () => {
     const fetchMock = vi.mocked(fetch)
     const incomplete = { ...dashboard, coverage: { ...dashboard.coverage, complete: false, reason: 'Fatura sem conta de pagamento.' } }
-    fetchMock.mockImplementation((input) => Promise.resolve(Response.json(String(input).includes('competence=2026-11') ? incomplete : dashboard)))
+    fetchMock.mockImplementation((input) => Promise.resolve(dashboardResponse(input, String(input).includes('competence=2026-11') ? incomplete : dashboard)))
     render(<FinancialDashboard workspaceId="family-1" />)
     await screen.findByText('Evolução projetada')
     fireEvent.change(screen.getByLabelText('Competência do dashboard'), { target: { value: '2026-11' } })
     fireEvent.change(screen.getByLabelText('Horizonte da projeção'), { target: { value: '12' } })
-    await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('competence=2026-11'), expect.anything()))
-    expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('months=12'), expect.anything())
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('competence=2026-11'), expect.anything()))
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('months=12'), expect.anything())
     expect(await screen.findByText(/Projeção parcial/)).toBeTruthy()
   })
 
@@ -76,10 +84,10 @@ describe('FinancialDashboard', () => {
       indicators: { ...dashboard.indicators, projectedBalance: '-120.50', nextCommitment: { ...dashboard.indicators.nextCommitment!, date: '2026-10-01' } },
       alerts: Array.from({ length: 6 }, (_, index) => ({ ...dashboard.alerts[0], code: `balance-${index}`, severity: 'Critical' as const, title: `Risco ${index}` })),
     }
-    vi.mocked(fetch).mockResolvedValue(Response.json(negative))
+    vi.mocked(fetch).mockImplementation(async input => dashboardResponse(input, negative))
     render(<FinancialDashboard workspaceId="family-1" onNavigate={onNavigate} />)
     expect(await screen.findByText('Risco de saldo projetado negativo.')).toBeTruthy()
-    expect(screen.getByText('Vencido')).toBeTruthy()
+    expect(await screen.findByText('Atrasado')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Mostrar todos os alertas/ })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Mostrar todos os alertas/ }))
     expect(screen.getByText(/Risco 5/)).toBeTruthy()
@@ -99,22 +107,21 @@ describe('FinancialDashboard', () => {
       indicators: { ...dashboard.indicators, nextCommitment: null },
       cashFlow: { realizedIncome: '0.00', realizedExpense: '0.00', pendingIncome: '0.00', pendingExpense: '0.00' },
     }
-    vi.mocked(fetch).mockResolvedValue(Response.json(empty))
+    vi.mocked(fetch).mockImplementation(async input => dashboardResponse(input, empty))
     render(<FinancialDashboard workspaceId="family-1" />)
     expect(await screen.findByText('Nenhuma projeção disponível para o período selecionado.')).toBeTruthy()
-    expect(screen.getByText('Nenhum cartão cadastrado.')).toBeTruthy()
+    expect(await screen.findByText('Nenhum cartão cadastrado.')).toBeTruthy()
     expect(screen.getByText(/Disponibilidade antes do próximo recebimento indeterminada/)).toBeTruthy()
   })
 
   it('permite repetir uma leitura com falha e só exibe o sucesso confirmado', async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(new Response('{}', { status: 503 }))
-      .mockResolvedValueOnce(Response.json(dashboard))
+    let tries = 0
+    vi.mocked(fetch).mockImplementation(async input => String(input).includes('/financial-dashboard') && tries++ === 0 ? new Response('{}', { status: 503 }) : dashboardResponse(input))
     render(<FinancialDashboard workspaceId="family-1" />)
     expect(await screen.findByRole('alert')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
     expect(await screen.findByText('Evolução projetada')).toBeTruthy()
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/financial-dashboard'))).toHaveLength(2)
   })
 
   it('não mostra resposta obsoleta depois da troca rápida de família', async () => {

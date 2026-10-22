@@ -72,6 +72,8 @@ export interface FinancialCalendarBalanceRisk {
 }
 
 export interface FinancialCalendarBalanceResponse {
+  creditCardProjectionComplete?: boolean
+  debtProjectionComplete?: boolean
   from: string
   through: string
   accountId: string | null

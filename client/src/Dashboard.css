@@ -1,0 +1,22 @@
+.legend-dot--pending { background: var(--warning, #c99034); }
+.dashboard-commitments, .dashboard-card-details ul { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: .75rem; }
+.dashboard-commitments li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .25rem .75rem; padding: .75rem 0; border-bottom: 1px solid var(--border); }
+.dashboard-commitments li > span, .dashboard-commitments li > small { grid-column: 1; }
+.dashboard-commitments li button { grid-column: 2; grid-row: 1 / 4; align-self: center; }
+.dashboard-commitments li strong, .dashboard-card-details li { overflow-wrap: anywhere; }
+.dashboard-commitment--today { color: var(--warning, #c99034); }
+.dashboard-card-details { padding: 1rem 0; border-top: 1px solid var(--border); }
+.dashboard-card-details h6 { margin: 0; font-size: .9rem; }
+.dashboard-card-details li { padding: .8rem; background: var(--surface-muted); border-radius: .6rem; }
+.dashboard-card-details li p { font-size: .8rem; margin: .5rem 0 0; }
+.dashboard-daily { min-width: 0; margin: 1rem 0; }
+.dashboard-daily svg { max-width: 100%; }
+.dashboard-daily-values { list-style: none; padding: 0; max-height: 12rem; overflow-y: auto; font-size: .8rem; }
+.dashboard-daily-values li { padding: .4rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.dashboard-page .card, .dashboard-page .dashboard-projection-list li { overflow-wrap: anywhere; }
+@media (max-width: 40rem) {
+  .dashboard-commitments li { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-commitments li button { grid-column: 1; grid-row: auto; justify-self: start; }
+  .dashboard-page .dashboard-projection-list li { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-page .dashboard-projection-list li .meta { grid-column: 1; }
+}
