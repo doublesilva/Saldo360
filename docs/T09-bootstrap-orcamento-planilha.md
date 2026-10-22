@@ -1,6 +1,6 @@
 # T09 — Bootstrap do orçamento a partir da planilha
 
-22/10/2026 — **T09.3 em andamento: mapeamento aprovado; publicação, CI e execução ainda pendentes**.
+22/10/2026 — **T09 encerrada: publicação validada, bootstrap integral executado e idempotência comprovada**.
 
 As seções 1–8 preservam o diagnóstico anterior às extensões. O estado posterior, decisões autorizadas,
 alterações e limites da T09.1 estão nas seções 9–13. A T09.2 está nas seções 14–20. Não interpretar
@@ -580,4 +580,111 @@ direto obrigatório após o deploy e não autoriza sozinho a execução.
 
 Publicação em main, CI completa do SHA exato, deploy separado e execução única elegível foram
 autorizados expressamente na T09.3. Nenhuma importação automática foi adicionada ao deploy/API.
-Fonte fresca, leitura direta do destino, resultado do execute e validação posterior ainda pendentes.
+As etapas operacionais, pendentes nessa validação local, foram concluídas conforme seções 22–25.
+
+## 22. Publicação, CI e deploy T09.3
+
+Commit executável: `8a8c4b448d6b3bbdc2edad42c4877f63b7491966`, publicado em main, incluindo os
+commits anteriores T09.1 (`d9528a4`) e T09.2 (`816b121`) e a migration
+`20261022165204_AddBudgetBootstrapExtensions`. Nenhuma migration adicional foi criada na T09.3.
+
+[CI completa 39845758660](https://github.com/doublesilva/Saldo360/actions/runs/39845758660), do SHA exato:
+backend **923/923**, frontend **289/289 em 30 arquivos**, infraestrutura e `ci-success` verdes;
+builds e smoke das imagens aprovados. O primeiro disparo manual concorreu com o gatilho de push
+e foi cancelado; a execução completa acima substituiu ambos. A falha de foco do teste frontend na
+CI anterior da T09.2 não se reproduziu nesta execução; não houve refatoração da UI para contorná-la.
+
+[Deploy separado e assinado 39848735262](https://github.com/doublesilva/Saldo360/actions/runs/39848735262):
+sucesso no mesmo SHA, concluído em `2026-10-22T20:28:42Z`. Backup normal pré-migração registrado em
+`/srv/saldo360-deploy/backups/pre-deploy-20261022-172803-8a8c4b448d6b.dump`; não foi restaurado.
+A migration T09.1 foi aplicada: **43 migrations**, comprovadas depois por nova conexão read-only.
+API/web no SHA aprovado e PostgreSQL healthy; readiness também aprovada através do proxy web.
+O deploy não disparou carga e não habilitou automações.
+
+## 23. Fonte fresca e dry-run final direto
+
+Captura nativa somente leitura dos mesmos seis ranges, concluída em `2026-10-22T22:12:21.997Z`.
+SourceId, documento, locale/fuso, ranges e ModifiedAt (`2026-10-17T15:53:11.534Z`) permaneceram iguais.
+Hash lógico fresco, idêntico ao aprovado:
+`94332027a04f07feb9f14c729e59662c65f59ec08eefc4a07bd0df6009815c32`.
+Não houve edição da planilha, leitura de PDFs/Gmail ou restauração de dados antigos.
+
+Dry-run final **DirectDatabase**, em transação PostgreSQL RepeatableRead/ReadOnly, contra o destino
+persistente já migrado, não contra export antigo: **CanExecute=true, Created=216, AlreadyImported=0,
+Unmapped=67, Conflict=0, Invalid=0, WarningCount=0**. Todas as exclusões estavam explicitamente aprovadas.
+PlanHash: `a1ada0e128b5d299f5038625e179bbc1dcc0a546575e59d87cd76f4114f3c347`.
+ReportHash revisado: `493c9239e30957ec46f7a6a20db4b5d7343da8f51998f805aa17b505f450fceb`.
+
+Conferência independente pré-carga: um usuário, um Personal ativo no ID aprovado, owner persistido
+inalterado, zero famílias/membros/convites, 43 migrations; zero cadastros/fatos financeiros prévios,
+preservada a única auditoria do smoke vazio anterior. Nova captura após o preflight, em
+`2026-10-22T22:13:23.627Z`, reproduziu integralmente a anterior e foi usada no guard de fonte fresca.
+
+O snapshot privado permaneceu local. A CLI acessou diretamente o PostgreSQL por túnel SSH restrito
+a loopback; conexão obtida sem impressão/persistência de credenciais e removida do ambiente ao terminar.
+Nenhum snapshot completo da planilha foi enviado ao servidor; não houve helper remoto com sua fonte.
+Artefatos privados permanecem em `.artifacts/budget-bootstrap/`, excluídos de Git/contexto Docker.
+
+## 24. Execução integral e validação posterior
+
+**Um único `--execute` real**, no Personal `01a163b9-4b06-74f8-ac02-05bdc7cfb14e`, retornou
+`createdEntities=216`. O caminho existente refez preflight completo sob lock da raiz, construiu o grafo,
+salvou entidades e proveniência com um único SaveChanges e commit transacional. Não houve exceção,
+carga parcial ou segunda execução. As 216 proveniências têm o mesmo instante operacional
+`2026-10-22T22:13:41.610803Z` (19:13:41 em São Paulo).
+
+Contagens reais confirmadas por nova transação read-only e pelo dry-run pós-carga:
+
+| Aggregate | Criados/presentes |
+|---|---:|
+| Categorias de despesa | 10 |
+| Contas | 2 |
+| Cartões | 4 |
+| Recorrências bancárias / cartão | 11 / 6 |
+| Previsões específicas | 7 |
+| Compras (5 completas + 4 únicas) | 9 |
+| Parcelas normais / conhecidas | 22 / 89 |
+| Faturas naturais das compras aprovadas | 8 |
+| Metas mensais agregadas independentes | 48 |
+| Proveniências | 216 |
+
+A proveniência é adicional às 216 entidades de domínio, não um subconjunto sem journal.
+Conferências independentes aprovadas: Itaú PF **-13826,92 em 08/10/2026**, Empresas sem saldo inventado;
+quatro limites 10000/fechamento 5/vencimento 10; issuers `Itau` e `Bourbon`; dois ChargeDays aprovados 10.
+As comparações por entidade do dry-run validaram valores, descrições, calendários e referências persistidas
+contra o mesmo plano. Permanecem Solar 6, DMAE 11, carro 24, CEEE outubro 15 e IPTU 8.
+Kalunga conserva 111,78 + 111,76 + 111,76; a obrigação 7/10 conserva números 7–10 e 320,71 por parcela.
+As 89 obrigações conhecidas não receberam data/total original ou fatura inventados. Metas conservam
+12 competências × 4 tipos independentes; recuperação de outubro 1270,38, com bruto preservado na evidência.
+
+**Zero** transações bancárias, transferências, pagamentos/ajustes de faturas, materializações,
+budgets/targets por categoria, dívidas, objetivos, cenários/parâmetros, lotes de importação,
+documentos, checkpoints e bindings. As metas agregadas não foram duplicadas em FinancialBudget.
+Storage financeiro continua vazio; os cinco documentos antigos não foram restaurados.
+Uma única identidade/Personal ativo, owner inalterado, zero Family/FamilyMember/convites e zero FamilyId
+financeiro. Auditoria do reset vazio anterior continua uma; zero cleanup. Nenhum reset foi repetido.
+
+As 67 exclusões deliberadas permanecem: histórico repetido, movimentos absorvidos no saldo-base,
+exemplo Ignorar, plano de saúde inativo, controle remoto 33,90 e parâmetros conhecidos sem equivalência
+de fato financeiro. Painel/Resumo/totais não foram transformados em lançamentos; não há cartão 242,
+pagamento artificial ou fatura histórica de outubro. Nenhuma Family foi criada.
+
+## 25. Idempotência, flags e encerramento
+
+Novo dry-run **direto e somente leitura** após o commit: **Created=0, AlreadyImported=216,
+Unmapped=67, Conflict=0, Invalid=0, WarningCount=0, CanExecute=true**; zero novas proveniências planejadas.
+Esse caminho compara também conteúdo/estado/referências reais, não somente existência no journal.
+ReportHash: `e02d4248496f7e705970509e3e837f8f8fc288383ff44f2369ff3cb56949bf0b`.
+Não houve novo `--execute` para testar idempotência.
+
+Flags efetivas pós-carga: FinancialEmailImport global e seis perfis **false**, todos os destinos no Personal
+real; classificação e seu agente **false**; extração e seu agente **false**; reconciliação, confirmação e
+binding **false**. O hosted scheduler encerra antes de iniciar quando FinancialEmailImport.Enabled=false;
+não há coletor/agente habilitado. API/web/PostgreSQL permanecem healthy, inclusive readiness via proxy.
+Os **21 containers externos** presentes no baseline desta tarefa mantiveram IDs, estado, início e
+restart counts idênticos; não confundir essa captura atual com os 22 do relatório histórico da recriação.
+
+**T09 encerrada, critérios de aceite atendidos.** Nenhuma T09.4 foi aberta. O relatório final é publicação
+documental separada: não autoriza novo deploy, carga, reset, restauração, materialização ou habilitação
+de integrações. Os registros financeiros agora são dados iniciais ativos; a antiga autorização de
+descarte do ambiente não é instrução para repetir sua limpeza.
