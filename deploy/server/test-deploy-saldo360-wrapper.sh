@@ -5,7 +5,7 @@ readonly SOURCE_WRAPPER="${1:-deploy/server/deploy-saldo360-wrapper}"
 readonly DEPLOY_SCRIPT="$(dirname "$SOURCE_WRAPPER")/deploy-saldo360"
 # The isolated web image probe must work while the real API is absent/stopped.
 # Keep the override confined to the one-off candidate, never compose up/publication.
-grep -Fq 'compose run -d --no-deps --add-host api:127.0.0.1 --name saldo360-web-candidate web' "$DEPLOY_SCRIPT"
+grep -Fq 'docker run -d --network none --add-host api:127.0.0.1 --name saldo360-web-candidate "saldo360-web:$SHA"' "$DEPLOY_SCRIPT"
 if grep -E '^compose up .*--add-host' "$DEPLOY_SCRIPT"; then
   echo 'Published web must use the real API, not the smoke-only host override' >&2
   exit 1

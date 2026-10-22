@@ -116,7 +116,7 @@ docker rm -f saldo360-web-candidate >/dev/null 2>&1 || true
 # This probe checks only /web-health, like CI. Resolve nginx's upstream locally
 # without requiring an active API (first install / controlled maintenance).
 # The published web is NOT given this override and uses the real healthy api.
-compose run -d --no-deps --add-host api:127.0.0.1 --name saldo360-web-candidate web >/dev/null
+docker run -d --network none --add-host api:127.0.0.1 --name saldo360-web-candidate "saldo360-web:$SHA" >/dev/null
 if ! wait_healthy saldo360-web-candidate "web candidate"; then
   docker rm -f saldo360-web-candidate >/dev/null 2>&1 || true
   docker rm -f saldo360-api-candidate >/dev/null 2>&1 || true
