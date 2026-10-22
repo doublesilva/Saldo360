@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 const navigationGroups = [
   { label: 'Principal', items: [['overview', 'Visão Geral'], ['calendar', 'Agenda'], ['budgets', 'Orçamentos'], ['cards', 'Cartões'], ['transactions', 'Lançamentos'], ['planning', 'Planejamento']] },
   { label: 'Ferramentas', items: [['reports', 'Relatórios'], ['goals', 'Metas'], ['recurrences', 'Recorrências']] },
-  { label: 'Mais', items: [['settings', 'Configurações'], ['accounts', 'Contas'], ['categories', 'Categorias'], ['documents', 'Documentos'], ['debts', 'Dívidas'], ['transfers', 'Transferências'], ['planned', 'Previsões'], ['social', 'Família (social)']] },
+  { label: 'Mais', items: [['settings', 'Configurações'], ['accounts', 'Contas'], ['categories', 'Categorias'], ['documents', 'Documentos'], ['debts', 'Dívidas'], ['transfers', 'Transferências'], ['planned', 'Previsões']] },
 ] as const
 
 export function AppShell({ section, onNavigate, workspaceName, subtitle, controls, actions, userArea, children }: {

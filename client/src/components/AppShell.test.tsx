@@ -29,7 +29,7 @@ it('opens a collapsible menu, confines focus, closes on Escape and restores scro
   await waitFor(() => expect(document.activeElement).toBe(within(nav).getByRole('button', { name: /Visão Geral/ })))
   const close = screen.getByRole('button', { name: 'Fechar navegação' })
   close.focus(); fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
-  expect(document.activeElement).toBe(within(nav).getByRole('button', { name: /Família/ }))
+  expect(document.activeElement).toBe(within(nav).getByRole('button', { name: 'Previsões' }))
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
   await waitFor(() => expect(document.activeElement).toBe(trigger))

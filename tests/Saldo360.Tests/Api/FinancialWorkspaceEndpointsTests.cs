@@ -8,6 +8,34 @@ namespace Saldo360.Tests.Api;
 public sealed class FinancialWorkspaceEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]
+    public async Task ExistingFamilyAndPersonalData_SurviveLogoutAndRepeatedFirstAccess()
+    {
+        var session = await SignInAsync("returning-owner");
+        var family = await CreateFamilyAsync(session, "Existing social family");
+        var workspace = await CreateWorkspaceAsync(session);
+        var details = Saldo360.Domain.Accounts.AccountDetails.TryCreate("Existing account", "Synthetic", "Checking", "PF", null, 123.45m, new DateOnly(2026, 10, 1), out _)!;
+        var account = Saldo360.Domain.Accounts.FinancialAccount.Create(workspace.Id, details, workspace.OwnerUserId, DateTimeOffset.UtcNow);
+        using (var db = Db()) { db.FinancialAccounts.Add(account); await db.SaveChangesAsync(); }
+
+        Assert.Equal(HttpStatusCode.NoContent, (await SendWithCsrfAsync(HttpMethod.Post, "/auth/logout", session)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SendAsync(HttpMethod.Get, "/api/me", session)).StatusCode);
+        var nextSession = await SignInAsync("returning-owner");
+        Assert.Equal(workspace.Id, (await CreateWorkspaceAsync(nextSession)).Id);
+        Assert.Equal(workspace.Id, (await CreateWorkspaceAsync(nextSession)).Id);
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{workspace.Id}/financial-dashboard", nextSession)).StatusCode);
+
+        using var verify = Db();
+        var preserved = Assert.Single(await verify.FinancialAccounts.ToListAsync());
+        Assert.Equal(account.Id, preserved.Id); Assert.Equal(123.45m, preserved.OpeningBalance);
+        Assert.Equal(workspace.Id, preserved.WorkspaceId);
+        Assert.Equal(workspace.OwnerUserId, Assert.Single(await verify.FinancialWorkspaces.ToListAsync()).OwnerUserId);
+        Assert.Equal(family.Id, Assert.Single(await verify.Families.ToListAsync()).Id);
+        Assert.Single(await verify.FamilyMembers.ToListAsync());
+        Assert.Single(await verify.Users.ToListAsync());
+        Assert.Empty(await verify.FinancialTransactions.ToListAsync());
+    }
+
+    [Fact]
     public async Task TenConcurrentBootstraps_CreateExactlyOneEmptyPersonal_WithoutFamily()
     {
         var session = await SignInAsync("workspace-owner");

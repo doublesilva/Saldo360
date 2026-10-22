@@ -17,8 +17,7 @@ import { FinancialRecurrences } from './FinancialRecurrences'
 import { FinancialPlanning } from './FinancialPlanning'
 import { FinancialDebts } from './FinancialDebts'
 import { FinancialGoals } from './FinancialGoals'
-import { Families } from './Families'
-import { FinancialReset } from './FinancialReset'
+import { WorkspaceSettings } from './WorkspaceSettings'
 import { retryResetCleanup, type ResetResult } from '../api/financialReset'
 
 export function PersonalFinance({ userArea }: { userArea?: ReactNode }) {
@@ -52,7 +51,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
   const budgets = (value: string) => { setCompetence(value); setSection('budgets') }
   const workspaceId = workspace.id
   return <AppShell section={section} onNavigate={setSection} workspaceName={workspace.name} userArea={userArea} subtitle={section === 'overview' ? 'Seu mês em perspectiva, com os dados do seu orçamento.' : 'Seu orçamento pessoal, sem compartilhar dados com a família.'} controls={section === 'overview' ? <DashboardFilters {...filters} /> : undefined}>
-    {section === 'settings' && <FinancialReset workspaceId={workspaceId} onReset={onReset} />}
+    {section === 'settings' && <WorkspaceSettings workspaceId={workspaceId} onReset={onReset} />}
     {section === 'overview' && <FinancialDashboard workspaceId={workspaceId} refreshKey={version} onNavigate={setSection} filters={filters} embedded />}
     {section === 'calendar' && <FinancialCalendarPage key={month} workspaceId={workspaceId} initialMonth={month} onChanged={changed} onNavigateToBudgets={budgets} />}
     {section === 'budgets' && <FinancialBudgetsPage key={competence} workspaceId={workspaceId} initialCompetence={competence} refreshKey={version} onNavigateToAgenda={agenda} />}
@@ -67,6 +66,5 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     {section === 'transactions' && <Transactions workspaceId={workspaceId} onChanged={changed} refreshKey={version} />}
     {section === 'transfers' && <Transfers workspaceId={workspaceId} onChanged={changed} />}
     {section === 'planned' && <Planned workspaceId={workspaceId} onChanged={changed} refreshKey={version} />}
-    {section === 'social' && <><p className="notice">Vínculos familiares não compartilham seu orçamento pessoal.</p><Families /></>}
   </AppShell>
 }
