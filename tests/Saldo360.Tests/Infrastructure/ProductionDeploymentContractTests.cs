@@ -17,9 +17,29 @@ public sealed class ProductionDeploymentContractTests
     public void CollectorDestinationRequiresExplicitWorkspaceWithoutFamilyFallback()
     {
         var compose = File.ReadAllText(Path.Combine(RepositoryRoot, "docker-compose.production.yml"));
-        Assert.Equal(6, Count(compose, "FINANCIAL_WORKSPACE_ID:?"));
+        var collectors = File.ReadAllText(Path.Combine(RepositoryRoot, "docker-compose.collectors.yml"));
+        var deploy = File.ReadAllText(Path.Combine(RepositoryRoot, "deploy", "server", "deploy-saldo360"));
+        Assert.DoesNotContain("FinancialEmailImport__Sources__", compose, StringComparison.Ordinal);
+        Assert.Equal(6, Count(collectors, "FINANCIAL_WORKSPACE_ID:?"));
+        Assert.Equal(7, Count(collectors, "__Enabled: \"false\"")); // six profiles + scheduler
+        Assert.DoesNotContain("__Enabled: \"true\"", collectors, StringComparison.Ordinal);
+        Assert.DoesNotContain("__FamilyId:", collectors, StringComparison.Ordinal);
+        Assert.DoesNotContain("FINANCIAL_WORKSPACE_ID:-", collectors, StringComparison.Ordinal);
         Assert.DoesNotContain("__FamilyId:", compose, StringComparison.Ordinal);
         Assert.DoesNotContain("FINANCIAL_WORKSPACE_ID:-", compose, StringComparison.Ordinal);
+        Assert.Contains("if [ -n \"$workspace_id\" ]; then", deploy, StringComparison.Ordinal);
+        Assert.Contains("docker-compose.collectors.yml", deploy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CutoverPlanIsOptionalForCleanInstallation_NotAnUnconditionalDeployGate()
+    {
+        var compose = File.ReadAllText(Path.Combine(RepositoryRoot, "docker-compose.production.yml"));
+        var deploy = File.ReadAllText(Path.Combine(RepositoryRoot, "deploy", "server", "deploy-saldo360"));
+        Assert.DoesNotContain("FINANCIAL_WORKSPACE_CUTOVER_PLAN:?", compose, StringComparison.Ordinal);
+        Assert.Contains("FINANCIAL_WORKSPACE_CUTOVER_PLAN: ${FINANCIAL_WORKSPACE_CUTOVER_PLAN:-}", compose, StringComparison.Ordinal);
+        Assert.Contains("if [ -n \"$${FINANCIAL_WORKSPACE_CUTOVER_PLAN:-}\" ]; then", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("FINANCIAL_WORKSPACE_CUTOVER_PLAN ausente", deploy, StringComparison.Ordinal);
     }
 
     [Fact]
