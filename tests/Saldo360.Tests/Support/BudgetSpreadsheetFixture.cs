@@ -55,12 +55,6 @@ internal static class BudgetSpreadsheetFixture
 
     public static SpreadsheetSnapshot ExecutableSyntheticSource()
     {
-        var s = Source();
-        foreach (var row in s.Sheet("Lançamentos").Rows.Skip(1))
-        {
-            if (row[7].Text is "Credicard" or "Zaffari/Mercado") row[10] = Cell(row[10].Text + "; Emissor confirmado: Synthetic issuer;");
-            if (row[11].Text is "REC-003" or "REC-ZAF-001") row[0] = Cell(row[1].Value.GetInt32());
-        }
-        return s;
+        return Source();
     }
 }

@@ -44,10 +44,13 @@ public sealed class BudgetSpreadsheetMapperTests
         var s = BudgetSpreadsheetFixture.Source(); var rows = s.Sheet("Lançamentos").Rows; rows[2][11] = rows[1][11];
         Assert.Contains(Map(s).Items, i => i.Reason == "DuplicateSourceId" && i.Status == BootstrapDisposition.Invalid);
     }
-    [Fact] public void RequiredIssuer_IsNotInferredFromBrandOrOtherCards()
+    [Fact] public void RequiredIssuer_UsesExplicitOwnerApproval_NotBrandInference()
     {
         var cards = Map().Items.Where(i => i.EntityType == SpreadsheetEntity.Card).ToArray(); Assert.Equal(4, cards.Length);
-        Assert.Equal(2, cards.Count(i => i.Reason == "MissingIssuerEvidence"));
+        Assert.Equal("Itau", cards.Single(i => i.Payload.Name == "Credicard").Payload.Institution);
+        Assert.Equal("Bourbon", cards.Single(i => i.Payload.Name == "Zaffari/Mercado").Payload.Institution);
+        Assert.All(cards, i => Assert.Equal(BootstrapDisposition.Created, i.Status));
+        Assert.All(cards.Where(i => i.Payload.Name is "Credicard" or "Zaffari/Mercado"), i => Assert.Contains("OwnerApproval:T09.3", i.MetadataJson));
         Assert.DoesNotContain(cards, i => i.Payload.Name == "242");
     }
     [Fact] public void Recurrences_AreDistinctAccountOrCardDefinitions_NotBankTransactions()
@@ -57,7 +60,15 @@ public sealed class BudgetSpreadsheetMapperTests
         Assert.All(items.Where(i => i.EntityType == SpreadsheetEntity.CardRecurrence), i => { Assert.Null(i.Payload.Account); Assert.NotNull(i.Payload.Card); });
         Assert.All(items.Where(i => i.EntityType == SpreadsheetEntity.AccountRecurrence), i => { Assert.NotNull(i.Payload.Account); Assert.Null(i.Payload.Card); });
         Assert.Equal(7, items.Count(i => i.EntityType == SpreadsheetEntity.PlannedTransaction));
-        Assert.Equal(2, items.Count(i => i.Reason.StartsWith("MissingChargeDate")));
+        Assert.DoesNotContain(items, i => i.Reason.StartsWith("MissingChargeDate"));
+        foreach (var id in new[] { "REC-003", "REC-ZAF-001" })
+        {
+            var recurrence = items.Single(i => i.ExternalReference == id + ":recurrence");
+            Assert.Equal(10, recurrence.Payload.Day);
+            Assert.Equal(recurrence.Payload.Competence!.Value.AddMonths(-1).AddDays(9), recurrence.Payload.Date);
+            Assert.Contains("OwnerApproval:T09.3", recurrence.MetadataJson);
+            Assert.Null(recurrence.Warnings);
+        }
     }
     [Fact] public void ChargeDate_DoesNotEqualInvoiceCompetencePlaceholder()
     {
@@ -129,9 +140,28 @@ public sealed class BudgetSpreadsheetMapperTests
     }
     [Fact] public void DomainGraph_DoesNotTurnInvalidCardIntoValidDependentRows()
     {
-        var plan = Map(); var graph = SpreadsheetDomainGraph.Build(plan, Guid.NewGuid(), BudgetSpreadsheetFixture.ReadAt);
+        var source = BudgetSpreadsheetFixture.Source();
+        var row = source.Sheet("Lançamentos").Rows.Single(r => r.Length > 11 && r[7].Text == "Credicard");
+        row[10] = BudgetSpreadsheetFixture.Cell(row[10].Text + "; Emissor confirmado: Divergent issuer;");
+        var plan = Map(source); var graph = SpreadsheetDomainGraph.Build(plan, Guid.NewGuid(), BudgetSpreadsheetFixture.ReadAt);
         Assert.Contains(graph.Items, i => i.EntityType == SpreadsheetEntity.KnownInstallment && i.Payload.Card == "CARD:Credicard" && i.Status == BootstrapDisposition.Invalid);
         Assert.DoesNotContain(graph.Entities.Values, e => e is Saldo360.Domain.Transactions.FinancialTransaction);
+    }
+    [Fact] public void ProvisionalFields_AreWarningsWithDurableMetadata_NotInventedSourceEvidence()
+    {
+        var source = BudgetSpreadsheetFixture.Source();
+        foreach (var row in source.Sheet("Lançamentos").Rows.Skip(1))
+            if (row[7].Text == "Black") row[10] = BudgetSpreadsheetFixture.Cell(row[10].Text.Replace("PDF Itaú", "").Replace("27/09", ""));
+        var plan = new BudgetSpreadsheetMapper(12).Map(Guid.NewGuid(), source);
+        var card = plan.Items.Single(i => i.ExternalReference == "CARD:Black");
+        Assert.Equal("Não informado", card.Payload.Institution);
+        Assert.Contains("\"issuerProvisional\":true", card.MetadataJson);
+        Assert.Single(card.Warnings!); Assert.Equal(BootstrapDisposition.Created, card.Status);
+        var recurrence = plan.Items.Single(i => i.ExternalReference == "REC-002:recurrence");
+        Assert.Equal(12, recurrence.Payload.Day); Assert.Single(recurrence.Warnings!);
+        Assert.Equal(BootstrapDisposition.Created, recurrence.Status);
+        Assert.Contains("\"chargeDayProvisional\":true", recurrence.MetadataJson);
+        Assert.Equal(10, plan.Items.Single(i => i.ExternalReference == "REC-003:recurrence").Payload.Day);
     }
     [Fact] public void SourceCategoryCase_IsCanonicalized_WithoutDuplicateCategoryEntities()
     {

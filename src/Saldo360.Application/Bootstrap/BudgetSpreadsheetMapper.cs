@@ -7,7 +7,7 @@ using Saldo360.Domain.CreditCards;
 namespace Saldo360.Application.Bootstrap;
 
 /// <summary>T09.2 source adapter, not another financial engine. Defaults/exclusions are approved decisions.</summary>
-public sealed class BudgetSpreadsheetMapper
+public sealed class BudgetSpreadsheetMapper(int provisionalChargeDay = 10)
 {
     private readonly List<SpreadsheetPlanItem> items = [];
     private static readonly string[] Categories = ["Alimentação", "Assinaturas", "Financiamento", "Moradia", "Operação PJ", "Outros", "Saúde", "Serviços", "Tributos", "Variáveis"];
@@ -29,6 +29,7 @@ public sealed class BudgetSpreadsheetMapper
     public SpreadsheetImportPlan Map(Guid workspaceId, SpreadsheetSnapshot snapshot)
     {
         items.Clear();
+        if (provisionalChargeDay is < 1 or > 28) throw new ArgumentOutOfRangeException(nameof(provisionalChargeDay));
         if (workspaceId == Guid.Empty) throw new ArgumentException("ExplicitWorkspaceRequired");
         var launches = Rows(snapshot, "Lançamentos");
         var fixedRows = Rows(snapshot, "Despesas Fixas");
@@ -49,13 +50,21 @@ public sealed class BudgetSpreadsheetMapper
             {
                 "Black" when launches.Any(r => r.T(7) == card && r.T(10).Contains("PDF Itaú", StringComparison.Ordinal)) => "Itaú",
                 "Nubank" when launches.Any(r => r.T(7) == card) => "Nubank",
+                "Credicard" => "Itau",
+                "Zaffari/Mercado" => "Bourbon",
                 _ => null
             };
             var ambiguous = explicitIssuers.Length > 1 || explicitIssuers.Length == 1 && issuer is not null && !issuer.Equals(explicitIssuers[0], StringComparison.OrdinalIgnoreCase);
             issuer ??= explicitIssuers.Length == 1 ? explicitIssuers[0] : null;
+            var provisional = issuer is null;
+            var approved = card is "Credicard" or "Zaffari/Mercado";
+            issuer ??= "Não informado";
             Add(CardRef(card), SpreadsheetEntity.Card, new(card, 10000m, Institution: issuer, Day: 5, Number: 10),
-                "T09.2 §6 / 'Lançamentos'!H1:H100", status: issuer is null || ambiguous ? BootstrapDisposition.Invalid : BootstrapDisposition.Created,
-                reason: ambiguous ? "AmbiguousIssuerEvidence" : issuer is null ? "MissingIssuerEvidence" : "ApprovedCalendarAndLimit;IssuerSourceEvidence");
+                "T09.2 §6 / 'Lançamentos'!H1:H100",
+                JsonSerializer.Serialize(new { issuer, issuerProvisional = provisional, issuerOrigin = approved ? "OwnerApproval:T09.3" : provisional ? "AdministrativePlaceholder" : "SourceEvidence" }),
+                status: ambiguous ? BootstrapDisposition.Invalid : BootstrapDisposition.Created,
+                reason: ambiguous ? "AmbiguousIssuerEvidence" : provisional ? "ProvisionalIssuer" : approved ? "OwnerApprovedIssuer:T09.3" : "ApprovedCalendarAndLimit;IssuerSourceEvidence",
+                warnings: provisional ? ["ProvisionalIssuer:NeedsCorrection"] : null);
         }
         foreach (var r in fixedRows) Safe(r, () => MapFixed(r));
         foreach (var r in launches.Where(r => r.T(12) != "Parcelado")) Safe(r, () => MapLaunch(r));
@@ -131,13 +140,27 @@ public sealed class BudgetSpreadsheetMapper
             if (r.T(0).Length > 0) charge = r.C(0).Date();
             else if (evidence is not null && r.T(10).Contains(evidence, StringComparison.Ordinal) && competence.Year == 2026 && competence.Month == 10)
                 charge = DateOnly.ParseExact(evidence + "/2026", "dd/MM/yyyy", CultureInfo.InvariantCulture);
+            var approved = r.Id is "REC-003" or "REC-ZAF-001";
+            var provisional = charge is null && !approved;
+            var scheduledDay = approved ? 10 : provisionalChargeDay;
+            if (charge is null)
+            {
+                // A recurrence start is an administrative schedule, not an invented historical purchase.
+                // Find the charge month that actually produces the source invoice competence.
+                charge = Enumerable.Range(-2, 4).Select(offset => Day(competence.AddMonths(offset), scheduledDay))
+                    .Single(d => CreditCardInvoiceCalendarCalculator.ForInstallment(d, 1, 5, 10).Competence == competence.ToString("yyyy-MM"));
+            }
             var valid = charge.HasValue && CreditCardInvoiceCalendarCalculator.ForInstallment(charge.Value, 1, 5, 10).Competence == competence.ToString("yyyy-MM");
+            if (approved && charge?.Day != 10) valid = false;
             Add(r.Id + ":recurrence", SpreadsheetEntity.CardRecurrence,
                 new(r.T(5), Money(r.C(8)), charge, Card: card, Category: category, Day: charge?.Day, Competence: competence,
                     IsEstimated: IsEstimated(r.T(10))), r.Location,
-                JsonSerializer.Serialize(new { chargeDateEvidence = evidence, expectedInvoiceCompetence = competence }),
+                JsonSerializer.Serialize(new { chargeDateEvidence = evidence, expectedInvoiceCompetence = competence,
+                    chargeDayProvisional = provisional, chargeOrigin = approved ? "OwnerApproval:T09.3" : provisional ? "AdministrativeDefault" : "SourceEvidence",
+                    scheduleOnly = approved || provisional }),
                 valid ? BootstrapDisposition.Created : BootstrapDisposition.Invalid,
-                charge is null ? "MissingChargeDate:CannotValidateInvoiceCompetence" : valid ? "ObservedChargeDate;CalendarValidated" : "InvoiceCompetenceMismatch");
+                valid ? approved ? "OwnerApprovedChargeDay:T09.3;CalendarValidated" : provisional ? "ProvisionalChargeDay;CalendarValidated" : "ObservedChargeDate;CalendarValidated" : "InvoiceCompetenceMismatch",
+                warnings: provisional ? ["ProvisionalChargeDay:NeedsCorrection"] : null);
         }
         else if (Singles.Contains(r.Id))
         {
@@ -255,7 +278,7 @@ public sealed class BudgetSpreadsheetMapper
     private static string CardRef(string name) => "CARD:" + (name switch { "Black" => "Black", "Nubank" or "Nu Empresas" => "Nubank", "Credicard" => "Credicard", "Zaffari/Mercado" or "Zaffari" => "Zaffari/Mercado", _ => throw new FormatException("UnknownCard") });
     private static string GroupId(string id) => id switch { "PAR-NU-004-OUT" or "PAR-NU-004-FUT" => "PAR-NU-004", "PAR-BL-022-01" or "PAR-BL-022-02" => "PAR-BL-022", _ => id };
     private void Add(string id, SpreadsheetEntity kind, SpreadsheetPayload payload, string location, string? metadata = null,
-        BootstrapDisposition status = BootstrapDisposition.Created, string reason = "CreatePlanned") => items.Add(new(id, kind, payload, location, metadata, status, reason));
+        BootstrapDisposition status = BootstrapDisposition.Created, string reason = "CreatePlanned", string[]? warnings = null) => items.Add(new(id, kind, payload, location, metadata, status, reason, Warnings: warnings));
     private void Exclude(string id, string name, string reason, string location, SpreadsheetEntity kind = SpreadsheetEntity.Exclusion)
         => items.Add(new(id, kind, new(name), location, Status: BootstrapDisposition.Unmapped, Reason: reason, ExcludedByApprovedDecision: true));
     private void Issue(string id, string reason, string location) => Add(id, SpreadsheetEntity.Validation, new("Preflight"), location, status: BootstrapDisposition.Invalid, reason: reason);

@@ -13,7 +13,7 @@ public sealed record SpreadsheetPayload(string Name, decimal? Amount = null, Dat
 public sealed record SpreadsheetPlanItem(string ExternalReference, SpreadsheetEntity EntityType,
     SpreadsheetPayload Payload, string SourceLocation, string? MetadataJson = null,
     BootstrapDisposition Status = BootstrapDisposition.Created, string Reason = "CreatePlanned",
-    bool ExcludedByApprovedDecision = false)
+    bool ExcludedByApprovedDecision = false, string[]? Warnings = null)
 {
     public bool IsEntity => EntityType is not (SpreadsheetEntity.Exclusion or SpreadsheetEntity.Parameter or SpreadsheetEntity.Validation);
     public string ContentHash => BootstrapContentFingerprint.Compute(EntityType.ToString(), new { Payload, MetadataJson });
@@ -24,7 +24,7 @@ public sealed record SpreadsheetPlanItem(string ExternalReference, SpreadsheetEn
 public sealed record SpreadsheetImportPlan(Guid WorkspaceId, string SourceHash, DateTimeOffset SourceReadAtUtc,
     IReadOnlyList<SpreadsheetPlanItem> Items)
 {
-    public string PlanHash => SpreadsheetSnapshot.Hash(new { WorkspaceId, SourceHash, MapperVersion = 1,
+    public string PlanHash => SpreadsheetSnapshot.Hash(new { WorkspaceId, SourceHash, MapperVersion = 2,
         Items = Items.Select(i => new { i.ExternalReference, i.EntityType, i.ContentHash, i.SourceLocation, i.Status, i.Reason, i.ExcludedByApprovedDecision }) });
 }
 public sealed record SpreadsheetDryRunResult(Guid WorkspaceId, Guid? OwnerUserId, string SourceHash, string PlanHash,
@@ -33,6 +33,7 @@ public sealed record SpreadsheetDryRunResult(Guid WorkspaceId, Guid? OwnerUserId
     string DestinationMode = "DirectDatabase", string? DestinationSnapshotHash = null)
 {
     public bool ZeroWrite => true;
+    public int WarningCount => Items.Sum(i => i.Warnings?.Length ?? 0);
     public bool CanExecute => DatabaseReadOnly && PermitsExecution(Items);
     public static bool PermitsExecution(IEnumerable<SpreadsheetPlanItem> items) => items.All(i => i.Status is BootstrapDisposition.Created or BootstrapDisposition.AlreadyImported
         || i.Status == BootstrapDisposition.Unmapped && i.ExcludedByApprovedDecision);

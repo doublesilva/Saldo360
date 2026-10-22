@@ -42,7 +42,7 @@ public sealed class BudgetSpreadsheetImporterTests(PostgresFixture postgres)
         await using (var db = PostgresFixture.CreateDbContext(c, guard))
         {
             var report = await new BudgetSpreadsheetImporter(db, TimeProvider.System).DryRunAsync(w, BudgetSpreadsheetFixture.Source());
-            Assert.Equal(owner, report.OwnerUserId); Assert.True(report.DatabaseReadOnly); Assert.False(report.CanExecute);
+            Assert.Equal(owner, report.OwnerUserId); Assert.True(report.DatabaseReadOnly); Assert.True(report.CanExecute);
             Assert.All(report.DestinationCounts.Where(x => x.Key != "__migrations"), p => Assert.Equal(0, p.Value));
             Assert.Empty(db.ChangeTracker.Entries());
             Assert.Contains(guard.Commands, s => s == "SET TRANSACTION READ ONLY");
@@ -105,6 +105,7 @@ public sealed class BudgetSpreadsheetImporterTests(PostgresFixture postgres)
     [Fact] public async Task InvalidPreflightAndSourceChanges_RejectBeforeFirstWrite()
     {
         var (c, w, _) = await Setup(); var s = BudgetSpreadsheetFixture.Source(); SpreadsheetDryRunResult report;
+        s.Sheet("Metas Mensais").Rows[1][1] = BudgetSpreadsheetFixture.Cell(-1m);
         await using (var db = PostgresFixture.CreateDbContext(c)) report = await new BudgetSpreadsheetImporter(db, TimeProvider.System).DryRunAsync(w, s);
         await using (var db = PostgresFixture.CreateDbContext(c))
             await Assert.ThrowsAsync<InvalidOperationException>(() => new BudgetSpreadsheetImporter(db, TimeProvider.System).ExecuteApprovedAsync(w, s, s with { ReadAtUtc = DateTimeOffset.UtcNow }, report, report.ReportHash));

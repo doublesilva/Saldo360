@@ -1,6 +1,6 @@
 # T09 — Bootstrap do orçamento a partir da planilha
 
-22/10/2026 — **T09.2: importador e dry-run integral implementados; CanExecute=false; importação não executada**.
+22/10/2026 — **T09.3 em andamento: mapeamento aprovado; publicação, CI e execução ainda pendentes**.
 
 As seções 1–8 preservam o diagnóstico anterior às extensões. O estado posterior, decisões autorizadas,
 alterações e limites da T09.1 estão nas seções 9–13. A T09.2 está nas seções 14–20. Não interpretar
@@ -551,3 +551,33 @@ schema ausente não é vazio; owner/inativo/Shared/destino não vazio bloqueiam.
 **Parar na apresentação do dry-run.** Resolver os quatro dados de cartão, revisar/aprovar a implantação
 T09.1 separadamente e produzir novo dry-run executável para autorização explícita. Este relatório,
 com CanExecute=false, **não autoriza `--execute`**.
+
+## 21. T09.3 — decisões aprovadas e validação local
+
+A autorização T09.3 substitui a parada anterior somente após CI/deploy e preflight atual elegíveis.
+O responsável aprovou issuer `Itau` para Credicard, `Bourbon` para Zaffari/Mercado e ChargeDay 10
+para Claude + IOF e manutenção Zaffari/Bourbon. A evidência dessas quatro decisões é administrativa
+(`OwnerApproval:T09.3`), não uma alteração nem confirmação contida na planilha.
+Com fechamento 5/vencimento 10, a agenda mensal no dia 10 inicia no mês anterior à competência
+da fatura esperada; a recorrência não representa uma compra histórica já realizada.
+
+Ausência futura de issuer admite `Não informado`, com metadata `issuerProvisional=true` e Warning.
+Ausência de dia observado admite default administrativo 10 (configurável no adaptador, 1–28),
+com `chargeDayProvisional=true`, Warning e validação do calendário/competência. As quatro decisões
+definitivas não usam placeholders. Valores, referências, evidência contraditória, ownership
+e provenance divergentes continuam bloqueantes; os guards estruturais não foram relaxados.
+
+Build Release aprovado sem warnings/erros e 35/35 testes dirigidos aprovados, sem ignorados,
+em PostgreSQL 17 descartável. Não houve carga local persistente.
+Dry-run local do mesmo snapshot aprovado, SourceHash
+`94332027a04f07feb9f14c729e59662c65f59ec08eefc4a07bd0df6009815c32`:
+216 Created planejados, 67 exclusões aprovadas, zero Conflict e um único Invalid:
+`T09.1MigrationNotApplied`, proveniente do snapshot antigo do destino. Nenhum MissingIssuerEvidence,
+MissingChargeDate ou Invalid dependente de Credicard. Contagens: 10 categorias, 2 contas, 4 cartões,
+11 recorrências bancárias, 6 de cartão, 7 previsões, 9 compras, 22 parcelas normais, 8 faturas naturais,
+89 parcelas conhecidas e 48 metas agregadas; 216 proveniências. Esse ensaio não substitui o dry-run
+direto obrigatório após o deploy e não autoriza sozinho a execução.
+
+Publicação em main, CI completa do SHA exato, deploy separado e execução única elegível foram
+autorizados expressamente na T09.3. Nenhuma importação automática foi adicionada ao deploy/API.
+Fonte fresca, leitura direta do destino, resultado do execute e validação posterior ainda pendentes.
