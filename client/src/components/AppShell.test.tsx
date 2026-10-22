@@ -14,6 +14,7 @@ it('keeps primary navigation ordered and marks the current section, preserving u
   expect(screen.getByRole('button', { name: 'Sair' })).toBeTruthy()
   expect(screen.getByLabelText('Competência')).toBeTruthy()
   expect(screen.getByText('Conteúdo atual')).toBeTruthy()
+  expect(screen.getByText('Conteúdo atual').closest('#finance-content')?.classList.contains('internal-page')).toBe(true)
   fireEvent.click(within(nav).getByRole('button', { name: /Lançamentos/ }))
   expect(navigate).toHaveBeenCalledWith('transactions')
   expect((within(nav).getByRole('button', { name: /Relatórios/ }) as HTMLButtonElement).disabled).toBe(true)
@@ -22,6 +23,7 @@ it('keeps primary navigation ordered and marks the current section, preserving u
 it('opens a collapsible menu, confines focus, closes on Escape and restores scrolling and trigger focus', async () => {
   render(<AppShell section="overview" onNavigate={vi.fn()} workspaceName="Personal"><p>Conteúdo</p></AppShell>)
   const trigger = screen.getByRole('button', { name: 'Abrir menu lateral' })
+  expect(screen.getByText('Conteúdo').closest('#finance-content')?.classList.contains('internal-page')).toBe(false)
   fireEvent.click(trigger)
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   expect(document.body.style.overflow).toBe('hidden')

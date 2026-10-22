@@ -1,0 +1,75 @@
+/* Shared presentation only: financial states and amounts remain owned by each module. */
+.internal-page {
+  --page-gap: 1rem;
+  --page-radius: .75rem;
+  --page-padding: clamp(.85rem, 2vw, 1.5rem);
+  overflow-wrap: anywhere;
+}
+
+.internal-page > * { min-width: 0; }
+.internal-page :where(h2, h3, h4, h5) { line-height: 1.3; letter-spacing: -.02em; }
+.internal-page :where(.accounts__header, .budgets__header, .calendar-header, .credit-cards__heading, .credit-card-details__heading, .section-heading, .budgets__section-header, .budget-heading) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--page-gap);
+  margin-bottom: var(--page-gap);
+}
+.internal-page :where(.accounts__header, .budgets__header, .credit-cards__heading) > :where(h2, h3) { margin: 0; }
+.internal-page :where(.account, .transaction, .budget-target, .budget-empty, .invoice-details, .credit-card-form, .inline-form, .dialog, .planning-toolbar, .transaction-filters, .calendar-filters) {
+  border: 1px solid var(--border);
+  border-radius: var(--page-radius);
+  padding: var(--page-padding);
+  background: var(--surface);
+  min-width: 0;
+}
+.internal-page :where(.account-list, .transaction-list) { display: grid; gap: var(--page-gap); padding: 0; list-style: none; }
+.internal-page :where(.form, .credit-card-form, .budget-target-form, .planning-page form) { gap: .85rem; }
+.internal-page :where(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  min-height: 2.75rem;
+  max-width: 100%;
+  min-width: 0;
+  padding: .55rem .75rem;
+}
+.internal-page textarea { width: 100%; min-height: 6rem; resize: vertical; }
+.internal-page :where(input, select, textarea)[aria-invalid='true'] { border-color: var(--fail); }
+.internal-page :where(fieldset, label, .form-row, .planning-toolbar > *, .credit-card-details) { min-width: 0; }
+.internal-page fieldset { margin-inline: 0; }
+.internal-page legend { color: var(--muted); padding-inline: .4rem; }
+.internal-page :where(.form__actions, .budget-target__actions, .month-navigation, .pagination, .form-row) { display: flex; flex-wrap: wrap; gap: .5rem; }
+.internal-page button { min-height: 2.75rem; white-space: normal; }
+.internal-page button:hover:not(:disabled) { border-color: var(--accent); }
+.internal-page .button--primary { background: var(--accent); color: var(--on-accent); }
+.internal-page :where(.danger, .button--danger) { color: var(--fail); }
+.internal-page :where(button, a, input, select, textarea, summary):focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.internal-page :where(.planning-table-wrap, .planning-comparison, .balance-table-wrap) { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.internal-page table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.internal-page :where(th, td) { padding: .75rem; border-bottom: 1px solid var(--border); text-align: start; }
+.internal-page th { color: var(--muted); background: var(--surface-muted); }
+.internal-page :where(.amount, .account__details dd, .invoice-totals strong) { font-variant-numeric: tabular-nums; }
+.internal-page .amount--income { color: var(--ok); }
+.internal-page :where(.amount--negative, .status--down, .field-error) { color: var(--fail); }
+.internal-page .amount--transfer { color: var(--accent); }
+.internal-page :where(.badge, .budget-badge) { display: inline-block; border-radius: .4rem; padding: .2rem .5rem; line-height: 1.5; }
+.internal-page :where(.operational-feedback, .notice) { padding: 1rem; border: 1px solid var(--border); border-radius: var(--page-radius); background: var(--surface); }
+.internal-page .operational-feedback--error { border-inline-start: 3px solid var(--fail); }
+.internal-page .operational-feedback--loading { border-inline-start: 3px solid var(--accent); }
+.internal-page :where(.operational-feedback--empty, .empty-state) { color: var(--muted); border: 1px dashed var(--border); border-radius: var(--page-radius); padding: var(--page-padding); }
+.internal-page .notice { border-inline-start: 3px solid var(--accent); }
+.internal-page .dialog { border: 2px solid var(--warning); background: var(--surface-muted); }
+
+@media (max-width: 48rem) {
+  .internal-page :where(.accounts__header, .budgets__header, .credit-cards__heading, .credit-card-details__heading, .section-heading, .planning-toolbar) { align-items: stretch; }
+  .internal-page :where(.transaction__main, .account__title, .budget-target__header, .invoice-card, .purchase-row, .payment-row, .projection-row) { flex-wrap: wrap; min-width: 0; }
+  .internal-page .credit-cards__layout { grid-template-columns: minmax(0, 1fr); }
+  .internal-page :where(.transaction-filters, .calendar-filters, .inline-form) { grid-template-columns: minmax(0, 1fr); }
+  .internal-page .planning-toolbar :is(input, select), .internal-page .planning-page :is(input, select, textarea) { min-width: 0; width: 100%; }
+  .internal-page :where(.form__actions, .budget-target__actions) > button { flex: 1 1 9rem; }
+  .internal-page .credit-cards__tabs { flex-wrap: wrap; }
+}

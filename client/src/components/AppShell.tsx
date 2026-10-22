@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import '../InternalPages.css'
 
 const navigationGroups = [
   { label: 'Principal', items: [['overview', 'Visão Geral'], ['calendar', 'Agenda'], ['budgets', 'Orçamentos'], ['cards', 'Cartões'], ['transactions', 'Lançamentos'], ['planning', 'Planejamento']] },
@@ -54,7 +55,7 @@ export function AppShell({ section, onNavigate, workspaceName, subtitle, control
     </aside>
     <div className="app-shell__main" inert={open}>
       <header className="app-topbar"><div className="app-topbar__title"><button ref={toggle} className="app-menu-toggle" type="button" aria-label="Abrir menu lateral" aria-controls="finance-sidebar" aria-expanded={open} onClick={() => setOpen(true)}>☰</button><div><h1 ref={heading} tabIndex={-1}>{title}</h1>{subtitle && <p>{subtitle}</p>}</div></div><div className="app-topbar__user">{actions && <div className="app-topbar__actions">{actions}</div>}{userArea}</div><div className="app-topbar__controls">{controls}</div></header>
-      <div id="finance-content" tabIndex={-1} className="app-content">{children}</div>
+      <div id="finance-content" tabIndex={-1} className={section === 'overview' ? 'app-content' : 'app-content internal-page'}>{children}</div>
     </div>
   </div>
 }
