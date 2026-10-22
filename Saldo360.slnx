@@ -4,6 +4,7 @@
     <Project Path="src/Saldo360.Application/Saldo360.Application.csproj" />
     <Project Path="src/Saldo360.Domain/Saldo360.Domain.csproj" />
     <Project Path="src/Saldo360.Infrastructure/Saldo360.Infrastructure.csproj" />
+    <Project Path="src/Saldo360.DocumentCutover/Saldo360.DocumentCutover.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Saldo360.Tests/Saldo360.Tests.csproj" />
