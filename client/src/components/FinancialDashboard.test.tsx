@@ -22,6 +22,27 @@ describe('FinancialDashboard', () => {
   beforeEach(() => { vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(dashboard))) })
   afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
+  it('shows four top indicators from the response and a month composition with no invented balance', async () => {
+    const { container } = render(<FinancialDashboard workspaceId="personal" />)
+    await screen.findByRole('heading', { name: 'Resumo do mês' })
+    expect(container.querySelectorAll('.dashboard-summary > article')).toHaveLength(4)
+    expect(screen.getByText('Receitas do mês · realizadas')).toBeTruthy()
+    expect(screen.getByText('Despesas do mês · realizadas')).toBeTruthy()
+    expect(screen.getByText('Fechamento projetado · 2026-10')).toBeTruthy()
+    expect(screen.getByRole('img', { name: /Composição/ })).toBeTruthy()
+  })
+
+  it('keeps unavailable balances and partial coverage explicit in the top indicators', async () => {
+    vi.mocked(fetch).mockResolvedValue(Response.json({ ...dashboard, position: { ...dashboard.position, realizedBalance: null }, indicators: { ...dashboard.indicators, projectedBalance: null }, coverage: { ...dashboard.coverage, complete: false } }))
+    const { container } = render(<FinancialDashboard workspaceId="personal" />)
+    await screen.findByRole('heading', { name: 'Resumo do mês' })
+    const metrics = container.querySelectorAll('.dashboard-summary > article')
+    expect(metrics[0].textContent).toContain('Indisponível')
+    expect(metrics[3].textContent).toContain('Indisponível')
+    expect(metrics[3].textContent).toContain('Cobertura parcial')
+    expect(metrics[3].textContent).not.toContain('0,00')
+  })
+
   it('exibe o resumo, projeção, alertas e mantém valores monetários formatados', async () => {
     const onNavigate = vi.fn()
     render(<FinancialDashboard workspaceId="family-1" onNavigate={onNavigate} />)

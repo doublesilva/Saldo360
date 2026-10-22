@@ -7,6 +7,7 @@ import { UserMenu } from './components/UserMenu'
 import { INVITE_PATH } from './invite'
 import { useSession } from './session'
 import './App.css'
+import './AppShell.css'
 
 type State =
   | { kind: 'loading' }
@@ -56,16 +57,17 @@ function App() {
   const params = new URLSearchParams(window.location.search)
   const loginFailed = params.get('login') === 'failed'
   const failureRef = params.get('ref')
+  const financialArea = session.state.kind === 'authenticated' && !onInvitePage
 
   return (
-    <main className="page">
-      <header className="page-header">
+    <main className={`page${financialArea ? ' page--authenticated' : ''}`}>
+      {!financialArea && <header className="page-header">
         <div>
           <h1>Saldo360</h1>
           <p className="subtitle">Orçamento pessoal</p>
         </div>
         <UserMenu session={session} />
-      </header>
+      </header>}
 
       {loginFailed && (
         <p className="notice notice--error" role="alert">
@@ -78,11 +80,11 @@ function App() {
         <InvitePage session={session} onAccepted={handleInvitationAccepted} />
       ) : (
         session.state.kind === 'authenticated' && (
-          <PersonalFinance key={`${session.state.user.issuer}|${session.state.user.subject}`} />
+          <PersonalFinance key={`${session.state.user.issuer}|${session.state.user.subject}`} userArea={<UserMenu session={session} />} />
         )
       )}
 
-      <section className="card" aria-live="polite">
+      <section className="card api-health" aria-live="polite">
         <h2>Conexão com a API</h2>
 
         {state.kind === 'loading' && <p className="status status--pending">Verificando…</p>}

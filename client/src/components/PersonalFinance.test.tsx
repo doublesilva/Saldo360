@@ -5,6 +5,34 @@ import { PersonalFinance } from './PersonalFinance'
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('Personal finance shell', () => {
+  it('keeps the user area available when bootstrap fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input) === '/auth/csrf' ? Response.json({ token: 'csrf' }) : new Response('{}', { status: 503 })))
+    render(<PersonalFinance userArea={<button>Sair</button>} />)
+    await screen.findByRole('alert')
+    expect(screen.getByRole('button', { name: 'Sair' })).toBeTruthy()
+  })
+
+  it('moves dashboard filters to the page header and preserves them across module navigation', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input); calls.push(url)
+      if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
+      if (url === '/api/me/financial-workspace') return Response.json({ id: 'personal-a', ownerUserId: 'a', name: 'Personal', type: 'Personal', isActive: true })
+      return new Response('{}', { status: 503 })
+    }))
+    render(<PersonalFinance />)
+    const competence = await screen.findByLabelText('Competência do dashboard')
+    expect(competence.closest('header')).not.toBeNull()
+    fireEvent.change(competence, { target: { value: '2026-11' } })
+    fireEvent.change(screen.getByLabelText('Horizonte da projeção'), { target: { value: '12' } })
+    await waitFor(() => expect(calls.some(url => url.includes('competence=2026-11') && url.includes('months=12'))).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Configurações' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Visão Geral' }))
+    expect((await screen.findByLabelText('Competência do dashboard') as HTMLInputElement).value).toBe('2026-11')
+    expect((screen.getByLabelText('Horizonte da projeção') as HTMLSelectElement).value).toBe('12')
+    expect(screen.getAllByLabelText('Competência do dashboard')).toHaveLength(1)
+  })
+
   it('opens the personal workspace without consulting a family and keeps social UI separate', async () => {
     const calls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
