@@ -46,6 +46,8 @@ internal static class FinancialResetFixture
         var materialization = FinancialRecurrenceMaterialization.Create(w, recurrence.Id, 1, date, recurring.Id, now);
         var budget = FinancialBudget.Create(w, date, null, u, now);
         var target = FinancialBudgetTarget.Create(w, budget.Id, "Target", 100m, category.Id, u, now);
+        var aggregateTarget = FinancialMonthlyAggregateTarget.Create(w, date, MonthlyAggregateTargetType.TotalExpenses, 100m, now);
+        var provenance = Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance.Create(w, "SyntheticFixture", "Synthetic", "aggregate-target", new string('e', 64), nameof(FinancialMonthlyAggregateTarget), aggregateTarget.Id, null, now);
         var card = FinancialCreditCard.Create(w, new("Card", "Issuer", "1234", u, 1000m, 10, 20, account.Id), u, now);
         var invoice = FinancialCreditCardInvoice.Create(w, card.Id, "2026-10", date, date.AddDays(9), date.AddDays(19), now);
         var purchase = FinancialCreditCardPurchase.Create(w, card.Id, category.Id, "Purchase", date, 100m, 1, u, now);
@@ -73,7 +75,7 @@ internal static class FinancialResetFixture
         var service = ServiceAccount.Create(u, ServiceType.Electricity, "Synthetic", "Service", now);
         var identifier = ServiceAccountIdentifier.Create(service, ServiceIdentifierType.UtilityCustomerNumber, [1,2,3], new string('d',64), "***0000", now);
         db.AddRange(account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, transfer,
-            recurrence, materialization, budget, target, card, invoice, purchase, cardTx, payment, adjustment, batch,
+            recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, cardTx, payment, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
             scenario, parameter, document, binding, checkpoint, service, identifier);
         await db.SaveChangesAsync();

@@ -12,7 +12,7 @@ internal sealed class ServiceBillRecurringCandidateRepository(Saldo360DbContext 
     {
         var start = DateOnly.ParseExact(competence + "-01", "yyyy-MM-dd"); var through = start.AddMonths(1).AddDays(-1);
         return await (from materialization in db.FinancialRecurrenceMaterializations.AsNoTracking()
-            join planned in db.FinancialPlannedTransactions.AsNoTracking() on new { materialization.WorkspaceId, Id = materialization.PlannedTransactionId } equals new { planned.WorkspaceId, planned.Id }
+            join planned in db.FinancialPlannedTransactions.AsNoTracking() on new { materialization.WorkspaceId, Id = materialization.PlannedTransactionId!.Value } equals new { planned.WorkspaceId, planned.Id }
             join recurrence in db.FinancialRecurrences.AsNoTracking() on new { materialization.WorkspaceId, Id = materialization.RecurrenceId } equals new { recurrence.WorkspaceId, recurrence.Id }
             join category in db.FinancialCategories.AsNoTracking() on new { planned.WorkspaceId, Id = planned.CategoryId } equals new { category.WorkspaceId, category.Id }
             where materialization.WorkspaceId == workspaceId && planned.Type == CategoryType.Expense && !planned.IsCancelled

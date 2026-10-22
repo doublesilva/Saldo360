@@ -12,7 +12,8 @@ public sealed class FinancialRecurrence : Entity
     private FinancialRecurrence() { Description = string.Empty; Currency = "BRL"; }
 
     public Guid WorkspaceId { get; private init; }
-    public Guid FinancialAccountId { get; private set; }
+    public Guid? FinancialAccountId { get; private set; }
+    public Guid? FinancialCreditCardId { get; private set; }
     public Guid FinancialCategoryId { get; private set; }
     public CategoryType Type { get; private set; }
     public string Description { get; private set; }
@@ -45,7 +46,12 @@ public sealed class FinancialRecurrence : Entity
 
     private FinancialRecurrence Apply(RecurrenceDetails d)
     {
+        if (d.AccountId.HasValue == d.CreditCardId.HasValue || d.AccountId == Guid.Empty || d.CreditCardId == Guid.Empty)
+            throw new ArgumentException("Informe exatamente um destino: conta ou cartão.");
+        if (d.CreditCardId.HasValue && d.Type != CategoryType.Expense)
+            throw new ArgumentException("Recorrência de cartão deve ser despesa.");
         FinancialAccountId = d.AccountId; FinancialCategoryId = d.CategoryId; Type = d.Type; Description = d.Description;
+        FinancialCreditCardId = d.CreditCardId;
         Amount = d.Amount; IsEstimated = d.IsEstimated; Frequency = d.Frequency; Interval = d.Interval;
         StartDate = d.StartDate; EndDate = d.EndDate; OccurrenceCount = d.OccurrenceCount;
         DayOfMonth = d.Frequency == RecurrenceFrequency.Weekly ? d.StartDate.Day : d.DayOfMonth ?? d.StartDate.Day;
@@ -53,5 +59,5 @@ public sealed class FinancialRecurrence : Entity
     }
 }
 
-public sealed record RecurrenceDetails(Guid AccountId, Guid CategoryId, CategoryType Type, string Description, decimal Amount,
-    bool IsEstimated, RecurrenceFrequency Frequency, int Interval, DateOnly StartDate, DateOnly? EndDate, int? OccurrenceCount, int? DayOfMonth);
+public sealed record RecurrenceDetails(Guid? AccountId, Guid CategoryId, CategoryType Type, string Description, decimal Amount,
+    bool IsEstimated, RecurrenceFrequency Frequency, int Interval, DateOnly StartDate, DateOnly? EndDate, int? OccurrenceCount, int? DayOfMonth, Guid? CreditCardId = null);

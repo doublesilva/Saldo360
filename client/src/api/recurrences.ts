@@ -6,15 +6,15 @@ export type RecurrenceStatus = 'Active' | 'Paused' | 'Ended' | 'Archived'
 export type PlannedStatus = 'Pending' | 'Realized' | 'Cancelled'
 
 export interface FinancialRecurrence {
-  id: string; workspaceId: string; accountId: string; categoryId: string; type: RecurrenceType; description: string
+  id: string; workspaceId: string; accountId: string | null; creditCardId?: string | null; categoryId: string; type: RecurrenceType; description: string
   amount: string; isEstimated: boolean; frequency: RecurrenceFrequency; interval: number; startDate: string
   endDate: string | null; occurrenceCount: number | null; dayOfMonth: number; status: RecurrenceStatus
   currency: string; createdAt: string; updatedAt: string; archivedAt: string | null
 }
-export interface RecurrenceOccurrence { recurrenceId: string; sequence: number; date: string; amount: string; description: string; type: RecurrenceType; isEstimated: boolean; accountId: string; categoryId: string }
-export interface RecurrenceMaterialization { occurrenceNumber: number; scheduledDate: string; plannedTransactionId: string | null; plannedDate: string | null; amount: string | null; status: PlannedStatus | null }
-export interface MaterializationResult { recurrenceId: string; createdCount: number; existingCount: number; items: Array<{ occurrenceNumber: number; scheduledDate: string; plannedTransactionId: string | null; plannedDate: string | null; amount: string | null; status: PlannedStatus | null; result: string }> }
-export interface RecurrenceInput { accountId: string; categoryId: string; type: RecurrenceType; description: string; amount: string; isEstimated: boolean; frequency: RecurrenceFrequency; interval: number; startDate: string; endDate: string | null; occurrenceCount: number | null; dayOfMonth: number | null }
+export interface RecurrenceOccurrence { recurrenceId: string; sequence: number; date: string; amount: string; description: string; type: RecurrenceType; isEstimated: boolean; accountId: string | null; creditCardId?: string | null; categoryId: string }
+export interface RecurrenceMaterialization { occurrenceNumber: number; scheduledDate: string; plannedTransactionId: string | null; creditCardPurchaseId?: string | null; plannedDate: string | null; amount: string | null; status: PlannedStatus | null }
+export interface MaterializationResult { recurrenceId: string; createdCount: number; existingCount: number; items: Array<{ occurrenceNumber: number; scheduledDate: string; plannedTransactionId: string | null; creditCardPurchaseId?: string | null; plannedDate: string | null; amount: string | null; status: PlannedStatus | null; result: string }> }
+export interface RecurrenceInput { accountId: string | null; creditCardId?: string | null; categoryId: string; type: RecurrenceType; description: string; amount: string; isEstimated: boolean; frequency: RecurrenceFrequency; interval: number; startDate: string; endDate: string | null; occurrenceCount: number | null; dayOfMonth: number | null }
 
 const headers = { Accept: 'application/json' }
 const base = (workspaceId: string, id?: string) => `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/recurrences${id ? `/${encodeURIComponent(id)}` : ''}`

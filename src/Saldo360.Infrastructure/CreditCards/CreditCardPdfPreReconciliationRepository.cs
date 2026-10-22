@@ -49,11 +49,11 @@ internal sealed class CreditCardPdfPreReconciliationRepository(Saldo360DbContext
             .ToListAsync(cancellationToken);
 
         var historicalOperations = await db.FinancialCreditCardImportedInstallments.AsNoTracking()
-            .Where(item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId)
-            .Join(db.FinancialCreditCardInvoices.AsNoTracking(), item => new { item.WorkspaceId, Id = item.InvoiceId }, invoiceRow => new { invoiceRow.WorkspaceId, invoiceRow.Id },
+            .Where(item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.TransactionDate != null)
+            .Join(db.FinancialCreditCardInvoices.AsNoTracking(), item => new { item.WorkspaceId, Id = item.InvoiceId!.Value }, invoiceRow => new { invoiceRow.WorkspaceId, invoiceRow.Id },
                 (item, invoiceRow) => new CreditCardPdfExistingOperation(
                     item.IsHistorical ? "HistoricalInstallment" : "ImportedInstallmentLink",
-                    item.Id, item.ExternalId, item.TransactionDate, item.Description, item.Amount,
+                    item.Id, item.ExternalId, item.TransactionDate!.Value, item.Description, item.Amount,
                     item.InstallmentNumber, item.InstallmentCount, invoiceRow.Competence))
             .ToListAsync(cancellationToken);
 

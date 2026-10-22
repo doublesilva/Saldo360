@@ -17,7 +17,7 @@ public static class FinancialRecurrenceCalendar
             var date = DateAt(recurrence, index);
             if (date > through || recurrence.EndDate is { } end && date > end || recurrence.OccurrenceCount is { } count && index >= count) break;
             sequence = index + 1;
-            if (date >= from) result.Add(new(recurrence.Id, sequence, date, recurrence.Description, recurrence.Type, recurrence.Amount, recurrence.IsEstimated, recurrence.FinancialAccountId, recurrence.FinancialCategoryId));
+            if (date >= from) result.Add(new(recurrence.Id, sequence, date, recurrence.Description, recurrence.Type, recurrence.Amount, recurrence.IsEstimated, recurrence.FinancialAccountId, recurrence.FinancialCategoryId, recurrence.FinancialCreditCardId));
         }
         return result;
     }

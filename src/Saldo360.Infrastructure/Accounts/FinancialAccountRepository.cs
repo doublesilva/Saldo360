@@ -140,6 +140,14 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         var paidByInvoice = paid.ToDictionary(item => item.Id, item => item.Amount);
         var outstanding = obligations.Where(item => item.DefaultPaymentAccountId == accountId).Sum(item => Math.Max(0m, item.Total - paidByInvoice.GetValueOrDefault(item.Id)));
         var unallocated = obligations.Any(item => item.DefaultPaymentAccountId is null || !familyAccounts.Contains(item.DefaultPaymentAccountId.Value));
+        var known = await (from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
+                           join card in db.FinancialCreditCards.AsNoTracking() on new { item.WorkspaceId, item.CreditCardId } equals new { card.WorkspaceId, CreditCardId = card.Id }
+                           where item.WorkspaceId == workspaceId && item.InvoiceId == null && item.IsHistorical
+                               && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
+                               && (item.DueDate == null || item.DueDate <= through)
+                           select new { item.Amount, item.DueDate, card.DefaultPaymentAccountId }).ToListAsync(cancellationToken);
+        outstanding += known.Where(x => x.DefaultPaymentAccountId == accountId && x.DueDate != null).Sum(x => x.Amount);
+        unallocated |= known.Any(x => x.DueDate == null || x.DefaultPaymentAccountId == null || !familyAccounts.Contains(x.DefaultPaymentAccountId.Value));
         return new CreditCardProjectionTotals(outstanding, unallocated);
     }
 

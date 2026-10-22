@@ -3,10 +3,11 @@ using Saldo360.Application.Transactions;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
 using Saldo360.Domain.Recurrences;
+using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Application.Recurrences;
 
-public sealed class FinancialRecurrenceService(IFinancialWorkspaceRepository workspaces, IFinancialRecurrenceRepository repository, IFinancialRecurrenceMaterializationRepository materializations, IReferenceLookup references, TimeProvider time)
+public sealed class FinancialRecurrenceService(IFinancialWorkspaceRepository workspaces, IFinancialRecurrenceRepository repository, IFinancialRecurrenceMaterializationRepository materializations, IReferenceLookup references, TimeProvider time, IFinancialCreditCardPurchaseRepository cards)
 {
     public async Task<RecurrenceOperationResult> CreateAsync(Guid workspaceId, Guid userId, RecurrenceInput input, CancellationToken ct)
     {
@@ -25,7 +26,7 @@ public sealed class FinancialRecurrenceService(IFinancialWorkspaceRepository wor
         if (!await IsParticipant(workspaceId,userId,ct)) return new(RecurrenceAccess.NotFound,null,null);
         var entity = await repository.FindEntityAsync(workspaceId,id,ct); if (entity is null) return new(RecurrenceAccess.NotFound,null,null);
         var (details, errors) = await Validate(workspaceId,input,ct); if (details is null) return new(RecurrenceAccess.Invalid,null,errors);
-        if (await repository.HasMaterializationsAsync(workspaceId, id, ct) && await ChangesCalendarAsync(entity, details)) return new(RecurrenceAccess.Conflict,null,null,"A definição de calendário não pode ser alterada depois da materialização de ocorrências.");
+        if (await repository.HasMaterializationsAsync(workspaceId, id, ct) && (await ChangesCalendarAsync(entity, details) || entity.FinancialCreditCardId != details.CreditCardId)) return new(RecurrenceAccess.Conflict,null,null,"A definição de calendário não pode ser alterada depois da materialização de ocorrências.");
         try { entity.Update(details,time.GetUtcNow()); await repository.SaveAsync(ct); return new(RecurrenceAccess.Allowed,await repository.GetAsync(workspaceId,id,ct),null); }
         catch (InvalidOperationException e) { return new(RecurrenceAccess.Conflict,null,null,e.Message); }
     }
@@ -36,9 +37,11 @@ public sealed class FinancialRecurrenceService(IFinancialWorkspaceRepository wor
         if (from > through) return (null,new Dictionary<string,string[]> { ["period"]=["from deve ser anterior ou igual a through."] },false,null);
         var entity=await repository.FindEntityAsync(workspaceId,id,ct); if(entity is null)return(null,null,true,null);
         if(entity.Status is RecurrenceStatus.Paused or RecurrenceStatus.Ended or RecurrenceStatus.Archived)return(null,null,false,"A recorrência não está ativa para novas materializações.");
-        var account = await references.GetAccountStateAsync(workspaceId, entity.FinancialAccountId, ct);
+        var account = entity.FinancialAccountId is { } accountId ? await references.GetAccountStateAsync(workspaceId, accountId, ct) : null;
         var category = await references.GetCategoryStateAsync(workspaceId, entity.FinancialCategoryId, ct);
-        if (account is null || !account.IsActive) return (null,new Dictionary<string,string[]> { ["accountId"]=["A conta da recorrência está inválida ou inativa."] },false,null);
+        if (entity.FinancialAccountId.HasValue && (account is null || !account.IsActive)) return (null,new Dictionary<string,string[]> { ["accountId"]=["A conta da recorrência está inválida ou inativa."] },false,null);
+        if (entity.FinancialCreditCardId is { } cardId && !await cards.IsActiveCardAsync(workspaceId, cardId, ct))
+            return (null,new Dictionary<string,string[]> { ["creditCardId"]=["Cartão inválido ou inativo."] },false,null);
         if (category is null || !category.IsActive || category.Type != entity.Type) return (null,new Dictionary<string,string[]> { ["categoryId"]=["A categoria da recorrência está inválida, incompatível ou inativa."] },false,null);
         IReadOnlyList<RecurrenceOccurrenceDto> occurrences;
         try { occurrences=FinancialRecurrenceCalendar.CalculateOccurrences(entity,from.Value,through.Value); }
@@ -77,9 +80,12 @@ public sealed class FinancialRecurrenceService(IFinancialWorkspaceRepository wor
     private async Task<(RecurrenceDetails?, Dictionary<string,string[]>)> Validate(Guid workspaceId, RecurrenceInput input, CancellationToken ct)
     {
         var errors=new Dictionary<string,string[]>(); var description=input.Description?.Trim()??string.Empty;
-        if(input.AccountId is null || input.AccountId==Guid.Empty) errors["accountId"]=["Informe a conta."];
+        if(input.AccountId.HasValue == input.CreditCardId.HasValue || input.AccountId == Guid.Empty || input.CreditCardId == Guid.Empty)
+            errors["destination"]=["Informe exatamente um destino: conta ou cartão."];
+        if(input.CreditCardId is { } card && !await cards.IsActiveCardAsync(workspaceId, card, ct)) errors["creditCardId"]=["Cartão inválido ou inativo."];
         if(input.CategoryId is null || input.CategoryId==Guid.Empty) errors["categoryId"]=["Informe a categoria."];
         if(!CategoryTypes.TryParse(input.Type,out var type)) errors["type"]=["Tipo inválido. Use Income ou Expense."];
+        if(input.CreditCardId.HasValue && type != CategoryType.Expense) errors["type"]=["Recorrência de cartão deve ser despesa."];
         if(description.Length==0) errors["description"]=["Informe a descrição."]; else if(description.Length>FinancialRecurrence.DescriptionMaxLength) errors["description"]=["A descrição excede o limite."];
         if(input.Amount is null || input.Amount<=0) errors["amount"]=["O valor deve ser maior que zero."]; else if(Money.Validate(input.Amount.Value,"O valor") is { } amountError) errors["amount"]=[amountError];
         if(!Enum.TryParse<RecurrenceFrequency>(input.Frequency,true,out var frequency)) errors["frequency"]=["Frequência inválida. Use Weekly, Monthly ou Yearly."];
@@ -91,6 +97,6 @@ public sealed class FinancialRecurrenceService(IFinancialWorkspaceRepository wor
         if(input.DayOfMonth is < 1 or > 31) errors["dayOfMonth"]=["O dia deve estar entre 1 e 31."];
         if(input.AccountId is { } account && !errors.ContainsKey("accountId")) { var s=await references.GetAccountStateAsync(workspaceId,account,ct); if(s is null) errors["accountId"]=["Conta inválida."]; else if(!s.IsActive) errors["accountId"]=["A conta está inativa. Escolha uma conta ativa."]; }
         if(input.CategoryId is { } category && !errors.ContainsKey("categoryId")) { var s=await references.GetCategoryStateAsync(workspaceId,category,ct); if(s is null) errors["categoryId"]=["Categoria inválida."]; else if(s.Type!=type) errors["categoryId"]=["A categoria não é compatível com o tipo."]; else if(!s.IsActive) errors["categoryId"]=["A categoria está inativa. Escolha uma categoria ativa."]; }
-        return errors.Count==0 ? (new RecurrenceDetails(input.AccountId!.Value,input.CategoryId!.Value,type,description,input.Amount!.Value,input.IsEstimated,frequency,input.Interval!.Value,input.StartDate!.Value,input.EndDate,input.OccurrenceCount,input.DayOfMonth),errors) : (null,errors);
+        return errors.Count==0 ? (new RecurrenceDetails(input.AccountId,input.CategoryId!.Value,type,description,input.Amount!.Value,input.IsEstimated,frequency,input.Interval!.Value,input.StartDate!.Value,input.EndDate,input.OccurrenceCount,input.DayOfMonth,input.CreditCardId),errors) : (null,errors);
     }
 }

@@ -77,7 +77,7 @@ internal sealed class FinancialCreditCardImportedInstallmentRepository(Saldo360D
         var record = await db.FinancialCreditCardImportedInstallments.SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.Id == id && item.Status == FinancialCreditCardImportedInstallmentStatus.Active, cancellationToken);
         if (record is null || !record.IsHistorical) return false;
         var paid = await db.FinancialCreditCardInvoicePayments.Where(item => item.WorkspaceId == workspaceId && item.InvoiceId == record.InvoiceId && item.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
-        var total = await InvoiceTotalAsync(workspaceId, record.InvoiceId, cancellationToken);
+        var total = record.InvoiceId is { } invoiceId ? await InvoiceTotalAsync(workspaceId, invoiceId, cancellationToken) : record.Amount;
         if (paid > total - record.Amount) return false;
         record.Cancel(userId, now); await db.SaveChangesAsync(cancellationToken); return true;
     }
@@ -89,7 +89,7 @@ internal sealed class FinancialCreditCardImportedInstallmentRepository(Saldo360D
     private Task<decimal> InvoiceTotalAsync(Guid workspaceId, Guid invoiceId, CancellationToken cancellationToken) => FinancialCreditCardInvoiceTotals.TotalAsync(db, workspaceId, invoiceId, cancellationToken);
     private static ImportedInstallmentOperationResult Invalid(string field, string message) => new(ImportedInstallmentAccess.Invalid, null, null, new Dictionary<string, string[]> { [field] = [message] });
     private static ImportedInstallmentOperationResult SameOrConflict(FinancialCreditCardImportedInstallment existing, ImportedInstallmentInput input) =>
-        existing.TransactionDate.ToString("yyyy-MM-dd") == input.TransactionDate
+        existing.TransactionDate?.ToString("yyyy-MM-dd") == input.TransactionDate
         && existing.Amount == decimal.Parse(input.Amount, System.Globalization.CultureInfo.InvariantCulture)
         && existing.Description == input.Description
         && existing.InstallmentNumber == input.InstallmentNumber
@@ -100,5 +100,5 @@ internal sealed class FinancialCreditCardImportedInstallmentRepository(Saldo360D
         && (input.InstallmentId is null || existing.LinkedInstallmentId == input.InstallmentId)
             ? new(ImportedInstallmentAccess.Allowed, ToDto(existing), null, null)
             : new(ImportedInstallmentAccess.Conflict, null, null, null, "A mesma operação e linha foram enviadas com conteúdo diferente.");
-    private static ImportedInstallmentRecordDto ToDto(FinancialCreditCardImportedInstallment item) => new(item.Id, item.ImportId, item.RowNumber, item.InvoiceId, item.LinkedInstallmentId, item.TransactionDate.ToString("yyyy-MM-dd"), item.Description, item.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), item.InstallmentNumber, item.InstallmentCount, item.ExternalId, item.CategoryId?.ToString(), item.IsHistorical, item.Status.ToString(), item.CreatedAt.ToString("O"), item.CancelledAt?.ToString("O"));
+    private static ImportedInstallmentRecordDto ToDto(FinancialCreditCardImportedInstallment item) => new(item.Id, item.ImportId, item.RowNumber, item.InvoiceId, item.LinkedInstallmentId, item.TransactionDate.HasValue ? item.TransactionDate.Value.ToString("yyyy-MM-dd") : null, item.Description, item.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), item.InstallmentNumber, item.InstallmentCount, item.ExternalId, item.CategoryId?.ToString(), item.IsHistorical, item.Status.ToString(), item.CreatedAt.ToString("O"), item.CancelledAt?.ToString("O"), item.Competence.HasValue ? item.Competence.Value.ToString("yyyy-MM") : null, item.DueDate.HasValue ? item.DueDate.Value.ToString("yyyy-MM-dd") : null, item.SourceSystem, item.ExternalReference);
 }

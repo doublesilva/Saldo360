@@ -27,21 +27,22 @@ public sealed record ImportedInstallmentInput(
 
 public sealed record ImportedInstallmentRecordDto(
     Guid Id,
-    Guid ImportId,
-    int RowNumber,
-    Guid InvoiceId,
+    Guid? ImportId,
+    int? RowNumber,
+    Guid? InvoiceId,
     Guid? LinkedInstallmentId,
-    string TransactionDate,
+    string? TransactionDate,
     string Description,
     string Amount,
-    int InstallmentNumber,
-    int InstallmentCount,
+    int? InstallmentNumber,
+    int? InstallmentCount,
     string? ExternalId,
     string? CategoryId,
     bool IsHistorical,
     string Status,
     string CreatedAt,
-    string? CancelledAt);
+    string? CancelledAt,
+    string? Competence = null, string? DueDate = null, string? SourceSystem = null, string? ExternalReference = null);
 
 public enum ImportedInstallmentAccess { Allowed, NotFound, Invalid, Conflict }
 

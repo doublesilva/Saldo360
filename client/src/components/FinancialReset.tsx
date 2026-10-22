@@ -4,6 +4,7 @@ import { previewFinancialReset, resetFinancialWorkspace, retryResetCleanup, type
 const labels: Record<string, string> = {
   accounts: 'Contas', categories: 'Categorias', transactions: 'Lançamentos', transfers: 'Transferências',
   plannedTransactions: 'Previsões', recurrences: 'Recorrências', recurrenceMaterializations: 'Materializações',
+  monthlyAggregateTargets: 'Metas mensais agregadas', bootstrapProvenance: 'Proveniência da carga inicial',
   budgets: 'Orçamentos mensais', budgetTargets: 'Metas por categoria', creditCards: 'Cartões',
   creditCardPurchases: 'Compras no cartão', creditCardInstallments: 'Parcelas do cartão', creditCardInvoices: 'Faturas',
   creditCardInvoicePayments: 'Pagamentos de faturas', creditCardInvoiceAdjustments: 'Ajustes de faturas',

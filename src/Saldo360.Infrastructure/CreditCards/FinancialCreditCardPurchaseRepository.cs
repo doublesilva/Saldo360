@@ -97,7 +97,7 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
                           where installment.InvoiceId != null && ids.Contains(installment.InvoiceId.Value) && installment.WorkspaceId == purchase.WorkspaceId && installment.Status == CreditCardInstallmentStatus.Active && purchase.Status == CreditCardPurchaseStatus.Active
                           select new { installment.InvoiceId, installment.Id, installment.PurchaseId, purchase.Description, purchase.InstallmentCount, installment.InstallmentNumber, installment.Amount, installment.Status }).ToListAsync(cancellationToken);
         var historicalRows = await db.FinancialCreditCardImportedInstallments.AsNoTracking()
-            .Where(item => ids.Contains(item.InvoiceId) && item.IsHistorical && item.Status == FinancialCreditCardImportedInstallmentStatus.Active)
+            .Where(item => item.InvoiceId != null && ids.Contains(item.InvoiceId.Value) && item.IsHistorical && item.Status == FinancialCreditCardImportedInstallmentStatus.Active)
             .Select(item => new { item.InvoiceId, item.Id, item.Description, item.InstallmentCount, item.InstallmentNumber, item.Amount })
             .ToListAsync(cancellationToken);
         var adjustments = await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()

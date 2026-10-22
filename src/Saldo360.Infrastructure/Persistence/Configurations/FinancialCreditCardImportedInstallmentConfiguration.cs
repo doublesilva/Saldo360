@@ -15,7 +15,10 @@ internal sealed class FinancialCreditCardImportedInstallmentConfiguration : IEnt
         {
             table.HasCheckConstraint("ck_imported_installments_amount_positive", "amount > 0");
             table.HasCheckConstraint("ck_imported_installments_amount_scale", "scale(amount) <= 2");
-            table.HasCheckConstraint("ck_imported_installments_number", "installment_number >= 1 AND installment_number <= installment_count");
+            table.HasCheckConstraint("ck_imported_installments_number", "(installment_number IS NULL OR installment_number >= 1) AND (installment_count IS NULL OR installment_count >= 1) AND (installment_number IS NULL OR installment_count IS NULL OR installment_number <= installment_count)");
+            table.HasCheckConstraint("ck_imported_installments_known", "invoice_id IS NOT NULL OR (is_historical AND competence IS NOT NULL AND source_system IS NOT NULL AND external_reference IS NOT NULL)");
+            table.HasCheckConstraint("ck_imported_installments_legacy_fields", "source_system IS NOT NULL OR (transaction_date IS NOT NULL AND installment_number IS NOT NULL AND installment_count IS NOT NULL AND import_id IS NOT NULL AND row_number IS NOT NULL)");
+            table.HasCheckConstraint("ck_imported_installments_competence", "competence IS NULL OR EXTRACT(DAY FROM competence) = 1");
             table.HasCheckConstraint("ck_imported_installments_status", "status IN ('Active', 'Cancelled')");
             table.HasCheckConstraint("ck_imported_installments_mode", "(is_historical = true AND linked_installment_id IS NULL) OR (is_historical = false AND linked_installment_id IS NOT NULL)");
         });
@@ -23,6 +26,10 @@ internal sealed class FinancialCreditCardImportedInstallmentConfiguration : IEnt
         builder.Property(item => item.Description).HasMaxLength(200).IsRequired(); builder.Property(item => item.ExternalId).HasMaxLength(200);
         builder.Property(item => item.Amount).HasColumnType("numeric"); builder.Property(item => item.TransactionDate).HasColumnType("date");
         builder.Property(item => item.Status).HasConversion<string>().HasMaxLength(20);
+        builder.Property(item => item.SourceSystem).HasMaxLength(80);
+        builder.Property(item => item.ExternalReference).HasMaxLength(200);
+        builder.Property(item => item.Competence).HasColumnType("date");
+        builder.Property(item => item.DueDate).HasColumnType("date");
         builder.HasIndex(item => new { item.WorkspaceId, item.CreditCardId, item.ImportId, item.RowNumber }).IsUnique();
         builder.HasIndex(item => new { item.WorkspaceId, item.CreditCardId, item.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL AND status = 'Active'");
         builder.HasIndex(item => new { item.WorkspaceId, item.LinkedInstallmentId }).IsUnique().HasFilter("linked_installment_id IS NOT NULL AND status = 'Active'");

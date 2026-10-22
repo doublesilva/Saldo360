@@ -95,7 +95,13 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                                   where payment.WorkspaceId == workspaceId && payment.CancelledAt == null && installment.CategoryId != null
                                       && categoryIds.Contains(installment.CategoryId.Value) && payment.PaymentDate >= first && payment.PaymentDate < through
                                   select new { CategoryId = installment.CategoryId!.Value, Amount = payment.Amount, Date = payment.PaymentDate }).ToListAsync(cancellationToken);
-        var consumptionRows = await realized.Concat(creditCardCommitted).Concat(historicalCreditCardCommitted)
+        var knownCreditCardCommitted = from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
+                                      where item.WorkspaceId == workspaceId && item.InvoiceId == null && item.IsHistorical
+                                          && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
+                                          && item.CategoryId != null && categoryIds.Contains(item.CategoryId.Value)
+                                          && item.DueDate >= first && item.DueDate < through
+                                      select new { CategoryId = item.CategoryId!.Value, item.Amount, IsCreditCard = true, Date = item.DueDate!.Value };
+        var consumptionRows = await realized.Concat(creditCardCommitted).Concat(historicalCreditCardCommitted).Concat(knownCreditCardCommitted)
             .GroupBy(item => new { item.CategoryId, item.IsCreditCard, item.Date.Year, item.Date.Month })
             .Select(group => new ConsumptionTotal(group.Key.CategoryId, group.Key.IsCreditCard, group.Key.Year, group.Key.Month, group.Sum(item => item.Amount)))
             .ToListAsync(cancellationToken);

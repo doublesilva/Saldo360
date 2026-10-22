@@ -16,7 +16,7 @@ export interface FinancialCreditCard {
 export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null }
 export interface Installment { id: string; number: number; amount: string; status: InstallmentStatus }
 export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[] }
-export interface InvoiceInstallment { installmentId: string; purchaseId: string; purchaseDescription: string; installmentNumber: number; installmentCount: number; amount: string }
+export interface InvoiceInstallment { installmentId: string; purchaseId: string; purchaseDescription: string; installmentNumber: number | null; installmentCount: number | null; amount: string }
 export interface CreditCardInvoice { id: string; creditCardId: string; competence: string; cycleStartDate: string; closingDate: string; dueDate: string; status: InvoiceStatus; totalAmount: string; paidAmount: string; remainingAmount: string; paymentStatus: InvoicePaymentStatus; installments: InvoiceInstallment[]; installmentCount: number }
 export interface InvoicePayment { id: string; invoiceId: string; financialAccountId: string; transactionId: string; operationId: string; paymentDate: string; amount: string; status: PaymentStatus; createdAt: string; cancelledAt: string | null }
 export interface CreditCardLimit { creditLimit: string; usedLimit: string; availableLimit: string; overLimitAmount: string }

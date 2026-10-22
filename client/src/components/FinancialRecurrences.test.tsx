@@ -39,4 +39,13 @@ describe('FinancialRecurrences', () => {
     await waitFor(() => expect(screen.getByText(/ocorrência\(s\) calculada/)).toBeTruthy())
   })
 
+  it('identifica destino cartão e não oferece conversão pelo formulário bancário', async () => {
+    mockApi([{ ...recurrence, accountId: null, creditCardId: 'card-1' }])
+    render(<FinancialRecurrences workspaceId="f1" />)
+    await screen.findByRole('button', { name: /Internet/ })
+    expect(screen.getByText('Cartão')).toBeTruthy()
+    expect(screen.getByText('card-1')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull()
+  })
+
 })

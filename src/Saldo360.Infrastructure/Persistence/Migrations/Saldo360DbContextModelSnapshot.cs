@@ -143,6 +143,68 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("content_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("entity_id");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("entity_type");
+
+                    b.Property<string>("ExternalReference")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("external_reference");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata_json");
+
+                    b.Property<string>("SourceDocument")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("source_document");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("source_system");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_bootstrap_provenance");
+
+                    b.HasIndex("WorkspaceId", "SourceSystem", "SourceDocument", "ExternalReference")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_bootstrap_provenance_workspace_id_source_system_s");
+
+                    b.ToTable("financial_bootstrap_provenance", (string)null);
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudget", b =>
                 {
                     b.Property<Guid>("Id")
@@ -326,6 +388,51 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_budget_targets_name_not_blank", "btrim(name) <> ''");
 
                             t.HasCheckConstraint("ck_financial_budget_targets_name_trimmed", "octet_length(name) = octet_length(btrim(name))");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialMonthlyAggregateTarget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<DateOnly>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("TargetType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("target_type");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_monthly_aggregate_targets");
+
+                    b.HasIndex("WorkspaceId", "Competence", "TargetType")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_monthly_aggregate_targets_workspace_id_competence");
+
+                    b.ToTable("financial_monthly_aggregate_targets", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_monthly_aggregate_amount", "amount >= 0 AND scale(amount) <= 2");
+
+                            t.HasCheckConstraint("ck_monthly_aggregate_competence", "EXTRACT(DAY FROM competence) = 1");
+
+                            t.HasCheckConstraint("ck_monthly_aggregate_type", "target_type IN ('FixedExpenses','CreditCards','TotalExpenses','RecoveryAmount')");
                         });
                 });
 
@@ -699,6 +806,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("category_id");
 
+                    b.Property<DateOnly?>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -717,24 +828,33 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("description");
 
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("due_date");
+
                     b.Property<string>("ExternalId")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("external_id");
 
-                    b.Property<Guid>("ImportId")
+                    b.Property<string>("ExternalReference")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("external_reference");
+
+                    b.Property<Guid?>("ImportId")
                         .HasColumnType("uuid")
                         .HasColumnName("import_id");
 
-                    b.Property<int>("InstallmentCount")
+                    b.Property<int?>("InstallmentCount")
                         .HasColumnType("integer")
                         .HasColumnName("installment_count");
 
-                    b.Property<int>("InstallmentNumber")
+                    b.Property<int?>("InstallmentNumber")
                         .HasColumnType("integer")
                         .HasColumnName("installment_number");
 
-                    b.Property<Guid>("InvoiceId")
+                    b.Property<Guid?>("InvoiceId")
                         .HasColumnType("uuid")
                         .HasColumnName("invoice_id");
 
@@ -746,9 +866,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("linked_installment_id");
 
-                    b.Property<int>("RowNumber")
+                    b.Property<int?>("RowNumber")
                         .HasColumnType("integer")
                         .HasColumnName("row_number");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("source_system");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -756,7 +881,7 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("status");
 
-                    b.Property<DateOnly>("TransactionDate")
+                    b.Property<DateOnly?>("TransactionDate")
                         .HasColumnType("date")
                         .HasColumnName("transaction_date");
 
@@ -799,9 +924,15 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_imported_installments_amount_scale", "scale(amount) <= 2");
 
+                            t.HasCheckConstraint("ck_imported_installments_competence", "competence IS NULL OR EXTRACT(DAY FROM competence) = 1");
+
+                            t.HasCheckConstraint("ck_imported_installments_known", "invoice_id IS NOT NULL OR (is_historical AND competence IS NOT NULL AND source_system IS NOT NULL AND external_reference IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_imported_installments_legacy_fields", "source_system IS NOT NULL OR (transaction_date IS NOT NULL AND installment_number IS NOT NULL AND installment_count IS NOT NULL AND import_id IS NOT NULL AND row_number IS NOT NULL)");
+
                             t.HasCheckConstraint("ck_imported_installments_mode", "(is_historical = true AND linked_installment_id IS NULL) OR (is_historical = false AND linked_installment_id IS NOT NULL)");
 
-                            t.HasCheckConstraint("ck_imported_installments_number", "installment_number >= 1 AND installment_number <= installment_count");
+                            t.HasCheckConstraint("ck_imported_installments_number", "(installment_number IS NULL OR installment_number >= 1) AND (installment_count IS NULL OR installment_count >= 1) AND (installment_number IS NULL OR installment_count IS NULL OR installment_number <= installment_count)");
 
                             t.HasCheckConstraint("ck_imported_installments_status", "status IN ('Active', 'Cancelled')");
                         });
@@ -2526,13 +2657,17 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("end_date");
 
-                    b.Property<Guid>("FinancialAccountId")
+                    b.Property<Guid?>("FinancialAccountId")
                         .HasColumnType("uuid")
                         .HasColumnName("financial_account_id");
 
                     b.Property<Guid>("FinancialCategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("financial_category_id");
+
+                    b.Property<Guid?>("FinancialCreditCardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("financial_credit_card_id");
 
                     b.Property<string>("Frequency")
                         .IsRequired()
@@ -2585,6 +2720,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("WorkspaceId", "FinancialAccountId")
                         .HasDatabaseName("ix_financial_recurrences_workspace_id_financial_account_id");
 
+                    b.HasIndex("WorkspaceId", "FinancialCreditCardId")
+                        .HasDatabaseName("ix_financial_recurrences_workspace_id_financial_credit_card_id");
+
                     b.HasIndex("WorkspaceId", "FinancialCategoryId", "Type")
                         .HasDatabaseName("ix_financial_recurrences_workspace_id_financial_category_id_ty");
 
@@ -2597,9 +2735,13 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_recurrences_amount_scale", "scale(amount) <= 2");
 
+                            t.HasCheckConstraint("ck_recurrences_card_expense", "financial_credit_card_id IS NULL OR type = 'Expense'");
+
                             t.HasCheckConstraint("ck_recurrences_count", "occurrence_count IS NULL OR occurrence_count > 0");
 
                             t.HasCheckConstraint("ck_recurrences_day", "day_of_month BETWEEN 1 AND 31");
+
+                            t.HasCheckConstraint("ck_recurrences_destination", "(financial_account_id IS NOT NULL) <> (financial_credit_card_id IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_recurrences_end", "end_date IS NULL OR end_date >= start_date");
 
@@ -2619,11 +2761,15 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<Guid?>("CreditCardPurchaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_purchase_id");
+
                     b.Property<int>("OccurrenceNumber")
                         .HasColumnType("integer")
                         .HasColumnName("occurrence_number");
 
-                    b.Property<Guid>("PlannedTransactionId")
+                    b.Property<Guid?>("PlannedTransactionId")
                         .HasColumnType("uuid")
                         .HasColumnName("planned_transaction_id");
 
@@ -2642,6 +2788,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_financial_recurrence_materializations");
 
+                    b.HasIndex("WorkspaceId", "CreditCardPurchaseId")
+                        .HasDatabaseName("ix_financial_recurrence_materializations_workspace_id_credit_c");
+
                     b.HasIndex("WorkspaceId", "PlannedTransactionId")
                         .HasDatabaseName("ix_financial_recurrence_materializations_workspace_id_planned_");
 
@@ -2652,7 +2801,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("WorkspaceId", "RecurrenceId", "ScheduledDate")
                         .HasDatabaseName("ix_financial_recurrence_materializations_workspace_id_recurren1");
 
-                    b.ToTable("financial_recurrence_materializations", (string)null);
+                    b.ToTable("financial_recurrence_materializations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_recurrence_materialization_destination", "(planned_transaction_id IS NOT NULL) <> (credit_card_purchase_id IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Saldo360.Domain.ServiceAccounts.ServiceAccount", b =>
@@ -3260,6 +3412,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_financial_accounts_workspace_responsible");
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_bootstrap_provenance_financial_workspaces_workspa");
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudget", b =>
                 {
                     b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
@@ -3327,6 +3489,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_budget_targets_categories_same_family_expense");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialMonthlyAggregateTarget", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_monthly_aggregate_targets_financial_workspaces_wo");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Categories.FinancialCategory", b =>
@@ -3483,7 +3655,6 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasForeignKey("WorkspaceId", "InvoiceId")
                         .HasPrincipalKey("WorkspaceId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_financial_credit_card_imported_installments_financial_credi1");
 
                     b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardInstallment", null)
@@ -3997,8 +4168,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasForeignKey("WorkspaceId", "FinancialAccountId")
                         .HasPrincipalKey("WorkspaceId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_financial_recurrences_financial_accounts_workspace_id_finan");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCard", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "FinancialCreditCardId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_recurrences_financial_credit_cards_workspace_id_f");
 
                     b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
                         .WithMany()
@@ -4018,12 +4195,18 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_financial_recurrence_materializations_financial_workspaces_");
 
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardPurchase", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "CreditCardPurchaseId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_recurrence_materializations_financial_credit_card");
+
                     b.HasOne("Saldo360.Domain.Planning.FinancialPlannedTransaction", null)
                         .WithMany()
                         .HasForeignKey("WorkspaceId", "PlannedTransactionId")
                         .HasPrincipalKey("WorkspaceId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_financial_recurrence_materializations_financial_planned_tra");
 
                     b.HasOne("Saldo360.Domain.Recurrences.FinancialRecurrence", null)

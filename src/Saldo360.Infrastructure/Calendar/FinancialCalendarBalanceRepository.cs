@@ -209,6 +209,15 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                                                      && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
                                                   select card.DefaultPaymentAccountId).AnyAsync(account => account == null || !selectedAccountIds.Contains(account.Value), cancellationToken);
         allCardObligations = allCardObligations || allHistoricalCardObligations || allAdjustmentCardObligations;
+        var knownCardObligations = await (from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
+                                         join card in db.FinancialCreditCards.AsNoTracking() on new { item.WorkspaceId, item.CreditCardId } equals new { card.WorkspaceId, CreditCardId = card.Id }
+                                         where item.WorkspaceId == workspaceId && item.InvoiceId == null && item.IsHistorical
+                                             && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
+                                             && (item.DueDate == null || item.DueDate <= through)
+                                         select new { item.Amount, item.DueDate, card.DefaultPaymentAccountId }).ToListAsync(cancellationToken);
+        cardPending.AddRange(knownCardObligations.Where(x => x.DueDate != null && x.DefaultPaymentAccountId != null && selectedAccountIds.Contains(x.DefaultPaymentAccountId.Value))
+            .Select(x => new FinancialCalendarDailyTotals(x.DueDate!.Value, 0m, x.Amount, 0m, 0m)));
+        allCardObligations |= knownCardObligations.Any(x => x.DueDate == null || x.DefaultPaymentAccountId == null || !selectedAccountIds.Contains(x.DefaultPaymentAccountId.Value));
 
         IReadOnlyList<FinancialCalendarDailyTotals> periodRealized = [];
         IReadOnlyList<FinancialCalendarDailyTotals> cardPayments = [];
