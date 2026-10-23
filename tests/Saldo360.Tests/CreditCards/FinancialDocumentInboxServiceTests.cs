@@ -9,6 +9,27 @@ public sealed class FinancialDocumentInboxServiceTests
     private static readonly Guid UserId = Guid.NewGuid();
     private static readonly Guid CardId = Guid.NewGuid();
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OnDemandEmailStoresAndDeduplicatesWithoutAnyAnalysis(bool review)
+    {
+        var fixture = Fixture(Preview("Nubank", "Reconciled", "1234"), true);
+        var date = DateTimeOffset.Parse("2026-10-23T12:00:00Z");
+        async Task<FinancialDocumentInboxReceiveResult> ReceivePending(string id, byte[] bytes) =>
+            await fixture.Service.ReceiveEmailPendingAsync(WorkspaceId, UserId, new MemoryStream(bytes), bytes.Length,
+                "bill.pdf", id, date, review, default);
+        var first = await ReceivePending("gmail:m:part:1", [1, 2, 3]);
+        var repeated = await ReceivePending("gmail:m:part:1", [1, 2, 3]);
+        var sameHash = await ReceivePending("gmail:other:part:1", [1, 2, 3]);
+        var conflict = await ReceivePending("gmail:m:part:1", [9, 8, 7]);
+        Assert.Equal("Created", first.Result); Assert.Equal(review ? "NeedsReview" : "Received", first.Item!.Status);
+        Assert.Null(first.Item.CreditCardId); Assert.Null(first.Item.Parser); Assert.Null(first.Item.ClassifiedAt);
+        Assert.Equal("AlreadyExists", repeated.Result); Assert.Equal(first.Item.Id, sameHash.Item!.Id);
+        Assert.Equal("Conflict", conflict.Result); Assert.Single(fixture.Repository.Items); Assert.Single(fixture.Storage.Objects);
+        Assert.Equal(0, fixture.Extractor.ParseCalls);
+    }
+
     [Fact]
     public async Task ReceivesStoresHashesAndIdentifiesSupportedStatement()
     {

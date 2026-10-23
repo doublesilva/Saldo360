@@ -38,6 +38,8 @@ public sealed record FinancialEmailMessage(string Id, DateTimeOffset ReceivedAt)
 public sealed record FinancialEmailAttachment(string Id, string PartId, string FileName, string ContentType, long Size);
 public interface IFinancialEmailSource
 {
+    Task<IReadOnlyList<FinancialEmailMessage>> SearchLatestAsync(string query, int limit, CancellationToken cancellationToken)
+        => throw new NotSupportedException("Latest search is unavailable.");
     Task<IReadOnlyList<FinancialEmailMessage>> SearchAsync(string query, DateTimeOffset after, int maxMessages, CancellationToken cancellationToken);
     Task<IReadOnlyList<FinancialEmailAttachment>> ListAttachmentsAsync(string messageId, CancellationToken cancellationToken);
     Task<Stream> OpenAttachmentAsync(string messageId, string attachmentId, CancellationToken cancellationToken);

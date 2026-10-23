@@ -33,6 +33,9 @@ public static class DependencyInjection
         services.AddScoped<FinancialBudgetService>();
         services.AddScoped<FinancialBudgetExecutionService>();
         services.AddScoped<FinancialCreditCardService>();
+        services.AddScoped<CardEmailSearchAuthorization>();
+        services.AddScoped<CardLatestEmailService>();
+        services.AddScoped<ICardEmailDocumentReceiver>(provider => provider.GetRequiredService<FinancialDocumentInboxService>());
         services.AddScoped<CreditCardStatementResolver>();
         services.AddScoped<FinancialCreditCardPurchaseService>();
         services.AddScoped<FinancialCreditCardInvoicePaymentService>();

@@ -9,6 +9,20 @@ const document = (overrides: Record<string, unknown> = {}) => ({ id: 'doc-1', so
 function common(items: unknown[]) { return vi.fn((input: string | URL | Request, init?: RequestInit) => { const url = String(input); if (url === '/auth/csrf') return json({ token: 'csrf' }); if (url.endsWith('/financial-documents/inbox')) return json(items); if (url.includes('/credit-cards?')) return json([card]); if (url.endsWith('/categories')) return json([{ id: 'cat-1', name: 'Compras', type: 'Expense', isActive: true, createdAt: '' }]); throw new Error(`${init?.method ?? 'GET'} ${url}`) }) }
 
 describe('FinancialDocumentInbox', () => {
+  it('abre diretamente o documento encontrado mesmo fora da lista recente', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/financial-documents/inbox/doc-1')) return json(document())
+      if (url.endsWith('/financial-documents/inbox')) return json([])
+      if (url.includes('/credit-cards?')) return json([card])
+      return json([])
+    }))
+    render(<FinancialDocumentInbox workspaceId="personal" initialDocumentId="doc-1" />)
+    await screen.findByRole('button', { name: 'Reanalisar' })
+    expect(screen.getAllByText('fatura.pdf').length).toBeGreaterThan(0)
+    expect(fetch).toHaveBeenCalledWith('/api/financial-workspaces/personal/financial-documents/inbox/doc-1', expect.anything())
+  })
+
   it('exibe Inbox vazia e aceita upload manual pela mesma área', async () => {
     let items: unknown[] = []; const uploads: FormData[] = []
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => { const url = String(input); if (url === '/auth/csrf') return json({ token: 'csrf' }); if (url.endsWith('/financial-documents/inbox') && init?.method === 'POST') { uploads.push(init.body as FormData); const created = document({ source: 'Manual', status: 'ReadyForReview', failureCode: null }); items = [created]; return json(created, 201) } if (url.endsWith('/financial-documents/inbox')) return json(items); if (url.includes('/credit-cards?')) return json([card]); if (url.endsWith('/categories')) return json([]); throw new Error(url) }))

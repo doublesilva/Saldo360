@@ -535,6 +535,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("due_day");
 
+                    b.Property<string>("GmailQuery")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("gmail_query");
+
                     b.Property<Guid?>("HolderUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("holder_user_id");

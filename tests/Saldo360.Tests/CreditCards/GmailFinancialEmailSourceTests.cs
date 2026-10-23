@@ -8,6 +8,44 @@ namespace Saldo360.Tests.CreditCards;
 public sealed class GmailFinancialEmailSourceTests
 {
     [Fact]
+    public async Task LatestSearchPaginatesAndSortsByInternalDateWithoutAddingDateFilters()
+    {
+        var gmail = new RecordingHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal)
+            ? request.RequestUri.Query.Contains("pageToken=next", StringComparison.Ordinal)
+                ? "{\"messages\":[{\"id\":\"new\"}]}" : "{\"messages\":[{\"id\":\"old\"}],\"nextPageToken\":\"next\"}"
+            : request.RequestUri.AbsolutePath.EndsWith("/new", StringComparison.Ordinal)
+                ? "{\"internalDate\":\"2000000\"}" : "{\"internalDate\":\"1000000\"}");
+        var source = LatestSource(gmail);
+        var result = await source.SearchLatestAsync("configured-query", 200, default);
+        Assert.Equal(new[] { "new", "old" }, result.Select(x => x.Id));
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(2000000), result[0].ReceivedAt);
+        Assert.Equal(2, gmail.Requests.Count(r => r.Uri.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal)));
+        Assert.All(gmail.Requests, r => { Assert.Equal(HttpMethod.Get, r.Method); Assert.DoesNotContain("after", r.Uri.Query); Assert.DoesNotContain("before", r.Uri.Query); });
+    }
+
+    [Theory]
+    [InlineData("{\"messages\":[{\"id\":\"one\"}],\"nextPageToken\":\"more\"}")]
+    [InlineData("{\"messages\":[{\"id\":\"one\"},{\"id\":\"two\"}]}")]
+    public async Task LatestSearchFailsClosedAtLimit(string response)
+    {
+        var gmail = new RecordingHandler(_ => response);
+        await Assert.ThrowsAsync<LatestEmailSearchLimitException>(() => LatestSource(gmail).SearchLatestAsync("q", 1, default));
+        Assert.Single(gmail.Requests);
+    }
+
+    [Fact]
+    public async Task LatestSearchRejectsUnknownReceptionDate()
+    {
+        var gmail = new RecordingHandler(r => r.RequestUri!.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal)
+            ? "{\"messages\":[{\"id\":\"one\"}]}" : "{}");
+        await Assert.ThrowsAsync<InvalidDataException>(() => LatestSource(gmail).SearchLatestAsync("q", 10, default));
+    }
+
+    private static GmailFinancialEmailSource LatestSource(RecordingHandler gmail) => new(new FakeHttpClientFactory(gmail,
+        new RecordingHandler(_ => "{\"access_token\":\"synthetic\",\"expires_in\":3600}")),
+        new FinancialEmailImportOptions { Gmail = new() { Mailbox = "mailbox@example.invalid", ClientId = "synthetic", ClientSecret = "synthetic", RefreshToken = "synthetic" } });
+
+    [Fact]
     public async Task HistoricalQuerySendsBothEpochBoundsAndDryBodyNeverDownloadsAttachment()
     {
         var gmail = new RecordingHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal)

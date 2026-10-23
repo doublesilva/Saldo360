@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { listCategories, type FinancialCategory } from '../api/categories'
 import { listCreditCards, type FinancialCreditCard } from '../api/creditCards'
 import type { PdfConfirmationResult, PdfPreReconciliation } from '../api/creditCardImports'
-import { confirmFinancialDocument, confirmServiceBill, createServiceAccountBinding, getServiceAccountBinding, ignoreFinancialDocument, listFinancialDocuments, previewServiceBill, previewServiceBillMatch, reanalyzeFinancialDocument, reviewFinancialDocument, uploadFinancialDocument, type FinancialDocument, type FinancialDocumentSource, type FinancialDocumentStatus, type ServiceAccountBindingResult, type ServiceBillConfirmationResult, type ServiceBillPreview, type ServiceBillRecurringMatchPreview } from '../api/financialDocuments'
+import { getFinancialDocument, confirmFinancialDocument, confirmServiceBill, createServiceAccountBinding, getServiceAccountBinding, ignoreFinancialDocument, listFinancialDocuments, previewServiceBill, previewServiceBillMatch, reanalyzeFinancialDocument, reviewFinancialDocument, uploadFinancialDocument, type FinancialDocument, type FinancialDocumentSource, type FinancialDocumentStatus, type ServiceAccountBindingResult, type ServiceBillConfirmationResult, type ServiceBillPreview, type ServiceBillRecurringMatchPreview } from '../api/financialDocuments'
 import { formatBrlDecimal, subtractMoneyDecimal } from '../money'
 import { PdfReconciliationPanel, PdfResult } from './FinancialCreditCardPdfImport'
 
@@ -21,10 +21,10 @@ const documentTypeLabel = (type: FinancialDocument['documentType']) => ({ Credit
 const serviceBillTypes = new Set(['ElectricityBill', 'WaterBill', 'TelecomBill'])
 const recognizedWithoutExtractor = (item: FinancialDocument) => item.failureCode === 'RecognizedDocumentWithoutExtractor'
 
-export function FinancialDocumentInbox({ workspaceId, onChanged, onAttentionCount }: { workspaceId: string; onChanged?: () => void; onAttentionCount?: (count: number) => void }) {
+export function FinancialDocumentInbox({ workspaceId, onChanged, onAttentionCount, initialDocumentId }: { workspaceId: string; onChanged?: () => void; onAttentionCount?: (count: number) => void; initialDocumentId?: string }) {
   const version = useRef(0)
   const [items, setItems] = useState<FinancialDocument[]>([]); const [cards, setCards] = useState<FinancialCreditCard[]>([]); const [categories, setCategories] = useState<FinancialCategory[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null); const [status, setStatus] = useState('Open'); const [source, setSource] = useState('All'); const [card, setCard] = useState('All'); const [competence, setCompetence] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(initialDocumentId ?? null); const [status, setStatus] = useState(initialDocumentId ? 'All' : 'Open'); const [source, setSource] = useState('All'); const [card, setCard] = useState('All'); const [competence, setCompetence] = useState('')
   const [loading, setLoading] = useState(true); const [busy, setBusy] = useState<string | null>(null); const [error, setError] = useState<string | null>(null)
   const [password, setPassword] = useState(''); const [selectedCard, setSelectedCard] = useState(''); const [report, setReport] = useState<PdfPreReconciliation | null>(null); const [result, setResult] = useState<PdfConfirmationResult | null>(null); const [categoryByComponent, setCategoryByComponent] = useState<Record<string, string>>({})
   const [file, setFile] = useState<File | null>(null); const [showUpload, setShowUpload] = useState(false)
@@ -33,7 +33,7 @@ export function FinancialDocumentInbox({ workspaceId, onChanged, onAttentionCoun
   const [serviceConfirmation, setServiceConfirmation] = useState<ServiceBillConfirmationResult | null>(null)
   const [serviceBinding, setServiceBinding] = useState<ServiceAccountBindingResult | null>(null)
 
-  const load = useCallback(async (signal?: AbortSignal) => { try { const [documents, familyCards, familyCategories] = await Promise.all([listFinancialDocuments(workspaceId, signal), listCreditCards(workspaceId, false, signal), listCategories(workspaceId, false, signal)]); setItems(documents); setCards(familyCards); setCategories(familyCategories.filter((x) => x.type === 'Expense' && x.isActive)); onAttentionCount?.(documents.filter((item) => attention.has(item.status)).length) } catch (failure) { if (!signal?.aborted) setError(errorMessage(failure)) } finally { if (!signal?.aborted) setLoading(false) } }, [workspaceId, onAttentionCount])
+  const load = useCallback(async (signal?: AbortSignal) => { try { const [documents, familyCards, familyCategories] = await Promise.all([listFinancialDocuments(workspaceId, signal), listCreditCards(workspaceId, false, signal), listCategories(workspaceId, false, signal)]); const requested = initialDocumentId && !documents.some(item => item.id === initialDocumentId) ? await getFinancialDocument(workspaceId, initialDocumentId, signal) : null; if (signal?.aborted) return; setItems(requested ? [requested, ...documents] : documents); setCards(familyCards); setCategories(familyCategories.filter((x) => x.type === 'Expense' && x.isActive)); onAttentionCount?.(documents.filter((item) => attention.has(item.status)).length) } catch (failure) { if (!signal?.aborted) setError(errorMessage(failure)) } finally { if (!signal?.aborted) setLoading(false) } }, [workspaceId, onAttentionCount, initialDocumentId])
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort() }, [load])
   const selected = items.find((item) => item.id === selectedId) ?? null
   const cardName = (id: string | null) => cards.find((item) => item.id === id)?.name ?? null

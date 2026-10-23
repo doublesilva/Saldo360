@@ -11,6 +11,7 @@ public static class FinancialDocumentInboxEndpoints
     {
         var group = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/financial-documents/inbox").RequireAuthorization();
         group.MapGet("/", List);
+        group.MapGet("/{id:guid}", Get);
         group.MapPost("/", Receive).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/reanalyze", Reanalyze).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/classify-preview", ClassifyPreview).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -24,6 +25,12 @@ public static class FinancialDocumentInboxEndpoints
         group.MapPost("/{id:guid}/confirm", Confirm).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
+    private static async Task<IResult> Get(Guid workspaceId, Guid id, CurrentUser user, FinancialDocumentInboxService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        return await service.GetAsync(workspaceId, id, userId, ct) is { } item ? Results.Ok(item) : Results.NotFound();
+    }
+
     private static async Task<IResult> GetServiceAccountBinding(Guid workspaceId, Guid id, CurrentUser user,
         ServiceAccountBindingService service, CancellationToken cancellationToken)
     {

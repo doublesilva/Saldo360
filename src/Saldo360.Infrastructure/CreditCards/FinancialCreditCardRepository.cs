@@ -50,5 +50,5 @@ internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFin
     private static FinancialCreditCardDto ToDto(FinancialCreditCard card) => new(
         card.Id, card.WorkspaceId, card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId,
         Domain.Common.Money.Format(card.CreditLimit), card.ClosingDay, card.DueDay, card.DefaultPaymentAccountId,
-        card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt);
+        card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt, card.GmailQuery);
 }

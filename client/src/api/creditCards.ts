@@ -9,11 +9,14 @@ export type InvoicePaymentStatus = 'Unpaid' | 'PartiallyPaid' | 'Paid'
 export type PaymentStatus = 'Active' | 'Cancelled'
 
 export interface FinancialCreditCard {
+  gmailQuery?: string | null
   id: string; name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string
   closingDay: number; dueDay: number; defaultPaymentAccountId: string | null; isArchived: boolean
   createdAt: string; updatedAt: string; archivedAt: string | null
 }
-export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null }
+export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null; gmailQuery?: string | null }
+export interface CardLatestEmailResult { status: string; cardId: string; documentId: string | null; receivedAt: string | null; fileName: string | null; inboxStatus: string | null; alreadyExisted: boolean; failureCode: string | null }
+export function searchLatestCardEmail(workspaceId: string, cardId: string) { return mutate<CardLatestEmailResult>(`${base(workspaceId, cardId)}/imports/email/latest`, 'POST', {}, 200) }
 export interface Installment { id: string; number: number; amount: string; status: InstallmentStatus }
 export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[]; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }
 export interface PurchaseInput { description: string; purchaseDate: string; totalAmount: string; installmentCount: number; categoryId: string; amountMode?: 'Total' | 'Installment'; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }

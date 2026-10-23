@@ -8,6 +8,25 @@ const card = { id: 'card-1', name: 'Platinum', issuer: 'Banco', lastFourDigits: 
 const json = (value: unknown) => Promise.resolve(new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } }))
 
 describe('FinancialCreditCardsPage', () => {
+  it('abre o cadastro a partir da importação e preserva a query Gmail ao editar', async () => {
+    let saved: Record<string, unknown> | null = null
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/auth/csrf') return json({ token: 'synthetic' })
+      if (url.endsWith(`/credit-cards/${card.id}`) && init?.method === 'PUT') { saved = JSON.parse(init.body as string); return json({ ...card, gmailQuery: saved?.gmailQuery }) }
+      if (url.includes('/credit-cards?')) return json([card])
+      if (url.includes('/summary?')) return json({ cardCount: 1, totalLimit: '10000.00', invoiceTotal: '0.00', availableLimit: '10000.00', cards: [] })
+      if (url.endsWith('/limit')) return json({ creditLimit: '10000.00', usedLimit: '0.00', availableLimit: '10000.00', overLimitAmount: '0.00' })
+      return json([])
+    }))
+    render(<FinancialCreditCardsPage workspaceId="workspace" />)
+    await screen.findAllByText('Platinum')
+    fireEvent.click(screen.getByRole('button', { name: 'Importações' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar no cadastro do cartão' }))
+    fireEvent.change(screen.getByLabelText('Query Gmail (opcional)'), { target: { value: 'from:synthetic.invalid filename:pdf' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(saved).toMatchObject({ gmailQuery: 'from:synthetic.invalid filename:pdf', lastFourDigits: '0012', creditLimit: '10000.00' }))
+  })
+
   it('reutiliza o formulário na fatura e recarrega os detalhes após salvar', async () => {
     let saved = false
     let invoiceReads = 0

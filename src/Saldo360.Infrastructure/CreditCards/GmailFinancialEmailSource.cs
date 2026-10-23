@@ -13,6 +13,34 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
     private string? accessToken;
     private DateTimeOffset expiresAt;
 
+    public async Task<IReadOnlyList<FinancialEmailMessage>> SearchLatestAsync(string query, int limit, CancellationToken cancellationToken)
+    {
+        if (limit is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(limit));
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var tokens = new HashSet<string>(StringComparer.Ordinal);
+        string? token = null;
+        do
+        {
+            var url = $"gmail/v1/users/{Uri.EscapeDataString(Mailbox())}/messages?q={Uri.EscapeDataString(query)}&maxResults={Math.Min(100, limit)}";
+            if (token is not null) url += $"&pageToken={Uri.EscapeDataString(token)}";
+            using var response = await SendAsync(HttpMethod.Get, url, cancellationToken);
+            var page = await response.Content.ReadFromJsonAsync<GmailMessageList>(cancellationToken: cancellationToken) ?? new();
+            foreach (var message in page.Messages)
+                if (string.IsNullOrWhiteSpace(message.Id) || (ids.Add(message.Id) && ids.Count > limit)) throw new LatestEmailSearchLimitException();
+            token = string.IsNullOrEmpty(page.NextPageToken) ? null : page.NextPageToken;
+            // Gmail list order is not trusted. Never select from a truncated search.
+            if (token is not null && (ids.Count >= limit || !tokens.Add(token) || tokens.Count >= limit)) throw new LatestEmailSearchLimitException();
+        } while (token is not null);
+        var messages = new List<FinancialEmailMessage>();
+        foreach (var id in ids)
+        {
+            var metadata = await GetMessageAsync(id, cancellationToken);
+            if (!long.TryParse(metadata.InternalDate, out var milliseconds)) throw new InvalidDataException("Missing reception date.");
+            messages.Add(new(id, DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)));
+        }
+        return messages.OrderByDescending(x => x.ReceivedAt).ThenBy(x => x.Id, StringComparer.Ordinal).ToArray();
+    }
+
     public async Task<IReadOnlyList<FinancialEmailMessage>> SearchAsync(string query, DateTimeOffset after, int maxMessages, CancellationToken cancellationToken)
     {
         var q = $"({query}) after:{after.ToUnixTimeSeconds()}";
@@ -119,7 +147,7 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
     }
     private static byte[] DecodeBase64Url(string value) { var normalized = value.Replace('-', '+').Replace('_', '/'); normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4) % 4, '='); return Convert.FromBase64String(normalized); }
 
-    private sealed class GmailMessageList { [JsonPropertyName("messages")] public List<GmailMessageRef> Messages { get; set; } = []; }
+    private sealed class GmailMessageList { [JsonPropertyName("messages")] public List<GmailMessageRef> Messages { get; set; } = []; [JsonPropertyName("nextPageToken")] public string? NextPageToken { get; set; } }
     private sealed class GmailMessageRef { [JsonPropertyName("id")] public string Id { get; set; } = string.Empty; }
     private sealed class GmailMessage { [JsonPropertyName("internalDate")] public string InternalDate { get; set; } = string.Empty; [JsonPropertyName("payload")] public GmailPart? Payload { get; set; } }
     private sealed class GmailPart { [JsonPropertyName("partId")] public string PartId { get; set; } = string.Empty; [JsonPropertyName("filename")] public string? FileName { get; set; } [JsonPropertyName("mimeType")] public string? MimeType { get; set; } [JsonPropertyName("body")] public GmailAttachmentBody? Body { get; set; } [JsonPropertyName("parts")] public List<GmailPart>? Parts { get; set; } }

@@ -107,8 +107,9 @@ public static class DependencyInjection
         services.AddSingleton<FinancialEmailSchedule>();
         services.AddSingleton<IFinancialEmailCollectorLock>(_ => new PostgresFinancialEmailCollectorLock(connectionString));
         services.AddHostedService<FinancialEmailCollectorHostedService>();
-        services.AddHttpClient("GmailFinancialEmail", client => client.BaseAddress = new Uri("https://gmail.googleapis.com/"));
-        services.AddHttpClient("GmailFinancialEmailToken", client => client.BaseAddress = new Uri("https://oauth2.googleapis.com/"));
+        // Queries and Gmail identifiers live in request URLs. Do not emit default URL logs.
+        services.AddHttpClient("GmailFinancialEmail", client => client.BaseAddress = new Uri("https://gmail.googleapis.com/")).RemoveAllLoggers();
+        services.AddHttpClient("GmailFinancialEmailToken", client => client.BaseAddress = new Uri("https://oauth2.googleapis.com/")).RemoveAllLoggers();
         services.AddHttpClient("FinancialLinkedDocument", client => client.Timeout = TimeSpan.FromSeconds(20))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
         services.AddSingleton<IFinancialEmailSource, GmailFinancialEmailSource>();

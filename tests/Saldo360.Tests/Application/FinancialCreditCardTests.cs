@@ -5,6 +5,18 @@ namespace Saldo360.Tests.Application;
 public sealed class FinancialCreditCardTests
 {
     [Fact]
+    public void GmailQueryIsOptionalTrimmedEditableAndClearable()
+    {
+        var details = CreditCardDetails.TryCreate("Card", "Bank", "1234", null, 100m, 5, 10, null, out var errors, "  from:bank.example filename:pdf  ")!;
+        Assert.Empty(errors); Assert.Equal("from:bank.example filename:pdf", details.GmailQuery);
+        var card = FinancialCreditCard.Create(Guid.NewGuid(), details, Guid.NewGuid(), DateTimeOffset.UtcNow);
+        Assert.Equal(details.GmailQuery, card.GmailQuery);
+        var cleared = CreditCardDetails.TryCreate("Card", "Bank", "1234", null, 100m, 5, 10, null, out _, "  ")!;
+        card.Update(cleared, Guid.NewGuid(), DateTimeOffset.UtcNow); Assert.Null(card.GmailQuery);
+        Assert.Null(CreditCardDetails.TryCreate("Card", "Bank", "1234", null, 100m, 5, 10, null, out var invalid, new string('x', 2049)));
+        Assert.Contains("gmailQuery", invalid.Keys);
+    }
+    [Fact]
     public void ValidatesZeroLimitAndBoundaryDays()
     {
         var details = CreditCardDetails.TryCreate("Principal", "Banco", null, 0m, 1, 31, null, out var errors);

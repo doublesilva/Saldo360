@@ -21,7 +21,7 @@ public sealed class CreditCardPdfPreviewService(
         try
         {
             var extracted = await extractor.ExtractAsync(content, MaxPages, [], cancellationToken);
-            if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.");
+            if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.", "TextUnavailable");
             var preview = extractor.Parse(extracted, fileName, competence, dateFormat);
             return await ValidateCardAsync(workspaceId, cardId, card, preview, cancellationToken);
         }
@@ -31,7 +31,7 @@ public sealed class CreditCardPdfPreviewService(
         }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.UnsupportedEncryption)
         {
-            return Invalid("file", "A criptografia deste PDF não é suportada.");
+            return Invalid("file", "A criptografia deste PDF não é suportada.", "UnsupportedEncryption");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -50,22 +50,22 @@ public sealed class CreditCardPdfPreviewService(
         candidates.AddRange(resolution.Candidates.Take(2).Where(candidate => !candidates.Contains(candidate, StringComparer.Ordinal)));
 
         if (candidates.Count == 0)
-            return Invalid("file", "O PDF exige senha, mas o material de identidade do titular não está disponível.");
+            return Invalid("file", "O PDF exige senha, mas o material de identidade do titular não está disponível.", "PasswordRequired");
 
         try
         {
             var extracted = await extractor.ExtractAsync(pdf, MaxPages, candidates, cancellationToken);
-            if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.");
+            if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.", "TextUnavailable");
             var preview = extractor.Parse(extracted, fileName, competence, dateFormat) with { Security = new("Unlocked") };
             return await ValidateCardAsync(workspaceId, cardId, card, preview, cancellationToken);
         }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.PasswordRejected)
         {
-            return Invalid("file", "Não foi possível desbloquear o PDF com as credenciais disponíveis.");
+            return Invalid("file", "Não foi possível desbloquear o PDF com as credenciais disponíveis.", "PasswordRequired");
         }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.UnsupportedEncryption)
         {
-            return Invalid("file", "A criptografia deste PDF não é suportada.");
+            return Invalid("file", "A criptografia deste PDF não é suportada.", "UnsupportedEncryption");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -73,7 +73,7 @@ public sealed class CreditCardPdfPreviewService(
         }
     }
 
-    private static CreditCardPdfPreviewResult Invalid(string field, string message) => new(CreditCardPdfPreviewAccess.Invalid, null, new Dictionary<string, string[]> { [field] = [message] });
+    private static CreditCardPdfPreviewResult Invalid(string field, string message, string? failureCode = null) => new(CreditCardPdfPreviewAccess.Invalid, null, new Dictionary<string, string[]> { [field] = [message] }, failureCode);
 
     private async Task<CreditCardPdfPreviewResult> ValidateCardAsync(Guid workspaceId, Guid selectedCardId, CreditCardPdfContext card, CreditCardPdfPreview preview, CancellationToken cancellationToken)
     {

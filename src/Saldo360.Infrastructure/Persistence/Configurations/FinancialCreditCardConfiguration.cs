@@ -27,6 +27,7 @@ internal sealed class FinancialCreditCardConfiguration : IEntityTypeConfiguratio
         builder.Property(card => card.Name).HasMaxLength(FinancialCreditCard.NameMaxLength).IsRequired();
         builder.Property(card => card.Issuer).HasMaxLength(FinancialCreditCard.IssuerMaxLength).IsRequired();
         builder.Property(card => card.LastFourDigits).HasMaxLength(FinancialCreditCard.LastFourDigitsLength);
+        builder.Property(card => card.GmailQuery).HasMaxLength(2048);
         builder.Property(card => card.CreditLimit).HasColumnType("numeric");
         builder.HasIndex(card => new { card.WorkspaceId, card.IsArchived });
         builder.HasAlternateKey(card => new { card.WorkspaceId, card.Id });

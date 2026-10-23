@@ -32,6 +32,13 @@ public sealed record ServiceBillConfirmationDto(Guid OccurrenceId, string Compet
     string ConfirmedAmount, string Difference, string ConfirmedAt);
 public sealed record FinancialDocumentInboxReceiveResult(string Result, FinancialDocumentInboxDto? Item, IDictionary<string, string[]>? Errors = null);
 
+public interface ICardEmailDocumentReceiver
+{
+    Task<FinancialDocumentInboxDto?> FindKnownEmailAsync(Guid workspaceId, Guid userId, string externalSourceId, string hash, CancellationToken cancellationToken);
+    Task<FinancialDocumentInboxReceiveResult> ReceiveEmailPendingAsync(Guid workspaceId, Guid userId, Stream content, long length,
+        string fileName, string externalSourceId, DateTimeOffset receivedAt, bool needsReview, CancellationToken cancellationToken);
+}
+
 public sealed class FinancialDocumentInboxService(
     IFinancialDocumentInboxRepository repository,
     IFinancialDocumentStorage storage,
@@ -41,8 +48,21 @@ public sealed class FinancialDocumentInboxService(
     FinancialDocumentClassificationOptions classificationOptions,
     IFinancialDocumentClassifier classifier,
     IFinancialDocumentAnalysisRouter analysisRouter,
-    TimeProvider clock)
+    TimeProvider clock) : ICardEmailDocumentReceiver
 {
+    public async Task<FinancialDocumentInboxDto?> FindKnownEmailAsync(Guid workspaceId, Guid userId, string externalSourceId, string hash, CancellationToken cancellationToken)
+    {
+        if (!await repository.CanAccessWorkspaceAsync(workspaceId, userId, cancellationToken)) return null;
+        var item = await repository.FindByExternalIdAsync(workspaceId, FinancialDocumentSource.Email, externalSourceId, cancellationToken)
+            ?? await repository.FindByHashAsync(workspaceId, hash, cancellationToken);
+        return item is null ? null : Map(item);
+    }
+
+    public Task<FinancialDocumentInboxReceiveResult> ReceiveEmailPendingAsync(Guid workspaceId, Guid userId, Stream content, long length,
+        string fileName, string externalSourceId, DateTimeOffset receivedAt, bool needsReview, CancellationToken cancellationToken) =>
+        ReceiveCoreAsync(workspaceId, userId, true, content, length, fileName, "application/pdf", FinancialDocumentSource.Email,
+            externalSourceId, null, null, receivedAt, cancellationToken, false, needsReview);
+
     public async Task<FinancialDocumentInboxReceiveResult> ReceiveAsync(Guid workspaceId, Guid userId, Stream content, long length,
         string fileName, string contentType, FinancialDocumentSource source, string? externalSourceId, Guid? selectedCardId,
         string? password, CancellationToken cancellationToken) =>
@@ -55,7 +75,7 @@ public sealed class FinancialDocumentInboxService(
 
     private async Task<FinancialDocumentInboxReceiveResult> ReceiveCoreAsync(Guid workspaceId, Guid? userId, bool requireMembership, Stream content, long length,
         string fileName, string contentType, FinancialDocumentSource source, string? externalSourceId, Guid? selectedCardId,
-        string? password, DateTimeOffset? receivedAt, CancellationToken cancellationToken)
+        string? password, DateTimeOffset? receivedAt, CancellationToken cancellationToken, bool analyze = true, bool needsReview = false)
     {
         var authorized = requireMembership
             ? userId is { } memberId && await repository.CanAccessWorkspaceAsync(workspaceId, memberId, cancellationToken)
@@ -91,6 +111,11 @@ public sealed class FinancialDocumentInboxService(
             }
         }
         catch { await storage.DeleteAsync(reference, CancellationToken.None); throw; }
+        if (!analyze)
+        {
+            if (needsReview) { item.RequireReview("CardIdentificationRequired", now); await repository.SaveAsync(cancellationToken); }
+            return new("Created", Map(item));
+        }
         if (userId is { } processingUser)
             await ProcessCoreAsync(item, processingUser, selectedCardId, password, cancellationToken);
         else
@@ -155,6 +180,13 @@ public sealed class FinancialDocumentInboxService(
         if (item is null) return null;
         await ProcessCoreAsync(item, userId, selectedCardId ?? item.CreditCardId, password, cancellationToken);
         return Map(item);
+    }
+
+    public async Task<FinancialDocumentInboxDto?> GetAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await repository.CanAccessWorkspaceAsync(workspaceId, userId, cancellationToken)) return null;
+        var item = await repository.GetAsync(workspaceId, id, userId, cancellationToken);
+        return item is null ? null : Map(item);
     }
 
     public async Task<IReadOnlyList<FinancialDocumentInboxDto>?> ListAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken)
