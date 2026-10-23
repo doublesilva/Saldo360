@@ -53,4 +53,38 @@ public sealed class FinancialCreditCardPurchaseTests
         Assert.All(purchase.Installments, item => Assert.Equal(CreditCardInstallmentStatus.Cancelled, item.Status));
         Assert.Equal(100m, purchase.TotalAmount);
     }
+
+    [Fact]
+    public void OngoingPurchaseKeepsOriginalRoundingAndRealNumbersWithoutRecreatingPaidRows()
+    {
+        var p = FinancialCreditCardPurchase.CreateOngoing(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Compra", new DateOnly(2026, 3, 26), 100m, 3, 1, new DateOnly(2026, 11, 1), Guid.NewGuid(), DateTimeOffset.UtcNow);
+        Assert.Equal(new[] { 2, 3 }, p.Installments.Select(i => i.InstallmentNumber));
+        Assert.Equal(new[] { 33.33m, 33.33m }, p.Installments.Select(i => i.Amount));
+        Assert.Equal(100m, p.TotalAmount);
+        Assert.Equal(66.66m, p.Installments.Sum(i => i.Amount));
+    }
+
+    [Fact]
+    public void CorrectingDateOrDescriptionDoesNotRewriteAmountsOfPaidHistory()
+    {
+        var user = Guid.NewGuid(); var category = Guid.NewGuid(); var now = DateTimeOffset.UtcNow;
+        var p = FinancialCreditCardPurchase.CreateOngoing(Guid.NewGuid(), Guid.NewGuid(), category, "Compra", new DateOnly(2026, 3, 26), 3207.10m, 10, 6, new DateOnly(2026, 10, 1), user, now);
+        var ids = p.Installments.Select(i => i.Id).ToArray();
+        p.UpdateSchedule(category, "Rótulo corrigido", new DateOnly(2026, 3, 25), 3207.10m, 10, 6, new DateOnly(2026, 11, 1), user, now);
+        Assert.Equal(ids, p.Installments.Select(i => i.Id));
+        Assert.All(p.Installments, i => Assert.Equal(320.71m, i.Amount));
+        Assert.Throws<InvalidOperationException>(() => p.UpdateSchedule(category, "Outro total", p.PurchaseDate, 4000m, 10, 6, p.FirstPendingCompetence, user, now));
+        Assert.Throws<InvalidOperationException>(() => p.UpdateSchedule(category, "Outro histórico", p.PurchaseDate, 3207.10m, 10, 5, p.FirstPendingCompetence, user, now));
+        Assert.Equal(3207.10m, p.TotalAmount);
+    }
+
+    [Theory]
+    [InlineData(-1, "2026-11-01")]
+    [InlineData(4, "2026-11-01")]
+    [InlineData(2, null)]
+    [InlineData(0, "2026-11-02")]
+    public void RejectsInvalidHistoricalSchedule(int paid, string? first)
+    {
+        Assert.Throws<ArgumentException>(() => FinancialCreditCardPurchase.CreateOngoing(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Compra", new DateOnly(2026, 3, 26), 1000m, 4, paid, first is null ? null : DateOnly.Parse(first), Guid.NewGuid(), DateTimeOffset.UtcNow));
+    }
 }

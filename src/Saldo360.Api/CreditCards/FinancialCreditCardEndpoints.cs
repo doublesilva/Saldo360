@@ -11,11 +11,21 @@ public static class FinancialCreditCardEndpoints
     {
         var cards = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/credit-cards").RequireAuthorization();
         cards.MapGet("/", List);
+        cards.MapGet("/summary", Summary);
         cards.MapGet("/{cardId:guid}", Get);
         cards.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         cards.MapPut("/{cardId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
         cards.MapDelete("/{cardId:guid}", Archive).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
+    }
+
+    private static async Task<IResult> Summary(Guid workspaceId, string? competence, CurrentUser user, FinancialCreditCardPurchaseService service, TimeProvider timeProvider, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        if (!DateOnly.TryParseExact(competence, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["competence"] = ["Informe a competência no formato yyyy-MM."] });
+        var result = await service.GetPortfolioAsync(workspaceId, userId, competence!, BusinessCalendar.Today(timeProvider.GetUtcNow()), ct);
+        return result is null ? Results.NotFound() : Results.Ok(result);
     }
 
     private static async Task<IResult> List(Guid workspaceId, bool? includeArchived, CurrentUser currentUser, FinancialCreditCardService cards, CancellationToken cancellationToken) =>

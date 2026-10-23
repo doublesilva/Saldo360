@@ -3,7 +3,7 @@ import { ApiRequestError, requestJson } from './apiErrors'
 
 export type CreditCardStatus = 'Active' | 'Archived'
 export type PurchaseStatus = 'Active' | 'Cancelled'
-export type InstallmentStatus = 'Pending' | 'Cancelled'
+export type InstallmentStatus = 'Active' | 'Cancelled'
 export type InvoiceStatus = 'Open' | 'Closed'
 export type InvoicePaymentStatus = 'Unpaid' | 'PartiallyPaid' | 'Paid'
 export type PaymentStatus = 'Active' | 'Cancelled'
@@ -15,11 +15,15 @@ export interface FinancialCreditCard {
 }
 export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null }
 export interface Installment { id: string; number: number; amount: string; status: InstallmentStatus }
-export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[] }
+export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[]; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }
+export interface PurchaseInput { description: string; purchaseDate: string; totalAmount: string; installmentCount: number; categoryId: string; amountMode?: 'Total' | 'Installment'; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }
+export interface PurchasePreview { totalAmount: string; installmentCount: number; previouslyPaidInstallments: number; remainingAmount: string; installments: { number: number; amount: string; competence: string; dueDate: string }[] }
 export interface InvoiceInstallment { installmentId: string; purchaseId: string; purchaseDescription: string; installmentNumber: number | null; installmentCount: number | null; amount: string }
 export interface CreditCardInvoice { id: string; creditCardId: string; competence: string; cycleStartDate: string; closingDate: string; dueDate: string; status: InvoiceStatus; totalAmount: string; paidAmount: string; remainingAmount: string; paymentStatus: InvoicePaymentStatus; installments: InvoiceInstallment[]; installmentCount: number }
 export interface InvoicePayment { id: string; invoiceId: string; financialAccountId: string; transactionId: string; operationId: string; paymentDate: string; amount: string; status: PaymentStatus; createdAt: string; cancelledAt: string | null }
 export interface CreditCardLimit { creditLimit: string; usedLimit: string; availableLimit: string; overLimitAmount: string }
+export interface CardPortfolioItem { cardId: string; creditLimit: string; usedLimit: string; availableLimit: string; utilizationPercentage: string; invoiceTotal: string; unlinkedKnownCount: number; unlinkedKnownAmount: string }
+export interface CardPortfolio { cardCount: number; totalLimit: string; invoiceTotal: string; availableLimit: string; cards: CardPortfolioItem[] }
 export interface InvoiceProjectionMonth { competence: string; cycleStartDate: string; closingDate: string; dueDate: string; status: InvoiceStatus; totalAmount: string; installmentCount: number }
 export type CreditCardProjection = CreditCardInvoice[]
 export type SaveResult<T> = { ok: true; value: T } | { ok: false; errors: Record<string, string[]> }
@@ -33,13 +37,16 @@ async function mutate<T>(url: string, method: string, body: unknown, expected: n
   throw new Error(`Falha na API (HTTP ${response.status}).`)
 }
 export async function listCreditCards(workspaceId: string, includeArchived = true, signal?: AbortSignal) { const response = await fetch(`${base(workspaceId)}?includeArchived=${includeArchived}`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar cartões (HTTP ${response.status}).`); return await response.json() as FinancialCreditCard[] }
+export async function getCardPortfolio(workspaceId: string, competence: string, signal?: AbortSignal) { const response = await fetch(`${base(workspaceId)}/summary?${new URLSearchParams({ competence })}`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar resumo (HTTP ${response.status}).`); const data = await response.json() as CardPortfolio; if (!data || !Array.isArray(data.cards) || !Number.isInteger(data.cardCount) || [data.totalLimit, data.invoiceTotal, data.availableLimit].some(v => typeof v !== 'string' || !/^-?\d+\.\d{2}$/.test(v))) throw new Error('Resumo de cartões inválido.'); return data }
 export async function getCreditCard(workspaceId: string, cardId: string, signal?: AbortSignal) { const response = await fetch(base(workspaceId, cardId), { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar cartão (HTTP ${response.status}).`); return await response.json() as FinancialCreditCard }
 export function createCreditCard(workspaceId: string, input: CreditCardInput) { return mutate<FinancialCreditCard>(base(workspaceId), 'POST', input, 201) }
 export function updateCreditCard(workspaceId: string, cardId: string, input: CreditCardInput) { return mutate<FinancialCreditCard>(base(workspaceId, cardId), 'PUT', input, 200) }
 export async function archiveCreditCard(workspaceId: string, cardId: string) { const response = await fetch(base(workspaceId, cardId), { method: 'DELETE', headers: { ...headers, [CSRF_HEADER]: await getCsrfToken() } }); if (response.status === 204) return { ok: true as const }; throw new Error(`Falha ao arquivar cartão (HTTP ${response.status}).`) }
 const child = (workspaceId: string, cardId: string, path: string) => `${base(workspaceId, cardId)}/${path}`
 export async function listPurchases(workspaceId: string, cardId: string, signal?: AbortSignal) { const response = await fetch(child(workspaceId, cardId, 'purchases'), { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar compras (HTTP ${response.status}).`); return await response.json() as CreditCardPurchase[] }
-export function createPurchase(workspaceId: string, cardId: string, input: { description: string; purchaseDate: string; totalAmount: string; installmentCount: number; categoryId: string }) { return mutate<CreditCardPurchase>(child(workspaceId, cardId, 'purchases'), 'POST', input, 201) }
+export function createPurchase(workspaceId: string, cardId: string, input: PurchaseInput) { return mutate<CreditCardPurchase>(child(workspaceId, cardId, 'purchases'), 'POST', input, 201) }
+export function updatePurchase(workspaceId: string, cardId: string, purchaseId: string, input: PurchaseInput) { return mutate<CreditCardPurchase>(`${child(workspaceId, cardId, 'purchases')}/${encodeURIComponent(purchaseId)}`, 'PUT', input, 200) }
+export function previewPurchase(workspaceId: string, cardId: string, input: PurchaseInput) { return mutate<PurchasePreview>(child(workspaceId, cardId, 'purchases/preview'), 'POST', input, 200) }
 export async function cancelPurchase(workspaceId: string, cardId: string, purchaseId: string) { const response = await fetch(`${child(workspaceId, cardId, 'purchases')}/${purchaseId}/cancel`, { method: 'POST', headers: { ...headers, [CSRF_HEADER]: await getCsrfToken() } }); if (response.status === 204) return { ok: true as const }; throw new Error(`Falha ao cancelar compra (HTTP ${response.status}).`) }
 export async function listInvoices(workspaceId: string, cardId: string, from: string, through: string, signal?: AbortSignal) { const query = new URLSearchParams({ from, through }); const response = await fetch(`${child(workspaceId, cardId, 'invoices')}?${query}`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar faturas (HTTP ${response.status}).`); return await response.json() as CreditCardInvoice[] }
 export async function getInvoice(workspaceId: string, cardId: string, invoiceId: string, signal?: AbortSignal) { const response = await fetch(`${child(workspaceId, cardId, 'invoices')}/${invoiceId}`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar fatura (HTTP ${response.status}).`); return await response.json() as CreditCardInvoice }

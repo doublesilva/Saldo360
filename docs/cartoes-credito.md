@@ -58,6 +58,11 @@ Ainda não há regra de determinação da fatura, compras, parcelas, encargos, c
 
 ## Compras e parcelas (T09.2)
 
+Nota de atualização (23/10/2026): a [T09.1 de gestão de compras](T09.1-gestao-compras-cartoes.md)
+acrescenta preview, edição protegida e cadastro em andamento. As rotas atuais usam
+`/api/financial-workspaces/{workspaceId}`, não as rotas históricas de família descritas abaixo.
+As limitações históricas de edição devem ser lidas junto dessa atualização; não houve nova carga no servidor.
+
 Uma compra no cartão é uma obrigação de crédito, não um lançamento bancário. A API de compras exige cartão ativo, categoria de despesa da família, descrição, data, valor total positivo e de 1 a 120 parcelas. Compras à vista no crédito usam uma parcela; não equivalem a débito em conta.
 
 ```text

@@ -4,6 +4,9 @@ namespace Saldo360.Application.CreditCards;
 
 public interface IFinancialCreditCardPurchaseRepository
 {
+    Task<T> InWorkspaceTransactionAsync<T>(Guid workspaceId, Func<Task<T>> operation, CancellationToken ct);
+    Task<bool> CanEditAsync(Guid workspaceId, Guid cardId, Guid purchaseId, DateOnly today, CancellationToken ct);
+    Task<CreditCardPortfolioDto> GetPortfolioAsync(Guid workspaceId, string competence, DateOnly today, CancellationToken ct);
     Task AddAsync(FinancialCreditCardPurchase purchase, CancellationToken cancellationToken);
     Task<FinancialCreditCardPurchase?> FindAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken);
     Task<FinancialCreditCardPurchaseDto?> GetAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken);

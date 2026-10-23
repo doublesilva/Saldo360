@@ -9,6 +9,37 @@ namespace Saldo360.Infrastructure.CreditCards;
 
 internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db) : IFinancialCreditCardPurchaseRepository
 {
+    public async Task<T> InWorkspaceTransactionAsync<T>(Guid workspaceId, Func<Task<T>> operation, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", ct);
+        try
+        {
+            var result = await operation();
+            if (result is CreditCardPurchaseResult { Access: not CreditCardPurchaseAccess.Allowed } || result is false)
+            {
+                await tx.RollbackAsync(ct);
+                db.ChangeTracker.Clear(); // A rejected schedule must not leak staging into another command.
+                return result;
+            }
+            await tx.CommitAsync(ct);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    public async Task<bool> CanEditAsync(Guid workspaceId, Guid cardId, Guid purchaseId, DateOnly today, CancellationToken ct)
+    {
+        var ids = await db.FinancialCreditCardInstallments.Where(i => i.WorkspaceId == workspaceId && i.PurchaseId == purchaseId && i.Status == CreditCardInstallmentStatus.Active && i.InvoiceId != null).Select(i => i.InvoiceId!.Value).ToListAsync(ct);
+        return !await db.FinancialCreditCardInvoices.AnyAsync(i => ids.Contains(i.Id) && i.WorkspaceId == workspaceId && i.ClosingDate < today, ct)
+            && !await db.FinancialCreditCardInvoicePayments.AnyAsync(p => ids.Contains(p.InvoiceId) && p.WorkspaceId == workspaceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active, ct)
+            && !await HasActiveReconciliationAsync(workspaceId, cardId, purchaseId, ct);
+    }
     public Task AddAsync(FinancialCreditCardPurchase purchase, CancellationToken cancellationToken) { db.FinancialCreditCardPurchases.Add(purchase); return Task.CompletedTask; }
     public Task<FinancialCreditCardPurchase?> FindAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => db.FinancialCreditCardPurchases.Include(p => p.Installments).SingleOrDefaultAsync(p => p.WorkspaceId == workspaceId && p.CreditCardId == cardId && p.Id == purchaseId, cancellationToken);
     public async Task<FinancialCreditCardPurchaseDto?> GetAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => ToDto(await FindAsync(workspaceId, cardId, purchaseId, cancellationToken));
@@ -89,6 +120,31 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
         return new FinancialCreditCardLimitDto(Money.Format(limit), Money.Format(used), Money.Format(limit - used), Money.Format(Math.Max(0m, used - limit)));
     }
 
+    public async Task<CreditCardPortfolioDto> GetPortfolioAsync(Guid workspaceId, string competence, DateOnly today, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
+        await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", ct);
+        // Same financial queries as card details; no frontend sums or fabricated invoices.
+        var cards = await db.FinancialCreditCards.AsNoTracking().Where(c => c.WorkspaceId == workspaceId && !c.IsArchived).OrderBy(c => c.Name).ToListAsync(ct);
+        var items = new List<CreditCardPortfolioItemDto>();
+        foreach (var card in cards)
+        {
+            var limit = (await GetLimitAsync(workspaceId, card.Id, ct))!;
+            var invoices = await ListInvoicesAsync(workspaceId, card.Id, competence, competence, today, ct);
+            var known = await db.FinancialCreditCardImportedInstallments.AsNoTracking()
+                .Where(i => i.WorkspaceId == workspaceId && i.CreditCardId == card.Id && i.IsHistorical && i.InvoiceId == null && i.Status == FinancialCreditCardImportedInstallmentStatus.Active)
+                .Select(i => i.Amount).ToListAsync(ct);
+            var used = Parse(limit.UsedLimit);
+            var percentage = card.CreditLimit <= 0m ? (used > 0m ? 100m : 0m) : Math.Clamp(used / card.CreditLimit * 100m, 0m, 100m);
+            items.Add(new(card.Id, limit.CreditLimit, limit.UsedLimit, limit.AvailableLimit, decimal.Round(percentage, 2, MidpointRounding.AwayFromZero).ToString("F2", System.Globalization.CultureInfo.InvariantCulture), Money.Format(invoices.Sum(i => Parse(i.TotalAmount))), known.Count, Money.Format(known.Sum())));
+        }
+        var result = new CreditCardPortfolioDto(items.Count, Money.Format(items.Sum(i => Parse(i.CreditLimit))), Money.Format(items.Sum(i => Parse(i.InvoiceTotal))), Money.Format(items.Sum(i => Parse(i.AvailableLimit))), items);
+        await tx.CommitAsync(ct);
+        return result;
+    }
+
+    private static decimal Parse(string value) => decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+
     private async Task<List<FinancialCreditCardInvoiceDto>> MapInvoicesAsync(List<FinancialCreditCardInvoice> invoices, DateOnly today, CancellationToken cancellationToken)
     {
         var ids = invoices.Select(i => i.Id).ToList();
@@ -126,5 +182,5 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
 
     private static FinancialCreditCardPurchaseDto? ToDto(FinancialCreditCardPurchase? purchase) => purchase is null ? null : new(
         purchase.Id, purchase.CreditCardId, purchase.CategoryId, purchase.Description, purchase.PurchaseDate, Money.Format(purchase.TotalAmount), purchase.InstallmentCount, purchase.Status,
-        purchase.Installments.OrderBy(i => i.InstallmentNumber).Select(i => new FinancialCreditCardInstallmentDto(i.Id, i.InstallmentNumber, Money.Format(i.Amount), i.Status)).ToList());
+        purchase.Installments.OrderBy(i => i.InstallmentNumber).Select(i => new FinancialCreditCardInstallmentDto(i.Id, i.InstallmentNumber, Money.Format(i.Amount), i.Status)).ToList(), purchase.PreviouslyPaidInstallments, purchase.FirstPendingCompetence);
 }

@@ -70,6 +70,9 @@ public sealed class CreditCardCsvPreviewServiceTests
 
     private sealed class FakePurchase : IFinancialCreditCardPurchaseRepository
     {
+        public Task<T> InWorkspaceTransactionAsync<T>(Guid workspaceId, Func<Task<T>> operation, CancellationToken ct) => throw new NotSupportedException("CSV preview must not enter a write transaction.");
+        public Task<bool> CanEditAsync(Guid workspaceId, Guid cardId, Guid purchaseId, DateOnly today, CancellationToken ct) => throw new NotSupportedException();
+        public Task<CreditCardPortfolioDto> GetPortfolioAsync(Guid workspaceId, string competence, DateOnly today, CancellationToken ct) => throw new NotSupportedException();
         public static int SaveCalls { get; set; }
         public Task AddAsync(FinancialCreditCardPurchase purchase, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<FinancialCreditCardPurchase?> FindAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => Task.FromResult<FinancialCreditCardPurchase?>(null);

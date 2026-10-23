@@ -18,6 +18,7 @@ internal sealed class FinancialCreditCardPurchaseConfiguration : IEntityTypeConf
             table.HasCheckConstraint("ck_credit_card_purchases_total_scale", "scale(total_amount) <= 2");
             table.HasCheckConstraint("ck_credit_card_purchases_installment_count", "installment_count BETWEEN 1 AND 120");
             table.HasCheckConstraint("ck_credit_card_purchases_status", "status IN ('Active', 'Cancelled')");
+            table.HasCheckConstraint("ck_credit_card_purchases_paid_schedule", "previously_paid_installments >= 0 AND previously_paid_installments < installment_count AND (previously_paid_installments = 0 OR first_pending_competence IS NOT NULL) AND (first_pending_competence IS NULL OR EXTRACT(DAY FROM first_pending_competence) = 1)");
         });
         builder.HasKey(p => p.Id); builder.Property(p => p.Id).ValueGeneratedNever();
         builder.Property(p => p.Description).HasMaxLength(FinancialCreditCardPurchase.DescriptionMaxLength).IsRequired();

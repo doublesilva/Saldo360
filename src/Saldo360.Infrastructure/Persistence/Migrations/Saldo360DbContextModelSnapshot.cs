@@ -1274,9 +1274,17 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("description");
 
+                    b.Property<DateOnly?>("FirstPendingCompetence")
+                        .HasColumnType("date")
+                        .HasColumnName("first_pending_competence");
+
                     b.Property<int>("InstallmentCount")
                         .HasColumnType("integer")
                         .HasColumnName("installment_count");
+
+                    b.Property<int>("PreviouslyPaidInstallments")
+                        .HasColumnType("integer")
+                        .HasColumnName("previously_paid_installments");
 
                     b.Property<DateOnly>("PurchaseDate")
                         .HasColumnType("date")
@@ -1330,6 +1338,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_credit_card_purchases_description_not_blank", "btrim(description) <> ''");
 
                             t.HasCheckConstraint("ck_credit_card_purchases_installment_count", "installment_count BETWEEN 1 AND 120");
+
+                            t.HasCheckConstraint("ck_credit_card_purchases_paid_schedule", "previously_paid_installments >= 0 AND previously_paid_installments < installment_count AND (previously_paid_installments = 0 OR first_pending_competence IS NOT NULL) AND (first_pending_competence IS NULL OR EXTRACT(DAY FROM first_pending_competence) = 1)");
 
                             t.HasCheckConstraint("ck_credit_card_purchases_status", "status IN ('Active', 'Cancelled')");
 

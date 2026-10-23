@@ -11,6 +11,8 @@ public static class FinancialCreditCardPurchaseEndpoints
     {
         var group = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/credit-cards/{cardId:guid}/purchases").RequireAuthorization();
         group.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/preview", Preview).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPut("/{purchaseId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/", List);
         group.MapGet("/{purchaseId:guid}", Get);
         group.MapPost("/{purchaseId:guid}/cancel", Cancel).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -21,7 +23,25 @@ public static class FinancialCreditCardPurchaseEndpoints
     {
         if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
         var result = await service.CreateAsync(workspaceId, cardId, userId, request?.ToInput() ?? new(null, null, null, null, null), ct);
-        return result.Access switch { CreditCardPurchaseAccess.NotFound => Results.NotFound(), CreditCardPurchaseAccess.Invalid => Results.ValidationProblem(result.Errors!), _ => Results.Created($"/api/financial-workspaces/{workspaceId}/credit-cards/{cardId}/purchases/{result.Purchase!.Id}", PurchaseResponse.From(result.Purchase)) };
+        return result.Access switch { CreditCardPurchaseAccess.NotFound => Results.NotFound(), CreditCardPurchaseAccess.Invalid => Results.ValidationProblem(result.Errors!), CreditCardPurchaseAccess.Conflict => Results.Json(new { errors = result.Errors }, statusCode: 409), _ => Results.Created($"/api/financial-workspaces/{workspaceId}/credit-cards/{cardId}/purchases/{result.Purchase!.Id}", PurchaseResponse.From(result.Purchase)) };
+    }
+
+    private static async Task<IResult> Update(Guid workspaceId, Guid cardId, Guid purchaseId, PurchaseRequest? request, CurrentUser user, FinancialCreditCardPurchaseService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var result = await service.UpdateAsync(workspaceId, cardId, purchaseId, userId, request?.ToInput() ?? new(null, null, null, null, null), ct);
+        return result.Access switch { CreditCardPurchaseAccess.NotFound => Results.NotFound(), CreditCardPurchaseAccess.Invalid => Results.ValidationProblem(result.Errors!), CreditCardPurchaseAccess.Conflict => Results.Json(new { errors = result.Errors }, statusCode: 409), _ => Results.Ok(PurchaseResponse.From(result.Purchase!)) };
+    }
+
+    private static async Task<IResult> Preview(Guid workspaceId, Guid cardId, PurchaseRequest? request, CurrentUser user, FinancialCreditCardPurchaseService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        try
+        {
+            var result = await service.PreviewAsync(workspaceId, cardId, userId, request?.ToInput() ?? new(null, null, null, null, null), ct);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        }
+        catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["purchase"] = [ex.Message] }); }
     }
 
     private static async Task<IResult> List(Guid workspaceId, Guid cardId, string? from, string? through, CurrentUser user, FinancialCreditCardPurchaseService service, CancellationToken ct)
@@ -44,13 +64,14 @@ public static class FinancialCreditCardPurchaseEndpoints
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record PurchaseRequest(string? Description, DateOnly? PurchaseDate, decimal? TotalAmount, int? InstallmentCount, Guid? CategoryId)
+public sealed record PurchaseRequest(string? Description, DateOnly? PurchaseDate, decimal? TotalAmount, int? InstallmentCount, Guid? CategoryId,
+    string AmountMode = "Total", int PreviouslyPaidInstallments = 0, DateOnly? FirstPendingCompetence = null)
 {
-    public CreditCardPurchaseInput ToInput() => new(Description, PurchaseDate, TotalAmount, InstallmentCount, CategoryId);
+    public CreditCardPurchaseInput ToInput() => new(Description, PurchaseDate, TotalAmount, InstallmentCount, CategoryId, AmountMode, PreviouslyPaidInstallments, FirstPendingCompetence);
 }
 
 public sealed record InstallmentResponse(Guid Id, int Number, string Amount, CreditCardInstallmentStatus Status);
-public sealed record PurchaseResponse(Guid Id, Guid CreditCardId, Guid CategoryId, string Description, DateOnly PurchaseDate, string TotalAmount, int InstallmentCount, CreditCardPurchaseStatus Status, IReadOnlyList<InstallmentResponse> Installments)
+public sealed record PurchaseResponse(Guid Id, Guid CreditCardId, Guid CategoryId, string Description, DateOnly PurchaseDate, string TotalAmount, int InstallmentCount, CreditCardPurchaseStatus Status, IReadOnlyList<InstallmentResponse> Installments, int PreviouslyPaidInstallments, DateOnly? FirstPendingCompetence)
 {
-    public static PurchaseResponse From(FinancialCreditCardPurchaseDto p) => new(p.Id, p.CreditCardId, p.CategoryId, p.Description, p.PurchaseDate, p.TotalAmount, p.InstallmentCount, p.Status, p.Installments.Select(i => new InstallmentResponse(i.Id, i.Number, i.Amount, i.Status)).ToList());
+    public static PurchaseResponse From(FinancialCreditCardPurchaseDto p) => new(p.Id, p.CreditCardId, p.CategoryId, p.Description, p.PurchaseDate, p.TotalAmount, p.InstallmentCount, p.Status, p.Installments.Select(i => new InstallmentResponse(i.Id, i.Number, i.Amount, i.Status)).ToList(), p.PreviouslyPaidInstallments, p.FirstPendingCompetence);
 }
