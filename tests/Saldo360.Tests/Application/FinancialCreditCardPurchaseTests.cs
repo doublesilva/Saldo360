@@ -5,6 +5,20 @@ namespace Saldo360.Tests.Application;
 public sealed class FinancialCreditCardPurchaseTests
 {
     [Theory]
+    [InlineData("2026-10-04", "2026-10", "2026-10-10")]
+    [InlineData("2026-10-05", "2026-10", "2026-10-10")]
+    [InlineData("2026-10-08", "2026-11", "2026-11-10")]
+    public void BlackClosingIsInclusiveAndMonthlyAmountIsNotOriginalTotal(string date, string competence, string due)
+    {
+        var purchaseDate = DateOnly.Parse(date);
+        var cycle = CreditCardInvoiceCalendarCalculator.ForInstallment(purchaseDate, 1, 5, 10);
+        Assert.Equal(competence, cycle.Competence); Assert.Equal(DateOnly.Parse(due), cycle.DueDate);
+        Assert.Equal(DateOnly.Parse(competence + "-01").AddMonths(1).ToString("yyyy-MM"), CreditCardInvoiceCalendarCalculator.ForInstallment(purchaseDate, 2, 5, 10).Competence);
+        var p = FinancialCreditCardPurchase.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Synthetic", purchaseDate, 999m, 3, Guid.NewGuid(), DateTimeOffset.UtcNow);
+        Assert.All(p.Installments, i => Assert.Equal(333m, i.Amount));
+        Assert.Equal(999m, p.TotalAmount);
+    }
+    [Theory]
     [InlineData("100.00", 3, "33.34", "33.33", "33.33")]
     [InlineData("0.10", 3, "0.04", "0.03", "0.03")]
     public void DistributesCentsDeterministically(string text, int count, string first, string second, string third)

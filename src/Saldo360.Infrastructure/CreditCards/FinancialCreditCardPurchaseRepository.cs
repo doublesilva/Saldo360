@@ -145,12 +145,18 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
                 UnlinkedObligations = period.Concat(known.Where(i => i.Competence == null)).ToList(),
                 UnassignedCompetenceCount = known.Count(i => i.Competence == null), IsArchived = card.IsArchived,
                 IncompleteDetailsCount = period.Count(i => i.DueDate == null || i.Number == null || i.Count == null || i.SourceSystem == null),
-                PaidPeriodAmount = Money.Format(invoices.Sum(i => Parse(i.PaidAmount))),
+                Invoices = invoices, PaidPeriodAmount = Money.Format(invoices.Sum(i => Parse(i.PaidAmount))),
                 OutstandingPeriodAmount = Money.Format(invoices.Sum(i => Parse(i.RemainingAmount)) + unlinkedTotal)
             });
         }
         var active = items.Where(i => !i.IsArchived).ToList();
-        var result = new CreditCardPortfolioDto(active.Count, Money.Format(active.Sum(i => Parse(i.CreditLimit))), Money.Format(active.Sum(i => Parse(i.InvoiceTotal))), Money.Format(active.Sum(i => Parse(i.AvailableLimit))), items);
+        var result = new CreditCardPortfolioDto(active.Count, Money.Format(active.Sum(i => Parse(i.CreditLimit))), Money.Format(active.Sum(i => Parse(i.InvoiceTotal))), Money.Format(active.Sum(i => Parse(i.AvailableLimit))), items)
+        {
+            PeriodInvoiceTotal = Money.Format(items.Sum(i => Parse(i.InvoiceTotal))),
+            PeriodPaidTotal = Money.Format(items.Sum(i => Parse(i.PaidPeriodAmount))),
+            PeriodOutstandingTotal = Money.Format(items.Sum(i => Parse(i.OutstandingPeriodAmount))),
+            PeriodUnlinkedTotal = Money.Format(items.Sum(i => Parse(i.UnlinkedPeriodAmount)))
+        };
         await tx.CommitAsync(ct);
         return result;
     }

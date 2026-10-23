@@ -1766,6 +1766,7 @@ button.calendar-day--selected {
 
 .credit-cards__heading,.credit-card-details__heading,.section-heading,.credit-card-details__heading,.form-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
 .credit-cards__tabs { display:flex; gap:.4rem; margin-bottom:1rem; border-bottom:1px solid var(--border); }
+.page--authenticated:has(.credit-cards) > .api-health { display:none; }
 .credit-cards__tab { border:0; border-radius:.4rem .4rem 0 0; background:transparent; }
 .credit-cards__tab--active { color:var(--accent); box-shadow:inset 0 -2px var(--accent); }
 .credit-cards__layout { display:grid; grid-template-columns:minmax(12rem,18rem) minmax(0,1fr); gap:1rem; margin-top:1rem; }

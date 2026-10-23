@@ -110,6 +110,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Put, Root + $"/purchases/{id}", owner, Input(description: "Descrição corrigida"))).StatusCode);
         // Existing past purchases remain valid. They cannot be silently rewritten once consolidated.
         var past = await ReadAsync<JsonElement>(await PostAsync("/purchases", Input("50.00", 1, 0, null, date: "2020-01-01")));
+        Assert.Equal(HttpStatusCode.Conflict, (await PostAsync("/purchases", Input("60.00", 1, 0, null, date: "2020-01-01"))).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await SendWithCsrfAsync(HttpMethod.Put, Root + $"/purchases/{past.GetProperty("id").GetGuid()}", owner, Input("60.00", 1, 0, null, date: "2020-01-01"))).StatusCode);
         // An attempted move to a closed destination must not persist the description or schedule.
         Assert.Equal(HttpStatusCode.Conflict, (await SendWithCsrfAsync(HttpMethod.Put, Root + $"/purchases/{id}", owner, Input(first: "2020-01-01", date: "2019-01-01"))).StatusCode);

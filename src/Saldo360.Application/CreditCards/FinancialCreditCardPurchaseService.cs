@@ -89,7 +89,7 @@ public sealed class FinancialCreditCardPurchaseService(IFinancialWorkspaceReposi
             if (purchaseId is not null && cycle.ClosingDate < today)
                 return new(CreditCardPurchaseAccess.Conflict, null, new Dictionary<string, string[]> { ["purchase"] = ["Não é possível mover parcelas para um período já fechado."] });
             var invoice = await purchases.FindInvoiceAsync(workspaceId, cardId, cycle.ClosingDate, cancellationToken);
-            if (invoice is not null && (purchaseId is not null || input.FirstPendingCompetence is not null))
+            if (invoice is not null)
             {
                 var details = await purchases.GetInvoiceAsync(workspaceId, cardId, invoice.Id, today, cancellationToken);
                 if (details is not null && (details.Status == FinancialCreditCardInvoiceStatus.Closed || details.PaidAmount != "0.00"))
