@@ -9,6 +9,7 @@ import {
   type CardPortfolio, type CreditCardInput, type CreditCardInvoice, type CreditCardLimit, type CreditCardPurchase, type FinancialCreditCard, type InvoicePayment,
 } from '../api/creditCards'
 import { CreditCardPurchaseForm } from './CreditCardPurchaseForm'
+import { CardKnownCommitments } from './CardKnownCommitments'
 import { FinancialInvoiceReconciliations } from './FinancialInvoiceReconciliations'
 import { FinancialCreditCardImports } from './FinancialCreditCardImports'
 import { normalizeRequestError, toUserMessage } from '../api/apiErrors'
@@ -69,7 +70,8 @@ function CardDetails({ workspaceId, cards, card, month, accounts, categories, on
     <section><div className="section-heading"><h5>Faturas</h5><span className="meta">{invoices.length} no mês</span></div>{invoices.length === 0 ? <p className="meta">Nenhuma fatura no período. O limite pode estar comprometido por parcelas futuras ou obrigações conhecidas ainda sem fatura.</p> : invoices.map((item) => <InvoiceCard key={item.id} invoice={item} onSelect={() => { setInvoice(item); void listPayments(workspaceId, card.id, item.id).then(setPayments).catch((failure) => setError(errorMessage(failure))) }} />)}</section>
     {invoice && <InvoiceDetails invoice={invoice} payments={payments} accounts={accounts} canPay={!card.isArchived} onClose={() => setInvoice(null)} onPay={() => setShowPayment(true)} onAdd={() => { setEditingPurchase(undefined); setPurchaseCompetence(invoice.competence); setShowPurchase(true) }} onCancelPayment={cancelInvoicePayment} />}{showPayment && invoice && <PaymentForm workspaceId={workspaceId} cardId={card.id} invoice={invoice} accounts={accounts} onDone={() => { setShowPayment(false); reload() }} onCancel={() => setShowPayment(false)} />}
     <section><div className="section-heading"><h5>Compras</h5>{!card.isArchived && <button type="button" onClick={() => { setEditingPurchase(undefined); setPurchaseCompetence(undefined); setShowPurchase(true) }}>Nova compra</button>}</div>{purchases.length === 0 ? <p className="meta">Nenhuma compra cadastrada.</p> : purchases.map((purchase) => <PurchaseRow key={purchase.id} purchase={purchase} onEdit={() => { setEditingPurchase(purchase); setPurchaseCompetence(undefined); setShowPurchase(true) }} onCancel={() => cancelCardPurchase(purchase.id)} />)}</section>{showPurchase && <CreditCardPurchaseForm key={editingPurchase?.id ?? `new-${purchaseCompetence ?? ''}`} workspaceId={workspaceId} cards={cards} cardId={card.id} purchase={editingPurchase} competence={purchaseCompetence} categories={categories} onDone={id => { setShowPurchase(false); onCardSelected(id); reload() }} onCancel={() => setShowPurchase(false)} />}
-    <section><h5>Projeção dos próximos seis meses</h5><p className="meta">Faturas existentes. Obrigações conhecidas sem vínculo não são inventadas como faturas nem incluídas nesta lista.</p>{projection.map((item) => <div className="projection-row" key={item.id}><span>{item.competence} · vencimento {item.dueDate}</span><strong>{formatBrlDecimal(item.totalAmount)}</strong></div>)}</section>
+    <CardKnownCommitments workspaceId={workspaceId} cardId={card.id} month={month} />
+    <section><h5>Faturas vinculadas nos próximos seis meses</h5>{projection.map((item) => <div className="projection-row" key={item.id}><span>{item.competence} · vencimento {item.dueDate}</span><strong>{formatBrlDecimal(item.totalAmount)}</strong></div>)}</section>
   </section>
 }
 

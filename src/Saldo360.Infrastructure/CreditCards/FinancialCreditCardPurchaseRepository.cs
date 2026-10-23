@@ -133,10 +133,18 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
             var invoices = await ListInvoicesAsync(workspaceId, card.Id, competence, competence, today, ct);
             var known = await db.FinancialCreditCardImportedInstallments.AsNoTracking()
                 .Where(i => i.WorkspaceId == workspaceId && i.CreditCardId == card.Id && i.IsHistorical && i.InvoiceId == null && i.Status == FinancialCreditCardImportedInstallmentStatus.Active)
-                .Select(i => i.Amount).ToListAsync(ct);
+                .Select(i => new KnownCardObligationDto(i.Id, i.Description, Money.Format(i.Amount), i.Competence, i.DueDate, i.InstallmentNumber, i.InstallmentCount, i.SourceSystem, i.ExternalReference)).ToListAsync(ct);
             var used = Parse(limit.UsedLimit);
             var percentage = card.CreditLimit <= 0m ? (used > 0m ? 100m : 0m) : Math.Clamp(used / card.CreditLimit * 100m, 0m, 100m);
-            items.Add(new(card.Id, limit.CreditLimit, limit.UsedLimit, limit.AvailableLimit, decimal.Round(percentage, 2, MidpointRounding.AwayFromZero).ToString("F2", System.Globalization.CultureInfo.InvariantCulture), Money.Format(invoices.Sum(i => Parse(i.TotalAmount))), known.Count, Money.Format(known.Sum())));
+            var period = known.Where(i => i.Competence?.ToString("yyyy-MM") == competence).ToList();
+            var invoiceTotal = invoices.Sum(i => Parse(i.TotalAmount));
+            var unlinkedTotal = period.Sum(i => Parse(i.Amount));
+            items.Add(new(card.Id, limit.CreditLimit, limit.UsedLimit, limit.AvailableLimit, decimal.Round(percentage, 2, MidpointRounding.AwayFromZero).ToString("F2", System.Globalization.CultureInfo.InvariantCulture), Money.Format(invoiceTotal), known.Count, Money.Format(known.Sum(i => Parse(i.Amount))))
+            {
+                UnlinkedPeriodAmount = Money.Format(unlinkedTotal), KnownPeriodTotal = Money.Format(invoiceTotal + unlinkedTotal),
+                UnlinkedObligations = period.Concat(known.Where(i => i.Competence == null)).ToList(),
+                UnassignedCompetenceCount = known.Count(i => i.Competence == null)
+            });
         }
         var result = new CreditCardPortfolioDto(items.Count, Money.Format(items.Sum(i => Parse(i.CreditLimit))), Money.Format(items.Sum(i => Parse(i.InvoiceTotal))), Money.Format(items.Sum(i => Parse(i.AvailableLimit))), items);
         await tx.CommitAsync(ct);
