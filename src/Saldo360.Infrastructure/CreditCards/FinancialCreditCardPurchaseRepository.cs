@@ -125,7 +125,7 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
         await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
         await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", ct);
         // Same financial queries as card details; no frontend sums or fabricated invoices.
-        var cards = await db.FinancialCreditCards.AsNoTracking().Where(c => c.WorkspaceId == workspaceId && !c.IsArchived).OrderBy(c => c.Name).ToListAsync(ct);
+        var cards = await db.FinancialCreditCards.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).OrderBy(c => c.Name).ToListAsync(ct);
         var items = new List<CreditCardPortfolioItemDto>();
         foreach (var card in cards)
         {
@@ -143,10 +143,14 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
             {
                 UnlinkedPeriodAmount = Money.Format(unlinkedTotal), KnownPeriodTotal = Money.Format(invoiceTotal + unlinkedTotal),
                 UnlinkedObligations = period.Concat(known.Where(i => i.Competence == null)).ToList(),
-                UnassignedCompetenceCount = known.Count(i => i.Competence == null)
+                UnassignedCompetenceCount = known.Count(i => i.Competence == null), IsArchived = card.IsArchived,
+                IncompleteDetailsCount = period.Count(i => i.DueDate == null || i.Number == null || i.Count == null || i.SourceSystem == null),
+                PaidPeriodAmount = Money.Format(invoices.Sum(i => Parse(i.PaidAmount))),
+                OutstandingPeriodAmount = Money.Format(invoices.Sum(i => Parse(i.RemainingAmount)) + unlinkedTotal)
             });
         }
-        var result = new CreditCardPortfolioDto(items.Count, Money.Format(items.Sum(i => Parse(i.CreditLimit))), Money.Format(items.Sum(i => Parse(i.InvoiceTotal))), Money.Format(items.Sum(i => Parse(i.AvailableLimit))), items);
+        var active = items.Where(i => !i.IsArchived).ToList();
+        var result = new CreditCardPortfolioDto(active.Count, Money.Format(active.Sum(i => Parse(i.CreditLimit))), Money.Format(active.Sum(i => Parse(i.InvoiceTotal))), Money.Format(active.Sum(i => Parse(i.AvailableLimit))), items);
         await tx.CommitAsync(ct);
         return result;
     }

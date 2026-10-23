@@ -13,6 +13,10 @@ public sealed record CreditCardPortfolioItemDto(Guid CardId, string CreditLimit,
     public string KnownPeriodTotal { get; init; } = "0.00";
     public IReadOnlyList<KnownCardObligationDto> UnlinkedObligations { get; init; } = [];
     public int UnassignedCompetenceCount { get; init; }
+    public bool IsArchived { get; init; }
+    public int IncompleteDetailsCount { get; init; }
+    public string PaidPeriodAmount { get; init; } = "0.00";
+    public string OutstandingPeriodAmount { get; init; } = "0.00";
 }
 public sealed record KnownCardObligationDto(Guid Id, string Description, string Amount, DateOnly? Competence, DateOnly? DueDate, int? Number, int? Count, string? SourceSystem, string? ExternalReference);
 public enum CreditCardPurchaseAccess { Allowed, NotFound, Invalid, Conflict }
