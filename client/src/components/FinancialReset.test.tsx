@@ -21,7 +21,7 @@ async function open() { fireEvent.click(screen.getByRole('button', { name: 'Rese
 it('shows counts without values, focuses confirmation and requires exact text; cancellation writes nothing', async () => {
   const calls = api(); render(<FinancialReset workspaceId="w" onReset={vi.fn()} />)
   const input = await open()
-  expect(document.activeElement).toBe(input)
+  await waitFor(() => expect(document.activeElement).toBe(input))
   expect(screen.getByText('Contas')).toBeTruthy(); expect(screen.getByText('4')).toBeTruthy()
   const submit = screen.getByRole('button', { name: 'Apagar dados financeiros' }) as HTMLButtonElement
   expect(submit.disabled).toBe(true)
