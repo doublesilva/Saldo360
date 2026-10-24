@@ -13,6 +13,95 @@ namespace Saldo360.Tests.Api;
 [Collection(PostgresCollection.Name)]
 public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
+    [Fact]
+    public async Task GmailAlreadyReceivedContinuesThroughAgentAndAtomicConsolidationExactlyOnce()
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
+        using var db = f.Db;
+        f.Card.Update(new("Synthetic", "Bank", "1234", null, 100m, 5, 10, null, "synthetic-query"), f.User, DateTimeOffset.UtcNow);
+        await db.SaveChangesAsync(); f.Provider.FullCalendar = true; f.Extractor.FullCalendar = true; f.Extractor.Failure = "insufficient";
+        var cards = new FinancialCreditCardRepository(db); var gate = new CardEmailSearchAuthorization(new FinancialWorkspaceRepository(db));
+        var locks = new PostgresFinancialEmailCollectorLock(ConnectionString);
+        var parser = new CreditCardPdfPreviewService(cards, f.Extractor, new Passwords(), new(cards));
+        var receiver = new FinancialDocumentInboxService(new FinancialDocumentInboxRepository(db), f.Storage, f.Extractor, parser, new(cards),
+            new(), new NoClassifier(), new FinancialDocumentAnalysisRouter(), TimeProvider.System);
+        var processing = new InboxStatementProcessingService(f.Service, new(gate, new CreditCardPdfConfirmationRepository(db, f.Storage, f.Options), locks, TimeProvider.System));
+        var search = new CardLatestEmailService(gate, cards, new Mail(), parser, receiver, locks, processing);
+        var first = await search.SearchAsync(f.Workspace, f.Card.Id, f.User, default);
+        Assert.Equal("AlreadyReceived", first.Status); Assert.Equal("Imported", first.Processing!.Consolidation.Status);
+        var second = await search.SearchAsync(f.Workspace, f.Card.Id, f.User, default);
+        Assert.Equal("AlreadyImported", second.Processing!.Consolidation.Status); Assert.Equal(1, f.Provider.Calls);
+        Assert.Single(await db.FinancialDocumentInboxItems.ToListAsync()); Assert.Single(await db.FinancialCreditCardPurchases.ToListAsync());
+        Assert.Single(await db.FinancialCreditCardInstallments.ToListAsync()); Assert.Single(await db.FinancialCreditCardInvoiceConsolidations.ToListAsync());
+        Assert.Empty(await db.FinancialCreditCardInvoicePayments.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
+        Assert.Empty(await db.FinancialEmailCollectorCheckpoints.ToListAsync()); Assert.Equal(2, await db.FinancialCategories.CountAsync());
+    }
+
+    private sealed class NoClassifier : IFinancialDocumentClassifier
+    {
+        public Task<FinancialDocumentClassificationResult> ClassifyAsync(FinancialDocumentClassificationRequest request, CancellationToken ct) => throw new InvalidOperationException("No classifier in statement processing.");
+    }
+    private sealed class Mail : IFinancialEmailSource
+    {
+        public Task<IReadOnlyList<FinancialEmailMessage>> SearchLatestAsync(string query, int max, CancellationToken ct) => Task.FromResult<IReadOnlyList<FinancialEmailMessage>>([new("synthetic", DateTimeOffset.UtcNow)]);
+        public Task<IReadOnlyList<FinancialEmailMessage>> SearchAsync(string query, DateTimeOffset after, int max, CancellationToken ct) => throw new InvalidOperationException();
+        public Task<IReadOnlyList<FinancialEmailAttachment>> ListAttachmentsAsync(string id, CancellationToken ct) => Task.FromResult<IReadOnlyList<FinancialEmailAttachment>>([new("a", "1", "synthetic.pdf", "application/pdf", 18)]);
+        public Task<Stream> OpenAttachmentAsync(string id, string attachment, CancellationToken ct) => Task.FromResult<Stream>(new MemoryStream("%PDF-1.4 synthetic"u8.ToArray()));
+        public Task<FinancialEmailBody> GetBodyAsync(string id, CancellationToken ct) => throw new InvalidOperationException();
+    }
+    [Theory]
+    [InlineData("insufficient", "Reliable", 1)]
+    [InlineData("wrong-card", "Rejected", 1)]
+    [InlineData("invented-identity", "Rejected", 1)]
+    [InlineData("password", "Rejected", 0)]
+    public async Task AutomaticPathReadsAgentBeforeResolvingDocumentaryIdentity(string scenario, string expected, int agentCalls)
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
+        using var db = f.Db;
+        f.Extractor.Failure = scenario; f.Provider.Failure = scenario;
+        var result = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true);
+        Assert.Equal(expected, result.Status); Assert.Equal(agentCalls, f.Provider.Calls);
+        if (scenario == "password") Assert.Equal("PasswordRequired", result.Analysis!.FailureCode);
+        Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task PasswordResumeUsesStoredDocumentAndDoesNotReupload()
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
+        using var db = f.Db; f.Extractor.Failure = "password";
+        Assert.Equal("PasswordRequired", (await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true)).Analysis!.FailureCode);
+        var resumed = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, "synthetic", default, automatic: true);
+        Assert.Equal("Reliable", resumed.Status); Assert.Equal(1, f.Provider.Calls);
+        Assert.Single(await db.FinancialDocumentInboxItems.ToListAsync()); Assert.Null(f.Item.CreditCardId);
+    }
+
+    [Fact]
+    public async Task AgentIdentifyingAnotherRegisteredCardDoesNotConsolidateSearchCandidate()
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
+        using var db = f.Db;
+        db.FinancialCreditCards.Add(FinancialCreditCard.Create(f.Workspace, new("Other", "Bank", "5678", null, 100m, 5, 10, null), f.User, DateTimeOffset.UtcNow));
+        await db.SaveChangesAsync();
+        f.Provider.Digits = "5678"; f.Extractor.Digits = "5678";
+        var result = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true);
+        Assert.Equal(1, f.Provider.Calls); Assert.Equal("CardMismatch", result.Analysis!.FailureCode);
+        Assert.Null(f.Item.CreditCardId); Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync());
+    }
+
+    [Fact]
+    public async Task AutomaticPathDoesNotEnableDisabledAgentOrUseCandidateToResolveAmbiguity()
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.Disabled);
+        using var db = f.Db;
+        var unavailable = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true);
+        Assert.Equal("AgentUnavailable", unavailable.Analysis!.FailureCode); Assert.Equal(0, f.Provider.Calls);
+        f.Options.Mode = CreditCardStatementAgentMode.AgentPrimary;
+        var duplicate = FinancialCreditCard.Create(f.Workspace, new("Other", "Bank", "1234", null, 100m, 5, 10, null), f.User, DateTimeOffset.UtcNow);
+        db.FinancialCreditCards.Add(duplicate); await db.SaveChangesAsync();
+        var ambiguous = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true);
+        Assert.Equal("NeedsReview", ambiguous.Status); Assert.Equal("CardIdentificationRequired", ambiguous.Analysis!.FailureCode);
+    }
     [Theory]
     [InlineData(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary)]
     [InlineData(FinancialDocumentSource.Manual, CreditCardStatementAgentMode.AgentPrimary)]
@@ -118,7 +207,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         var health = FinancialCategory.Create(target, "Saúde", CategoryType.Expense, workspace.OwnerUserId, now);
         var other = FinancialCategory.Create(target, "Outros", CategoryType.Expense, workspace.OwnerUserId, now);
         var item = FinancialDocumentInboxItem.Create(Guid.NewGuid(), target, source, source == FinancialDocumentSource.Email ? "gmail:synthetic:part:1" : null,
-            "synthetic.pdf", new string('a', 64), "application/pdf", "synthetic-private", now, now);
+            "synthetic.pdf", Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData("%PDF-1.4 synthetic"u8)), "application/pdf", "synthetic-private", now, now);
         db.FinancialCreditCards.Add(card); db.FinancialCategories.AddRange(health, other); db.FinancialDocumentInboxItems.Add(item); await db.SaveChangesAsync();
         var options = new CreditCardStatementAgentOptions { Enabled = true, Mode = mode, Model = "synthetic" };
         var extractor = new Extractor(); var provider = new Provider(); var storage = new Storage();
@@ -134,27 +223,28 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         InboxStatementAnalysisService Service, CreditCardStatementAgentOptions Options, Provider Provider, Extractor Extractor, Storage Storage);
     private sealed class Provider : ICreditCardStatementAgentProvider
     {
-        public int Calls; public string? Failure; public string Category = "Saúde";
+        public int Calls; public string? Failure; public string Category = "Saúde"; public bool FullCalendar; public string Digits = "1234";
         public Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken ct)
         {
             Calls++; if (Failure == "provider") throw new CreditCardStatementAgentUnavailableException("synthetic unavailable");
             if (Failure == "json") return Task.FromResult("not-json");
             Assert.DoesNotContain("gmail:", request.DocumentText); Assert.DoesNotContain("OwnerUserId", request.DocumentText);
             var item = new CreditCardStatementAgentItem("SHOP", "10.00", "Debit", "Purchase", null, null, "CurrentInvoice", true, 1, "SHOP 10.00", "High", "2026-10-01", "SHOP", Category, "High");
-            return Task.FromResult(JsonSerializer.Serialize(new CreditCardStatementAgentDocument("2.0", new("Bank", "1234", "2026-10", null, null, "10.00"), [item]), CreditCardStatementAgentSchema.Json));
+            return Task.FromResult(JsonSerializer.Serialize(new CreditCardStatementAgentDocument("2.0", new("Bank", Digits, "2026-10", FullCalendar ? "2026-10-05" : null, FullCalendar ? "2026-10-10" : null, "10.00")
+            { IdentityPage = 1, IdentityEvidence = Failure == "invented-identity" ? "invented Bank 1234" : $"Bank {Digits} Synthetic Holder", CardProduct = "Synthetic", HolderName = "Holder" }, [item]), CreditCardStatementAgentSchema.Json));
         }
     }
     private sealed class Extractor : ICreditCardPdfTextExtractor
     {
-        public string? Failure;
+        public string? Failure; public bool FullCalendar; public string Digits = "1234";
         public Task<CreditCardPdfExtractedDocument> ExtractAsync(Stream pdf, int maxPages, IReadOnlyList<string> passwords, CancellationToken ct)
         {
             Assert.Equal(50, maxPages);
-            if (Failure == "password") throw new CreditCardPdfReadException(CreditCardPdfReadFailure.PasswordRequired);
-            return Task.FromResult(new CreditCardPdfExtractedDocument(Failure == "no-text" ? [] : [new(1, "01/10 SHOP 10.00\nTOTAL 10.00")]));
+            if (Failure == "password" && !passwords.Contains("synthetic")) throw new CreditCardPdfReadException(CreditCardPdfReadFailure.PasswordRequired);
+            return Task.FromResult(new CreditCardPdfExtractedDocument(Failure == "no-text" ? [] : [new(1, $"Bank {Digits} Synthetic Holder\n01/10 SHOP 10.00\nTOTAL 10.00")]));
         }
         public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string file, string? competence, string? format) =>
-            new(file, 1, "Synthetic", new("Bank", Failure == "wrong-card" ? "9999" : "1234", "2026-10", null, null, "10.00"), new(1, 0, 0, 0),
+            new(file, 1, "Synthetic", new("Bank", Failure == "insufficient" ? null : Failure == "wrong-card" ? "9999" : Digits, "2026-10", FullCalendar ? "2026-10-05" : null, FullCalendar ? "2026-10-10" : null, "10.00"), new(1, 0, 0, 0),
                 [new(1, 1, "SHOP 10.00", "2026-10-01", "SHOP", "10.00", "Purchase", null, null, "2026-10", "Valid", [], []) { Nature = "Debit", IncludedInCurrentTotal = true }], []);
     }
     private sealed class Passwords : ICreditCardPdfPasswordProvider

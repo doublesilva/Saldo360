@@ -12,6 +12,11 @@ namespace Saldo360.Tests.Api;
 [Collection(PostgresCollection.Name)]
 public sealed class CardLatestEmailEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
+    private sealed class PendingProcessing : IInboxStatementProcessingService
+    {
+        public Task<InboxStatementProcessingResult> ProcessAsync(Guid workspace, Guid document, Guid candidate, Guid user, string? password, CancellationToken ct) =>
+            Task.FromResult(new InboxStatementProcessingResult(new("NeedsReview"), new("NeedsReview", FailureCode: "AgentUnavailable")));
+    }
     [Fact]
     public async Task SuccessfulSearchOnlyReceivesDocumentAndPreservesCheckpointAndFinancialTables()
     {
@@ -32,7 +37,7 @@ public sealed class CardLatestEmailEndpointsTests(PostgresFixture postgres) : Po
         var storage = new MemoryStorage();
         var inbox = new FinancialDocumentInboxService(new FinancialDocumentInboxRepository(db), storage, new ForbiddenAnalysis(), preview,
             new CreditCardStatementResolver(cards), new FinancialDocumentClassificationOptions { Enabled = true }, new ForbiddenAnalysis(), new FinancialDocumentAnalysisRouter(), TimeProvider.System);
-        var service = new CardLatestEmailService(new(new FinancialWorkspaceRepository(db)), cards, new SyntheticSource(), preview, inbox, new PostgresFinancialEmailCollectorLock(ConnectionString));
+        var service = new CardLatestEmailService(new(new FinancialWorkspaceRepository(db)), cards, new SyntheticSource(), preview, inbox, new PostgresFinancialEmailCollectorLock(ConnectionString), new PendingProcessing());
         var found = await service.SearchAsync(target, card.Id, workspace.OwnerUserId, default);
         var repeated = await service.SearchAsync(target, card.Id, workspace.OwnerUserId, default);
         Assert.Equal("Found", found.Status); Assert.Equal("AlreadyReceived", repeated.Status);

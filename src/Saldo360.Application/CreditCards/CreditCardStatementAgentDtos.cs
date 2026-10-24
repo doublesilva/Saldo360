@@ -12,6 +12,7 @@ public sealed record CreditCardStatementAgentRequest(
 {
     public StatementCategoryContext? Categories { get; init; }
     public bool ReconcileWithRetry { get; init; }
+    public bool RequireAgentIdentity { get; init; }
     public string? CorrectionInstruction { get; init; }
 }
 
@@ -49,9 +50,10 @@ public sealed class CreditCardStatementAgentUnavailableException(string message,
 
 public static class CreditCardStatementAgentPrompt
 {
-    public const string Version = "2026-10-23.2";
+    public const string Version = "2026-10-24.3";
     public const string System = """
         Você extrai faturas de cartão de crédito para JSON estritamente aderente ao schema fornecido.
+        No header, extraia cardProduct e holderName quando presentes, e identityEvidence como citação literal contínua da identificação no PDF com identityPage. Ausente significa null. Nunca use o cartão candidato como evidência documental.
         Extraia somente fatos evidenciados no documento. Nunca invente dados ausentes, emissor, produto comercial ou cartão cadastrado.
         Distinga fatura atual, parcelas futuras, pagamentos, créditos, estornos, taxas, saldo anterior e saldo financiado.
         Payment é informacional e deve usar includedInCurrentTotal=false e section=Payments.
@@ -87,7 +89,17 @@ public sealed record CreditCardStatementAgentHeader(
     string? Competence,
     string? ClosingDate,
     string? DueDate,
-    string? OfficialTotal);
+    string? OfficialTotal)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CardProduct { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? HolderName { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? IdentityEvidence { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? IdentityPage { get; init; }
+}
 
 public sealed record CreditCardStatementAgentItem(
     string OriginalDescription,
@@ -121,10 +133,16 @@ public sealed record CreditCardStatementAgentPreview(
 public sealed record CreditCardStatementAgentPreviewResult(
     CreditCardPdfPreviewAccess Access,
     CreditCardStatementExtractionResult? Preview,
-    IDictionary<string, string[]>? Errors);
+    IDictionary<string, string[]>? Errors)
+{
+    public string? FailureCode { get; init; }
+}
 
 public interface ICreditCardStatementAgentPreviewService
 {
+    Task<CreditCardStatementAgentPreviewResult> PreviewForProcessingAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
+        long length, string fileName, string? competence, string? password, StatementCategoryContext categories, CancellationToken ct)
+        => PreviewWithCategoriesAsync(workspaceId, cardId, userId, pdf, length, fileName, competence, password, categories, ct);
     Task<CreditCardStatementAgentPreviewResult> PreviewWithCategoriesAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
         long length, string fileName, string? competence, string? password, StatementCategoryContext categories, CancellationToken ct)
         => PreviewAsync(workspaceId, cardId, userId, pdf, length, fileName, competence, password, ct);
@@ -163,6 +181,9 @@ public static class CreditCardStatementAgentSchema
                 || new[] { "transactionDate", "normalizedDescription", "suggestedCategory", "categoryConfidence" }.Any(field => !item.TryGetProperty(field, out _)))) return false;
         }
         if (!OptionalText(document.Header.Issuer, 120) || !OptionalDigits(document.Header.CardLastDigits, 4)
+            || !OptionalText(document.Header.CardProduct, 120) || !OptionalText(document.Header.HolderName, 200)
+            || !OptionalText(document.Header.IdentityEvidence, 1000)
+            || document.Header.IdentityPage is { } identityPage && (identityPage < 1 || identityPage > pageCount)
             || !OptionalCompetence(document.Header.Competence) || !OptionalDate(document.Header.ClosingDate)
             || !OptionalDate(document.Header.DueDate) || !OptionalMoney(document.Header.OfficialTotal)) return false;
         var normalized = new List<CreditCardStatementAgentItem>(document.Items.Count);

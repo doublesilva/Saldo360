@@ -293,6 +293,11 @@ public sealed class OfficialStatementConsolidationTests(PostgresFixture postgres
     {
         var f = await Arrange(); using var db = f.Db;
         var doc = await Document(f, [Item("SHOP", "10.00")], "10.00");
+        // A trusted agent analysis previously validated against the stored PDF can be resumed without another provider call.
+        var stored = InboxStatementAnalysisService.Read(doc.StatementAnalysisJson)!;
+        var extraction = stored.Extraction! with { Mode = "AgentPrimary", PrimarySource = "Agent", Primary = stored.Extraction!.Primary! with { Header = stored.Extraction.Primary!.Header with { IdentityEvidence = "Bank 1234", IdentityPage = 1 } } };
+        doc.SetStatementAnalysis(JsonSerializer.Serialize(stored with { Extraction = extraction }), true, DateTimeOffset.UtcNow);
+        await db.SaveChangesAsync();
         using var app = Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IFinancialDocumentStorage>(f.Storage); services.AddSingleton(f.Options);

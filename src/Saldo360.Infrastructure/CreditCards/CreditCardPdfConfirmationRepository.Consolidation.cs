@@ -51,7 +51,10 @@ internal sealed partial class CreditCardPdfConfirmationRepository
             if (document.Status is not (FinancialDocumentInboxStatus.ReadyForReview or FinancialDocumentInboxStatus.ReadyToConfirm)) return await Abort("NeedsReview", "AnalysisRequired");
             if (!OfficialStatementAnalysisValidation.Revalidate(analysis, cardId, out var preview)) return await Abort("NeedsReview", "AnalysisNotReliable");
             var header = preview!.Header;
-            var resolution = await new CreditCardStatementResolver(new FinancialCreditCardRepository(db)).ResolveAsync(workspaceId, header.Issuer, header.CardLastDigits, card.HolderUserId, ct);
+            var identityResolver = new CreditCardStatementResolver(new FinancialCreditCardRepository(db));
+            var resolution = header.IdentityEvidence is not null
+                ? await identityResolver.ResolveDocumentAsync(workspaceId, header, ct)
+                : await identityResolver.ResolveAsync(workspaceId, header.Issuer, header.CardLastDigits, null, ct);
             if (resolution.Status != CreditCardStatementResolutionStatus.Matched || resolution.CardId != cardId) return await Abort("NeedsReview", "CardIdentityUnresolved");
             var catalog = await new StatementCategoryContextRepository(db).ReadAsync(workspaceId, cardId, documentId, ct);
             var cardDto = (await new FinancialCreditCardRepository(db).GetAsync(workspaceId, cardId, ct))!;

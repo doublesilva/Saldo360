@@ -6,16 +6,20 @@ public sealed class LatestEmailSearchLimitException : Exception;
 
 public sealed record CardLatestEmailResult(string Status, Guid CardId, Guid? DocumentId = null,
     string? ReceivedAt = null, string? FileName = null, string? InboxStatus = null,
-    bool AlreadyExisted = false, string? FailureCode = null);
+    bool AlreadyExisted = false, string? FailureCode = null)
+{
+    public InboxStatementProcessingResult? Processing { get; init; }
+}
 
-/// <summary>Explicit owner action; deliberately has no collector, checkpoint or financial writer dependency.</summary>
+/// <summary>Explicit owner action; reuses statement processing without incremental collectors/checkpoints.</summary>
 public sealed class CardLatestEmailService(
     CardEmailSearchAuthorization authorization,
     IFinancialCreditCardRepository cards,
     IFinancialEmailSource source,
     ICreditCardPdfPreviewService preview,
     ICardEmailDocumentReceiver inbox,
-    IFinancialEmailCollectorLock operationLock)
+    IFinancialEmailCollectorLock operationLock,
+    IInboxStatementProcessingService processing)
 {
     public const int MessageLimit = 200;
 
@@ -67,7 +71,8 @@ public sealed class CardLatestEmailService(
                             var check = await preview.PreviewAsync(workspaceId, cardId, userId, content, content.Length,
                                 attachment.FileName, null, null, null, null, ct);
                             if (check.Access == CreditCardPdfPreviewAccess.NotFound) { content.Dispose(); return new("NotFound", cardId); }
-                            if (check.Access != CreditCardPdfPreviewAccess.Allowed && check.FailureCode is not ("PasswordRequired" or "TextUnavailable" or "UnsupportedEncryption")) { content.Dispose(); continue; }
+                            if (check.Access != CreditCardPdfPreviewAccess.Allowed && check.Errors?.ContainsKey("cardId") != true
+                                && check.FailureCode is not ("PasswordRequired" or "PasswordRejected" or "TextUnavailable" or "UnsupportedEncryption" or "InsufficientEvidence" or "CardIdentificationRequired")) { content.Dispose(); continue; }
                             var match = check.Preview?.CardResolution;
                             candidates.Add((attachment, content, match?.Status != "Matched" || match.CardId != cardId));
                         }
@@ -87,9 +92,14 @@ public sealed class CardLatestEmailService(
                     if (received.Result is not ("Created" or "AlreadyExists") || received.Item is null)
                         return new("Error", cardId, FailureCode: received.Result == "Conflict" ? "DocumentConflict" : "ReceptionFailed");
                     var item = received.Item;
-                    return new(received.Result == "AlreadyExists" ? "AlreadyReceived" : chosen.Review ? "NeedsReview" : "Found",
-                        cardId, item.Id, item.ReceivedAt, item.OriginalFileName, item.Status, received.Result == "AlreadyExists",
-                        chosen.Review ? "CardIdentificationRequired" : null);
+                    var processed = await processing.ProcessAsync(workspaceId, item.Id, cardId, userId, null, ct);
+                    var code = processed.Consolidation.FailureCode ?? processed.Analysis.Analysis?.FailureCode;
+                    var status = processed.Consolidation.Status is "Imported" or "AlreadyImported" ? "Imported"
+                        : processed.Analysis.Status is "Reliable" or "AlreadyAnalyzed" ? "ReadyForReview"
+                        : processed.Analysis.Status == "Busy" ? item.Status : "NeedsReview";
+                    return new(received.Result == "AlreadyExists" ? "AlreadyReceived" : "Found",
+                        cardId, item.Id, item.ReceivedAt, item.OriginalFileName, status, received.Result == "AlreadyExists",
+                        code) { Processing = processed };
                 }
                 finally { foreach (var candidate in candidates) candidate.Content.Dispose(); }
             }

@@ -3,13 +3,32 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { searchLatestCardEmail, type FinancialCreditCard } from '../api/creditCards'
 import { CardLatestEmailSearch } from './CardLatestEmailSearch'
 import { FinancialCreditCardImports } from './FinancialCreditCardImports'
+import { processStatement } from '../api/financialDocuments'
 
 vi.mock('../api/creditCards', async importOriginal => ({ ...await importOriginal<typeof import('../api/creditCards')>(), searchLatestCardEmail: vi.fn() }))
+vi.mock('../api/financialDocuments', async importOriginal => ({ ...await importOriginal<typeof import('../api/financialDocuments')>(), processStatement: vi.fn() }))
 vi.mock('./FinancialDocumentInbox', () => ({ FinancialDocumentInbox: ({ initialDocumentId }: { initialDocumentId: string }) => <p>Inbox documento {initialDocumentId}</p> }))
 const search = vi.mocked(searchLatestCardEmail)
 const card: FinancialCreditCard = { id: 'card', name: 'Synthetic', issuer: 'Bank', lastFourDigits: '1234', holderUserId: null, creditLimit: '100.00', closingDay: 5, dueDay: 10, defaultPaymentAccountId: null, isArchived: false, createdAt: '', updatedAt: '', archivedAt: null, gmailQuery: 'configured-query' }
 const result = (status: string) => ({ ok: true as const, value: { status, cardId: card.id, documentId: ['Found', 'AlreadyReceived', 'NeedsReview'].includes(status) ? 'doc' : null, receivedAt: '2026-10-23T12:00:00Z', fileName: 'bill.pdf', inboxStatus: 'Received', alreadyExisted: status === 'AlreadyReceived', failureCode: null } })
 beforeEach(() => { search.mockReset(); vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('[]', { status: 200 })))) })
+
+it('retoma o PDF armazenado com senha, sem nova pesquisa e sem seleção manual do cartão', async () => {
+  const response = result('AlreadyReceived')
+  search.mockResolvedValue({ ...response, value: { ...response.value, processing: { analysis: { status: 'Rejected', analysis: null }, consolidation: { status: 'NeedsReview', invoiceId: null, version: null, officialTotal: null, failureCode: 'PasswordRequired' } } } })
+  vi.mocked(processStatement).mockResolvedValue({ ok: true, value: { analysis: { status: 'Reliable', analysis: null }, consolidation: { status: 'Imported', invoiceId: 'invoice', version: 1, officialTotal: '10.00', failureCode: null } } })
+  const changed = vi.fn()
+  render(<CardLatestEmailSearch workspaceId="personal" card={card} onChanged={changed} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Buscar fatura no e-mail' }))
+  const password = await screen.findByLabelText('Senha do PDF')
+  fireEvent.change(password, { target: { value: 'synthetic-password' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Desbloquear e continuar automaticamente' }))
+  await screen.findByText('Fatura consolidada com segurança.')
+  expect(screen.getByText(/Inbox: Imported/)).toBeTruthy()
+  expect(processStatement).toHaveBeenCalledWith('personal', 'doc', 'card', 'synthetic-password')
+  expect(search).toHaveBeenCalledTimes(1); expect(changed).toHaveBeenCalledTimes(1)
+  expect(screen.queryByLabelText('Senha do PDF')).toBeNull()
+})
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 it('habilita busca configurada e recebe o documento na Inbox existente', async () => {

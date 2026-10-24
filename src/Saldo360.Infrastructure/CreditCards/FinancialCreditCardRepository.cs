@@ -44,7 +44,8 @@ internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFin
     public async Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid workspaceId, CancellationToken cancellationToken) =>
         await db.FinancialCreditCards.AsNoTracking()
             .Where(card => card.WorkspaceId == workspaceId && !card.IsArchived && card.LastFourDigits != null)
-            .Select(card => new CreditCardStatementCandidate(card.Id, card.Issuer, card.LastFourDigits!, card.HolderUserId))
+            .Select(card => new CreditCardStatementCandidate(card.Id, card.Issuer, card.LastFourDigits!, card.HolderUserId,
+                db.Users.Where(user => user.Id == card.HolderUserId).Select(user => user.DisplayName).FirstOrDefault()))
             .ToListAsync(cancellationToken);
 
     private static FinancialCreditCardDto ToDto(FinancialCreditCard card) => new(

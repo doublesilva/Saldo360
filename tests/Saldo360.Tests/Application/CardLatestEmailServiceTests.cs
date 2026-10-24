@@ -78,7 +78,7 @@ public sealed class CardLatestEmailServiceTests
     {
         var f = new Fixture { Failure = scenario };
         var result = await f.Run();
-        Assert.Equal("NeedsReview", result.Status); Assert.True(f.Review); Assert.Single(f.Received);
+        Assert.Equal("Found", result.Status); Assert.True(f.Review); Assert.Single(f.Received); Assert.Equal(1, f.Processed);
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public sealed class CardLatestEmailServiceTests
 
     // All unintended calls (including writes to the card) fail: the service has no checkpoint or financial writer.
     private sealed class Fixture : IFinancialWorkspaceRepository, IFinancialCreditCardRepository, IFinancialEmailSource,
-        ICreditCardPdfPreviewService, ICardEmailDocumentReceiver, IFinancialEmailCollectorLock
+        ICreditCardPdfPreviewService, ICardEmailDocumentReceiver, IFinancialEmailCollectorLock, IInboxStatementProcessingService
     {
         public static readonly Guid Workspace = CardEmailSearchAuthorization.AuthorizedPersonalId;
         public static readonly Guid User = Guid.NewGuid(), CardId = Guid.NewGuid();
@@ -110,7 +110,10 @@ public sealed class CardLatestEmailServiceTests
         public string? Failure, Query; public int Searches, Limit;
         public IReadOnlyList<FinancialEmailMessage> Messages = [new("latest", Now)];
         public List<string> Received = [], Downloads = [];
-        public CardLatestEmailService Service => new(new(this), this, this, this, this, this);
+        public int Processed;
+        public CardLatestEmailService Service => new(new(this), this, this, this, this, this, this);
+        public Task<InboxStatementProcessingResult> ProcessAsync(Guid w, Guid d, Guid c, Guid u, string? password, CancellationToken ct)
+        { Processed++; Assert.Equal(Workspace, w); Assert.Equal(CardId, c); Assert.Equal(User, u); return Task.FromResult(new InboxStatementProcessingResult(new("NeedsReview"), new("NeedsReview", FailureCode: "AnalysisRequired"))); }
         public Task<CardLatestEmailResult> Run() => Service.SearchAsync(Workspace, CardId, User, default);
         public Task<FinancialWorkspaceRole?> GetOwnerRoleAsync(Guid w, Guid u, CancellationToken ct) => Task.FromResult<FinancialWorkspaceRole?>(Owner && w == Workspace && u == User ? FinancialWorkspaceRole.Owner : null);
         public Task<FinancialWorkspace> EnsurePersonalAsync(Guid u, DateTimeOffset now, CancellationToken ct) => throw new NotSupportedException();

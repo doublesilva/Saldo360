@@ -11,6 +11,12 @@ public sealed class CreditCardStatementExtractionOrchestrator(
 
     public async Task<CreditCardStatementExtractionResult> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
     {
+        if (request.RequireAgentIdentity)
+        {
+            if (!options.Enabled || options.Mode == CreditCardStatementAgentMode.Disabled)
+                return new(options.Mode.ToString(), "Agent", null, AgentExtractionAssessment.Rejected, false, null, null, null, "AgentUnavailable");
+            return await AgentPrimaryAsync(request, cancellationToken);
+        }
         return options.Mode switch
         {
             CreditCardStatementAgentMode.AgentPrimary => await AgentPrimaryAsync(request, cancellationToken),
@@ -41,15 +47,17 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         }
         var comparison = parserResult.Preview is null ? null : CreditCardStatementAgentEvaluator.Compare(parserResult.Preview, agentResult.Preview);
         var assessment = CreditCardStatementAgentEvaluator.Assess(agentResult.Preview);
+        var identityMissing = request.RequireAgentIdentity && !IdentityGrounded(agentResult.Preview.Header, request.Document);
         if (request.ReconcileWithRetry && (!Grounded(agentResult.Preview, request.Document)
+            || identityMissing
             || officialAnchor != agentResult.Preview.Header.OfficialTotal
             || (CreditCardStatementAgentEvaluator.Assess(parserResult.Preview) == AgentExtractionAssessment.Reliable
                 && comparison is { } reliableComparison && (reliableComparison.ItemsOnlyInParser.Count > 0 || reliableComparison.ItemsOnlyInAgent.Count > 0))))
             assessment = AgentExtractionAssessment.Rejected;
         Record(options.Mode, "agent", request.Document.Pages.Count, agentResult.Preview, assessment, comparison is not null && !CreditCardStatementAgentEvaluator.Summarize(comparison).Matches);
-        return new(options.Mode.ToString(), "Agent", agentResult.Preview, assessment, true,
+        return new(request.RequireAgentIdentity ? "AgentPrimary" : options.Mode.ToString(), "Agent", agentResult.Preview, assessment, true,
             parserResult.Preview, comparison, comparison is null ? null : CreditCardStatementAgentEvaluator.Summarize(comparison),
-            assessment == AgentExtractionAssessment.Rejected ? "EvidenceOrOfficialTotalMismatch" : null) { Attempts = attempts };
+            assessment == AgentExtractionAssessment.Rejected ? identityMissing ? "CardIdentificationRequired" : "EvidenceOrOfficialTotalMismatch" : null) { Attempts = attempts };
     }
 
     private async Task<CreditCardStatementExtractionResult> ParserPrimaryAsync(CreditCardStatementAgentRequest request, bool shadow, CancellationToken cancellationToken)
@@ -78,6 +86,16 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         catch (CreditCardStatementAgentUnavailableException) { return (null, "Provider experimental indisponível."); }
         catch (Exception exception) when (exception is not OperationCanceledException) { return (null, "Falha sanitizada na extração experimental."); }
         finally { Duration.Record(started.Elapsed.TotalMilliseconds, new KeyValuePair<string, object?>("source", source)); }
+    }
+
+    public static bool IdentityGrounded(CreditCardStatementAgentHeader header, CreditCardPdfExtractedDocument document)
+    {
+        if (string.IsNullOrWhiteSpace(header.IdentityEvidence) || header.IdentityPage is null
+            || string.IsNullOrWhiteSpace(header.Issuer) || string.IsNullOrWhiteSpace(header.CardLastDigits)) return false;
+        var evidence = header.IdentityEvidence;
+        return document.Pages.Any(p => p.Number == header.IdentityPage && p.Text.Contains(evidence, StringComparison.OrdinalIgnoreCase))
+            && new[] { header.Issuer, header.CardLastDigits, header.CardProduct, header.HolderName }
+                .Where(v => v is not null).All(v => StatementCategorization.Normalize(evidence).Contains(StatementCategorization.Normalize(v!), StringComparison.Ordinal));
     }
 
     private static bool Grounded(CreditCardStatementAgentPreview preview, CreditCardPdfExtractedDocument document)

@@ -5,6 +5,26 @@ namespace Saldo360.Tests.CreditCards;
 public sealed class CreditCardStatementResolverTests
 {
     [Fact]
+    public void LegacyHeadersRetainTheirSerializedShapeForOfficialJournalHashes()
+    {
+        const string legacy = "{\"issuer\":\"Bank\",\"cardLastDigits\":\"1234\",\"competence\":null,\"closingDate\":null,\"dueDate\":null,\"officialTotal\":null}";
+        var header = System.Text.Json.JsonSerializer.Deserialize<CreditCardStatementAgentHeader>(legacy, CreditCardStatementAgentSchema.Json);
+        Assert.Equal(legacy, System.Text.Json.JsonSerializer.Serialize(header, CreditCardStatementAgentSchema.Json));
+    }
+
+    [Theory]
+    [InlineData("Diego Silva", CreditCardStatementResolutionStatus.Matched)]
+    [InlineData("Outro Titular", CreditCardStatementResolutionStatus.InsufficientEvidence)]
+    public async Task DocumentaryHolderCanContradictButNeverReplaceIssuerAndDigits(string name, CreditCardStatementResolutionStatus expected)
+    {
+        var card = new CreditCardStatementCandidate(Guid.NewGuid(), "Bank", "1234", Guid.NewGuid(), "Diego Silva");
+        var resolver = new CreditCardStatementResolver(new FakeRepository([card]));
+        var header = new CreditCardStatementAgentHeader("Bank", "1234", null, null, null, null) { HolderName = name };
+        Assert.Equal(expected, (await resolver.ResolveDocumentAsync(Guid.NewGuid(), header, default)).Status);
+        Assert.Equal(CreditCardStatementResolutionStatus.InsufficientEvidence, (await resolver.ResolveDocumentAsync(Guid.NewGuid(), header with { CardLastDigits = null }, default)).Status);
+    }
+
+    [Fact]
     public async Task ResolvesExactIssuerAndDigitsWithKnownAccentNormalization()
     {
         var id = Guid.NewGuid();

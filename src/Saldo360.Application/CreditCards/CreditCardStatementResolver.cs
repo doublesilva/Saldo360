@@ -5,7 +5,7 @@ namespace Saldo360.Application.CreditCards;
 
 public enum CreditCardStatementResolutionStatus { Matched, NotFound, Ambiguous, InsufficientEvidence }
 public sealed record CreditCardStatementResolution(CreditCardStatementResolutionStatus Status, Guid? CardId = null);
-public sealed record CreditCardStatementCandidate(Guid CardId, string Issuer, string LastFourDigits, Guid? HolderUserId);
+public sealed record CreditCardStatementCandidate(Guid CardId, string Issuer, string LastFourDigits, Guid? HolderUserId, string? HolderName = null);
 
 public interface ICreditCardStatementResolutionRepository
 {
@@ -14,6 +14,16 @@ public interface ICreditCardStatementResolutionRepository
 
 public sealed class CreditCardStatementResolver(ICreditCardStatementResolutionRepository repository)
 {
+    public async Task<CreditCardStatementResolution> ResolveDocumentAsync(Guid workspaceId, CreditCardStatementAgentHeader header, CancellationToken ct)
+    {
+        var resolved = await ResolveAsync(workspaceId, header.Issuer, header.CardLastDigits, null, ct);
+        if (resolved.Status != CreditCardStatementResolutionStatus.Matched || string.IsNullOrWhiteSpace(header.HolderName)) return resolved;
+        var candidate = (await repository.ListActiveAsync(workspaceId, ct)).Single(c => c.CardId == resolved.CardId);
+        // Display names corroborate, never authorize or replace a missing issuer/last-four identity.
+        return candidate.HolderName is { Length: > 0 } name && NormalizeIssuer(name) != NormalizeIssuer(header.HolderName)
+            ? new(CreditCardStatementResolutionStatus.InsufficientEvidence) : resolved;
+    }
+
     public async Task<CreditCardStatementResolution> ResolveAsync(Guid workspaceId, string? issuer, string? lastFourDigits, Guid? holderUserId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(lastFourDigits) || lastFourDigits.Length != 4 || lastFourDigits.Any(character => character is < '0' or > '9') || string.IsNullOrWhiteSpace(issuer))

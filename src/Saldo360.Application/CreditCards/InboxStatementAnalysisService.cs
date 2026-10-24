@@ -21,7 +21,7 @@ public sealed class InboxStatementAnalysisService(
         return new(analysis?.Status ?? "NotAnalyzed", analysis);
     }
 
-    public async Task<InboxStatementAnalysisResult> AnalyzeAsync(Guid workspaceId, Guid documentId, Guid cardId, Guid userId, string? password, CancellationToken ct)
+    public async Task<InboxStatementAnalysisResult> AnalyzeAsync(Guid workspaceId, Guid documentId, Guid cardId, Guid userId, string? password, CancellationToken ct, bool automatic = false)
     {
         if (!await authorization.CanSearchAsync(workspaceId, userId, ct)) return new("NotFound");
         var item = await documents.GetAsync(workspaceId, documentId, userId, ct);
@@ -35,7 +35,8 @@ public sealed class InboxStatementAnalysisService(
         var previous = Read(item.StatementAnalysisJson);
         var hash = ComputeInputHash(item, card, catalog, options);
         if (item.Status is FinancialDocumentInboxStatus.ReadyForReview or FinancialDocumentInboxStatus.ReadyToConfirm
-            && previous is { Status: "Reliable" } && previous.CardId == cardId && previous.InputHash == hash) return new("AlreadyAnalyzed", previous);
+            && previous is { Status: "Reliable" } && previous.CardId == cardId && previous.InputHash == hash
+            && (!automatic || previous.Extraction is { PrimarySource: "Agent", Primary.Header.IdentityEvidence: not null })) return new("AlreadyAnalyzed", previous);
         var manual = previous?.CardId == cardId ? previous.ManualOverrides : new Dictionary<string, Guid>();
         item.StartAnalysis(clock.GetUtcNow()); await documents.SaveAsync(ct);
         try
@@ -43,15 +44,20 @@ public sealed class InboxStatementAnalysisService(
             await using var file = await storage.OpenReadAsync(item.StorageReference, ct);
             if (file is null) return await FailAsync(item, cardId, hash, manual, "StorageObjectMissing", ct);
             var categories = new StatementCategoryContext(catalog.Categories.Where(c => c.IsActive && c.Type == Saldo360.Domain.Categories.CategoryType.Expense).Select(c => c.Name).ToArray(), catalog.History);
-            var result = await preview.PreviewWithCategoriesAsync(workspaceId, cardId, userId, file, file.Length, item.OriginalFileName, item.Competence, password, categories, ct);
+            var result = automatic
+                ? await preview.PreviewForProcessingAsync(workspaceId, cardId, userId, file, file.Length, item.OriginalFileName, item.Competence, password, categories, ct)
+                : await preview.PreviewWithCategoriesAsync(workspaceId, cardId, userId, file, file.Length, item.OriginalFileName, item.Competence, password, categories, ct);
             if (result.Access != CreditCardPdfPreviewAccess.Allowed || result.Preview is null)
-                return await FailAsync(item, cardId, hash, manual, "PdfAnalysisFailed", ct);
+                return await FailAsync(item, cardId, hash, manual, result.FailureCode ?? "PdfAnalysisFailed", ct);
             var extraction = result.Preview;
             var primary = extraction.Primary;
-            var resolution = primary is null ? null : await resolver.ResolveAsync(workspaceId, primary.Header.Issuer, primary.Header.CardLastDigits, card.HolderUserId, ct);
+            var resolution = primary is null ? null : automatic
+                ? await resolver.ResolveDocumentAsync(workspaceId, primary.Header, ct)
+                : await resolver.ResolveAsync(workspaceId, primary.Header.Issuer, primary.Header.CardLastDigits, null, ct);
             if (resolution?.Status == CreditCardStatementResolutionStatus.Matched && resolution.CardId != cardId)
                 return await FailAsync(item, cardId, hash, manual, "CardMismatch", ct);
             var status = extraction.Assessment.ToString();
+            if (automatic && (extraction.PrimarySource != "Agent" || primary?.Header.IdentityEvidence is null)) status = "NeedsReview";
             if (status == "Reliable" && resolution?.Status != CreditCardStatementResolutionStatus.Matched) status = "NeedsReview";
             var suggestions = StatementCategorization.Categorize(primary, catalog, manual);
             if (status == "Reliable" && suggestions.Any(c => c.Source is "InactiveCategory" or "ManualUnavailable" or "HistoryUnavailable" or "HistoryConflict")) status = "NeedsReview";

@@ -51,6 +51,8 @@ public static class DependencyInjection
         services.AddScoped<FinancialDocumentInboxService>();
         services.AddScoped<InboxStatementAnalysisService>();
         services.AddScoped<InboxStatementConsolidationService>();
+        services.AddScoped<InboxStatementProcessingService>();
+        services.AddScoped<IInboxStatementProcessingService>(sp => sp.GetRequiredService<InboxStatementProcessingService>());
         services.AddScoped<FinancialDocumentInboxReviewService>();
         services.AddScoped<FinancialDocumentInboxConfirmationService>();
         services.AddScoped<FinancialDocumentClassificationPreviewService>();

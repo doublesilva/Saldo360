@@ -19,11 +19,13 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
       "properties":{
         "schemaVersion":{"type":"string","enum":["2.0"]},
         "header":{"type":"object","additionalProperties":false,
-          "required":["issuer","cardLastDigits","competence","closingDate","dueDate","officialTotal"],
+          "required":["issuer","cardLastDigits","competence","closingDate","dueDate","officialTotal","cardProduct","holderName","identityEvidence","identityPage"],
           "properties":{
             "issuer":{"type":["string","null"]},"cardLastDigits":{"type":["string","null"]},
             "competence":{"type":["string","null"]},"closingDate":{"type":["string","null"]},
-            "dueDate":{"type":["string","null"]},"officialTotal":{"type":["string","null"]}
+            "dueDate":{"type":["string","null"]},"officialTotal":{"type":["string","null"]},
+            "cardProduct":{"type":["string","null"]},"holderName":{"type":["string","null"]},
+            "identityEvidence":{"type":["string","null"]},"identityPage":{"type":["integer","null"]}
           }},
         "items":{"type":"array","items":{"type":"object","additionalProperties":false,
           "required":["originalDescription","amount","nature","type","installmentNumber","installmentCount","section","includedInCurrentTotal","page","evidence","confidence","transactionDate","normalizedDescription","suggestedCategory","categoryConfidence"],
