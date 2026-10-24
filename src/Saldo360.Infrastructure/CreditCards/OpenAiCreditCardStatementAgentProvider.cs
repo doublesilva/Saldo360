@@ -47,7 +47,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
     public async Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken cancellationToken)
     {
         if (!options.Enabled || options.Mode == CreditCardStatementAgentMode.Disabled || !string.Equals(options.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase))
-            throw new CreditCardStatementAgentUnavailableException("Provider desabilitado.");
+            throw new CreditCardStatementAgentUnavailableException("Provider desabilitado.", failureCode: "AgentUnavailable");
         var key = ReadSecret(options.ApiKeyFile, options.ApiKey);
         var client = clients.CreateClient("CreditCardStatementAgent");
         using var message = new HttpRequestMessage(HttpMethod.Post, "responses");
@@ -67,29 +67,64 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
         try
         {
             using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (!response.IsSuccessStatusCode) throw new CreditCardStatementAgentUnavailableException($"Provider retornou HTTP {(int)response.StatusCode}.");
+            if (!response.IsSuccessStatusCode)
+                throw new CreditCardStatementAgentUnavailableException("Provider recusou a solicitação.", failureCode: await FailureCodeAsync(response, cancellationToken));
             using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
             var outputText = json.RootElement.GetProperty("output").EnumerateArray()
                 .SelectMany(item => item.TryGetProperty("content", out var content) ? content.EnumerateArray().ToArray() : [])
                 .FirstOrDefault(item => item.TryGetProperty("type", out var type) && type.GetString() == "output_text");
             if (outputText.ValueKind == JsonValueKind.Undefined || !outputText.TryGetProperty("text", out var text) || string.IsNullOrWhiteSpace(text.GetString()))
-                throw new CreditCardStatementAgentUnavailableException("Provider não retornou saída estruturada.");
+                throw new CreditCardStatementAgentUnavailableException("Provider não retornou saída estruturada.", failureCode: "ProviderNoStructuredOutput");
             logger.LogInformation("Credit card statement agent completed provider={Provider} model={Model} durationMs={Duration}", "OpenAI", options.Model, started.ElapsedMilliseconds);
             return text.GetString()!;
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
-        { throw new CreditCardStatementAgentUnavailableException("Timeout do provider.", exception); }
+        { throw new CreditCardStatementAgentUnavailableException("Timeout do provider.", exception, "ProviderTimeout"); }
         catch (HttpRequestException exception)
-        { throw new CreditCardStatementAgentUnavailableException("Falha de comunicação com o provider.", exception); }
+        { throw new CreditCardStatementAgentUnavailableException("Falha de comunicação com o provider.", exception, "ProviderNetworkFailure"); }
+        catch (JsonException) { throw new CreditCardStatementAgentUnavailableException("Resposta inválida do provider.", failureCode: "InvalidProviderResponse"); }
+        catch (InvalidOperationException) { throw new CreditCardStatementAgentUnavailableException("Resposta inválida do provider.", failureCode: "InvalidProviderResponse"); }
+        catch (KeyNotFoundException) { throw new CreditCardStatementAgentUnavailableException("Resposta inválida do provider.", failureCode: "InvalidProviderResponse"); }
+    }
+
+    private static async Task<string> FailureCodeAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        string? code = null;
+        // Parse only bounded error.code; never return or log the provider's free-text message/body.
+        try
+        {
+            await using var body = await response.Content.ReadAsStreamAsync(ct);
+            var buffer = new byte[4097]; var count = 0;
+            while (count < buffer.Length)
+            { var read = await body.ReadAsync(buffer.AsMemory(count), ct); if (read == 0) break; count += read; }
+            if (count <= 4096)
+            {
+                using var error = JsonDocument.Parse(buffer.AsMemory(0, count));
+                if (error.RootElement.TryGetProperty("error", out var detail) && detail.ValueKind == JsonValueKind.Object
+                    && detail.TryGetProperty("code", out var value) && value.ValueKind == JsonValueKind.String) code = value.GetString();
+            }
+        }
+        catch (JsonException) { }
+        return (int)response.StatusCode switch
+        {
+            401 => "ProviderAuthenticationFailed", 403 => "ProviderPermissionDenied",
+            404 => code == "model_not_found" ? "ProviderModelUnavailable" : "ProviderResourceNotFound",
+            429 => code == "insufficient_quota" ? "ProviderQuotaExceeded" : "ProviderRateLimited",
+            400 => code == "model_not_found" ? "ProviderModelUnavailable" : "ProviderInvalidRequest",
+            _ => "ProviderHttpFailure"
+        };
     }
 
     private static string ReadSecret(string file, string configured)
     {
         if (!string.IsNullOrWhiteSpace(file))
         {
-            if (!File.Exists(file)) throw new CreditCardStatementAgentUnavailableException("Arquivo de segredo do provider não encontrado.");
-            var value = File.ReadAllText(file).TrimEnd('\r', '\n');
-            if (string.IsNullOrWhiteSpace(value)) throw new CreditCardStatementAgentUnavailableException("Arquivo de segredo do provider está vazio.");
+            if (!File.Exists(file)) throw new CreditCardStatementAgentUnavailableException("Arquivo de segredo do provider não encontrado.", failureCode: "ProviderCredentialMissing");
+            string value;
+            try { value = File.ReadAllText(file).TrimEnd('\r', '\n'); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            { throw new CreditCardStatementAgentUnavailableException("Arquivo de segredo indisponível.", failureCode: "ProviderCredentialUnreadable"); }
+            if (string.IsNullOrWhiteSpace(value)) throw new CreditCardStatementAgentUnavailableException("Arquivo de segredo do provider está vazio.", failureCode: "ProviderCredentialEmpty");
             return value;
         }
         if (!string.IsNullOrWhiteSpace(configured)) return configured;

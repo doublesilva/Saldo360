@@ -13,6 +13,7 @@ public sealed record CreditCardStatementAgentRequest(
     public StatementCategoryContext? Categories { get; init; }
     public bool ReconcileWithRetry { get; init; }
     public bool RequireAgentIdentity { get; init; }
+    public bool AllowCorrectionRetry { get; init; } = true;
     public string? CorrectionInstruction { get; init; }
 }
 
@@ -46,7 +47,10 @@ public interface ICreditCardStatementAgentProvider
     Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken cancellationToken);
 }
 
-public sealed class CreditCardStatementAgentUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
+public sealed class CreditCardStatementAgentUnavailableException(string message, Exception? inner = null, string? failureCode = null) : Exception(message, inner)
+{
+    public string? FailureCode { get; } = failureCode;
+}
 
 public static class CreditCardStatementAgentPrompt
 {
@@ -140,6 +144,9 @@ public sealed record CreditCardStatementAgentPreviewResult(
 
 public interface ICreditCardStatementAgentPreviewService
 {
+    Task<CreditCardStatementAgentPreviewResult> PreviewDiagnosticAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
+        long length, string fileName, string? competence, string? password, StatementCategoryContext categories, CancellationToken ct)
+        => PreviewForProcessingAsync(workspaceId, cardId, userId, pdf, length, fileName, competence, password, categories, ct);
     Task<CreditCardStatementAgentPreviewResult> PreviewForProcessingAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
         long length, string fileName, string? competence, string? password, StatementCategoryContext categories, CancellationToken ct)
         => PreviewWithCategoriesAsync(workspaceId, cardId, userId, pdf, length, fileName, competence, password, categories, ct);

@@ -31,7 +31,7 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         var agentResult = await EvaluateAsync(agent, "agent", request, cancellationToken);
         var attempts = 1;
         var officialAnchor = parserResult.Preview?.Header.OfficialTotal ?? agentResult.Preview?.Header.OfficialTotal;
-        if (request.ReconcileWithRetry && agentResult.Preview?.Reconciliation.Status == "Divergent")
+        if (request.ReconcileWithRetry && request.AllowCorrectionRetry && agentResult.Preview?.Reconciliation.Status == "Divergent")
         {
             attempts++;
             agentResult = await EvaluateAsync(agent, "agent", request with
@@ -83,7 +83,7 @@ public sealed class CreditCardStatementExtractionOrchestrator(
             return CreditCardStatementAgentEvaluator.TryEvaluate(json, request.FileName, request.Document.Pages.Count, out var preview, out var error)
                 ? (preview, null) : (null, error);
         }
-        catch (CreditCardStatementAgentUnavailableException) { return (null, "Provider experimental indisponível."); }
+        catch (CreditCardStatementAgentUnavailableException exception) { return (null, exception.FailureCode ?? "Provider experimental indisponível."); }
         catch (Exception exception) when (exception is not OperationCanceledException) { return (null, "Falha sanitizada na extração experimental."); }
         finally { Duration.Record(started.Elapsed.TotalMilliseconds, new KeyValuePair<string, object?>("source", source)); }
     }

@@ -138,7 +138,7 @@ public static class DependencyInjection
         {
             client.BaseAddress = new Uri(statementAgent.Endpoint);
             client.Timeout = TimeSpan.FromSeconds(Math.Clamp(statementAgent.TimeoutSeconds, 5, 180));
-        });
+        }).RemoveAllLoggers();
         services.AddSingleton<ICreditCardStatementAgentProvider, OpenAiCreditCardStatementAgentProvider>();
         var documentClassification = configuration.GetSection("FinancialDocumentClassification").Get<FinancialDocumentClassificationOptions>() ?? new FinancialDocumentClassificationOptions();
         services.AddSingleton(documentClassification);

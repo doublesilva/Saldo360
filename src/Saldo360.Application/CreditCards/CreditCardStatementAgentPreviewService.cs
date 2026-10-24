@@ -6,6 +6,9 @@ public sealed class CreditCardStatementAgentPreviewService(
     ICreditCardPdfPasswordProvider passwords,
     ICreditCardStatementExtractionOrchestrator orchestrator) : ICreditCardStatementAgentPreviewService
 {
+    public Task<CreditCardStatementAgentPreviewResult> PreviewDiagnosticAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
+        long length, string fileName, string? competence, string? password, StatementCategoryContext categories, CancellationToken ct) =>
+        PreviewCoreAsync(workspaceId, cardId, userId, pdf, length, fileName, competence, password, ct, categories, true, false);
     public Task<CreditCardStatementAgentPreviewResult> PreviewForProcessingAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
         long length, string fileName, string? competence, string? password, StatementCategoryContext categories, CancellationToken ct) =>
         PreviewCoreAsync(workspaceId, cardId, userId, pdf, length, fileName, competence, password, ct, categories, true);
@@ -18,7 +21,7 @@ public sealed class CreditCardStatementAgentPreviewService(
         PreviewCoreAsync(workspaceId, cardId, userId, pdf, length, fileName, competence, password, ct, null);
 
     private async Task<CreditCardStatementAgentPreviewResult> PreviewCoreAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
-        long length, string fileName, string? competence, string? password, CancellationToken cancellationToken, StatementCategoryContext? categories, bool automatic = false)
+        long length, string fileName, string? competence, string? password, CancellationToken cancellationToken, StatementCategoryContext? categories, bool automatic = false, bool allowCorrectionRetry = true)
     {
         var card = await context.GetAsync(workspaceId, cardId, userId, cancellationToken);
         if (card is null) return new(CreditCardPdfPreviewAccess.NotFound, null, null);
@@ -64,7 +67,7 @@ public sealed class CreditCardStatementAgentPreviewService(
             var text = StatementCategorization.Normalize(string.Join("\n", extracted.Pages.Select(p => p.Text)));
             categories = categories with { History = categories.History.Where(h => text.Contains(StatementCategorization.Normalize(h.Description), StringComparison.Ordinal)).Take(200).ToArray() };
         }
-        try { result = await orchestrator.ExtractAsync(new(fileName, extracted, competence) { Categories = categories, ReconcileWithRetry = categories is not null, RequireAgentIdentity = automatic }, cancellationToken); }
+        try { result = await orchestrator.ExtractAsync(new(fileName, extracted, competence) { Categories = categories, ReconcileWithRetry = categories is not null, RequireAgentIdentity = automatic, AllowCorrectionRetry = allowCorrectionRetry }, cancellationToken); }
         catch (Exception exception) when (exception is not OperationCanceledException)
         { return Invalid("agent", "O agente não conseguiu interpretar a fatura com segurança."); }
         if (result.Primary is null) return new(CreditCardPdfPreviewAccess.Allowed, result, null);
@@ -73,7 +76,9 @@ public sealed class CreditCardStatementAgentPreviewService(
             // A deterministic contradiction still blocks finance, but never prevents agent interpretation.
             var local = pdfExtractor.Parse(extracted, fileName, competence, null);
             if (local.Statement.CardLastDigits is { } localDigits && result.Primary.Header.CardLastDigits is { } agentDigits && localDigits != agentDigits)
-                return Invalid("cardId", "Identificações documentais divergentes; revise o documento.") with { FailureCode = "CardMismatch" };
+                return !allowCorrectionRetry
+                    ? new(CreditCardPdfPreviewAccess.Allowed, result, null) { FailureCode = "CardMismatch" }
+                    : Invalid("cardId", "Identificações documentais divergentes; revise o documento.") with { FailureCode = "CardMismatch" };
             return new(CreditCardPdfPreviewAccess.Allowed, result, null);
         }
         if (result.Primary.Header.CardLastDigits is { } digits && card.LastFourDigits is { } selected && digits != selected)

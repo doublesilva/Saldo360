@@ -13,6 +13,52 @@ namespace Saldo360.Tests.Api;
 [Collection(PostgresCollection.Name)]
 public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("divergent")]
+    [InlineData("wrong-card")]
+    [InlineData("password")]
+    [InlineData("json")]
+    public async Task ReadOnlyDiagnosticNeverPersistsInboxOrFinancialStateAndDoesNotRetry(string? failure)
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
+        using var db = f.Db; f.Options.Model = "gpt-4o-mini";
+        f.Extractor.Failure = failure; f.Provider.Failure = failure;
+        f.Extractor.FullCalendar = true; f.Provider.FullCalendar = true;
+        var before = JsonSerializer.Serialize(await db.FinancialDocumentInboxItems.AsNoTracking().SingleAsync());
+        var cards = new FinancialCreditCardRepository(db);
+        var parser = new ParserBackedCreditCardStatementExtractorAgent(f.Extractor);
+        var preview = new CreditCardStatementAgentPreviewService(cards, f.Extractor, new Passwords(), new CreditCardStatementExtractionOrchestrator(f.Options, parser, new(f.Provider)));
+        var diagnostic = new StoredStatementDiagnostic(db, new(new FinancialWorkspaceRepository(db)), new FinancialDocumentInboxRepository(db),
+            f.Storage, cards, new StatementCategoryContextRepository(db), preview, new(cards), f.Options);
+        var report = await diagnostic.RunAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default);
+        Assert.True(report.DatabaseReadOnly); Assert.Equal(failure == "password" ? 0 : 1, f.Provider.Calls);
+        if (failure is null)
+        {
+            Assert.Equal("OpenAI", report.Source); Assert.Equal("Reliable", report.Status);
+            Assert.Equal("10.00", report.Extraction!.Primary!.Header.OfficialTotal); Assert.Single(report.Categories!);
+        }
+        else if (failure == "divergent") Assert.Equal("Divergent", report.Extraction!.Primary!.Reconciliation.Status);
+        else if (failure == "wrong-card") { Assert.Equal("CardMismatch", report.FailureCode); Assert.NotNull(report.Extraction!.Primary); }
+        else if (failure == "password") Assert.Equal("PasswordRequired", report.FailureCode);
+        Assert.Equal(before, JsonSerializer.Serialize(await db.FinancialDocumentInboxItems.AsNoTracking().SingleAsync()));
+        Assert.Empty(await db.FinancialCreditCardPurchases.ToListAsync()); Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync());
+        Assert.Empty(await db.FinancialCreditCardImportedInstallments.ToListAsync()); Assert.Empty(await db.FinancialCreditCardInvoicePayments.ToListAsync());
+        Assert.Equal(2, await db.FinancialCategories.CountAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
+        Assert.False(db.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
+    public async Task ReadOnlyDiagnosticRejectsUnauthorizedUserBeforeStorageOrProvider()
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
+        using var db = f.Db; f.Options.Model = "gpt-4o-mini";
+        var cards = new FinancialCreditCardRepository(db);
+        var preview = new CreditCardStatementAgentPreviewService(cards, f.Extractor, new Passwords(), new CreditCardStatementExtractionOrchestrator(f.Options, new ParserBackedCreditCardStatementExtractorAgent(f.Extractor), new(f.Provider)));
+        var diagnostic = new StoredStatementDiagnostic(db, new(new FinancialWorkspaceRepository(db)), new FinancialDocumentInboxRepository(db), f.Storage, cards, new StatementCategoryContextRepository(db), preview, new(cards), f.Options);
+        var report = await diagnostic.RunAsync(f.Workspace, f.Item.Id, f.Card.Id, Guid.NewGuid(), null, default);
+        Assert.Equal("NotFound", report.Status); Assert.Equal(0, f.Provider.Calls); Assert.Equal(0, f.Storage.Reads);
+    }
     [Fact]
     public async Task GmailAlreadyReceivedContinuesThroughAgentAndAtomicConsolidationExactlyOnce()
     {
@@ -229,7 +275,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
             Calls++; if (Failure == "provider") throw new CreditCardStatementAgentUnavailableException("synthetic unavailable");
             if (Failure == "json") return Task.FromResult("not-json");
             Assert.DoesNotContain("gmail:", request.DocumentText); Assert.DoesNotContain("OwnerUserId", request.DocumentText);
-            var item = new CreditCardStatementAgentItem("SHOP", "10.00", "Debit", "Purchase", null, null, "CurrentInvoice", true, 1, "SHOP 10.00", "High", "2026-10-01", "SHOP", Category, "High");
+            var item = new CreditCardStatementAgentItem("SHOP", Failure == "divergent" ? "9.00" : "10.00", "Debit", "Purchase", null, null, "CurrentInvoice", true, 1, "SHOP 10.00", "High", "2026-10-01", "SHOP", Category, "High");
             return Task.FromResult(JsonSerializer.Serialize(new CreditCardStatementAgentDocument("2.0", new("Bank", Digits, "2026-10", FullCalendar ? "2026-10-05" : null, FullCalendar ? "2026-10-10" : null, "10.00")
             { IdentityPage = 1, IdentityEvidence = Failure == "invented-identity" ? "invented Bank 1234" : $"Bank {Digits} Synthetic Holder", CardProduct = "Synthetic", HolderName = "Holder" }, [item]), CreditCardStatementAgentSchema.Json));
         }
