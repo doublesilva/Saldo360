@@ -33,9 +33,9 @@ public sealed class InboxStatementAnalysisService(
         if (lease is null) return new("Busy");
         var catalog = await context.ReadAsync(workspaceId, cardId, documentId, ct);
         var previous = Read(item.StatementAnalysisJson);
-        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
-        { item.ContentHash, cardId, card.LastFourDigits, card.Issuer, card.HolderUserId, options.Mode, options.Enabled, options.Model, options.Provider, options.Endpoint, CreditCardStatementAgentPrompt.Version, catalog }))));
-        if (previous is { Status: "Reliable" } && previous.CardId == cardId && previous.InputHash == hash) return new("AlreadyAnalyzed", previous);
+        var hash = ComputeInputHash(item, card, catalog, options);
+        if (item.Status is FinancialDocumentInboxStatus.ReadyForReview or FinancialDocumentInboxStatus.ReadyToConfirm
+            && previous is { Status: "Reliable" } && previous.CardId == cardId && previous.InputHash == hash) return new("AlreadyAnalyzed", previous);
         var manual = previous?.CardId == cardId ? previous.ManualOverrides : new Dictionary<string, Guid>();
         item.StartAnalysis(clock.GetUtcNow()); await documents.SaveAsync(ct);
         try
@@ -90,6 +90,12 @@ public sealed class InboxStatementAnalysisService(
     }
 
     public static InboxStatementAnalysis? Read(string? json) => json is null ? null : JsonSerializer.Deserialize<InboxStatementAnalysis>(json);
+    public static string ComputeInputHash(FinancialDocumentInboxItem item, FinancialCreditCardDto card, StatementCategoryCatalog catalog, CreditCardStatementAgentOptions options)
+    {
+        var cardId = card.Id;
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        { item.ContentHash, cardId, card.LastFourDigits, card.Issuer, card.HolderUserId, card.ClosingDay, card.DueDay, options.Mode, options.Enabled, options.Model, options.Provider, options.Endpoint, CreditCardStatementAgentPrompt.Version, catalog }))));
+    }
     private async Task<InboxStatementAnalysisResult> FailAsync(FinancialDocumentInboxItem item, Guid cardId, string hash, IReadOnlyDictionary<string, Guid> manual, string code, CancellationToken ct)
     {
         var previous = Read(item.StatementAnalysisJson);

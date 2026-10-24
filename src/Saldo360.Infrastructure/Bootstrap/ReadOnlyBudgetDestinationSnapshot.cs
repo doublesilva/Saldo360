@@ -39,6 +39,9 @@ public sealed record ReadOnlyBudgetDestinationSnapshot(int SchemaVersion, Guid W
         var schemaReady = AppliedMigrations.Contains(BudgetSpreadsheetImporter.RequiredMigration, StringComparer.Ordinal);
         if (!schemaReady) Invalid("T09.1MigrationNotApplied:DoNotApplyAutomatically");
         var expected = Baseline.Split(' ').Concat(new[] { "financial_bootstrap_provenance", "financial_monthly_aggregate_targets" }).ToHashSet(StringComparer.Ordinal);
+        // Recognize the new financial journal only when its schema migration is explicitly present.
+        // Unknown tables, a missing expected journal or a nonempty journal still require direct preflight.
+        if (AppliedMigrations.Contains("20261024004947_AddOfficialInvoiceConsolidation", StringComparer.Ordinal)) expected.Add("financial_credit_card_invoice_consolidations");
         if (Baseline.Split(' ').Any(t => !Counts.ContainsKey(t)) || Counts.Keys.Any(t => !expected.Contains(t)) || Counts.Values.Any(n => n < 0)) Invalid("IncompleteDestinationInventoryRequiresDirectPreflight");
         if (schemaReady && expected.Any(t => !Counts.ContainsKey(t))) Invalid("MissingT09.1TablesRequiresDirectPreflight");
         foreach (var p in Counts.Where(p => p.Value != 0 && p.Key != "financial_workspace_reset_audit"))

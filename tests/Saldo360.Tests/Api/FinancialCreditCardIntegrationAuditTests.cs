@@ -54,6 +54,7 @@ public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture pos
         Assert.Equal("5000.00", Money(await GetJsonAsync($"/api/financial-workspaces/{_family.Id}/accounts/{_account}/balance?asOf={Today:yyyy-MM-dd}"), "balance"));
 
         var firstInvoiceId = invoices[0].GetProperty("id").GetGuid();
+        await using (var official = Db()) await OfficialInvoiceFixture.CloseAsync(official, firstInvoiceId);
         var paymentOperationId = Guid.NewGuid();
         var paymentPayload = new { operationId = paymentOperationId, financialAccountId = _account, paymentDate = Today, amount = "400.00" };
         var paymentUrl = $"/api/financial-workspaces/{_family.Id}/credit-cards/{_card}/invoices/{firstInvoiceId}/payments";

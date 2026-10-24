@@ -17,7 +17,8 @@ internal sealed class FinancialCreditCardImportRepository(Saldo360DbContext db) 
 
     public async Task<CreditCardImportRepositoryResult> ConfirmAsync(Guid workspaceId, Guid cardId, Guid userId, Guid importId, string payloadHash, IReadOnlyList<CreditCardImportItemInput> items, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", cancellationToken);
         var existing = await db.FinancialCreditCardImportBatches.Include(item => item.Items).SingleOrDefaultAsync(item => item.Id == importId, cancellationToken);
         if (existing is not null)
         {
@@ -44,6 +45,11 @@ internal sealed class FinancialCreditCardImportRepository(Saldo360DbContext db) 
             {
                 var cycle = CreditCardInvoiceCalendarCalculator.ForInstallment(purchase.PurchaseDate, installment.InstallmentNumber, calendar.ClosingDay, calendar.DueDay);
                 var invoice = await db.FinancialCreditCardInvoices.SingleOrDefaultAsync(value => value.WorkspaceId == workspaceId && value.CreditCardId == cardId && value.ClosingDate == cycle.ClosingDate, cancellationToken);
+                if (invoice is { OfficialVersion: > 0 })
+                {
+                    await transaction.RollbackAsync(cancellationToken); db.ChangeTracker.Clear();
+                    return new(null, true, false, "A fatura oficial exige consolidação versionada pela Inbox.");
+                }
                 if (invoice is null)
                 {
                     invoice = FinancialCreditCardInvoice.Create(workspaceId, cardId, cycle.Competence, cycle.CycleStartDate, cycle.ClosingDate, cycle.DueDate, now);

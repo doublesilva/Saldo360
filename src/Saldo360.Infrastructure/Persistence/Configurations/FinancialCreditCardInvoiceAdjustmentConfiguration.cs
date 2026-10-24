@@ -16,10 +16,10 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentConfiguration
         {
             table.HasCheckConstraint("ck_invoice_adjustments_amount_positive", "amount > 0");
             table.HasCheckConstraint("ck_invoice_adjustments_amount_scale", "scale(amount) <= 2");
-            table.HasCheckConstraint("ck_invoice_adjustments_type", "type IN ('Fee', 'Credit', 'Refund')");
+            table.HasCheckConstraint("ck_invoice_adjustments_type", "type IN ('Fee', 'Credit', 'Refund', 'PreviousBalance', 'FinancedBalance')");
             table.HasCheckConstraint("ck_invoice_adjustments_nature", "nature IN ('Debit', 'Credit')");
             table.HasCheckConstraint("ck_invoice_adjustments_status", "status IN ('Active', 'Cancelled')");
-            table.HasCheckConstraint("ck_invoice_adjustments_type_nature", "(type = 'Fee' AND nature = 'Debit') OR (type IN ('Credit', 'Refund') AND nature = 'Credit')");
+            table.HasCheckConstraint("ck_invoice_adjustments_type_nature", "(type IN ('Fee', 'PreviousBalance', 'FinancedBalance') AND nature = 'Debit') OR (type IN ('Credit', 'Refund') AND nature = 'Credit')");
         });
         builder.HasKey(item => item.Id);
         builder.Property(item => item.Id).ValueGeneratedNever();

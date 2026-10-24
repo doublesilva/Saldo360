@@ -28,6 +28,7 @@ public sealed class CardConsolidationTests(PostgresFixture postgres) : PostgresA
             // 89 synthetic, explicitly known rows: never private source data or an importer execution.
             for (var i = 0; i < 89; i++) db.Add(FinancialCreditCardImportedInstallment.CreateKnown(w.Id, card, category, "Known synthetic", 1m, null, null, new(2030, 11, 1), new(2030, 11, 10), "Synthetic", $"synthetic:{i}", w.OwnerUserId, DateTimeOffset.UtcNow));
             await db.SaveChangesAsync();
+            await OfficialInvoiceFixture.CloseAsync(db, invoice);
         }
         async Task<JsonElement> Row(string competence) { var r = await SendAsync(HttpMethod.Get, root + $"/credit-cards/summary?competence={competence}", s); Assert.Equal(HttpStatusCode.OK, r.StatusCode); return (await ReadAsync<JsonElement>(r)).GetProperty("cards")[0]; }
         var before = await Row("2020-01");

@@ -157,6 +157,9 @@ public sealed class BudgetSpreadsheetImporterTests(PostgresFixture postgres)
             (await db.Database.GetAppliedMigrationsAsync()).ToArray(), direct.DestinationCounts.Where(p => p.Key != "__migrations").ToDictionary(p => p.Key, p => p.Value));
         var offline = destination.DryRun(w, source); Assert.True(offline.CanExecute); Assert.Equal("ReadOnlyDestinationSnapshot", offline.DestinationMode);
         Assert.Equal(direct.PlanHash, offline.PlanHash); Assert.Equal(direct.CountsByAggregate, offline.CountsByAggregate);
+        var missingOfficialInventory = destination with { Counts = destination.Counts.Where(p => p.Key != "financial_credit_card_invoice_consolidations").ToDictionary(p => p.Key, p => p.Value) };
+        var missingOfficialReport = missingOfficialInventory.DryRun(w, source);
+        Assert.False(missingOfficialReport.CanExecute); Assert.Equal(-1, missingOfficialReport.DestinationCounts["financial_credit_card_invoice_consolidations"]);
         var old = destination with { AppliedMigrations = destination.AppliedMigrations.Where(m => m != BudgetSpreadsheetImporter.RequiredMigration).ToArray(),
             Counts = destination.Counts.Where(p => p.Key is not ("financial_bootstrap_provenance" or "financial_monthly_aggregate_targets")).ToDictionary(p => p.Key, p => p.Value) };
         var blocked = old.DryRun(w, source); Assert.False(blocked.CanExecute); Assert.Equal(-1, blocked.DestinationCounts["financial_bootstrap_provenance"]);

@@ -222,7 +222,8 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         await using (var db = Db())
         {
             await db.GetService<IMigrator>().MigrateAsync("20261020232559_AddFinancialWorkspaceResetCoordination");
-            db.FinancialCreditCardInvoices.Add(invoice); await db.SaveChangesAsync();
+            // Insert through the historical schema: the current EF model now has official-state columns absent here.
+            await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO financial_credit_card_invoices (id,workspace_id,credit_card_id,competence,cycle_start_date,closing_date,due_date,created_at) VALUES ({invoice.Id},{w.Id},{card},{invoice.Competence},{invoice.CycleStartDate},{invoice.ClosingDate},{invoice.DueDate},{now})");
             // Exercise the previous schema, not the current model. Row 1 was valid in that schema.
             await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO financial_credit_card_imported_installments (id,workspace_id,credit_card_id,import_id,row_number,invoice_id,transaction_date,description,amount,installment_number,installment_count,is_historical,status,created_at,created_by_user_id) VALUES ({id},{w.Id},{card},{batch},1,{invoice.Id},{date},'Synthetic previous import',123.45,7,10,true,'Active',{now},{w.OwnerUserId})");
             await db.Database.MigrateAsync();

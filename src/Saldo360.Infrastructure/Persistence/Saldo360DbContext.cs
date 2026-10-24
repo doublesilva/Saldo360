@@ -56,6 +56,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialCreditCardPurchase> FinancialCreditCardPurchases => Set<FinancialCreditCardPurchase>();
     public DbSet<FinancialCreditCardInstallment> FinancialCreditCardInstallments => Set<FinancialCreditCardInstallment>();
     public DbSet<FinancialCreditCardInvoice> FinancialCreditCardInvoices => Set<FinancialCreditCardInvoice>();
+    public DbSet<FinancialCreditCardInvoiceConsolidation> FinancialCreditCardInvoiceConsolidations => Set<FinancialCreditCardInvoiceConsolidation>();
     public DbSet<FinancialCreditCardInvoicePayment> FinancialCreditCardInvoicePayments => Set<FinancialCreditCardInvoicePayment>();
     public DbSet<FinancialPlannedInvoiceReconciliation> FinancialPlannedInvoiceReconciliations => Set<FinancialPlannedInvoiceReconciliation>();
     public DbSet<FinancialCreditCardImportBatch> FinancialCreditCardImportBatches => Set<FinancialCreditCardImportBatch>();

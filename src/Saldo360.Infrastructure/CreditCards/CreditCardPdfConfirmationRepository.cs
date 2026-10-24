@@ -10,13 +10,15 @@ using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
-internal sealed class CreditCardPdfConfirmationRepository(Saldo360DbContext db) : ICreditCardPdfConfirmationRepository
+internal sealed partial class CreditCardPdfConfirmationRepository(Saldo360DbContext db, IFinancialDocumentStorage? storage = null,
+    CreditCardStatementAgentOptions? agentOptions = null) : ICreditCardPdfConfirmationRepository
 {
     public async Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(
         Guid workspaceId, Guid cardId, Guid userId, CreditCardPdfTrustedConfirmation confirmation,
         DateTimeOffset now, CancellationToken cancellationToken)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", cancellationToken);
         var existing = await db.FinancialCreditCardImportBatches.Include(batch => batch.Items)
             .SingleOrDefaultAsync(batch => batch.WorkspaceId == workspaceId && batch.CreditCardId == cardId
                 && batch.Source == FinancialCreditCardImportSource.Pdf && batch.DocumentHash == confirmation.DocumentHash, cancellationToken);
@@ -35,6 +37,10 @@ internal sealed class CreditCardPdfConfirmationRepository(Saldo360DbContext db) 
             await transaction.RollbackAsync(cancellationToken);
             return new(CreditCardPdfConfirmationAccess.NotFound);
         }
+        if (invoice.OfficialVersion > 0 || await db.FinancialCreditCardInvoicePayments.AnyAsync(p => p.WorkspaceId == workspaceId && p.InvoiceId == invoice.Id && p.Status == FinancialCreditCardInvoicePaymentStatus.Active, cancellationToken)
+            || await db.FinancialPlannedInvoiceReconciliations.AnyAsync(r => r.WorkspaceId == workspaceId && r.CreditCardInvoiceId == invoice.Id && r.RemovedAt == null, cancellationToken))
+            return await AbortConflict(transaction, "A fatura oficial ou com vínculo financeiro exige consolidação versionada pela Inbox.", cancellationToken);
+        var before = await CompositionSnapshotAsync(workspaceId, cardId, invoice.Id, invoice.Competence, cancellationToken);
         var batch = FinancialCreditCardImportBatch.CreatePdf(Guid.NewGuid(), workspaceId, cardId, confirmation.DocumentHash,
             confirmation.DecisionHash, confirmation.Parser, confirmation.Competence, confirmation.OfficialTotal, userId, now);
         db.FinancialCreditCardImportBatches.Add(batch);
@@ -94,13 +100,19 @@ internal sealed class CreditCardPdfConfirmationRepository(Saldo360DbContext db) 
         try
         {
             await db.SaveChangesAsync(cancellationToken);
-            var persisted = await OutstandingAsync(workspaceId, invoice.Id, cancellationToken);
+            var persisted = await FinancialCreditCardInvoiceTotals.TotalAsync(db, workspaceId, invoice.Id, cancellationToken);
             if (persisted != confirmation.OfficialTotal)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 db.ChangeTracker.Clear();
                 return new(CreditCardPdfConfirmationAccess.Conflict, null, null, $"A composição persistida diverge do documento em {(persisted - confirmation.OfficialTotal).ToString("0.00", CultureInfo.InvariantCulture)}.");
             }
+            var after = await CompositionSnapshotAsync(workspaceId, cardId, invoice.Id, invoice.Competence, cancellationToken);
+            invoice.CloseOfficial(1, persisted, now);
+            db.FinancialCreditCardInvoiceConsolidations.Add(FinancialCreditCardInvoiceConsolidation.Create(workspaceId, cardId, invoice.Id, null,
+                confirmation.DocumentHash, confirmation.DecisionHash, OfficialStatementAnalysisValidation.Hash(after),
+                System.Text.Json.JsonSerializer.Serialize(new { LegacyPdfBatch = batch.Id, Before = before, After = after }), 1, persisted, userId, now));
+            await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new(CreditCardPdfConfirmationAccess.Allowed, ToResult(batch, persisted));
         }

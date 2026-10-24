@@ -965,6 +965,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("invoice_id");
 
+                    b.Property<Guid?>("OfficialCategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("official_category_id");
+
                     b.Property<Guid>("PurchaseId")
                         .HasColumnType("uuid")
                         .HasColumnName("purchase_id");
@@ -987,6 +991,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("WorkspaceId", "InvoiceId")
                         .HasDatabaseName("ix_financial_credit_card_installments_workspace_id_invoice_id");
+
+                    b.HasIndex("WorkspaceId", "OfficialCategoryId")
+                        .HasDatabaseName("ix_financial_credit_card_installments_workspace_id_official_ca");
 
                     b.HasIndex("WorkspaceId", "PurchaseId", "InstallmentNumber")
                         .IsUnique()
@@ -1037,6 +1044,18 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("due_date");
 
+                    b.Property<DateTimeOffset?>("OfficialClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("official_closed_at");
+
+                    b.Property<decimal?>("OfficialTotal")
+                        .HasColumnType("numeric")
+                        .HasColumnName("official_total");
+
+                    b.Property<int>("OfficialVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("official_version");
+
                     b.Property<Guid>("WorkspaceId")
                         .HasColumnType("uuid")
                         .HasColumnName("workspace_id");
@@ -1051,7 +1070,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_financial_credit_card_invoices_workspace_id_credit_card_id_");
 
-                    b.ToTable("financial_credit_card_invoices", (string)null);
+                    b.ToTable("financial_credit_card_invoices", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_invoice_official_state", "(official_version = 0 AND official_total IS NULL AND official_closed_at IS NULL) OR (official_version > 0 AND official_total >= 0 AND scale(official_total) <= 2 AND official_closed_at IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustment", b =>
@@ -1159,9 +1181,93 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_invoice_adjustments_status", "status IN ('Active', 'Cancelled')");
 
-                            t.HasCheckConstraint("ck_invoice_adjustments_type", "type IN ('Fee', 'Credit', 'Refund')");
+                            t.HasCheckConstraint("ck_invoice_adjustments_type", "type IN ('Fee', 'Credit', 'Refund', 'PreviousBalance', 'FinancedBalance')");
 
-                            t.HasCheckConstraint("ck_invoice_adjustments_type_nature", "(type = 'Fee' AND nature = 'Debit') OR (type IN ('Credit', 'Refund') AND nature = 'Credit')");
+                            t.HasCheckConstraint("ck_invoice_adjustments_type_nature", "(type IN ('Fee', 'PreviousBalance', 'FinancedBalance') AND nature = 'Debit') OR (type IN ('Credit', 'Refund') AND nature = 'Credit')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceConsolidation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<Guid>("CreditCardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_id");
+
+                    b.Property<string>("DecisionHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("decision_hash");
+
+                    b.Property<string>("DocumentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("document_hash");
+
+                    b.Property<Guid?>("DocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("document_id");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<decimal>("OfficialTotal")
+                        .HasColumnType("numeric")
+                        .HasColumnName("official_total");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("snapshot_json");
+
+                    b.Property<string>("StateHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("state_hash");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_credit_card_invoice_consolidations");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_financial_credit_card_invoice_consolidations_created_by_use");
+
+                    b.HasIndex("WorkspaceId", "DocumentId")
+                        .HasDatabaseName("ix_financial_credit_card_invoice_consolidations_workspace_id_d");
+
+                    b.HasIndex("WorkspaceId", "CreditCardId", "DocumentHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_credit_card_invoice_consolidations_workspace_id_c");
+
+                    b.HasIndex("WorkspaceId", "InvoiceId", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_credit_card_invoice_consolidations_workspace_id_i");
+
+                    b.ToTable("financial_credit_card_invoice_consolidations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_official_consolidation_total", "official_total >= 0 AND scale(official_total) <= 2 AND version > 0");
                         });
                 });
 
@@ -3693,6 +3799,13 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_credit_card_installments_invoices_same_family");
 
+                    b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "OfficialCategoryId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_credit_card_installments_financial_categories_wor");
+
                     b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardPurchase", null)
                         .WithMany("Installments")
                         .HasForeignKey("WorkspaceId", "PurchaseId")
@@ -3757,6 +3870,38 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_credit_card_invoice_adjustments_financial_credit_1");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceConsolidation", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_invoice_consolidations_application_us");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCard", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "CreditCardId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_invoice_consolidations_financial_cred");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialDocumentInboxItem", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_credit_card_invoice_consolidations_financial_docu");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardInvoice", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "InvoiceId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_credit_card_invoice_consolidations_financial_cred1");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCardInvoicePayment", b =>

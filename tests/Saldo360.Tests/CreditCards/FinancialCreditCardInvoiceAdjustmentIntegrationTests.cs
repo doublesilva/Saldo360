@@ -10,6 +10,21 @@ namespace Saldo360.Tests.CreditCards;
 [Collection(PostgresCollection.Name)]
 public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
+    [Theory]
+    [InlineData("PreviousBalance", "Debit")]
+    [InlineData("FinancedBalance", "Credit")]
+    [InlineData("999", "Debit")]
+    [InlineData("Credit", "999")]
+    public async Task ManualContractDoesNotAcceptInternalBalanceTypesOrUndefinedEnums(string type, string nature)
+    {
+        var context = await ArrangeAsync("adjustment-contract");
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<FinancialCreditCardInvoiceAdjustmentService>();
+        var result = await service.CreateAsync(context.WorkspaceId, context.CardId, context.InvoiceId, context.UserId, Input(type, nature, "1.00", "invalid-contract"), default);
+        Assert.Equal(InvoiceAdjustmentAccess.Invalid, result.Access);
+        await using var db = Db(); Assert.Empty(await db.FinancialCreditCardInvoiceAdjustments.ToListAsync());
+    }
+
     [Fact]
     public async Task DebitAndCreditAdjustmentsAffectInvoiceLimitAndProjectionWithoutBankTransaction()
     {
@@ -49,6 +64,7 @@ public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(Postgre
             Assert.Equal(InvoiceAdjustmentAccess.Conflict, conflict.Access);
         }
 
+        await using (var official = Db()) await OfficialInvoiceFixture.CloseAsync(official, context.InvoiceId);
         var payment = await SendWithCsrfAsync(HttpMethod.Post,
             $"/api/financial-workspaces/{context.WorkspaceId}/credit-cards/{context.CardId}/invoices/{context.InvoiceId}/payments", context.Session,
             new { operationId = Guid.NewGuid(), financialAccountId = context.AccountId, paymentDate = "2026-10-17", amount = "110.00" });
@@ -58,7 +74,7 @@ public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(Postgre
         {
             var service = scope.ServiceProvider.GetRequiredService<FinancialCreditCardInvoiceAdjustmentService>();
             var blocked = await service.CancelAsync(context.WorkspaceId, context.CardId, context.InvoiceId, created.Id, context.UserId, CancellationToken.None);
-            Assert.Equal(InvoiceAdjustmentAccess.PaidTotalConflict, blocked.Access);
+            Assert.Equal(InvoiceAdjustmentAccess.Conflict, blocked.Access); // Official composition remains immutable even before considering the paid total.
         }
         await using var db = Db();
         Assert.Equal(1, await db.FinancialCreditCardInvoiceAdjustments.CountAsync());

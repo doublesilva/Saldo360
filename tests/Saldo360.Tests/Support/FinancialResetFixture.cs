@@ -75,10 +75,12 @@ internal static class FinancialResetFixture
         var service = ServiceAccount.Create(u, ServiceType.Electricity, "Synthetic", "Service", now);
         var identifier = ServiceAccountIdentifier.Create(service, ServiceIdentifierType.UtilityCustomerNumber, [1,2,3], new string('d',64), "***0000", now);
         db.AddRange(account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, transfer,
-            recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, cardTx, payment, adjustment, batch,
+            recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
             scenario, parameter, document, binding, checkpoint, service, identifier);
         await db.SaveChangesAsync();
+        await OfficialInvoiceFixture.CloseAsync(db, invoice.Id);
+        db.AddRange(cardTx, payment); await db.SaveChangesAsync();
         return (account.Id, category.Id, recurring.Id);
     }
 }

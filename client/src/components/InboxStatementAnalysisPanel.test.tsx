@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { analyzeStatement, correctStatementCategory, getStatementAnalysis, type StatementAnalysisResult } from '../api/financialDocuments'
+import { analyzeStatement, processStatement, consolidateStatement, correctStatementCategory, getStatementAnalysis, type StatementAnalysisResult } from '../api/financialDocuments'
 import { InboxStatementAnalysisPanel } from './InboxStatementAnalysisPanel'
 
-vi.mock('../api/financialDocuments', async original => ({ ...await original<typeof import('../api/financialDocuments')>(), analyzeStatement: vi.fn(), correctStatementCategory: vi.fn(), getStatementAnalysis: vi.fn() }))
+vi.mock('../api/financialDocuments', async original => ({ ...await original<typeof import('../api/financialDocuments')>(), analyzeStatement: vi.fn(), processStatement: vi.fn(), consolidateStatement: vi.fn(), correctStatementCategory: vi.fn(), getStatementAnalysis: vi.fn() }))
 const analyze = vi.mocked(analyzeStatement), get = vi.mocked(getStatementAnalysis), correct = vi.mocked(correctStatementCategory)
 const result = (status = 'Reliable', proposed = false): StatementAnalysisResult => ({ status, analysis: { schemaVersion: '2.0', cardId: 'card', status, failureCode: null,
   categories: [{ key: 'key', itemIndex: 0, categoryId: proposed ? null : 'health', categoryName: proposed ? 'Instrumentos' : 'Saúde', isProposal: proposed, confidence: 'High', source: proposed ? 'Proposed' : 'Existing' }],
@@ -11,6 +11,47 @@ const result = (status = 'Reliable', proposed = false): StatementAnalysisResult 
 const props = { workspaceId: 'personal', documentId: 'doc', cardId: 'card', password: '', categories: [{ id: 'health', name: 'Saúde', type: 'Expense' as const, isActive: true, createdAt: '' }, { id: 'other', name: 'Outros', type: 'Expense' as const, isActive: true, createdAt: '' }], blocked: false, onBusy: vi.fn(), onAnalyzed: vi.fn() }
 beforeEach(() => { get.mockReset().mockResolvedValue({ status: 'NotAnalyzed', analysis: null }); analyze.mockReset(); correct.mockReset(); props.onBusy.mockClear(); props.onAnalyzed.mockClear() })
 afterEach(cleanup)
+
+it.each(['Imported', 'AlreadyImported', 'NewVersionConsolidated', 'NeedsReview', 'Conflict'])('processamento apresenta o resultado financeiro %s', async status => {
+  vi.mocked(processStatement).mockResolvedValue({ ok: true, value: { analysis: result(), consolidation: { status, invoiceId: 'invoice', version: 1, officialTotal: '10.00', failureCode: null } } })
+  render(<InboxStatementAnalysisPanel {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Processar e consolidar fatura' }))
+  await waitFor(() => expect(props.onAnalyzed).toHaveBeenCalledOnce())
+  const labels: Record<string, string> = { Imported: 'Fatura oficial importada', AlreadyImported: 'Fatura já importada', NewVersionConsolidated: 'Nova versão consolidada', NeedsReview: 'Revisão necessária', Conflict: 'Conflito financeiro' }
+  expect(screen.getByText(new RegExp(labels[status]))).toBeTruthy()
+  expect(analyze).not.toHaveBeenCalled(); expect(correct).not.toHaveBeenCalled()
+})
+
+it('consolida análise pronta sem enviar valores financeiros', async () => {
+  get.mockResolvedValue(result())
+  vi.mocked(consolidateStatement).mockResolvedValue({ ok: true, value: { status: 'Imported', invoiceId: 'invoice', version: 1, officialTotal: '10.00', failureCode: null } })
+  render(<InboxStatementAnalysisPanel {...props} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Pronta para consolidar/ }))
+  await screen.findByText(/Fatura oficial importada/)
+  expect(consolidateStatement).toHaveBeenCalledWith('personal', 'doc', 'card')
+  expect((screen.getByLabelText('Corrigir categoria de SHOP') as HTMLSelectElement).disabled).toBe(true)
+})
+
+it('documento importado mantém consulta e replay mas não permite mudar decisões da análise', async () => {
+  get.mockResolvedValue(result()); render(<InboxStatementAnalysisPanel {...props} imported />)
+  const category = await screen.findByLabelText('Corrigir categoria de SHOP') as HTMLSelectElement
+  expect(category.disabled).toBe(true)
+  expect((screen.getByRole('button', { name: 'Analisar fatura armazenada' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByRole('button', { name: /Pronta para consolidar/ })).toBeNull()
+  expect((screen.getByRole('button', { name: 'Processar e consolidar fatura' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+it('processamento financeiro bloqueia clique repetido e descarta resposta após trocar documento', async () => {
+  let resolve!: (value: Awaited<ReturnType<typeof processStatement>>) => void
+  vi.mocked(processStatement).mockReset().mockImplementation(() => new Promise(r => { resolve = r }))
+  const view = render(<InboxStatementAnalysisPanel key="old" {...props} />)
+  const button = screen.getByRole('button', { name: 'Processar e consolidar fatura' })
+  fireEvent.click(button); fireEvent.click(button); expect(processStatement).toHaveBeenCalledOnce()
+  view.rerender(<InboxStatementAnalysisPanel key="new" {...props} documentId="other-doc" />)
+  resolve({ ok: true, value: { analysis: result(), consolidation: { status: 'Imported', invoiceId: 'invoice', version: 1, officialTotal: '10.00', failureCode: null } } })
+  await waitFor(() => expect(props.onAnalyzed).not.toHaveBeenCalled())
+  expect(screen.queryByText(/Fatura oficial importada/)).toBeNull()
+})
 
 it('analisa o documento armazenado sem upload e já seleciona categoria segura', async () => {
   analyze.mockResolvedValue({ ok: true, value: result() })

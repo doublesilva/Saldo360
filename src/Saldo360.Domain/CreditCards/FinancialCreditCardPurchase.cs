@@ -95,12 +95,19 @@ public sealed class FinancialCreditCardInstallment : Entity
     public Guid? InvoiceId { get; private set; }
     public int InstallmentNumber { get; private init; }
     public decimal Amount { get; private set; }
+    public Guid? OfficialCategoryId { get; private set; }
     public CreditCardInstallmentStatus Status { get; private set; }
     public DateTimeOffset CreatedAt { get; private init; }
     internal static FinancialCreditCardInstallment Create(Guid workspaceId, Guid purchaseId, int number, long cents, DateTimeOffset now) => new() { WorkspaceId = workspaceId, PurchaseId = purchaseId, InstallmentNumber = number, Amount = cents / 100m, Status = CreditCardInstallmentStatus.Active, CreatedAt = now };
     internal void Cancel() => Status = CreditCardInstallmentStatus.Cancelled;
     internal void Revise(decimal amount) { Amount = amount; Status = CreditCardInstallmentStatus.Active; }
     public void AssignInvoice(Guid invoiceId) => InvoiceId = invoiceId;
+    public void ApplyOfficial(decimal amount, Guid categoryId)
+    {
+        if (amount <= 0 || Money.Validate(amount, "Parcela") is not null) throw new ArgumentException("Parcela inválida.");
+        Amount = amount; OfficialCategoryId = categoryId; Status = CreditCardInstallmentStatus.Active;
+    }
+    public void SupersedeOfficial() => Status = CreditCardInstallmentStatus.Cancelled;
 }
 
 public static class CreditCardPurchaseDetails

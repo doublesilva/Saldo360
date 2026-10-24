@@ -36,7 +36,7 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
     public async Task<bool> CanEditAsync(Guid workspaceId, Guid cardId, Guid purchaseId, DateOnly today, CancellationToken ct)
     {
         var ids = await db.FinancialCreditCardInstallments.Where(i => i.WorkspaceId == workspaceId && i.PurchaseId == purchaseId && i.Status == CreditCardInstallmentStatus.Active && i.InvoiceId != null).Select(i => i.InvoiceId!.Value).ToListAsync(ct);
-        return !await db.FinancialCreditCardInvoices.AnyAsync(i => ids.Contains(i.Id) && i.WorkspaceId == workspaceId && i.ClosingDate < today, ct)
+        return !await db.FinancialCreditCardInvoices.AnyAsync(i => ids.Contains(i.Id) && i.WorkspaceId == workspaceId && i.OfficialVersion > 0, ct)
             && !await db.FinancialCreditCardInvoicePayments.AnyAsync(p => ids.Contains(p.InvoiceId) && p.WorkspaceId == workspaceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active, ct)
             && !await HasActiveReconciliationAsync(workspaceId, cardId, purchaseId, ct);
     }
@@ -72,6 +72,7 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
         var invoiceIds = await db.FinancialCreditCardInstallments.AsNoTracking().Where(i => i.WorkspaceId == workspaceId && i.PurchaseId == purchaseId && i.InvoiceId != null).Select(i => i.InvoiceId!.Value).Distinct().ToListAsync(cancellationToken);
         foreach (var invoiceId in invoiceIds)
         {
+            if (await db.FinancialCreditCardInvoices.AnyAsync(i => i.WorkspaceId == workspaceId && i.Id == invoiceId && i.OfficialVersion > 0, cancellationToken)) return false;
             var paid = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(p => p.WorkspaceId == workspaceId && p.InvoiceId == invoiceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
             var otherTotal = await (from i in db.FinancialCreditCardInstallments.AsNoTracking() join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id where i.WorkspaceId == workspaceId && i.InvoiceId == invoiceId && i.PurchaseId != purchaseId && i.Status == CreditCardInstallmentStatus.Active && p.Status == CreditCardPurchaseStatus.Active select i.Amount).SumAsync(cancellationToken);
             otherTotal += await db.FinancialCreditCardImportedInstallments.AsNoTracking().Where(i => i.WorkspaceId == workspaceId && i.InvoiceId == invoiceId && i.IsHistorical && i.Status == FinancialCreditCardImportedInstallmentStatus.Active).SumAsync(i => (decimal?)i.Amount, cancellationToken) ?? 0m;

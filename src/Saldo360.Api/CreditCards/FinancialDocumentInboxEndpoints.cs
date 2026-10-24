@@ -17,6 +17,8 @@ public static class FinancialDocumentInboxEndpoints
         group.MapGet("/{id:guid}", Get);
         group.MapGet("/{id:guid}/statement-analysis", GetStatementAnalysis);
         group.MapPost("/{id:guid}/statement-analysis", AnalyzeStatement).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/{id:guid}/statement-consolidation", ConsolidateStatement).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/{id:guid}/statement-processing", ProcessStatement).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPut("/{id:guid}/statement-analysis/items/{key}/category", CorrectStatementCategory).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/", Receive).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/reanalyze", Reanalyze).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -36,6 +38,28 @@ public static class FinancialDocumentInboxEndpoints
         "NotFound" => Results.NotFound(), "Invalid" => Results.ValidationProblem(result.Errors!),
         "Conflict" or "Busy" => Results.Conflict(result), _ => Results.Ok(result)
     };
+    private static async Task<IResult> ConsolidateStatement(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user, InboxStatementConsolidationService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        if (!request.HasFormContentType || !Guid.TryParse((await request.ReadFormAsync(ct))["creditCardId"], out var card)) return Validation("creditCardId", "Selecione explicitamente o cartão.");
+        var result = await service.ConsolidateAsync(workspaceId, card, id, userId, ct);
+        return result.Status == "NotFound" ? Results.NotFound() : Results.Ok(result);
+    }
+    private static async Task<IResult> ProcessStatement(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user,
+        InboxStatementAnalysisService analysis, InboxStatementConsolidationService consolidation, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        if (!request.HasFormContentType) return Validation("creditCardId", "Selecione explicitamente o cartão.");
+        var form = await request.ReadFormAsync(ct);
+        if (!Guid.TryParse(form["creditCardId"], out var card)) return Validation("creditCardId", "Selecione explicitamente o cartão.");
+        var result = await analysis.AnalyzeAsync(workspaceId, id, card, userId, form["password"], ct);
+        if (result.Status == "NotFound") return Results.NotFound();
+        // A previously imported document is verified by the financial idempotency guard, not analyzed again.
+        var financial = result.Status == "Busy" ? new OfficialStatementConsolidationResult("Busy", FailureCode: "StatementAnalysisInProgress")
+            : result.Analysis?.Status == "Reliable" || result.Status == "Conflict"
+                ? await consolidation.ConsolidateAsync(workspaceId, card, id, userId, ct) : new OfficialStatementConsolidationResult("NeedsReview", FailureCode: "AnalysisRequired");
+        return Results.Ok(new { analysis = result, consolidation = financial });
+    }
     private static async Task<IResult> GetStatementAnalysis(Guid workspaceId, Guid id, CurrentUser user, InboxStatementAnalysisService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : AnalysisResponse(await service.GetAsync(workspaceId, id, userId, ct));
     private static async Task<IResult> AnalyzeStatement(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user, InboxStatementAnalysisService service, CancellationToken ct)

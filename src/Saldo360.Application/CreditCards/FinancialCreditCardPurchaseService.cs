@@ -86,8 +86,6 @@ public sealed class FinancialCreditCardPurchaseService(IFinancialWorkspaceReposi
         foreach (var installment in purchase.Installments.Where(i => i.Status == CreditCardInstallmentStatus.Active))
         {
             var cycle = Cycle(purchase, installment, calendar);
-            if (purchaseId is not null && cycle.ClosingDate < today)
-                return new(CreditCardPurchaseAccess.Conflict, null, new Dictionary<string, string[]> { ["purchase"] = ["Não é possível mover parcelas para um período já fechado."] });
             var invoice = await purchases.FindInvoiceAsync(workspaceId, cardId, cycle.ClosingDate, cancellationToken);
             if (invoice is not null)
             {

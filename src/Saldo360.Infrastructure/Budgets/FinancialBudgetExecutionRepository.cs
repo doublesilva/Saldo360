@@ -75,8 +75,8 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                                          where installment.WorkspaceId == workspaceId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
                                             && purchase.WorkspaceId == workspaceId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
                                             && invoice.WorkspaceId == workspaceId && invoice.DueDate >= first && invoice.DueDate < through
-                                            && categoryIds.Contains(purchase.CategoryId)
-                                         select new { CategoryId = purchase.CategoryId, Amount = installment.Amount, IsCreditCard = true, Date = invoice.DueDate };
+                                            && categoryIds.Contains(installment.OfficialCategoryId ?? purchase.CategoryId)
+                                         select new { CategoryId = installment.OfficialCategoryId ?? purchase.CategoryId, Amount = installment.Amount, IsCreditCard = true, Date = invoice.DueDate };
         var historicalCreditCardCommitted = from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
                                              join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
                                              where item.WorkspaceId == workspaceId && item.IsHistorical && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
@@ -101,7 +101,19 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
                                           && item.CategoryId != null && categoryIds.Contains(item.CategoryId.Value)
                                           && item.DueDate >= first && item.DueDate < through
                                       select new { CategoryId = item.CategoryId!.Value, item.Amount, IsCreditCard = true, Date = item.DueDate!.Value };
-        var consumptionRows = await realized.Concat(creditCardCommitted).Concat(historicalCreditCardCommitted).Concat(knownCreditCardCommitted)
+        var cardAdjustments = from adjustment in db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
+                              join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on adjustment.InvoiceId equals invoice.Id
+                              where adjustment.WorkspaceId == workspaceId && invoice.WorkspaceId == workspaceId
+                                  && adjustment.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentStatus.Active
+                                  && adjustment.CategoryId != null && categoryIds.Contains(adjustment.CategoryId.Value)
+                                  && (adjustment.Type == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentType.Fee
+                                      || adjustment.Type == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentType.Credit
+                                      || adjustment.Type == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentType.Refund)
+                                  && invoice.DueDate >= first && invoice.DueDate < through
+                              select new { CategoryId = adjustment.CategoryId!.Value,
+                                  Amount = adjustment.Nature == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentNature.Debit ? adjustment.Amount : -adjustment.Amount,
+                                  IsCreditCard = true, Date = invoice.DueDate };
+        var consumptionRows = await realized.Concat(creditCardCommitted).Concat(historicalCreditCardCommitted).Concat(knownCreditCardCommitted).Concat(cardAdjustments)
             .GroupBy(item => new { item.CategoryId, item.IsCreditCard, item.Date.Year, item.Date.Month })
             .Select(group => new ConsumptionTotal(group.Key.CategoryId, group.Key.IsCreditCard, group.Key.Year, group.Key.Month, group.Sum(item => item.Amount)))
             .ToListAsync(cancellationToken);

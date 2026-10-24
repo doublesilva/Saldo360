@@ -34,6 +34,8 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentRepository(Saldo360DbC
             await transaction.RollbackAsync(cancellationToken);
             return new(InvoiceAdjustmentAccess.NotFound);
         }
+        if (await db.FinancialCreditCardInvoices.AnyAsync(i => i.WorkspaceId == workspaceId && i.Id == invoiceId && i.OfficialVersion > 0, cancellationToken))
+            return new(InvoiceAdjustmentAccess.Conflict, null, null, "A composição oficial só pode ser substituída por nova consolidação.");
         if (input.CategoryId is { } categoryId && !await db.FinancialCategories.AnyAsync(
                 item => item.WorkspaceId == workspaceId && item.Id == categoryId && item.IsActive, cancellationToken))
         {
@@ -85,6 +87,8 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentRepository(Saldo360DbC
             return new(InvoiceAdjustmentAccess.Allowed, ToDto(adjustment));
         }
         var total = await FinancialCreditCardInvoiceTotals.TotalAsync(db, workspaceId, invoiceId, cancellationToken);
+        if (await db.FinancialCreditCardInvoices.AnyAsync(i => i.WorkspaceId == workspaceId && i.Id == invoiceId && i.OfficialVersion > 0, cancellationToken))
+            return new(InvoiceAdjustmentAccess.Conflict, null, null, "A composição oficial só pode ser substituída por nova consolidação.");
         var paid = await FinancialCreditCardInvoiceTotals.PaidAsync(db, workspaceId, invoiceId, cancellationToken);
         var totalAfterCancellation = total - adjustment.SignedAmount;
         if (totalAfterCancellation < paid)

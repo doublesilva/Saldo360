@@ -29,7 +29,7 @@ public sealed class FinancialResetEndpointsTests(PostgresFixture postgres) : Pos
         var preview = await SendAsync(HttpMethod.Get, Path(wa.Id) + "/preview", a);
         Assert.Equal(HttpStatusCode.OK, preview.StatusCode); Assert.True(preview.Headers.CacheControl!.NoStore);
         var report = await ReadAsync<JsonElement>(preview);
-        Assert.Equal(32, report.GetProperty("counts").EnumerateObject().Count());
+        Assert.Equal(33, report.GetProperty("counts").EnumerateObject().Count());
         foreach(var forbidden in new[] { "synthetic.pdf", "synthetic-email", "***0000", "totalAmount", "lookupHash", "storageReference", "protectedNormalizedValue" })
             Assert.DoesNotContain(forbidden,report.GetRawText());
         Assert.All(report.GetProperty("counts").EnumerateObject(), c => Assert.True(c.Value.GetInt64() > 0, c.Name));

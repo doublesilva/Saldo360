@@ -18,10 +18,11 @@ public sealed class FinancialCreditCardInvoiceAdjustmentService(
     {
         if (input is null) return Invalid("body", "Informe o ajuste da fatura.");
         var errors = new Dictionary<string, string[]>();
-        var validType = Enum.TryParse<FinancialCreditCardInvoiceAdjustmentType>(input.Type, true, out var type);
+        var validType = Enum.TryParse<FinancialCreditCardInvoiceAdjustmentType>(input.Type, true, out var type)
+            && type is FinancialCreditCardInvoiceAdjustmentType.Fee or FinancialCreditCardInvoiceAdjustmentType.Credit or FinancialCreditCardInvoiceAdjustmentType.Refund;
         if (!validType)
             errors["type"] = ["Tipo deve ser Fee, Credit ou Refund."];
-        var validNature = Enum.TryParse<FinancialCreditCardInvoiceAdjustmentNature>(input.Nature, true, out var nature);
+        var validNature = Enum.TryParse<FinancialCreditCardInvoiceAdjustmentNature>(input.Nature, true, out var nature) && Enum.IsDefined(nature);
         if (!validNature)
             errors["nature"] = ["Natureza deve ser Debit ou Credit."];
         if (validType && validNature && ((type == FinancialCreditCardInvoiceAdjustmentType.Fee) != (nature == FinancialCreditCardInvoiceAdjustmentNature.Debit)))

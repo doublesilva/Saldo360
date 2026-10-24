@@ -2,7 +2,7 @@ using Saldo360.Domain.Common;
 
 namespace Saldo360.Domain.CreditCards;
 
-public enum FinancialCreditCardInvoiceAdjustmentType { Fee, Credit, Refund }
+public enum FinancialCreditCardInvoiceAdjustmentType { Fee, Credit, Refund, PreviousBalance, FinancedBalance }
 public enum FinancialCreditCardInvoiceAdjustmentNature { Debit, Credit }
 public enum FinancialCreditCardInvoiceAdjustmentStatus { Active, Cancelled }
 

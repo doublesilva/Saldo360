@@ -26,6 +26,8 @@ public sealed record CreditCardPdfTrustedConfirmation(
 
 public interface ICreditCardPdfConfirmationRepository
 {
+    Task<OfficialStatementConsolidationResult> ConsolidateInboxAsync(Guid workspaceId, Guid cardId, Guid documentId, Guid userId, DateTimeOffset now, CancellationToken ct)
+        => Task.FromResult(new OfficialStatementConsolidationResult("NeedsReview", FailureCode: "ConsolidationUnavailable"));
     Task<CreditCardPdfConfirmationOperationResult> ConfirmAsync(Guid workspaceId, Guid cardId, Guid userId, CreditCardPdfTrustedConfirmation confirmation, DateTimeOffset now, CancellationToken cancellationToken);
 }
 

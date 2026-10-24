@@ -122,6 +122,7 @@ public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixtur
 
     private async Task<Guid> CreatePaymentAsync(Guid workspaceId, string owner, Guid card, Guid invoice, Guid account, Guid operationId, string amount, DateOnly today)
     {
+        await using (var official = Db()) await OfficialInvoiceFixture.CloseAsync(official, invoice);
         var response = await SendWithCsrfAsync(HttpMethod.Post,
             $"/api/financial-workspaces/{workspaceId}/credit-cards/{card}/invoices/{invoice}/payments", owner,
             new { operationId, financialAccountId = account, paymentDate = today, amount });

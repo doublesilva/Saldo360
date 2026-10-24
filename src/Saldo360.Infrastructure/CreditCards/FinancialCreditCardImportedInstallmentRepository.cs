@@ -56,6 +56,7 @@ internal sealed class FinancialCreditCardImportedInstallmentRepository(Saldo360D
         if (existing is not null) return SameOrConflict(existing, input);
         var invoice = await db.FinancialCreditCardInvoices.SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.Competence == input.Competence, cancellationToken);
         if (invoice is null) { await transaction.RollbackAsync(cancellationToken); return Invalid("competence", "Não existe fatura correspondente à competência informada."); }
+        if (invoice.OfficialVersion > 0) return new(ImportedInstallmentAccess.Conflict, null, null, null, "A composição oficial exige consolidação versionada.");
         var paid = await db.FinancialCreditCardInvoicePayments.Where(item => item.WorkspaceId == workspaceId && item.InvoiceId == invoice.Id && item.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
         var current = await InvoiceTotalAsync(workspaceId, invoice.Id, cancellationToken);
         if (paid >= current && current > 0m) { await transaction.RollbackAsync(cancellationToken); return Invalid("invoiceId", "A fatura já está quitada e não pode receber obrigação histórica silenciosamente."); }
@@ -76,6 +77,7 @@ internal sealed class FinancialCreditCardImportedInstallmentRepository(Saldo360D
     {
         var record = await db.FinancialCreditCardImportedInstallments.SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.CreditCardId == cardId && item.Id == id && item.Status == FinancialCreditCardImportedInstallmentStatus.Active, cancellationToken);
         if (record is null || !record.IsHistorical) return false;
+        if (record.InvoiceId is { } officialId && await db.FinancialCreditCardInvoices.AnyAsync(i => i.WorkspaceId == workspaceId && i.Id == officialId && i.OfficialVersion > 0, cancellationToken)) return false;
         var paid = await db.FinancialCreditCardInvoicePayments.Where(item => item.WorkspaceId == workspaceId && item.InvoiceId == record.InvoiceId && item.Status == FinancialCreditCardInvoicePaymentStatus.Active).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
         var total = record.InvoiceId is { } invoiceId ? await InvoiceTotalAsync(workspaceId, invoiceId, cancellationToken) : record.Amount;
         if (paid > total - record.Amount) return false;

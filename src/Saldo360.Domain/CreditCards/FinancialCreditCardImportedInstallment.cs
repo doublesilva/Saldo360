@@ -20,10 +20,10 @@ public sealed class FinancialCreditCardImportedInstallment : Entity
     public string? SourceSystem { get; private init; }
     public string? ExternalReference { get; private init; }
     public string Description { get; private init; }
-    public decimal Amount { get; private init; }
+    public decimal Amount { get; private set; }
     public int? InstallmentNumber { get; private init; }
     public int? InstallmentCount { get; private init; }
-    public Guid? CategoryId { get; private init; }
+    public Guid? CategoryId { get; private set; }
     public bool IsHistorical { get; private init; }
     public FinancialCreditCardImportedInstallmentStatus Status { get; private set; }
     public DateTimeOffset CreatedAt { get; private init; }
@@ -73,5 +73,11 @@ public sealed class FinancialCreditCardImportedInstallment : Entity
             || invoice.CreditCardId != CreditCardId || invoice.Competence != Competence?.ToString("yyyy-MM") || invoice.DueDate != DueDate
             || InvoiceId.HasValue && InvoiceId != invoice.Id) throw new ArgumentException("Fatura incompatível com obrigação conhecida.");
         InvoiceId = invoice.Id;
+    }
+    public void ApplyOfficial(decimal amount, Guid? categoryId, FinancialCreditCardInvoice? invoice = null)
+    {
+        if (Status != FinancialCreditCardImportedInstallmentStatus.Active || amount <= 0 || Money.Validate(amount, "Parcela") is not null) throw new ArgumentException("Parcela inválida.");
+        if (invoice is not null) AttachKnownInvoice(invoice);
+        Amount = amount; CategoryId = categoryId;
     }
 }

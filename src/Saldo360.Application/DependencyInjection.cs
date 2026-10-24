@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<CreditCardPdfConfirmationService>();
         services.AddScoped<FinancialDocumentInboxService>();
         services.AddScoped<InboxStatementAnalysisService>();
+        services.AddScoped<InboxStatementConsolidationService>();
         services.AddScoped<FinancialDocumentInboxReviewService>();
         services.AddScoped<FinancialDocumentInboxConfirmationService>();
         services.AddScoped<FinancialDocumentClassificationPreviewService>();

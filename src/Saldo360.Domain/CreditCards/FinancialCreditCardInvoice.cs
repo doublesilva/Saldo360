@@ -14,6 +14,15 @@ public sealed class FinancialCreditCardInvoice : Entity
     public DateOnly ClosingDate { get; private init; }
     public DateOnly DueDate { get; private init; }
     public DateTimeOffset CreatedAt { get; private init; }
+    public int OfficialVersion { get; private set; }
+    public decimal? OfficialTotal { get; private set; }
+    public DateTimeOffset? OfficialClosedAt { get; private set; }
+
+    public void CloseOfficial(int version, decimal total, DateTimeOffset now)
+    {
+        if (version != OfficialVersion + 1 || total < 0 || Money.Validate(total, "Fatura") is not null) throw new ArgumentException("Versão oficial inválida.");
+        OfficialVersion = version; OfficialTotal = total; OfficialClosedAt = now;
+    }
 
     public static FinancialCreditCardInvoice Create(Guid workspaceId, Guid cardId, string competence, DateOnly cycleStartDate, DateOnly closingDate, DateOnly dueDate, DateTimeOffset now) => new()
     {
@@ -21,7 +30,7 @@ public sealed class FinancialCreditCardInvoice : Entity
         ClosingDate = closingDate, DueDate = dueDate, CreatedAt = now,
     };
 
-    public FinancialCreditCardInvoiceStatus GetStatus(DateOnly today) => today > ClosingDate ? FinancialCreditCardInvoiceStatus.Closed : FinancialCreditCardInvoiceStatus.Open;
+    public FinancialCreditCardInvoiceStatus GetStatus(DateOnly today) => OfficialVersion > 0 ? FinancialCreditCardInvoiceStatus.Closed : FinancialCreditCardInvoiceStatus.Open;
 }
 
 public sealed record CreditCardInvoiceCalendar(DateOnly CycleStartDate, DateOnly ClosingDate, DateOnly DueDate, string Competence);

@@ -8,6 +8,7 @@ const labels: Record<string, string> = {
   budgets: 'Orçamentos mensais', budgetTargets: 'Metas por categoria', creditCards: 'Cartões',
   creditCardPurchases: 'Compras no cartão', creditCardInstallments: 'Parcelas do cartão', creditCardInvoices: 'Faturas',
   creditCardInvoicePayments: 'Pagamentos de faturas', creditCardInvoiceAdjustments: 'Ajustes de faturas',
+  creditCardInvoiceConsolidations: 'Versões oficiais de faturas',
   plannedInvoiceReconciliations: 'Conciliações de faturas', creditCardImportBatches: 'Lotes de importação',
   creditCardImportItems: 'Itens de importação', creditCardImportedInstallments: 'Parcelas importadas',
   debts: 'Dívidas', debtInstallments: 'Parcelas de dívidas', debtPayments: 'Pagamentos de dívidas',

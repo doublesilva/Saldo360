@@ -46,7 +46,7 @@ describe('FinancialCreditCardsPage', () => {
     render(<FinancialCreditCardsPage workspaceId="workspace" onChanged={changed} />)
     await screen.findAllByText('Platinum')
     fireEvent.change(screen.getByLabelText('Competência das faturas'), { target: { value: '2030-11' } })
-    fireEvent.click(await screen.findByRole('button', { name: /2030-11.*Aberta/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /2030-11.*Provisória/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar lançamento' }))
     expect((screen.getByLabelText('Primeira competência pendente (opcional para compra nova)') as HTMLInputElement).value).toBe('2030-11')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra sintética' } })

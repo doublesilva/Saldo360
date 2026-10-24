@@ -48,9 +48,10 @@ internal sealed class FinancialCreditCardInvoicePaymentRepository(Saldo360DbCont
     public async Task<PaymentCreationResult> CreateAsync(Guid workspaceId, Guid cardId, Guid invoiceId, Guid operationId, Guid accountId, DateOnly paymentDate, decimal amount, Guid userId, DateOnly today, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", cancellationToken);
         var invoice = await db.FinancialCreditCardInvoices.SingleOrDefaultAsync(i => i.WorkspaceId == workspaceId && i.CreditCardId == cardId && i.Id == invoiceId, cancellationToken);
         if (invoice is null) return new(PaymentOperationResult.NotFound);
-        if (today <= invoice.ClosingDate) return new(PaymentOperationResult.OpenInvoice);
+        if (invoice.OfficialVersion == 0) return new(PaymentOperationResult.OpenInvoice);
         var account = await db.FinancialAccounts.SingleOrDefaultAsync(a => a.WorkspaceId == workspaceId && a.Id == accountId, cancellationToken);
         if (account is null || !account.IsActive) return new(PaymentOperationResult.InvalidAccount);
         var total = await FinancialCreditCardInvoiceTotals.TotalAsync(db, workspaceId, invoiceId, cancellationToken);
