@@ -269,6 +269,45 @@ CSRF e ação explícita. Concluir a validação manual não autoriza ligar o co
 
 ## Primeiro deploy
 
+### Agente de faturas OpenAI: configuração não é ativação
+
+O serviço `api` monta somente `/etc/jarvis/secrets/openai-api-key` em
+`/run/secrets/openai-api-key:ro`. Não copiar a chave para este projeto, `.env`, imagem ou logs.
+O segredo compartilhado permanece sob administração do Jarvis, sem `chmod`/`chown` pelo deploy.
+O provisionamento informado é `root:1654`, modo `0440`, com API `1654:1654` e grupo adicional `1654`.
+
+As configurações iniciais são `CREDIT_CARD_STATEMENT_AGENT_ENABLED=false`,
+`CREDIT_CARD_STATEMENT_AGENT_MODE=Disabled` e modelo `gpt-4o-mini`.
+O provider é `OpenAI` e `ApiKeyFile` é fixo no caminho montado. O provider existente falha se esse
+arquivo faltar ou estiver vazio; não recorre à credencial inline quando `ApiKeyFile` está configurado.
+
+O script de release verifica arquivo regular/não vazio **antes do build**. Depois do build e antes
+do backup/migrations/candidatos/cutover, executa um probe de shell com a imagem/configuração da API,
+validando UID/GID e leitura. O entrypoint da API não é iniciado nesse probe e não há chamada OpenAI.
+Falha encerra o deploy, inclusive com o agente desabilitado: a montagem é obrigatória e não deve criar
+diretório em lugar de segredo ausente. O deploy não provisiona, copia ou repara o segredo.
+O probe é um container efêmero e não modifica a API ativa nem registra conteúdo do arquivo.
+
+Somente em janela futura explicitamente autorizada, alterar **apenas configuração não secreta**
+em `/srv/saldo360-deploy/.env`:
+
+```dotenv
+CREDIT_CARD_STATEMENT_AGENT_ENABLED=true
+CREDIT_CARD_STATEMENT_AGENT_MODE=AgentPrimary
+CREDIT_CARD_STATEMENT_AGENT_MODEL=gpt-4o-mini
+```
+
+Aplicar pela arquitetura existente de release assinada/deploy autorizado, com CI do SHA aprovado,
+preflight, backup, candidatos e readiness; editar `.env` sozinho não muda containers já iniciados.
+Confirmar flags efetivas sem imprimir todas as variáveis do container ou o conteúdo do segredo.
+Classificação documental, agentes de contas de serviço e scheduler permanecem independentes.
+Para desativação controlada, restaurar `false`/`Disabled` e aplicar a configuração pela mesma operação
+autorizada. Nunca ativar automaticamente por sucesso de CI/deploy. Rollback de release mantém as
+ressalvas de compatibilidade de schema descritas na seção Recuperação; não restaurar banco por mera
+alteração dessas flags.
+
+Preparação e evidências locais: [configuração segura do agente](T16-deploy-agente-openai.md).
+
 Depois do bootstrap e do merge em `main`, execute manualmente o workflow **Deploy Saldo360**.
 
 Validações esperadas:

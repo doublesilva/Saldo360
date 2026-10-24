@@ -230,6 +230,10 @@ jobs:
           docker compose --env-file "$RUNNER_TEMP/saldo360.env" -f docker-compose.production.yml config --quiet
       - name: Validate clean install and optional collector configuration
         run: bash scripts/ci/test-clean-install-compose.sh
+      - name: Validate disabled statement agent and secret preflight
+        run: bash scripts/ci/test-statement-agent-deploy.sh
+      - name: Test statement secret permissions in disposable container
+        run: bash scripts/ci/test-statement-agent-secret-reader.sh
       - name: Validate Linux scripts
         shell: bash
         run: |

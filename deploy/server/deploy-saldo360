@@ -27,6 +27,30 @@ compose() {
   docker compose --env-file "$ENV_FILE" --project-directory "$RELEASE" "${compose_files[@]}" "$@"
 }
 
+# BEGIN OpenAI secret preflight (no secret content is read into the deploy process).
+validate_openai_secret_file() {
+  if [ ! -f /etc/jarvis/secrets/openai-api-key ] || [ ! -s /etc/jarvis/secrets/openai-api-key ]; then
+    echo 'Segredo OpenAI ausente, vazio ou não regular; deploy interrompido sem ativar o agente.' >&2
+    return 1
+  fi
+}
+
+validate_openai_secret_reader() {
+  # Use the release image's effective API user and Compose mounts/groups, not root.
+  # Override the entrypoint: this probe never starts the API or calls a provider.
+  if ! compose run --rm --no-deps --entrypoint /bin/sh api -eu -c '
+    test "$(id -u)" = 1654
+    test "$(id -g)" = 1654
+    test -f /run/secrets/openai-api-key
+    test -s /run/secrets/openai-api-key
+    test -r /run/secrets/openai-api-key
+  '; then
+    echo 'Segredo OpenAI não legível pelo usuário 1654:1654 da API; deploy interrompido. Nenhuma permissão foi alterada.' >&2
+    return 1
+  fi
+}
+# END OpenAI secret preflight
+
 wait_healthy() {
   local container="$1"
   local label="$2"
@@ -72,9 +96,11 @@ fi
 
 echo "==> Validando compose"
 compose config --quiet
+validate_openai_secret_file
 
 echo "==> Construindo imagens do commit $SHA"
 compose build --pull api web
+validate_openai_secret_reader
 
 echo "==> Backup pré-migração, quando já houver banco em execução"
 postgres_id="$(compose ps -q postgres || true)"

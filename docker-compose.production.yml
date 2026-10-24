@@ -49,6 +49,11 @@ services:
       ServiceBillReconciliation__Enabled: ${SERVICE_BILL_RECONCILIATION_ENABLED:-false}
       ServiceBillReconciliation__ConfirmationEnabled: ${SERVICE_BILL_CONFIRMATION_ENABLED:-false}
       ServiceBillReconciliation__BindingEnabled: ${SERVICE_BILL_BINDING_ENABLED:-false}
+      CreditCardStatementAgent__Enabled: ${CREDIT_CARD_STATEMENT_AGENT_ENABLED:-false}
+      CreditCardStatementAgent__Mode: ${CREDIT_CARD_STATEMENT_AGENT_MODE:-Disabled}
+      CreditCardStatementAgent__Provider: OpenAI
+      CreditCardStatementAgent__Model: ${CREDIT_CARD_STATEMENT_AGENT_MODEL:-gpt-4o-mini}
+      CreditCardStatementAgent__ApiKeyFile: /run/secrets/openai-api-key
 
       # Collector profiles are optional: the first Personal is provisioned only after login.
       # deploy-saldo360 adds docker-compose.collectors.yml only with a real configured ID.
@@ -58,6 +63,7 @@ services:
       ReverseProxy__AllowedHosts__0: ${SALDO360_PUBLIC_HOST:?Defina SALDO360_PUBLIC_HOST no .env}
     volumes:
       - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
+      - /etc/jarvis/secrets/openai-api-key:/run/secrets/openai-api-key:ro
       - /etc/saldo360/secrets/service-account-identifier-hmac-key:/run/secrets/service-account-identifier-hmac-key:ro
       - /etc/saldo360/secrets/gmail:/etc/saldo360/secrets/gmail:ro
       - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro
