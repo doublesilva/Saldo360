@@ -61,7 +61,10 @@ try
     using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(4));
     var report = await scope.ServiceProvider.GetRequiredService<StoredStatementDiagnostic>().RunAsync(workspace, document, card, user, password, timeout.Token);
     await JsonSerializer.SerializeAsync(reportFile, report, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
-    Console.WriteLine(JsonSerializer.Serialize(new { report.Status, report.Source, report.Provider, report.Model, report.DatabaseReadOnly, report.FailureCode, financialMutationExecuted = false, inboxMutationExecuted = false }));
+    Console.WriteLine(JsonSerializer.Serialize(new { report.Status, report.Source, report.Provider, report.Model, report.DatabaseReadOnly, report.FailureCode,
+        extractionValidation = report.Extraction?.ValidationStatus, reconciliation = report.Extraction?.Primary?.Reconciliation.Status,
+        documentWarnings = report.Extraction?.DocumentWarnings, report.ConsolidationStatus, report.ConsolidationBlockReason,
+        financialMutationExecuted = false, inboxMutationExecuted = false }));
     return report.Status == "Reliable" ? 0 : 2;
 }
 catch (ArgumentException) { Console.Error.WriteLine("InvalidExplicitDiagnosticArgumentsOrConfiguration; use --help. No credentials are accepted on the command line."); return 1; }

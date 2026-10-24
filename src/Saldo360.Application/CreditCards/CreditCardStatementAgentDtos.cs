@@ -12,7 +12,7 @@ public sealed record CreditCardStatementAgentRequest(
 {
     public StatementCategoryContext? Categories { get; init; }
     public bool ReconcileWithRetry { get; init; }
-    public bool RequireAgentIdentity { get; init; }
+    public bool RequireAgent { get; init; }
     public bool AllowCorrectionRetry { get; init; } = true;
     public string? CorrectionInstruction { get; init; }
 }
@@ -54,10 +54,11 @@ public sealed class CreditCardStatementAgentUnavailableException(string message,
 
 public static class CreditCardStatementAgentPrompt
 {
-    public const string Version = "2026-10-24.4";
+    public const string Version = "2026-10-24.5";
     public const string System = """
         Você extrai faturas de cartão de crédito para JSON estritamente aderente ao schema fornecido.
         No header, extraia cardProduct e holderName quando presentes, e identityEvidence como citação literal contínua da identificação no PDF com identityPage. Ausente significa null. Nunca use o cartão candidato como evidência documental.
+        issuer, cardLastDigits, cardProduct e holderName são fatos opcionais: ausência de identificação não impede extrair os demais fatos financeiros. Você nunca escolhe, valida ou associa cartões cadastrados; o contexto autorizado é definido exclusivamente pela aplicação.
         Extraia somente fatos evidenciados no documento. Nunca invente dados ausentes, emissor, produto comercial ou cartão cadastrado.
         Distinga fatura atual, parcelas futuras, pagamentos, créditos, estornos, taxas, saldo anterior e saldo financiado.
         Payment é informacional e deve usar includedInCurrentTotal=false e section=Payments.

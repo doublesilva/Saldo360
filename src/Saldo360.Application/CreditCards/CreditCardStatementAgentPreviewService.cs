@@ -43,36 +43,31 @@ public sealed class CreditCardStatementAgentPreviewService(
         if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text)))
             return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.");
 
-        if (categories is not null && !automatic)
-        {
-            var local = pdfExtractor.Parse(extracted, fileName, competence, null);
-            if (local.Statement.CardLastDigits is { } localDigits && card.LastFourDigits is { } selectedDigits && localDigits != selectedDigits)
-                return Invalid("cardId", "O PDF corresponde a outro cartão. A extração por agente não foi iniciada.");
-        }
-
         CreditCardStatementExtractionResult result;
         if (categories is not null)
         {
             var text = StatementCategorization.Normalize(string.Join("\n", extracted.Pages.Select(p => p.Text)));
             categories = categories with { History = categories.History.Where(h => text.Contains(StatementCategorization.Normalize(h.Description), StringComparison.Ordinal)).Take(200).ToArray() };
         }
-        try { result = await orchestrator.ExtractAsync(new(fileName, extracted, competence) { Categories = categories, ReconcileWithRetry = categories is not null, RequireAgentIdentity = automatic, AllowCorrectionRetry = allowCorrectionRetry }, cancellationToken); }
+        try { result = await orchestrator.ExtractAsync(new(fileName, extracted, competence) { Categories = categories, ReconcileWithRetry = categories is not null, RequireAgent = automatic, AllowCorrectionRetry = allowCorrectionRetry }, cancellationToken); }
         catch (Exception exception) when (exception is not OperationCanceledException)
         { return Invalid("agent", "O agente não conseguiu interpretar a fatura com segurança."); }
         if (result.Primary is null) return new(CreditCardPdfPreviewAccess.Allowed, result, null);
-        if (automatic)
+        var warnings = (result.DocumentWarnings ?? []).ToList();
+        var mismatch = CreditCardStatementResolver.ContradictsSelectedContext(result.Primary.Header, card.Issuer, card.LastFourDigits);
+        // Parser contradictions require context review, not loss of a valid financial preview.
+        if (categories is not null)
         {
-            // A deterministic contradiction still blocks finance, but never prevents agent interpretation.
-            var local = pdfExtractor.Parse(extracted, fileName, competence, null);
-            if (local.Statement.CardLastDigits is { } localDigits && result.Primary.Header.CardLastDigits is { } agentDigits && localDigits != agentDigits)
-                return !allowCorrectionRetry
-                    ? new(CreditCardPdfPreviewAccess.Allowed, result, null) { FailureCode = "CardMismatch" }
-                    : Invalid("cardId", "Identificações documentais divergentes; revise o documento.") with { FailureCode = "CardMismatch" };
-            return new(CreditCardPdfPreviewAccess.Allowed, result, null);
+            try
+            {
+                var local = pdfExtractor.Parse(extracted, fileName, competence, null);
+                mismatch |= local.Statement.CardLastDigits is { } localDigits && card.LastFourDigits is { } selectedDigits && localDigits != selectedDigits;
+            }
+            catch (Exception error) when (error is not OperationCanceledException) { warnings.Add("ParserContextUnavailable"); }
         }
-        if (result.Primary.Header.CardLastDigits is { } digits && card.LastFourDigits is { } selected && digits != selected)
-            return Invalid("cardId", $"A fatura pertence ao cartão •••• {digits}, diferente do cartão selecionado •••• {selected}.");
-        return new(CreditCardPdfPreviewAccess.Allowed, result, null);
+        if (mismatch) warnings.Add("CardMismatch");
+        result = result with { DocumentWarnings = warnings.Count == 0 ? null : warnings.Distinct().ToArray() };
+        return new(CreditCardPdfPreviewAccess.Allowed, result, null) { FailureCode = mismatch ? "CardMismatch" : null };
     }
 
     private static CreditCardStatementAgentPreviewResult Invalid(string field, string message) =>

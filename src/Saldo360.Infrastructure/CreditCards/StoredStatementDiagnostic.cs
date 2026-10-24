@@ -9,7 +9,12 @@ namespace Saldo360.Infrastructure.CreditCards;
 public sealed record StoredStatementDiagnosticReport(string Status, string Source, string Provider, string Model,
     bool DatabaseReadOnly, Guid DocumentId, CreditCardStatementExtractionResult? Extraction = null,
     CreditCardStatementResolution? CardResolution = null, IReadOnlyList<StatementItemCategory>? Categories = null,
-    string? FailureCode = null);
+    string? FailureCode = null)
+{
+    public Guid? ContextCardId { get; init; }
+    public string? ConsolidationBlockReason { get; init; }
+    public string ConsolidationStatus { get; init; } = "NotExecuted";
+}
 
 /// <summary>Administrative, non-persisting preview only. Not registered in the API or called by deployment.</summary>
 public sealed class StoredStatementDiagnostic(Saldo360DbContext db, CardEmailSearchAuthorization authorization,
@@ -49,14 +54,17 @@ public sealed class StoredStatementDiagnostic(Saldo360DbContext db, CardEmailSea
         var extraction = result.Preview;
         var resolution = extraction.Primary is { } primary ? await resolver.ResolveDocumentAsync(workspace, primary.Header, ct) : null;
         var failure = result.FailureCode ?? extraction.AgentError;
-        if (resolution?.Status == CreditCardStatementResolutionStatus.Matched && (resolution.CardId != candidate || item.CreditCardId is { } associated && associated != resolution.CardId)) failure = "CardMismatch";
-        else if (extraction.Primary is not null && resolution?.Status != CreditCardStatementResolutionStatus.Matched) failure ??= "CardIdentificationRequired";
+        if (extraction.Primary is { } facts && (CreditCardStatementResolver.ContradictsSelectedContext(facts.Header, card.Issuer, card.LastFourDigits)
+            || item.CreditCardId is { } associated && associated != candidate)) failure = "CardMismatch";
         var status = failure is null ? extraction.Assessment.ToString() : "NeedsReview";
         var suggestions = StatementCategorization.Categorize(extraction.Primary, catalog, new Dictionary<string, Guid>());
         if (db.ChangeTracker.HasChanges()) throw new InvalidOperationException("DiagnosticMutationDetected");
         await tx.RollbackAsync(ct);
         return new(status, extraction.PrimarySource == "Agent" && extraction.Primary is not null ? "OpenAI" : extraction.PrimarySource == "Parser" ? "Parser" : "None",
-            "OpenAI", options.Model, true, document, extraction, resolution, suggestions, failure);
+            "OpenAI", options.Model, true, document, extraction, resolution, suggestions, failure)
+        { ContextCardId = candidate, ConsolidationBlockReason = failure ?? (extraction.DocumentWarnings?.Contains("IdentityEvidenceUnverified") == true ? "IdentityEvidenceUnverified"
+            : resolution?.Status != CreditCardStatementResolutionStatus.Matched || resolution.CardId != candidate ? "CardIdentityUnresolved"
+            : OfficialStatementAnalysisValidation.ParserReviewReason(extraction)) };
     }
 }
 

@@ -19,6 +19,13 @@ public sealed class InboxStatementConsolidationService(CardEmailSearchAuthorizat
 
 public static class OfficialStatementAnalysisValidation
 {
+    // A parser discrepancy is diagnostic for extraction, but is not implicit permission for a financial write.
+    public static string? ParserReviewReason(CreditCardStatementExtractionResult extraction) =>
+        extraction.PrimarySource == "Agent" && (extraction.ShadowSummary is { HasFinancialDifference: true }
+        || extraction.Comparison is { } comparison && CreditCardStatementAgentEvaluator.Assess(extraction.ParserShadow) == AgentExtractionAssessment.Reliable
+            && (comparison.ItemsOnlyInParser.Count > 0 || comparison.ItemsOnlyInAgent.Count > 0))
+            ? "ParserFinancialReviewRequired" : null;
+
     public static string DecisionHash(InboxStatementAnalysis analysis) => Hash(JsonSerializer.Serialize(new
     {
         analysis.SchemaVersion, analysis.CardId, analysis.InputHash, analysis.Extraction,
@@ -30,7 +37,7 @@ public static class OfficialStatementAnalysisValidation
     public static bool Revalidate(InboxStatementAnalysis analysis, Guid card, out CreditCardStatementAgentPreview? preview)
     {
         preview = null;
-        if (analysis.SchemaVersion != "2.0" || analysis.CardId != card || analysis.Status != "Reliable"
+        if (analysis.SchemaVersion != "2.0" || analysis.CardId != card || analysis.Status != "Reliable" || analysis.ConsolidationBlockReason is not null
             || analysis.Extraction is not { Assessment: AgentExtractionAssessment.Reliable, Primary: { } primary } extraction
             || !Enum.TryParse<CreditCardStatementAgentMode>(extraction.Mode, out var mode)
             || (mode == CreditCardStatementAgentMode.AgentPrimary ? extraction.PrimarySource != "Agent" : extraction.PrimarySource != "Parser")) return false;

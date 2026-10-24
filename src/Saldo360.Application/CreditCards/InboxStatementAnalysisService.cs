@@ -36,7 +36,7 @@ public sealed class InboxStatementAnalysisService(
         var hash = ComputeInputHash(item, card, catalog, options);
         if (item.Status is FinancialDocumentInboxStatus.ReadyForReview or FinancialDocumentInboxStatus.ReadyToConfirm
             && previous is { Status: "Reliable" } && previous.CardId == cardId && previous.InputHash == hash
-            && (!automatic || previous.Extraction is { PrimarySource: "Agent", Primary.Header.IdentityEvidence: not null })) return new("AlreadyAnalyzed", previous);
+            && (!automatic || previous.Extraction is { PrimarySource: "Agent" })) return new("AlreadyAnalyzed", previous);
         var manual = previous?.CardId == cardId ? previous.ManualOverrides : new Dictionary<string, Guid>();
         item.StartAnalysis(clock.GetUtcNow()); await documents.SaveAsync(ct);
         try
@@ -51,20 +51,21 @@ public sealed class InboxStatementAnalysisService(
                 return await FailAsync(item, cardId, hash, manual, result.FailureCode ?? "PdfAnalysisFailed", ct, result.PasswordResolutionCode);
             var extraction = result.Preview;
             var primary = extraction.Primary;
-            var resolution = primary is null ? null : automatic
-                ? await resolver.ResolveDocumentAsync(workspaceId, primary.Header, ct)
-                : await resolver.ResolveAsync(workspaceId, primary.Header.Issuer, primary.Header.CardLastDigits, null, ct);
-            if (resolution?.Status == CreditCardStatementResolutionStatus.Matched && resolution.CardId != cardId)
-                return await FailAsync(item, cardId, hash, manual, "CardMismatch", ct);
+            // Resolution is only the existing consolidation guard; never the source of CardId or financial validity.
+            var resolution = primary is null ? null : await resolver.ResolveDocumentAsync(workspaceId, primary.Header, ct);
+            var mismatch = primary is not null && (CreditCardStatementResolver.ContradictsSelectedContext(primary.Header, card.Issuer, card.LastFourDigits)
+                || result.FailureCode == "CardMismatch" || extraction.DocumentWarnings?.Contains("CardMismatch") == true);
             var status = extraction.Assessment.ToString();
-            if (automatic && (extraction.PrimarySource != "Agent" || primary?.Header.IdentityEvidence is null)) status = "NeedsReview";
-            if (status == "Reliable" && resolution?.Status != CreditCardStatementResolutionStatus.Matched) status = "NeedsReview";
+            if (mismatch || automatic && extraction.PrimarySource != "Agent") status = "NeedsReview";
             var suggestions = StatementCategorization.Categorize(primary, catalog, manual);
             if (status == "Reliable" && suggestions.Any(c => c.Source is "InactiveCategory" or "ManualUnavailable" or "HistoryUnavailable" or "HistoryConflict")) status = "NeedsReview";
+            var block = primary is null ? extraction.AgentError ?? "AnalysisRequired" : mismatch ? "CardMismatch" : extraction.DocumentWarnings?.Contains("IdentityEvidenceUnverified") == true ? "IdentityEvidenceUnverified"
+                : resolution?.Status != CreditCardStatementResolutionStatus.Matched || resolution.CardId != cardId ? "CardIdentityUnresolved"
+                : OfficialStatementAnalysisValidation.ParserReviewReason(extraction);
             var analysis = new InboxStatementAnalysis("2.0", cardId, hash, status, extraction, suggestions, manual,
-                primary is null ? extraction.AgentError : resolution?.Status != CreditCardStatementResolutionStatus.Matched ? "CardIdentificationRequired" : extraction.AgentError)
-            { ManualDecisions = previous?.CardId == cardId ? previous.ManualDecisions : [] };
-            item.SetStatementAnalysis(JsonSerializer.Serialize(analysis), status == "Reliable", clock.GetUtcNow());
+                mismatch ? "CardMismatch" : extraction.AgentError)
+            { ManualDecisions = previous?.CardId == cardId ? previous.ManualDecisions : [], ConsolidationBlockReason = block };
+            item.SetStatementAnalysis(JsonSerializer.Serialize(analysis), status == "Reliable" && block is null, clock.GetUtcNow());
             await documents.SaveAsync(ct); return new(status, analysis);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -91,7 +92,7 @@ public sealed class InboxStatementAnalysisService(
         if (purchase is null) return new("Conflict");
         var decisions = analysis.ManualDecisions.Where(d => d.Key != key).Append(new(key, purchase.OriginalDescription, purchase.TransactionDate, purchase.Amount, categoryId)).ToArray();
         var updated = analysis with { ManualOverrides = manual, ManualDecisions = decisions, Categories = analysis.Categories.Select(c => c.Key == key ? c with { CategoryId = categoryId, CategoryName = category.Name, Confidence = "High", Source = "Manual", IsProposal = false } : c).ToArray() };
-        item.SetStatementAnalysis(JsonSerializer.Serialize(updated), updated.Status == "Reliable", clock.GetUtcNow()); await documents.SaveAsync(ct);
+        item.SetStatementAnalysis(JsonSerializer.Serialize(updated), updated.Status == "Reliable" && updated.ConsolidationBlockReason is null, clock.GetUtcNow()); await documents.SaveAsync(ct);
         return new("Corrected", updated);
     }
 

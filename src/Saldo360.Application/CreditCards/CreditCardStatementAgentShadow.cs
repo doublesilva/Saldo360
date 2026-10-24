@@ -29,6 +29,10 @@ public sealed record CreditCardStatementExtractionResult(
     string? AgentError)
 {
     public int Attempts { get; init; } = 1;
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ValidationStatus { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? DocumentWarnings { get; init; }
 }
 public interface ICreditCardStatementExtractionOrchestrator
 {

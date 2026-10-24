@@ -19,6 +19,8 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
     [InlineData("wrong-card")]
     [InlineData("password")]
     [InlineData("json")]
+    [InlineData("no-issuer")]
+    [InlineData("no-digits")]
     public async Task ReadOnlyDiagnosticNeverPersistsInboxOrFinancialStateAndDoesNotRetry(string? failure)
     {
         var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
@@ -33,10 +35,12 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
             f.Storage, cards, new StatementCategoryContextRepository(db), preview, new(cards), f.Options);
         var report = await diagnostic.RunAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default);
         Assert.True(report.DatabaseReadOnly); Assert.Equal(failure == "password" ? 0 : 1, f.Provider.Calls);
-        if (failure is null)
+        if (failure is null or "no-issuer" or "no-digits")
         {
             Assert.Equal("OpenAI", report.Source); Assert.Equal("Reliable", report.Status);
             Assert.Equal("10.00", report.Extraction!.Primary!.Header.OfficialTotal); Assert.Single(report.Categories!);
+            Assert.Equal(f.Card.Id, report.ContextCardId); Assert.Equal("NotExecuted", report.ConsolidationStatus);
+            if (failure is not null) { Assert.Null(report.FailureCode); Assert.Equal("CardIdentityUnresolved", report.ConsolidationBlockReason); }
         }
         else if (failure == "divergent") Assert.Equal("Divergent", report.Extraction!.Primary!.Reconciliation.Status);
         else if (failure == "wrong-card") { Assert.Equal("CardMismatch", report.FailureCode); Assert.NotNull(report.Extraction!.Primary); }
@@ -97,8 +101,8 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
     }
     [Theory]
     [InlineData("insufficient", "Reliable", 1)]
-    [InlineData("wrong-card", "Rejected", 1)]
-    [InlineData("invented-identity", "Rejected", 1)]
+    [InlineData("wrong-card", "NeedsReview", 1)]
+    [InlineData("invented-identity", "Reliable", 1)]
     [InlineData("password", "Rejected", 0)]
     public async Task AutomaticPathReadsAgentBeforeResolvingDocumentaryIdentity(string scenario, string expected, int agentCalls)
     {
@@ -107,6 +111,8 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         f.Extractor.Failure = scenario; f.Provider.Failure = scenario;
         var result = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true);
         Assert.Equal(expected, result.Status); Assert.Equal(agentCalls, f.Provider.Calls);
+        if (scenario == "wrong-card") { Assert.NotNull(result.Analysis!.Extraction!.Primary); Assert.Equal("CardMismatch", result.Analysis.ConsolidationBlockReason); }
+        if (scenario == "invented-identity") Assert.Equal("IdentityEvidenceUnverified", result.Analysis!.ConsolidationBlockReason);
         if (scenario == "password") Assert.Equal("PasswordRequired", result.Analysis!.FailureCode);
         Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
     }
@@ -120,6 +126,34 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         var resumed = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, "synthetic", default, automatic: true);
         Assert.Equal("Reliable", resumed.Status); Assert.Equal(1, f.Provider.Calls);
         Assert.Single(await db.FinancialDocumentInboxItems.ToListAsync()); Assert.Null(f.Item.CreditCardId);
+    }
+
+    [Theory]
+    [InlineData("no-issuer")]
+    [InlineData("no-digits")]
+    public async Task MissingDocumentIdentityKeepsFinancialPreviewButNeverBypassesExistingConsolidationGuard(string failure)
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
+        using var db = f.Db; f.Provider.Failure = failure; f.Provider.FullCalendar = true; f.Extractor.FullCalendar = true;
+        var locks = new PostgresFinancialEmailCollectorLock(ConnectionString);
+        var processing = new InboxStatementProcessingService(f.Service, new(new(new FinancialWorkspaceRepository(db)),
+            new CreditCardPdfConfirmationRepository(db, f.Storage, f.Options), locks, TimeProvider.System));
+        var result = await processing.ProcessAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default);
+        Assert.Equal("Reliable", result.Analysis.Status); Assert.Equal(f.Card.Id, result.Analysis.Analysis!.CardId);
+        Assert.NotNull(result.Analysis.Analysis.Extraction!.Primary); Assert.Null(result.Analysis.Analysis.FailureCode);
+        Assert.Equal("Reconciled", result.Analysis.Analysis.Extraction.Primary.Reconciliation.Status);
+        Assert.Equal("NeedsReview", result.Consolidation.Status); Assert.Equal("CardIdentityUnresolved", result.Consolidation.FailureCode);
+        Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync()); Assert.Empty(await db.FinancialCreditCardPurchases.ToListAsync());
+        Assert.Empty(await db.FinancialCreditCardInvoicePayments.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ArchivedCardNeverReachesDocumentExtraction()
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
+        using var db = f.Db; f.Card.Archive(f.User, DateTimeOffset.UtcNow); await db.SaveChangesAsync();
+        Assert.Equal("NotFound", (await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default)).Status);
+        Assert.Equal(0, f.Provider.Calls); Assert.Equal(0, f.Storage.Reads);
     }
 
     [Fact]
@@ -146,7 +180,8 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         var duplicate = FinancialCreditCard.Create(f.Workspace, new("Other", "Bank", "1234", null, 100m, 5, 10, null), f.User, DateTimeOffset.UtcNow);
         db.FinancialCreditCards.Add(duplicate); await db.SaveChangesAsync();
         var ambiguous = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true);
-        Assert.Equal("NeedsReview", ambiguous.Status); Assert.Equal("CardIdentificationRequired", ambiguous.Analysis!.FailureCode);
+        Assert.Equal("Reliable", ambiguous.Status); Assert.Null(ambiguous.Analysis!.FailureCode);
+        Assert.Equal(f.Card.Id, ambiguous.Analysis.CardId); Assert.Equal("CardIdentityUnresolved", ambiguous.Analysis.ConsolidationBlockReason);
     }
     [Theory]
     [InlineData(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary)]
@@ -223,8 +258,9 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
         using var db = f.Db; f.Provider.Failure = failure; f.Extractor.Failure = failure;
         var result = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default);
-        Assert.Equal("Rejected", result.Status); Assert.Equal(FinancialDocumentInboxStatus.NeedsReview, f.Item.Status);
-        if (failure is "password" or "no-text" or "wrong-card") Assert.Equal(0, f.Provider.Calls);
+        Assert.Equal(failure == "wrong-card" ? "NeedsReview" : "Rejected", result.Status); Assert.Equal(FinancialDocumentInboxStatus.NeedsReview, f.Item.Status);
+        if (failure is "password" or "no-text") Assert.Equal(0, f.Provider.Calls);
+        if (failure == "wrong-card") { Assert.Equal(1, f.Provider.Calls); Assert.NotNull(result.Analysis!.Extraction!.Primary); }
         Assert.Empty(await db.FinancialCreditCardPurchases.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
         Assert.Empty(await db.FinancialEmailCollectorCheckpoints.ToListAsync()); Assert.Equal(2, await db.FinancialCategories.CountAsync());
     }
@@ -276,7 +312,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
             if (Failure == "json") return Task.FromResult("not-json");
             Assert.DoesNotContain("gmail:", request.DocumentText); Assert.DoesNotContain("OwnerUserId", request.DocumentText);
             var item = new CreditCardStatementAgentItem("SHOP", Failure == "divergent" ? "9.00" : "10.00", "Debit", "Purchase", null, null, "CurrentInvoice", true, 1, "SHOP 10.00", "High", "2026-10-01", "SHOP", Category, "High");
-            return Task.FromResult(JsonSerializer.Serialize(new CreditCardStatementAgentDocument("2.0", new("Bank", Digits, "2026-10", FullCalendar ? "2026-10-05" : null, FullCalendar ? "2026-10-10" : null, "10.00")
+            return Task.FromResult(JsonSerializer.Serialize(new CreditCardStatementAgentDocument("2.0", new(Failure == "no-issuer" ? null : "Bank", Failure == "no-digits" ? null : Digits, "2026-10", FullCalendar ? "2026-10-05" : null, FullCalendar ? "2026-10-10" : null, "10.00")
             { IdentityPage = 1, IdentityEvidence = Failure == "invented-identity" ? "invented Bank 1234" : $"Bank {Digits} Synthetic Holder", CardProduct = "Synthetic", HolderName = "Holder" }, [item]), CreditCardStatementAgentSchema.Json));
         }
     }

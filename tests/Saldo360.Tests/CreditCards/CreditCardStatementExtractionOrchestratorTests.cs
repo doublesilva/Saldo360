@@ -6,6 +6,31 @@ namespace Saldo360.Tests.CreditCards;
 public sealed class CreditCardStatementExtractionOrchestratorTests
 {
     [Theory]
+    [InlineData(null, "1234", "SHOP 10.00", "10.00", "Reliable", "Valid")]
+    [InlineData("Bank", null, "SHOP 10.00", "10.00", "Reliable", "Valid")]
+    [InlineData(null, null, "SHOP 10.00", "10.00", "Reliable", "Valid")]
+    [InlineData(null, null, "FABRICATED 10.00", "10.00", "Rejected", "Rejected")]
+    [InlineData(null, null, "SHOP 9.00", "9.00", "NeedsReview", "Valid")]
+    public async Task FinancialExtractionIsIndependentOfIdentityAndParser(string? issuer, string? digits, string evidence, string amount, string expected, string validation)
+    {
+        var facts = new CreditCardStatementAgentDocument("2.0", new(issuer, digits, "2026-10", null, null, "10.00"),
+            [Item(evidence.StartsWith("FABRICATED", StringComparison.Ordinal) ? "FABRICATED" : "SHOP", amount) with { Evidence = evidence }]);
+        var json = JsonSerializer.Serialize(facts, CreditCardStatementAgentSchema.Json);
+        // Parser disagreement is deliberately reliable in isolation but is not the authority for this PDF.
+        var service = new CreditCardStatementExtractionOrchestrator(new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary },
+            new FakeParser(Json("20.00", Item("PARSER", "20.00"))), new(new FakeProvider(json)));
+        var result = await service.ExtractAsync(new("synthetic.pdf", new([new(1, "SHOP 10.00\nSHOP 9.00\nTOTAL 10.00")]), null)
+            { RequireAgent = true, ReconcileWithRetry = true, AllowCorrectionRetry = false }, default);
+        Assert.Equal(expected, result.Assessment.ToString()); Assert.Equal(validation, result.ValidationStatus);
+        Assert.NotNull(result.Primary); Assert.Contains("ParserAgentDifference", result.DocumentWarnings!);
+        Assert.Contains("DocumentIdentityIncomplete", result.DocumentWarnings!);
+        Assert.DoesNotContain("CardIdentificationRequired", result.AgentError ?? "");
+        Assert.Equal("ParserFinancialReviewRequired", OfficialStatementAnalysisValidation.ParserReviewReason(result));
+        if (expected == "Rejected") Assert.Equal("FinancialEvidenceInvalid", result.AgentError);
+        if (expected == "NeedsReview") Assert.Equal("Divergent", result.Primary.Reconciliation.Status);
+    }
+
+    [Theory]
     [InlineData("resolved", AgentExtractionAssessment.Reliable)]
     [InlineData("persistent", AgentExtractionAssessment.NeedsReview)]
     [InlineData("changed-total", AgentExtractionAssessment.Rejected)]
@@ -50,6 +75,7 @@ public sealed class CreditCardStatementExtractionOrchestratorTests
         Assert.Equal("Parser", result.PrimarySource); Assert.True(result.ParserShadowExecuted);
         Assert.Equal("100.00", result.Primary!.Header.OfficialTotal);
         Assert.True(result.ShadowSummary!.HasFinancialDifference);
+        Assert.Null(OfficialStatementAnalysisValidation.ParserReviewReason(result));
     }
 
     [Fact]
@@ -112,12 +138,13 @@ public sealed class CreditCardStatementExtractionOrchestratorTests
     private static Task<CreditCardStatementExtractionResult> Run(CreditCardStatementAgentMode mode, FakeParser parser, FakeProvider provider)
     {
         var orchestrator = new CreditCardStatementExtractionOrchestrator(new() { Enabled = true, Mode = mode }, parser, new(provider));
-        return orchestrator.ExtractAsync(new("file.pdf", new([new(1, "document")]), null), CancellationToken.None);
+        // Explicit synthetic source evidence: these tests isolate mode/comparison behavior, not grounding failures.
+        return orchestrator.ExtractAsync(new("file.pdf", new([new(1, "CURRENT 100.00\nCURRENT 101.00\nPARSER 962.12\nCURRENT 726.94\nSHEIN FUTURA 100.00\nPARSER 100.00\nCURRENT 10.00\nAMBIGUOUS 10.00\nTOTAL 11.00")]), null), CancellationToken.None);
     }
     private static string Json(string total, params CreditCardStatementAgentItem[] items) => JsonSerializer.Serialize(
         new CreditCardStatementAgentDocument("1.0", new("Itaú", "1234", "2026-10", "2026-10-05", "2026-10-12", total), items), CreditCardStatementAgentSchema.Json);
     private static CreditCardStatementAgentItem Item(string description, string amount) =>
-        new(description, amount, "Debit", "Purchase", null, null, "CurrentInvoice", true, 1, description, "High");
+        new(description, amount, "Debit", "Purchase", null, null, "CurrentInvoice", true, 1, description + " " + amount, "High");
     private sealed class FakeParser(string response) : IParserBackedCreditCardStatementExtractorAgent
     { public Task<string> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken) => Task.FromResult(response); }
     private sealed class FakeProvider(string? response = null, bool error = false) : ICreditCardStatementAgentProvider

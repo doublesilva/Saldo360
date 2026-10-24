@@ -13,6 +13,7 @@ public sealed class InboxStatementProcessingService(InboxStatementAnalysisServic
     {
         var result = await analysis.AnalyzeAsync(workspace, document, candidate, user, password, ct, automatic: true);
         var financial = result.Status == "Busy" ? new OfficialStatementConsolidationResult("Busy", FailureCode: "StatementAnalysisInProgress")
+            : result.Analysis?.ConsolidationBlockReason is { } reason ? new OfficialStatementConsolidationResult("NeedsReview", FailureCode: reason)
             : result.Analysis?.Status == "Reliable" || result.Status == "Conflict"
                 ? await consolidation.ConsolidateAsync(workspace, result.Analysis?.CardId ?? candidate, document, user, ct)
                 : new OfficialStatementConsolidationResult("NeedsReview", FailureCode: result.Analysis?.FailureCode ?? "AnalysisRequired");

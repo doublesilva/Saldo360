@@ -14,6 +14,11 @@ public interface ICreditCardStatementResolutionRepository
 
 public sealed class CreditCardStatementResolver(ICreditCardStatementResolutionRepository repository)
 {
+    // Context is selected and authorized by the caller. This check never chooses another registered card.
+    public static bool ContradictsSelectedContext(CreditCardStatementAgentHeader header, string issuer, string? lastFourDigits) =>
+        header.CardLastDigits is { } digits && lastFourDigits is { } selected && digits != selected
+        || !string.IsNullOrWhiteSpace(header.Issuer) && NormalizeIssuer(header.Issuer) != NormalizeIssuer(issuer);
+
     public async Task<CreditCardStatementResolution> ResolveDocumentAsync(Guid workspaceId, CreditCardStatementAgentHeader header, CancellationToken ct)
     {
         var resolved = await ResolveAsync(workspaceId, header.Issuer, header.CardLastDigits, null, ct);

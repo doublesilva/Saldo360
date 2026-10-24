@@ -11,7 +11,7 @@ public sealed class CreditCardStatementExtractionOrchestrator(
 
     public async Task<CreditCardStatementExtractionResult> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
     {
-        if (request.RequireAgentIdentity)
+        if (request.RequireAgent)
         {
             if (!options.Enabled || options.Mode == CreditCardStatementAgentMode.Disabled)
                 return new(options.Mode.ToString(), "Agent", null, AgentExtractionAssessment.Rejected, false, null, null, null, "AgentUnavailable");
@@ -30,7 +30,8 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         var parserResult = await EvaluateAsync(parser, "parser", request, cancellationToken);
         var agentResult = await EvaluateAsync(agent, "agent", request, cancellationToken);
         var attempts = 1;
-        var officialAnchor = parserResult.Preview?.Header.OfficialTotal ?? agentResult.Preview?.Header.OfficialTotal;
+        // The parser is diagnostic, never the authority for the agent's document facts.
+        var officialAnchor = agentResult.Preview?.Header.OfficialTotal;
         if (request.ReconcileWithRetry && request.AllowCorrectionRetry && agentResult.Preview?.Reconciliation.Status == "Divergent")
         {
             attempts++;
@@ -43,21 +44,20 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         {
             Record(options.Mode, "agent", request.Document.Pages.Count, null, AgentExtractionAssessment.Rejected, false);
             return new(options.Mode.ToString(), "Agent", null, AgentExtractionAssessment.Rejected, true,
-                parserResult.Preview, null, null, agentResult.Error) { Attempts = attempts };
+                parserResult.Preview, null, null, agentResult.Error) { Attempts = attempts, ValidationStatus = "Rejected" };
         }
         var comparison = parserResult.Preview is null ? null : CreditCardStatementAgentEvaluator.Compare(parserResult.Preview, agentResult.Preview);
         var assessment = CreditCardStatementAgentEvaluator.Assess(agentResult.Preview);
-        var identityMissing = request.RequireAgentIdentity && !IdentityGrounded(agentResult.Preview.Header, request.Document);
-        if (request.ReconcileWithRetry && (!Grounded(agentResult.Preview, request.Document)
-            || identityMissing
-            || officialAnchor != agentResult.Preview.Header.OfficialTotal
-            || (CreditCardStatementAgentEvaluator.Assess(parserResult.Preview) == AgentExtractionAssessment.Reliable
-                && comparison is { } reliableComparison && (reliableComparison.ItemsOnlyInParser.Count > 0 || reliableComparison.ItemsOnlyInAgent.Count > 0))))
-            assessment = AgentExtractionAssessment.Rejected;
+        var invalidEvidence = !Grounded(agentResult.Preview, request.Document);
+        var changedTotal = officialAnchor != agentResult.Preview.Header.OfficialTotal;
+        if (invalidEvidence || changedTotal) assessment = AgentExtractionAssessment.Rejected;
+        var warnings = IdentityWarnings(agentResult.Preview.Header, request.Document).ToList();
+        if (comparison is not null && !CreditCardStatementAgentEvaluator.Summarize(comparison).Matches) warnings.Add("ParserAgentDifference");
         Record(options.Mode, "agent", request.Document.Pages.Count, agentResult.Preview, assessment, comparison is not null && !CreditCardStatementAgentEvaluator.Summarize(comparison).Matches);
-        return new(request.RequireAgentIdentity ? "AgentPrimary" : options.Mode.ToString(), "Agent", agentResult.Preview, assessment, true,
+        return new(request.RequireAgent ? "AgentPrimary" : options.Mode.ToString(), "Agent", agentResult.Preview, assessment, true,
             parserResult.Preview, comparison, comparison is null ? null : CreditCardStatementAgentEvaluator.Summarize(comparison),
-            assessment == AgentExtractionAssessment.Rejected ? identityMissing ? "CardIdentificationRequired" : "EvidenceOrOfficialTotalMismatch" : null) { Attempts = attempts };
+            invalidEvidence ? "FinancialEvidenceInvalid" : changedTotal ? "OfficialTotalChanged" : null)
+        { Attempts = attempts, ValidationStatus = invalidEvidence || changedTotal ? "Rejected" : "Valid", DocumentWarnings = warnings.Count == 0 ? null : warnings };
     }
 
     private async Task<CreditCardStatementExtractionResult> ParserPrimaryAsync(CreditCardStatementAgentRequest request, bool shadow, CancellationToken cancellationToken)
@@ -88,14 +88,14 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         finally { Duration.Record(started.Elapsed.TotalMilliseconds, new KeyValuePair<string, object?>("source", source)); }
     }
 
-    public static bool IdentityGrounded(CreditCardStatementAgentHeader header, CreditCardPdfExtractedDocument document)
+    private static IEnumerable<string> IdentityWarnings(CreditCardStatementAgentHeader header, CreditCardPdfExtractedDocument document)
     {
-        if (string.IsNullOrWhiteSpace(header.IdentityEvidence) || header.IdentityPage is null
-            || string.IsNullOrWhiteSpace(header.Issuer) || string.IsNullOrWhiteSpace(header.CardLastDigits)) return false;
-        var evidence = header.IdentityEvidence;
-        return document.Pages.Any(p => p.Number == header.IdentityPage && p.Text.Contains(evidence, StringComparison.OrdinalIgnoreCase))
-            && new[] { header.Issuer, header.CardLastDigits, header.CardProduct, header.HolderName }
-                .Where(v => v is not null).All(v => StatementCategorization.Normalize(evidence).Contains(StatementCategorization.Normalize(v!), StringComparison.Ordinal));
+        if (string.IsNullOrWhiteSpace(header.Issuer) || string.IsNullOrWhiteSpace(header.CardLastDigits)) yield return "DocumentIdentityIncomplete";
+        if (header.IdentityEvidence is { } evidence && (header.IdentityPage is null
+            || !document.Pages.Any(p => p.Number == header.IdentityPage && p.Text.Contains(evidence, StringComparison.OrdinalIgnoreCase))
+            || !new[] { header.Issuer, header.CardLastDigits, header.CardProduct, header.HolderName }
+                .Where(v => v is not null).All(v => StatementCategorization.Normalize(evidence).Contains(StatementCategorization.Normalize(v!), StringComparison.Ordinal))))
+            yield return "IdentityEvidenceUnverified";
     }
 
     private static bool Grounded(CreditCardStatementAgentPreview preview, CreditCardPdfExtractedDocument document)

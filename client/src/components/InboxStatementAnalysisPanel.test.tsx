@@ -12,6 +12,21 @@ const props = { workspaceId: 'personal', documentId: 'doc', cardId: 'card', pass
 beforeEach(() => { get.mockReset().mockResolvedValue({ status: 'NotAnalyzed', analysis: null }); analyze.mockReset(); correct.mockReset(); props.onBusy.mockClear(); props.onAnalyzed.mockClear() })
 afterEach(cleanup)
 
+it('separa prévia financeira válida, alerta documental e bloqueio da consolidação', async () => {
+  const response = result()
+  response.analysis!.consolidationBlockReason = 'CardIdentityUnresolved'
+  response.analysis!.extraction!.validationStatus = 'Valid'
+  response.analysis!.extraction!.documentWarnings = ['DocumentIdentityIncomplete', 'ParserAgentDifference']
+  get.mockResolvedValue(response)
+  render(<InboxStatementAnalysisPanel {...props} />)
+  await screen.findByText(/Prévia financeira: disponível · Validação: Valid · Conciliação: Reconciled/)
+  expect(screen.getByText(/Identificação documental incompleta/)).toBeTruthy()
+  expect(screen.getByText(/diferenças diagnósticas/)).toBeTruthy()
+  expect(screen.getByText(/Prévia não autoriza consolidação/)).toBeTruthy()
+  expect(screen.getByText(/Total oficial:/)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /Solicitar consolidação/ })).toBeNull()
+})
+
 it.each(['Imported', 'AlreadyImported', 'NewVersionConsolidated', 'NeedsReview', 'Conflict'])('processamento apresenta o resultado financeiro %s', async status => {
   vi.mocked(processStatement).mockResolvedValue({ ok: true, value: { analysis: result(), consolidation: { status, invoiceId: 'invoice', version: 1, officialTotal: '10.00', failureCode: null } } })
   render(<InboxStatementAnalysisPanel {...props} />)
@@ -26,7 +41,7 @@ it('consolida análise pronta sem enviar valores financeiros', async () => {
   get.mockResolvedValue(result())
   vi.mocked(consolidateStatement).mockResolvedValue({ ok: true, value: { status: 'Imported', invoiceId: 'invoice', version: 1, officialTotal: '10.00', failureCode: null } })
   render(<InboxStatementAnalysisPanel {...props} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Pronta para consolidar/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /Solicitar consolidação/ }))
   await screen.findByText(/Fatura oficial importada/)
   expect(consolidateStatement).toHaveBeenCalledWith('personal', 'doc', 'card')
   expect((screen.getByLabelText('Corrigir categoria de SHOP') as HTMLSelectElement).disabled).toBe(true)
@@ -37,7 +52,7 @@ it('documento importado mantém consulta e replay mas não permite mudar decisõ
   const category = await screen.findByLabelText('Corrigir categoria de SHOP') as HTMLSelectElement
   expect(category.disabled).toBe(true)
   expect((screen.getByRole('button', { name: 'Analisar fatura armazenada' }) as HTMLButtonElement).disabled).toBe(true)
-  expect(screen.queryByRole('button', { name: /Pronta para consolidar/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: /Solicitar consolidação/ })).toBeNull()
   expect((screen.getByRole('button', { name: 'Processar e consolidar fatura' }) as HTMLButtonElement).disabled).toBe(false)
 })
 

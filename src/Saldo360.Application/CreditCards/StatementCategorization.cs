@@ -23,6 +23,8 @@ public sealed record InboxStatementAnalysis(string SchemaVersion, Guid CardId, s
     public IReadOnlyList<StatementManualDecision> ManualDecisions { get; init; } = [];
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? PasswordResolutionCode { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ConsolidationBlockReason { get; init; }
 }
 public sealed record InboxStatementAnalysisResult(string Status, InboxStatementAnalysis? Analysis = null, IDictionary<string, string[]>? Errors = null);
 

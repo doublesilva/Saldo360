@@ -1,5 +1,9 @@
 # T16 — Diagnóstico controlado de fatura armazenada
 
+Atualização T16.2: a separação atual entre extração, alertas de identidade, contexto selecionado e
+consolidação está em [refatoração da extração](T16.2-refatoracao-extracao-faturas.md).
+As evidências abaixo descrevem a implementação original do diagnóstico, não uma nova chamada real.
+
 24/10/2026 — **Mecanismo concluído e validado localmente. Nenhuma chamada real foi executada.**
 
 ## Escopo e isolamento
