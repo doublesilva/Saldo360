@@ -21,6 +21,8 @@ public sealed record InboxStatementAnalysis(string SchemaVersion, Guid CardId, s
     IReadOnlyDictionary<string, Guid> ManualOverrides, string? FailureCode = null)
 {
     public IReadOnlyList<StatementManualDecision> ManualDecisions { get; init; } = [];
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PasswordResolutionCode { get; init; }
 }
 public sealed record InboxStatementAnalysisResult(string Status, InboxStatementAnalysis? Analysis = null, IDictionary<string, string[]>? Errors = null);
 

@@ -48,7 +48,7 @@ public sealed class InboxStatementAnalysisService(
                 ? await preview.PreviewForProcessingAsync(workspaceId, cardId, userId, file, file.Length, item.OriginalFileName, item.Competence, password, categories, ct)
                 : await preview.PreviewWithCategoriesAsync(workspaceId, cardId, userId, file, file.Length, item.OriginalFileName, item.Competence, password, categories, ct);
             if (result.Access != CreditCardPdfPreviewAccess.Allowed || result.Preview is null)
-                return await FailAsync(item, cardId, hash, manual, result.FailureCode ?? "PdfAnalysisFailed", ct);
+                return await FailAsync(item, cardId, hash, manual, result.FailureCode ?? "PdfAnalysisFailed", ct, result.PasswordResolutionCode);
             var extraction = result.Preview;
             var primary = extraction.Primary;
             var resolution = primary is null ? null : automatic
@@ -102,11 +102,11 @@ public sealed class InboxStatementAnalysisService(
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
         { item.ContentHash, cardId, card.LastFourDigits, card.Issuer, card.HolderUserId, card.ClosingDay, card.DueDay, options.Mode, options.Enabled, options.Model, options.Provider, options.Endpoint, CreditCardStatementAgentPrompt.Version, catalog }))));
     }
-    private async Task<InboxStatementAnalysisResult> FailAsync(FinancialDocumentInboxItem item, Guid cardId, string hash, IReadOnlyDictionary<string, Guid> manual, string code, CancellationToken ct)
+    private async Task<InboxStatementAnalysisResult> FailAsync(FinancialDocumentInboxItem item, Guid cardId, string hash, IReadOnlyDictionary<string, Guid> manual, string code, CancellationToken ct, string? passwordResolutionCode = null)
     {
         var previous = Read(item.StatementAnalysisJson);
         var analysis = new InboxStatementAnalysis("2.0", cardId, hash, "Rejected", null, [], manual, code)
-        { ManualDecisions = previous?.CardId == cardId ? previous.ManualDecisions : [] };
+        { ManualDecisions = previous?.CardId == cardId ? previous.ManualDecisions : [], PasswordResolutionCode = passwordResolutionCode };
         item.SetStatementAnalysis(JsonSerializer.Serialize(analysis), false, clock.GetUtcNow()); await documents.SaveAsync(ct); return new("Rejected", analysis);
     }
 }

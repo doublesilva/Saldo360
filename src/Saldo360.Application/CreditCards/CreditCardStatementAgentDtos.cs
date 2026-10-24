@@ -140,6 +140,7 @@ public sealed record CreditCardStatementAgentPreviewResult(
     IDictionary<string, string[]>? Errors)
 {
     public string? FailureCode { get; init; }
+    public string? PasswordResolutionCode { get; init; }
 }
 
 public interface ICreditCardStatementAgentPreviewService

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { searchLatestCardEmail, type CardLatestEmailResult, type FinancialCreditCard } from '../api/creditCards'
 import { FinancialDocumentInbox } from './FinancialDocumentInbox'
 import { processStatement } from '../api/financialDocuments'
+import { PdfPasswordHint } from './PdfPasswordHint'
 
 const labels: Record<string, string> = {
   Found: 'Fatura encontrada.', AlreadyReceived: 'Documento já recebido.', NoMatch: 'Nenhuma fatura encontrada.',
@@ -57,6 +58,7 @@ export function CardLatestEmailSearch({ workspaceId, card, onConfigure, onChange
     {!card.gmailQuery && <><p>{labels.QueryMissing}</p><button type="button" onClick={() => onConfigure?.(card.id)}>Configurar no cadastro do cartão</button></>}
     <button type="button" disabled={!card.gmailQuery || busy || card.isArchived} onClick={() => void search()}>{busy ? 'Buscando no Gmail…' : 'Buscar fatura no e-mail'}</button>
     {error && <p role="alert">{error}</p>}
+    <PdfPasswordHint code={result?.processing?.analysis.analysis?.passwordResolutionCode} />
     {financial && <p>{['Imported', 'AlreadyImported'].includes(financial.status) ? 'Fatura consolidada com segurança.' : financial.status === 'Busy' ? 'Processamento já em andamento.' : `Revisão necessária: ${financial.failureCode ?? financial.status}.`}</p>}
     {passwordNeeded && <form onSubmit={e => { e.preventDefault(); void resume() }}><label>Senha do PDF<input type="password" autoComplete="off" maxLength={128} value={password} onChange={e => setPassword(e.target.value)} /></label><button type="submit" disabled={busy || !password}>Desbloquear e continuar automaticamente</button></form>}
     {result && <div><p>{labels[result.status] ?? labels.Error}</p>{result.status !== 'NeedsReview' && result.failureCode === 'CardIdentificationRequired' && <p>{labels.NeedsReview}</p>}{result.documentId && <>

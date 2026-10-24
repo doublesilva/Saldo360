@@ -5,6 +5,22 @@ namespace Saldo360.Tests.CreditCards;
 
 public sealed class CreditCardPdfPreviewTests
 {
+    [Fact]
+    public async Task SharedReaderUnlocksRealSyntheticPdfWithoutChangingExtractedFinancialItems()
+    {
+        await using var pdf = new MemoryStream(Convert.FromBase64String(ProtectedPdfBase64));
+        var read = await new PdfPasswordReader(_extractor, new ReaderPasswords()).ReadAsync(pdf,
+            new(Guid.NewGuid(), Guid.NewGuid(), Card: new("Synthetic", Guid.NewGuid())), null, default);
+        await using var direct = new MemoryStream(Convert.FromBase64String(ProtectedPdfBase64));
+        var expected = await _extractor.ExtractAsync(direct, 50, ["12345"], default);
+        Assert.True(read.Unlocked);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(_extractor.Parse(expected, "synthetic.pdf", "2026-10", null)),
+            System.Text.Json.JsonSerializer.Serialize(_extractor.Parse(read.Document, "synthetic.pdf", "2026-10", null)));
+    }
+    private sealed class ReaderPasswords : ICreditCardPdfPasswordProvider
+    {
+        public Task<CreditCardPdfPasswordResolution> ResolveAsync(Guid holder, string issuer, CancellationToken ct) => Task.FromResult(new CreditCardPdfPasswordResolution(["123", "12345"]));
+    }
     private const string ProtectedPdfBase64 = "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgPDNhYTcyNzNmODM+Cj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovQ291bnQgMgovS2lkcyBbIDQgMCBSIDggMCBSIF0KPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9Db250ZW50cyA1IDAgUgovTWVkaWFCb3ggWyAwIDAgNTk1LjI3NTYgODQxLjg4OTggXQovUmVzb3VyY2VzIDw8Ci9Gb250IDYgMCBSCi9Qcm9jU2V0IFsgL1BERiAvVGV4dCAvSW1hZ2VCIC9JbWFnZUMgL0ltYWdlSSBdCj4+Ci9Sb3RhdGUgMAovVHJhbnMgPDwKPj4KL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgo+PgplbmRvYmoKNSAwIG9iago8PAovRmlsdGVyIFsgL0FTQ0lJODVEZWNvZGUgL0ZsYXRlRGVjb2RlIF0KL0xlbmd0aCAxNDcKPj4Kc3RyZWFtCrsbzPE6Y1iccKJknO3JCw4DuHXWqd4kGAWwwivkJ58Tn1BzMqzauLRLovoMRdTErhs9x1B5dUHBFrPoHerV+Sn7sUlf8PTxlfDdP7q6fd7GAEn482VszT4GUmfIxNA67QgGS4zcdNx3sT1KoVr8gwBtse/hGBCedB3BUfQRUA0mPMo94yf8YwR0uuaFAlUI7VLK9AplbmRzdHJlYW0KZW5kb2JqCjYgMCBvYmoKPDwKL0YxIDcgMCBSCj4+CmVuZG9iago3IDAgb2JqCjw8Ci9CYXNlRm9udCAvSGVsdmV0aWNhCi9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nCi9OYW1lIC9GMQovU3VidHlwZSAvVHlwZTEKL1R5cGUgL0ZvbnQKPj4KZW5kb2JqCjggMCBvYmoKPDwKL0NvbnRlbnRzIDkgMCBSCi9NZWRpYUJveCBbIDAgMCA1OTUuMjc1NiA4NDEuODg5OCBdCi9SZXNvdXJjZXMgPDwKL0ZvbnQgNiAwIFIKL1Byb2NTZXQgWyAvUERGIC9UZXh0IC9JbWFnZUIgL0ltYWdlQyAvSW1hZ2VJIF0KPj4KL1JvdGF0ZSAwCi9UcmFucyA8PAo+PgovVHlwZSAvUGFnZQovUGFyZW50IDIgMCBSCj4+CmVuZG9iago5IDAgb2JqCjw8Ci9GaWx0ZXIgWyAvQVNDSUk4NURlY29kZSAvRmxhdGVEZWNvZGUgXQovTGVuZ3RoIDExMQo+PgpzdHJlYW0K/F7gnkVdYPvBfbjTxq+550Cs2eHbJi4MwoXm/0bMSTOQ2nSzZM8dDin/cCcKNkmPVF2rV4Wc3TIqtGTqKXKNd2WVGPJzr4UnNlqZqSAm9wdhY09P5MbBgh9hO6iUatLrqYuHL9T0n3M95N9nWa48CmVuZHN0cmVhbQplbmRvYmoKMTAgMCBvYmoKPDwKL1YgMgovUiAzCi9MZW5ndGggMTI4Ci9QIDQyOTQ5NjcyOTIKL0ZpbHRlciAvU3RhbmRhcmQKL08gPDE3Mzc2NDYyOWU5MDY2YmViMjZmMGRlYmM3ZDBhNzFlNDBkMzg2MjQzYmMyODQzNWNjOTgzNWY3YmY1NTI5NDM+Ci9VIDw4ODc4OTBjYjcwZDFhZGE2MWM1MGEzYzY4ZWIzNGRmZjI4YmY0ZTVlNGU3NThhNDE2NDAwNGU1NmZmZmEwMTA4Pgo+PgplbmRvYmoKeHJlZgowIDExCjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDU5IDAwMDAwIG4gCjAwMDAwMDAxMjQgMDAwMDAgbiAKMDAwMDAwMDE3MyAwMDAwMCBuIAowMDAwMDAwMzcyIDAwMDAwIG4gCjAwMDAwMDA2MTAgMDAwMDAgbiAKMDAwMDAwMDY0MSAwMDAwMCBuIAowMDAwMDAwNzQ4IDAwMDAwIG4gCjAwMDAwMDA5NDcgMDAwMDAgbiAKMDAwMDAwMTE0OSAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDExCi9Sb290IDMgMCBSCi9JbmZvIDEgMCBSCi9JRCBbIDwzODMwMzQ2MTMwMzg2MjM4MzE2NjYzNjUzNzMzNjIzNjM4MzkzMjYyNjQzNTM0NjU2MjMxMzYzODM4MzczMTYyPiA8MzgzMDM0NjEzMDM4NjIzODMxNjY2MzY1MzczMzYyMzYzODM5MzI2MjY0MzUzNDY1NjIzMTM2MzgzODM3MzE2Mj4gXQovRW5jcnlwdCAxMCAwIFIKPj4Kc3RhcnR4cmVmCjEzNjUKJSVFT0YK";
     private readonly CreditCardPdfTextExtractor _extractor = new();
 

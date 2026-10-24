@@ -8,6 +8,13 @@ public sealed class CreditCardPdfPreviewService(
 {
     public const long MaxFileBytes = 10 * 1024 * 1024;
     public const int MaxPages = 50;
+    public async Task<CreditCardPdfPreviewResult?> ValidateExtractedAsync(Guid workspaceId, Guid cardId, Guid userId, CreditCardPdfExtractedDocument document, string fileName, bool unlocked, CancellationToken ct)
+    {
+        var card = await context.GetAsync(workspaceId, cardId, userId, ct);
+        if (card is null) return new(CreditCardPdfPreviewAccess.NotFound, null, null);
+        var preview = extractor.Parse(document, fileName, null, null) with { Security = new(unlocked ? "Unlocked" : "Unprotected") };
+        return await ValidateCardAsync(workspaceId, cardId, card, preview, ct);
+    }
     public async Task<CreditCardPdfPreviewResult> PreviewAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf, long length, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? password, CancellationToken cancellationToken)
     {
         var card = await context.GetAsync(workspaceId, cardId, userId, cancellationToken);
@@ -20,14 +27,15 @@ public sealed class CreditCardPdfPreviewService(
         await pdf.CopyToAsync(content, cancellationToken);
         try
         {
-            var extracted = await extractor.ExtractAsync(content, MaxPages, [], cancellationToken);
+            var read = await new PdfPasswordReader(extractor, passwords).ReadAsync(content, new(workspaceId, userId, cardId, Card: card), password, cancellationToken);
+            var extracted = read.Document;
             if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.", "TextUnavailable");
-            var preview = extractor.Parse(extracted, fileName, competence, dateFormat);
+            var preview = extractor.Parse(extracted, fileName, competence, dateFormat) with { Security = new(read.Unlocked ? "Unlocked" : "Unprotected") };
             return await ValidateCardAsync(workspaceId, cardId, card, preview, cancellationToken);
         }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.PasswordRequired)
         {
-            return await PreviewProtectedAsync(workspaceId, cardId, card, content, fileName, issuerProfile, competence, dateFormat, password, cancellationToken);
+            return Invalid("file", PasswordMessage(exception.PasswordResolutionCode), "PasswordRequired") with { PasswordResolutionCode = exception.PasswordResolutionCode };
         }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.UnsupportedEncryption)
         {
@@ -39,39 +47,16 @@ public sealed class CreditCardPdfPreviewService(
         }
     }
 
-    private async Task<CreditCardPdfPreviewResult> PreviewProtectedAsync(Guid workspaceId, Guid cardId, CreditCardPdfContext card, Stream pdf, string fileName, string? issuerProfile, string? competence, string? dateFormat, string? manualPassword, CancellationToken cancellationToken)
+    internal static string PasswordMessage(string? code) => code switch
     {
-        var candidates = new List<string>(3);
-        if (!string.IsNullOrEmpty(manualPassword)) candidates.Add(manualPassword);
-
-        var resolution = card.HolderUserId is { } holder
-            ? await passwords.ResolveAsync(holder, card.Issuer, cancellationToken)
-            : CreditCardPdfPasswordResolution.Unavailable;
-        candidates.AddRange(resolution.Candidates.Take(2).Where(candidate => !candidates.Contains(candidate, StringComparer.Ordinal)));
-
-        if (candidates.Count == 0)
-            return Invalid("file", "O PDF exige senha, mas o material de identidade do titular não está disponível.", "PasswordRequired");
-
-        try
-        {
-            var extracted = await extractor.ExtractAsync(pdf, MaxPages, candidates, cancellationToken);
-            if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.", "TextUnavailable");
-            var preview = extractor.Parse(extracted, fileName, competence, dateFormat) with { Security = new("Unlocked") };
-            return await ValidateCardAsync(workspaceId, cardId, card, preview, cancellationToken);
-        }
-        catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.PasswordRejected)
-        {
-            return Invalid("file", "Não foi possível desbloquear o PDF com as credenciais disponíveis.", "PasswordRequired");
-        }
-        catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.UnsupportedEncryption)
-        {
-            return Invalid("file", "A criptografia deste PDF não é suportada.", "UnsupportedEncryption");
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            return Invalid("file", "O PDF está corrompido ou não pôde ser interpretado.");
-        }
-    }
+        "CpfNotRegistered" => "CPF não cadastrado no perfil. Informe a senha do PDF manualmente.",
+        "CpfInvalid" => "CPF do perfil inválido. Informe a senha do PDF manualmente.",
+        "CpfSessionInvalid" => "Sessão de perfil inválida ou expirada. Informe a senha manualmente ou autentique novamente.",
+        "CpfAccessDenied" => "Acesso ao perfil não autorizado. Informe a senha do PDF manualmente.",
+        "CpfUnavailable" => "Perfil temporariamente indisponível. Informe a senha do PDF manualmente.",
+        "IdentityMaterialUnavailable" => "O PDF exige senha, mas o material de identidade do titular não está disponível. Informe a senha manualmente.",
+        _ => "Não foi possível desbloquear o PDF com as credenciais disponíveis. Informe a senha manualmente."
+    };
 
     private static CreditCardPdfPreviewResult Invalid(string field, string message, string? failureCode = null) => new(CreditCardPdfPreviewAccess.Invalid, null, new Dictionary<string, string[]> { [field] = [message] }, failureCode);
 
@@ -104,15 +89,20 @@ public interface ICreditCardPdfTextExtractor
 
 public enum CreditCardPdfReadFailure { PasswordRequired, PasswordRejected, UnsupportedEncryption, Corrupt }
 
-public sealed class CreditCardPdfReadException(CreditCardPdfReadFailure failure, Exception? innerException = null)
+public sealed class CreditCardPdfReadException(CreditCardPdfReadFailure failure, Exception? innerException = null, string? passwordResolutionCode = null)
     : Exception("Não foi possível ler o PDF.", innerException)
 {
     public CreditCardPdfReadFailure Failure { get; } = failure;
+    public string? PasswordResolutionCode { get; } = passwordResolutionCode;
 }
 
 public interface ICreditCardPdfPasswordProvider
 {
     Task<CreditCardPdfPasswordResolution> ResolveAsync(Guid holderUserId, string issuer, CancellationToken cancellationToken);
+    Task<CreditCardPdfPasswordResolution> ResolveForDocumentAsync(PdfPasswordContext context, string? manualPassword, CancellationToken ct)
+        => !string.IsNullOrEmpty(manualPassword) ? Task.FromResult(new CreditCardPdfPasswordResolution([manualPassword]))
+            : context.Card?.HolderUserId is { } holder ? ResolveAsync(holder, context.Card.Issuer, ct)
+            : Task.FromResult(CreditCardPdfPasswordResolution.Unavailable);
 }
 
 public interface ICreditCardPdfContextRepository
@@ -122,7 +112,10 @@ public interface ICreditCardPdfContextRepository
 
 public sealed record CreditCardPdfContext(string Issuer, Guid? HolderUserId, string? LastFourDigits = null);
 
-public sealed record CreditCardPdfPasswordResolution(IReadOnlyList<string> Candidates)
+public sealed class CreditCardPdfPasswordResolution(IReadOnlyList<string> candidates, string? failureCode = null)
 {
+    [System.Text.Json.Serialization.JsonIgnore] public IReadOnlyList<string> Candidates { get; } = candidates;
+    public string? FailureCode { get; } = failureCode;
+    public override string ToString() => "PdfPasswordResolution";
     public static CreditCardPdfPasswordResolution Unavailable { get; } = new([]);
 }

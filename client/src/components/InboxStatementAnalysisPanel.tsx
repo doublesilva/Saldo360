@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { analyzeStatement, processStatement, consolidateStatement, correctStatementCategory, getStatementAnalysis, type StatementAnalysisResult, type StatementConsolidationResult } from '../api/financialDocuments'
 import type { FinancialCategory } from '../api/categories'
 import { formatBrlDecimal } from '../money'
+import { PdfPasswordHint } from './PdfPasswordHint'
 
 export function InboxStatementAnalysisPanel({ workspaceId, documentId, cardId, password, categories, blocked, imported = false, onBusy, onAnalyzed }: {
   workspaceId: string; documentId: string; cardId: string; password: string; categories: FinancialCategory[]; blocked: boolean; imported?: boolean; onBusy: (busy: boolean) => void; onAnalyzed: (financial?: StatementConsolidationResult) => void
@@ -44,6 +45,7 @@ export function InboxStatementAnalysisPanel({ workspaceId, documentId, cardId, p
     {financial && <p role={financial.status === 'Conflict' ? 'alert' : 'status'}>{({ Imported: 'Fatura oficial importada', AlreadyImported: 'Fatura já importada', NewVersionConsolidated: 'Nova versão consolidada', NeedsReview: 'Revisão necessária', Conflict: 'Conflito financeiro', Busy: 'Processamento já em andamento. Tente novamente.', NotFound: 'Documento ou cartão indisponível' } as Record<string, string>)[financial.status] ?? 'Revisão necessária'}{financial.version ? ` · versão ${financial.version}` : ''}{financial.officialTotal ? ` · ${formatBrlDecimal(financial.officialTotal)}` : ''}{financial.failureCode ? ` · ${financial.failureCode}` : ''}</p>}
     {!cardId && <p>Selecione explicitamente o cartão para analisar sem novo upload.</p>}
     {error && <p role="alert">{error}</p>}
+    <PdfPasswordHint code={analysis?.passwordResolutionCode} />
     {analysis && <><p>Resultado: {analysis.status} · modo {analysis.extraction?.mode ?? 'Indisponível'} · tentativas {analysis.extraction?.attempts ?? 0}</p>
       {analysis.status !== 'Reliable' && <p>Há divergências ou evidências pendentes. Revisão necessária; nenhum lançamento foi importado.</p>}
       {analysis.status !== 'Reliable' && analysis.extraction?.comparison && <details><summary>Diferenças entre parser e agente</summary><p>Componentes somente no parser: {analysis.extraction.comparison.itemsOnlyInParser.join(' · ') || 'Nenhum'}</p><p>Componentes somente no agente: {analysis.extraction.comparison.itemsOnlyInAgent.join(' · ') || 'Nenhum'}</p></details>}

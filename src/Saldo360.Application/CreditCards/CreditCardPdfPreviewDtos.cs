@@ -63,4 +63,7 @@ public enum CreditCardPdfPreviewAccess { Allowed, NotFound, Invalid }
 public sealed record CreditCardPdfPreviewResult(
     CreditCardPdfPreviewAccess Access,
     CreditCardPdfPreview? Preview,
-    IDictionary<string, string[]>? Errors, string? FailureCode = null);
+    IDictionary<string, string[]>? Errors, string? FailureCode = null)
+{
+    public string? PasswordResolutionCode { get; init; }
+}

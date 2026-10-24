@@ -32,22 +32,11 @@ public sealed class CreditCardStatementAgentPreviewService(
         using var content = new MemoryStream((int)length);
         await pdf.CopyToAsync(content, cancellationToken);
         CreditCardPdfExtractedDocument extracted;
-        try { extracted = await pdfExtractor.ExtractAsync(content, CreditCardPdfPreviewService.MaxPages, [], cancellationToken); }
+        try { extracted = (await new PdfPasswordReader(pdfExtractor, passwords).ReadAsync(content, new(workspaceId, userId, cardId, Card: card), password, cancellationToken, allowAutomatic: allowCorrectionRetry)).Document; }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.PasswordRequired)
         {
-            var candidates = new List<string>();
-            if (!string.IsNullOrEmpty(password)) candidates.Add(password);
-            if (card.HolderUserId is { } holder)
-            {
-                var resolved = await passwords.ResolveAsync(holder, card.Issuer, cancellationToken);
-                candidates.AddRange(resolved.Candidates.Take(2).Where(candidate => !candidates.Contains(candidate, StringComparer.Ordinal)));
-            }
-            if (candidates.Count == 0) return Invalid("password", "Informe a senha para continuar o processamento.") with { FailureCode = "PasswordRequired" };
-            try { extracted = await pdfExtractor.ExtractAsync(content, CreditCardPdfPreviewService.MaxPages, candidates, cancellationToken); }
-            catch (CreditCardPdfReadException rejected) when (rejected.Failure == CreditCardPdfReadFailure.PasswordRejected)
-            { return Invalid("password", "Não foi possível desbloquear o PDF com as credenciais disponíveis.") with { FailureCode = "PasswordRejected" }; }
-            catch (Exception failed) when (failed is not OperationCanceledException)
-            { return Invalid("file", "O PDF está corrompido ou não pôde ser interpretado."); }
+            return Invalid("password", CreditCardPdfPreviewService.PasswordMessage(exception.PasswordResolutionCode)) with
+            { FailureCode = "PasswordRequired", PasswordResolutionCode = exception.PasswordResolutionCode };
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         { return Invalid("file", "O PDF está corrompido ou não pôde ser interpretado."); }

@@ -48,7 +48,7 @@ public sealed class FinancialDocumentInboxService(
     FinancialDocumentClassificationOptions classificationOptions,
     IFinancialDocumentClassifier classifier,
     IFinancialDocumentAnalysisRouter analysisRouter,
-    TimeProvider clock) : ICardEmailDocumentReceiver
+    TimeProvider clock, ICreditCardPdfPasswordProvider? documentPasswords = null) : ICardEmailDocumentReceiver
 {
     public async Task<FinancialDocumentInboxDto?> FindKnownEmailAsync(Guid workspaceId, Guid userId, string externalSourceId, string hash, CancellationToken cancellationToken)
     {
@@ -209,10 +209,12 @@ public sealed class FinancialDocumentInboxService(
         try
         {
             CreditCardPdfExtractedDocument? classifiedDocument = null;
+            var classifiedUnlocked = false;
             if (classificationOptions.Enabled)
             {
-                var passwords = string.IsNullOrEmpty(password) ? Array.Empty<string>() : [password];
-                classifiedDocument = await extractor.ExtractAsync(stored, CreditCardPdfPreviewService.MaxPages, passwords, cancellationToken);
+                var read = await new PdfPasswordReader(extractor, documentPasswords ?? new ManualOnlyPdfPasswordProvider())
+                    .ReadAsync(stored, new(item.WorkspaceId, userId, selectedCardId, item.Id), password, cancellationToken);
+                classifiedDocument = read.Document; classifiedUnlocked = read.Unlocked;
                 var classification = classifiedDocument.Pages.Count == 0 || classifiedDocument.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))
                     ? new FinancialDocumentClassificationResult("Unknown", "Low", [], "Unknown", "InsufficientEvidence")
                     : await classifier.ClassifyAsync(new(item.OriginalFileName, classifiedDocument), cancellationToken);
@@ -228,15 +230,21 @@ public sealed class FinancialDocumentInboxService(
             CreditCardPdfPreview preview;
             if (selectedCardId is { } cardId)
             {
-                var result = await previewService.PreviewAsync(item.WorkspaceId, cardId, userId, stored, stored.Length,
+                var cached = classifiedDocument is null ? null : await previewService.ValidateExtractedAsync(item.WorkspaceId, cardId, userId, classifiedDocument, item.OriginalFileName, classifiedUnlocked, cancellationToken);
+                var result = cached ?? await previewService.PreviewAsync(item.WorkspaceId, cardId, userId, stored, stored.Length,
                     item.OriginalFileName, null, null, null, password, cancellationToken);
-                if (result.Access != CreditCardPdfPreviewAccess.Allowed) { item.Fail("PdfAnalysisFailed", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
+                if (result.Access != CreditCardPdfPreviewAccess.Allowed)
+                {
+                    if (result.FailureCode is "PasswordRequired" or "PasswordRejected") item.RequireReview(result.PasswordResolutionCode ?? result.FailureCode, clock.GetUtcNow());
+                    else item.Fail("PdfAnalysisFailed", clock.GetUtcNow());
+                    await repository.SaveAsync(cancellationToken); return;
+                }
                 preview = result.Preview!;
             }
             else
             {
-                var passwords = string.IsNullOrEmpty(password) ? Array.Empty<string>() : [password];
-                var document = classifiedDocument ?? await extractor.ExtractAsync(stored, CreditCardPdfPreviewService.MaxPages, passwords, cancellationToken);
+                var document = classifiedDocument ?? (await new PdfPasswordReader(extractor, documentPasswords ?? new ManualOnlyPdfPasswordProvider())
+                    .ReadAsync(stored, new(item.WorkspaceId, userId, DocumentId: item.Id), password, cancellationToken)).Document;
                 if (document.Pages.Count == 0 || document.Pages.All(page => string.IsNullOrWhiteSpace(page.Text))) { item.Fail("TextUnavailable", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
                 preview = extractor.Parse(document, item.OriginalFileName, null, null);
                 var resolution = await resolver.ResolveAsync(item.WorkspaceId, preview.Statement.Issuer, preview.Statement.CardLastDigits, userId, cancellationToken);
@@ -251,7 +259,7 @@ public sealed class FinancialDocumentInboxService(
         {
             if (classificationOptions.Enabled) item.ApplyClassification("Unknown", "Low", "Unknown", exception.Failure.ToString(), clock.GetUtcNow());
             if (exception.Failure is CreditCardPdfReadFailure.PasswordRequired or CreditCardPdfReadFailure.PasswordRejected)
-                item.RequireReview(exception.Failure.ToString(), clock.GetUtcNow());
+                item.RequireReview(exception.PasswordResolutionCode ?? exception.Failure.ToString(), clock.GetUtcNow());
             else item.Fail(exception.Failure.ToString(), clock.GetUtcNow());
             await repository.SaveAsync(cancellationToken);
         }

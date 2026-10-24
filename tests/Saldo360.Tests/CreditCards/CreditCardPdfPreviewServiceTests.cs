@@ -31,7 +31,8 @@ public sealed class CreditCardPdfPreviewServiceTests
         Assert.Equal(CreditCardPdfPreviewAccess.Allowed, result.Access);
         Assert.Equal("Unlocked", result.Preview!.Security.Status);
         Assert.Equal(1, provider.Calls);
-        Assert.Equal(["99999", "123"], extractor.Attempts[1]);
+        Assert.Equal(["99999"], extractor.Attempts[1]);
+        Assert.Equal(["123"], extractor.Attempts[2]);
     }
 
     [Fact]
@@ -45,6 +46,7 @@ public sealed class CreditCardPdfPreviewServiceTests
 
         Assert.Equal(CreditCardPdfPreviewAccess.Allowed, result.Access);
         Assert.Equal("manual-secret", extractor.Attempts[1][0]);
+        Assert.Equal(0, provider.Calls);
         Assert.DoesNotContain("manual-secret", System.Text.Json.JsonSerializer.Serialize(result));
     }
 

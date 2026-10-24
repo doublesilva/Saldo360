@@ -17,19 +17,10 @@ public sealed class CreditCardStatementAgentShadowService(
         if (password?.Length > 128) return Invalid("password", "A senha informada excede o limite permitido.");
         using var content = new MemoryStream((int)length); await pdf.CopyToAsync(content, cancellationToken);
         CreditCardPdfExtractedDocument document;
-        try { document = await extractor.ExtractAsync(content, CreditCardPdfPreviewService.MaxPages, [], cancellationToken); }
+        try { document = (await new PdfPasswordReader(extractor, passwords).ReadAsync(content, new(workspaceId, userId, cardId, Card: card), password, cancellationToken)).Document; }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.PasswordRequired)
         {
-            var candidates = new List<string>();
-            if (!string.IsNullOrEmpty(password)) candidates.Add(password);
-            if (card.HolderUserId is { } holder)
-            {
-                var resolution = await passwords.ResolveAsync(holder, card.Issuer, cancellationToken);
-                candidates.AddRange(resolution.Candidates.Take(2).Where(value => !candidates.Contains(value, StringComparer.Ordinal)));
-            }
-            if (candidates.Count == 0) return Invalid("file", "O PDF exige senha, mas o material de identidade não está disponível.");
-            try { document = await extractor.ExtractAsync(content, CreditCardPdfPreviewService.MaxPages, candidates, cancellationToken); }
-            catch (Exception failed) when (failed is not OperationCanceledException) { return Invalid("file", "Não foi possível desbloquear ou interpretar o PDF."); }
+            return Invalid("file", CreditCardPdfPreviewService.PasswordMessage(exception.PasswordResolutionCode));
         }
         catch (Exception failed) when (failed is not OperationCanceledException) { return Invalid("file", "O PDF está corrompido ou não pôde ser interpretado."); }
         if (document.Pages.Count == 0 || document.Pages.All(page => string.IsNullOrWhiteSpace(page.Text)))
