@@ -21,6 +21,7 @@ public sealed class FinancialDocumentInboxItem : Entity
     public string? Competence { get; private set; }
     public Guid? CreditCardId { get; private set; }
     public string? FailureCode { get; private set; }
+    public string? StatementAnalysisJson { get; private set; }
     public string? DocumentType { get; private set; }
     public string? ClassificationConfidence { get; private set; }
     public string? ClassificationSource { get; private set; }
@@ -43,6 +44,12 @@ public sealed class FinancialDocumentInboxItem : Entity
             CreatedAt = now, UpdatedAt = now };
 
     public void StartAnalysis(DateTimeOffset now) { EnsureMutable(); Status = FinancialDocumentInboxStatus.Analyzing; FailureCode = null; UpdatedAt = now; }
+    public void SetStatementAnalysis(string json, bool reliable, DateTimeOffset now)
+    {
+        EnsureMutable(); StatementAnalysisJson = json;
+        Status = reliable ? FinancialDocumentInboxStatus.ReadyForReview : FinancialDocumentInboxStatus.NeedsReview;
+        FailureCode = reliable ? null : "StatementAnalysisNeedsReview"; UpdatedAt = now;
+    }
     public void CompleteAnalysis(string parser, string? competence, Guid? cardId, FinancialDocumentInboxStatus status, DateTimeOffset now)
     {
         if (status is not (FinancialDocumentInboxStatus.ReadyToConfirm or FinancialDocumentInboxStatus.NeedsReview or FinancialDocumentInboxStatus.ReadyForReview))

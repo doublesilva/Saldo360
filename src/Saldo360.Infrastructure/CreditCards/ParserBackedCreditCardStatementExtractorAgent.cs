@@ -42,7 +42,8 @@ internal sealed class ParserBackedCreditCardStatementExtractorAgent(ICreditCardP
                 item.OriginalDescription ?? item.Description,
                 Math.Abs(amount).ToString("0.00", CultureInfo.InvariantCulture), nature, type,
                 item.InstallmentNumber, item.InstallmentCount, section, item.IncludedInCurrentTotal,
-                item.Page, Truncate(item.SourceText, 300), type == "Unknown" ? "Low" : "High");
+                item.Page, Truncate(item.SourceText, 300), type == "Unknown" ? "Low" : "High",
+                item.TransactionDate, item.NormalizedDescription ?? item.Description);
         }).ToList();
         var document = new CreditCardStatementAgentDocument(CreditCardStatementAgentSchema.Version, header, items);
         return Task.FromResult(JsonSerializer.Serialize(document, CreditCardStatementAgentSchema.Json));

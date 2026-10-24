@@ -1,0 +1,100 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Saldo360.Domain.CreditCards;
+
+namespace Saldo360.Application.CreditCards;
+
+public sealed class InboxStatementAnalysisService(
+    CardEmailSearchAuthorization authorization, IFinancialDocumentInboxRepository documents,
+    IFinancialDocumentStorage storage, IFinancialCreditCardRepository cards,
+    ICreditCardStatementAgentPreviewService preview, CreditCardStatementResolver resolver,
+    IStatementCategoryContextRepository context, CreditCardStatementAgentOptions options,
+    IFinancialEmailCollectorLock operationLock, TimeProvider clock)
+{
+    public async Task<InboxStatementAnalysisResult> GetAsync(Guid workspaceId, Guid documentId, Guid userId, CancellationToken ct)
+    {
+        if (!await authorization.CanSearchAsync(workspaceId, userId, ct)) return new("NotFound");
+        var item = await documents.GetAsync(workspaceId, documentId, userId, ct);
+        if (item is null) return new("NotFound");
+        var analysis = Read(item.StatementAnalysisJson);
+        return new(analysis?.Status ?? "NotAnalyzed", analysis);
+    }
+
+    public async Task<InboxStatementAnalysisResult> AnalyzeAsync(Guid workspaceId, Guid documentId, Guid cardId, Guid userId, string? password, CancellationToken ct)
+    {
+        if (!await authorization.CanSearchAsync(workspaceId, userId, ct)) return new("NotFound");
+        var item = await documents.GetAsync(workspaceId, documentId, userId, ct);
+        var card = await cards.GetAsync(workspaceId, cardId, ct);
+        if (item is null || card is null || card.IsArchived) return new("NotFound");
+        if (item.Status is FinancialDocumentInboxStatus.Imported or FinancialDocumentInboxStatus.Ignored or FinancialDocumentInboxStatus.Conflict
+            || (item.CreditCardId is { } associated && associated != cardId)) return new("Conflict");
+        await using var lease = await operationLock.TryAcquireAsync(workspaceId, $"statement-analysis:{documentId:N}", ct);
+        if (lease is null) return new("Busy");
+        var catalog = await context.ReadAsync(workspaceId, cardId, documentId, ct);
+        var previous = Read(item.StatementAnalysisJson);
+        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        { item.ContentHash, cardId, card.LastFourDigits, card.Issuer, card.HolderUserId, options.Mode, options.Enabled, options.Model, options.Provider, options.Endpoint, CreditCardStatementAgentPrompt.Version, catalog }))));
+        if (previous is { Status: "Reliable" } && previous.CardId == cardId && previous.InputHash == hash) return new("AlreadyAnalyzed", previous);
+        var manual = previous?.CardId == cardId ? previous.ManualOverrides : new Dictionary<string, Guid>();
+        item.StartAnalysis(clock.GetUtcNow()); await documents.SaveAsync(ct);
+        try
+        {
+            await using var file = await storage.OpenReadAsync(item.StorageReference, ct);
+            if (file is null) return await FailAsync(item, cardId, hash, manual, "StorageObjectMissing", ct);
+            var categories = new StatementCategoryContext(catalog.Categories.Where(c => c.IsActive && c.Type == Saldo360.Domain.Categories.CategoryType.Expense).Select(c => c.Name).ToArray(), catalog.History);
+            var result = await preview.PreviewWithCategoriesAsync(workspaceId, cardId, userId, file, file.Length, item.OriginalFileName, item.Competence, password, categories, ct);
+            if (result.Access != CreditCardPdfPreviewAccess.Allowed || result.Preview is null)
+                return await FailAsync(item, cardId, hash, manual, "PdfAnalysisFailed", ct);
+            var extraction = result.Preview;
+            var primary = extraction.Primary;
+            var resolution = primary is null ? null : await resolver.ResolveAsync(workspaceId, primary.Header.Issuer, primary.Header.CardLastDigits, card.HolderUserId, ct);
+            if (resolution?.Status == CreditCardStatementResolutionStatus.Matched && resolution.CardId != cardId)
+                return await FailAsync(item, cardId, hash, manual, "CardMismatch", ct);
+            var status = extraction.Assessment.ToString();
+            if (status == "Reliable" && resolution?.Status != CreditCardStatementResolutionStatus.Matched) status = "NeedsReview";
+            var suggestions = StatementCategorization.Categorize(primary, catalog, manual);
+            if (status == "Reliable" && suggestions.Any(c => c.Source is "InactiveCategory" or "ManualUnavailable" or "HistoryUnavailable" or "HistoryConflict")) status = "NeedsReview";
+            var analysis = new InboxStatementAnalysis("2.0", cardId, hash, status, extraction, suggestions, manual,
+                primary is null ? extraction.AgentError : resolution?.Status != CreditCardStatementResolutionStatus.Matched ? "CardIdentificationRequired" : extraction.AgentError)
+            { ManualDecisions = previous?.CardId == cardId ? previous.ManualDecisions : [] };
+            item.SetStatementAnalysis(JsonSerializer.Serialize(analysis), status == "Reliable", clock.GetUtcNow());
+            await documents.SaveAsync(ct); return new(status, analysis);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        { item.RequireReview("AnalysisCancelled", clock.GetUtcNow()); await documents.SaveAsync(CancellationToken.None); throw; }
+        catch (Exception) { return await FailAsync(item, cardId, hash, manual, "StatementAnalysisFailed", ct); }
+    }
+
+    public async Task<InboxStatementAnalysisResult> CorrectCategoryAsync(Guid workspaceId, Guid documentId, string key, Guid categoryId, Guid userId, CancellationToken ct)
+    {
+        if (!await authorization.CanSearchAsync(workspaceId, userId, ct)) return new("NotFound");
+        var item = await documents.GetAsync(workspaceId, documentId, userId, ct);
+        if (item is null) return new("NotFound");
+        if (item.Status is FinancialDocumentInboxStatus.Imported or FinancialDocumentInboxStatus.Ignored or FinancialDocumentInboxStatus.Conflict) return new("Conflict");
+        await using var lease = await operationLock.TryAcquireAsync(workspaceId, $"statement-analysis:{documentId:N}", ct);
+        if (lease is null) return new("Busy");
+        var analysis = Read(item.StatementAnalysisJson);
+        if (analysis is null || !analysis.Categories.Any(c => c.Key == key)) return new("NotFound");
+        var catalog = await context.ReadAsync(workspaceId, analysis.CardId, documentId, ct);
+        var category = catalog.Categories.SingleOrDefault(c => c.Id == categoryId && c.IsActive && c.Type == Saldo360.Domain.Categories.CategoryType.Expense);
+        if (category is null) return new("Invalid", Errors: new Dictionary<string, string[]> { ["categoryId"] = ["Selecione uma categoria de despesa ativa deste Personal."] });
+        var manual = analysis.ManualOverrides.ToDictionary(x => x.Key, x => x.Value); manual[key] = categoryId;
+        var itemIndex = analysis.Categories.Single(c => c.Key == key).ItemIndex;
+        var purchase = analysis.Extraction?.Primary?.Items.ElementAtOrDefault(itemIndex);
+        if (purchase is null) return new("Conflict");
+        var decisions = analysis.ManualDecisions.Where(d => d.Key != key).Append(new(key, purchase.OriginalDescription, purchase.TransactionDate, purchase.Amount, categoryId)).ToArray();
+        var updated = analysis with { ManualOverrides = manual, ManualDecisions = decisions, Categories = analysis.Categories.Select(c => c.Key == key ? c with { CategoryId = categoryId, CategoryName = category.Name, Confidence = "High", Source = "Manual", IsProposal = false } : c).ToArray() };
+        item.SetStatementAnalysis(JsonSerializer.Serialize(updated), updated.Status == "Reliable", clock.GetUtcNow()); await documents.SaveAsync(ct);
+        return new("Corrected", updated);
+    }
+
+    public static InboxStatementAnalysis? Read(string? json) => json is null ? null : JsonSerializer.Deserialize<InboxStatementAnalysis>(json);
+    private async Task<InboxStatementAnalysisResult> FailAsync(FinancialDocumentInboxItem item, Guid cardId, string hash, IReadOnlyDictionary<string, Guid> manual, string code, CancellationToken ct)
+    {
+        var previous = Read(item.StatementAnalysisJson);
+        var analysis = new InboxStatementAnalysis("2.0", cardId, hash, "Rejected", null, [], manual, code)
+        { ManualDecisions = previous?.CardId == cardId ? previous.ManualDecisions : [] };
+        item.SetStatementAnalysis(JsonSerializer.Serialize(analysis), false, clock.GetUtcNow()); await documents.SaveAsync(ct); return new("Rejected", analysis);
+    }
+}

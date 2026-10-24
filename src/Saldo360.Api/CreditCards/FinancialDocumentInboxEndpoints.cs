@@ -5,6 +5,9 @@ using System.Text.Json;
 
 namespace Saldo360.Api.CreditCards;
 
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
+public sealed record StatementCategoryCorrection(Guid CategoryId);
+
 public static class FinancialDocumentInboxEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialDocumentInboxEndpoints(this IEndpointRouteBuilder app)
@@ -12,6 +15,9 @@ public static class FinancialDocumentInboxEndpoints
         var group = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/financial-documents/inbox").RequireAuthorization();
         group.MapGet("/", List);
         group.MapGet("/{id:guid}", Get);
+        group.MapGet("/{id:guid}/statement-analysis", GetStatementAnalysis);
+        group.MapPost("/{id:guid}/statement-analysis", AnalyzeStatement).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPut("/{id:guid}/statement-analysis/items/{key}/category", CorrectStatementCategory).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/", Receive).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/reanalyze", Reanalyze).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/{id:guid}/classify-preview", ClassifyPreview).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -25,6 +31,25 @@ public static class FinancialDocumentInboxEndpoints
         group.MapPost("/{id:guid}/confirm", Confirm).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
+    private static IResult AnalysisResponse(InboxStatementAnalysisResult result) => result.Status switch
+    {
+        "NotFound" => Results.NotFound(), "Invalid" => Results.ValidationProblem(result.Errors!),
+        "Conflict" or "Busy" => Results.Conflict(result), _ => Results.Ok(result)
+    };
+    private static async Task<IResult> GetStatementAnalysis(Guid workspaceId, Guid id, CurrentUser user, InboxStatementAnalysisService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : AnalysisResponse(await service.GetAsync(workspaceId, id, userId, ct));
+    private static async Task<IResult> AnalyzeStatement(Guid workspaceId, Guid id, HttpRequest request, CurrentUser user, InboxStatementAnalysisService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        if (!request.HasFormContentType) return Validation("creditCardId", "Selecione explicitamente o cartão.");
+        var form = await request.ReadFormAsync(ct);
+        if (!Guid.TryParse(form["creditCardId"], out var cardId)) return Validation("creditCardId", "Selecione explicitamente o cartão.");
+        return AnalysisResponse(await service.AnalyzeAsync(workspaceId, id, cardId, userId, form["password"], ct));
+    }
+    private static async Task<IResult> CorrectStatementCategory(Guid workspaceId, Guid id, string key, StatementCategoryCorrection request,
+        CurrentUser user, InboxStatementAnalysisService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : AnalysisResponse(await service.CorrectCategoryAsync(workspaceId, id, key, request.CategoryId, userId, ct));
+
     private static async Task<IResult> Get(Guid workspaceId, Guid id, CurrentUser user, FinancialDocumentInboxService service, CancellationToken ct)
     {
         if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();

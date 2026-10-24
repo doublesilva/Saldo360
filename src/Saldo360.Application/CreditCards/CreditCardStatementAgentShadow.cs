@@ -26,7 +26,10 @@ public sealed record CreditCardStatementExtractionResult(
     CreditCardStatementAgentPreview? ParserShadow,
     CreditCardStatementAgentShadowComparison? Comparison,
     CreditCardStatementShadowSummary? ShadowSummary,
-    string? AgentError);
+    string? AgentError)
+{
+    public int Attempts { get; init; } = 1;
+}
 public interface ICreditCardStatementExtractionOrchestrator
 {
     Task<CreditCardStatementExtractionResult> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken);

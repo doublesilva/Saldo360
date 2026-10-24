@@ -1469,6 +1469,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("source");
 
+                    b.Property<string>("StatementAnalysisJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("statement_analysis_json");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(30)

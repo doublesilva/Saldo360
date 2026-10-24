@@ -17,7 +17,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
       "type":"object","additionalProperties":false,
       "required":["schemaVersion","header","items"],
       "properties":{
-        "schemaVersion":{"type":"string","enum":["1.0"]},
+        "schemaVersion":{"type":"string","enum":["2.0"]},
         "header":{"type":"object","additionalProperties":false,
           "required":["issuer","cardLastDigits","competence","closingDate","dueDate","officialTotal"],
           "properties":{
@@ -26,9 +26,11 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
             "dueDate":{"type":["string","null"]},"officialTotal":{"type":["string","null"]}
           }},
         "items":{"type":"array","items":{"type":"object","additionalProperties":false,
-          "required":["originalDescription","amount","nature","type","installmentNumber","installmentCount","section","includedInCurrentTotal","page","evidence","confidence"],
+          "required":["originalDescription","amount","nature","type","installmentNumber","installmentCount","section","includedInCurrentTotal","page","evidence","confidence","transactionDate","normalizedDescription","suggestedCategory","categoryConfidence"],
           "properties":{
             "originalDescription":{"type":"string"},"amount":{"type":"string"},
+            "transactionDate":{"type":["string","null"]},"normalizedDescription":{"type":["string","null"]},
+            "suggestedCategory":{"type":["string","null"]},"categoryConfidence":{"type":["string","null"],"enum":["High","Medium","Low",null]},
             "nature":{"type":"string","enum":["Debit","Credit"]},
             "type":{"type":"string","enum":["Purchase","Installment","Payment","Fee","Credit","Refund","PreviousBalance","FinancedBalance","Unknown"]},
             "installmentNumber":{"type":["integer","null"]},"installmentCount":{"type":["integer","null"]},

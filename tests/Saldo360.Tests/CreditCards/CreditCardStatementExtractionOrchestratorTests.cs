@@ -5,6 +5,32 @@ namespace Saldo360.Tests.CreditCards;
 
 public sealed class CreditCardStatementExtractionOrchestratorTests
 {
+    [Theory]
+    [InlineData("resolved", AgentExtractionAssessment.Reliable)]
+    [InlineData("persistent", AgentExtractionAssessment.NeedsReview)]
+    [InlineData("changed-total", AgentExtractionAssessment.Rejected)]
+    [InlineData("invented", AgentExtractionAssessment.Rejected)]
+    public async Task InboxRetryIsLimitedAndCannotChangeTotalOrInventEvidence(string scenario, AgentExtractionAssessment expected)
+    {
+        var first = Json("10.00", Item("SHOP", "8.00") with { Evidence = "SHOP 8.00" });
+        var second = scenario switch
+        {
+            "resolved" => Json("10.00", Item("SHOP", "8.00") with { Evidence = "SHOP 8.00" }, Item("TAX", "2.00") with { Evidence = "TAX 2.00", Type = "Fee", Section = "Fees" }),
+            "changed-total" => Json("8.00", Item("SHOP", "8.00") with { Evidence = "SHOP 8.00" }),
+            "invented" => Json("10.00", Item("ADJUSTMENT", "10.00") with { Evidence = "TOTAL 10.00" }),
+            _ => first
+        };
+        var provider = new SequenceProvider(first, second);
+        var service = new CreditCardStatementExtractionOrchestrator(new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary }, new FakeParser(first), new(provider));
+        var result = await service.ExtractAsync(new("f.pdf", new([new(1, "SHOP 8.00\nTAX 2.00\nTOTAL 10.00")]), null) { ReconcileWithRetry = true, Categories = new([], []) }, default);
+        Assert.Equal(expected, result.Assessment); Assert.Equal(2, provider.Calls); Assert.Equal(2, result.Attempts);
+    }
+    private sealed class SequenceProvider(params string[] responses) : ICreditCardStatementAgentProvider
+    {
+        public int Calls;
+        public Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken ct) => Task.FromResult(responses[Math.Min(Calls++, responses.Length - 1)]);
+    }
+
     [Fact]
     public async Task DisabledUsesOnlyParser()
     {

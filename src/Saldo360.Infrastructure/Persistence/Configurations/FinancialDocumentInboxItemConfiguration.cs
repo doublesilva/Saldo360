@@ -16,6 +16,7 @@ internal sealed class FinancialDocumentInboxItemConfiguration : IEntityTypeConfi
                 "service_bill_projected_amount IS NULL OR (scale(service_bill_projected_amount) <= 2 AND scale(service_bill_confirmed_amount) <= 2)");
         });
         builder.HasKey(item => new { item.WorkspaceId, item.Id });
+        builder.Property(item => item.StatementAnalysisJson).HasColumnType("jsonb");
         builder.Property(item => item.OriginalFileName).HasMaxLength(255).IsRequired();
         builder.Property(item => item.ContentHash).HasMaxLength(64).IsRequired();
         builder.Property(item => item.ContentType).HasMaxLength(100).IsRequired();

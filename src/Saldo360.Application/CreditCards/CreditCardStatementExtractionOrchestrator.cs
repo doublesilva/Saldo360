@@ -23,17 +23,33 @@ public sealed class CreditCardStatementExtractionOrchestrator(
     {
         var parserResult = await EvaluateAsync(parser, "parser", request, cancellationToken);
         var agentResult = await EvaluateAsync(agent, "agent", request, cancellationToken);
+        var attempts = 1;
+        var officialAnchor = parserResult.Preview?.Header.OfficialTotal ?? agentResult.Preview?.Header.OfficialTotal;
+        if (request.ReconcileWithRetry && agentResult.Preview?.Reconciliation.Status == "Divergent")
+        {
+            attempts++;
+            agentResult = await EvaluateAsync(agent, "agent", request with
+            {
+                CorrectionInstruction = $"Releia as evidências: componentes omitidos, créditos, pagamentos e parcelas futuras. Total oficial imutável: {officialAnchor ?? "desconhecido"}. Diferença anterior: {agentResult.Preview.Reconciliation.Difference}. Não fabrique ajustes ou lançamentos."
+            }, cancellationToken);
+        }
         if (agentResult.Preview is null)
         {
             Record(options.Mode, "agent", request.Document.Pages.Count, null, AgentExtractionAssessment.Rejected, false);
             return new(options.Mode.ToString(), "Agent", null, AgentExtractionAssessment.Rejected, true,
-                parserResult.Preview, null, null, agentResult.Error);
+                parserResult.Preview, null, null, agentResult.Error) { Attempts = attempts };
         }
         var comparison = parserResult.Preview is null ? null : CreditCardStatementAgentEvaluator.Compare(parserResult.Preview, agentResult.Preview);
         var assessment = CreditCardStatementAgentEvaluator.Assess(agentResult.Preview);
+        if (request.ReconcileWithRetry && (!Grounded(agentResult.Preview, request.Document)
+            || officialAnchor != agentResult.Preview.Header.OfficialTotal
+            || (CreditCardStatementAgentEvaluator.Assess(parserResult.Preview) == AgentExtractionAssessment.Reliable
+                && comparison is { } reliableComparison && (reliableComparison.ItemsOnlyInParser.Count > 0 || reliableComparison.ItemsOnlyInAgent.Count > 0))))
+            assessment = AgentExtractionAssessment.Rejected;
         Record(options.Mode, "agent", request.Document.Pages.Count, agentResult.Preview, assessment, comparison is not null && !CreditCardStatementAgentEvaluator.Summarize(comparison).Matches);
         return new(options.Mode.ToString(), "Agent", agentResult.Preview, assessment, true,
-            parserResult.Preview, comparison, comparison is null ? null : CreditCardStatementAgentEvaluator.Summarize(comparison), null);
+            parserResult.Preview, comparison, comparison is null ? null : CreditCardStatementAgentEvaluator.Summarize(comparison),
+            assessment == AgentExtractionAssessment.Rejected ? "EvidenceOrOfficialTotalMismatch" : null) { Attempts = attempts };
     }
 
     private async Task<CreditCardStatementExtractionResult> ParserPrimaryAsync(CreditCardStatementAgentRequest request, bool shadow, CancellationToken cancellationToken)
@@ -62,6 +78,30 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         catch (CreditCardStatementAgentUnavailableException) { return (null, "Provider experimental indisponível."); }
         catch (Exception exception) when (exception is not OperationCanceledException) { return (null, "Falha sanitizada na extração experimental."); }
         finally { Duration.Record(started.Elapsed.TotalMilliseconds, new KeyValuePair<string, object?>("source", source)); }
+    }
+
+    private static bool Grounded(CreditCardStatementAgentPreview preview, CreditCardPdfExtractedDocument document)
+    {
+        static bool HasAmount(string text, string money)
+        {
+            if (!decimal.TryParse(money, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out var amount)) return false;
+            var variants = new[] { money, amount.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")), amount.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")) };
+            return variants.Any(value => System.Text.RegularExpressions.Regex.IsMatch(text, $@"(?<![\d.,]){System.Text.RegularExpressions.Regex.Escape(value)}(?![\d.,])"));
+        }
+        if (preview.Header.OfficialTotal is { } total && !document.Pages.Any(page => HasAmount(page.Text, total))) return false;
+        foreach (var duplicate in preview.Items.GroupBy(item => (item.Page, item.Evidence)).Where(group => group.Count() > 1))
+        {
+            var text = document.Pages.FirstOrDefault(page => page.Number == duplicate.Key.Page)?.Text ?? string.Empty;
+            var count = 0; var position = 0;
+            while ((position = text.IndexOf(duplicate.Key.Evidence, position, StringComparison.OrdinalIgnoreCase)) >= 0)
+            { count++; position += duplicate.Key.Evidence.Length; }
+            if (count < duplicate.Count()) return false;
+        }
+        if (preview.Items.Any(item => item.Type is "Purchase" or "Installment" or "Fee"
+            && StatementCategorization.Normalize(item.OriginalDescription) is "TOTAL" or "TOTALDAFATURA" or "VALORTOTAL" or "AJUSTEDECONCILIACAO")) return false;
+        return preview.Items.All(item => document.Pages.Any(page => page.Number == item.Page
+            && page.Text.Contains(item.Evidence, StringComparison.OrdinalIgnoreCase) && HasAmount(item.Evidence, item.Amount)
+            && StatementCategorization.Normalize(item.Evidence).Contains(StatementCategorization.Normalize(item.OriginalDescription), StringComparison.Ordinal)));
     }
 
     private static void Record(CreditCardStatementAgentMode mode, string primarySource, int pages, CreditCardStatementAgentPreview? preview,

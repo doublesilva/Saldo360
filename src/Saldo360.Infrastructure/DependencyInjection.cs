@@ -100,6 +100,7 @@ public static class DependencyInjection
         services.AddScoped<ICreditCardPdfPreReconciliationRepository, CreditCardPdfPreReconciliationRepository>();
         services.AddScoped<ICreditCardPdfConfirmationRepository, CreditCardPdfConfirmationRepository>();
         services.AddScoped<IFinancialDocumentInboxRepository, FinancialDocumentInboxRepository>();
+        services.AddScoped<IStatementCategoryContextRepository, StatementCategoryContextRepository>();
         services.AddScoped<IFinancialEmailCollectorCheckpointRepository, FinancialEmailCollectorCheckpointRepository>();
         services.AddSingleton<IFinancialDocumentStorage, FileSystemFinancialDocumentStorage>();
         var emailImport = configuration.GetSection("FinancialEmailImport").Get<FinancialEmailImportOptions>() ?? new FinancialEmailImportOptions();
