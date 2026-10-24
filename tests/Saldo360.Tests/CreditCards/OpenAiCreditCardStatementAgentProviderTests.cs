@@ -36,7 +36,7 @@ public sealed class OpenAiCreditCardStatementAgentProviderTests
     [Fact]
     public async Task SendsCentralPromptAndStrictSchemaAndReturnsStructuredJson()
     {
-        var statement = "{\"schemaVersion\":\"1.0\",\"header\":{\"issuer\":\"Banco\",\"cardLastDigits\":null,\"competence\":null,\"closingDate\":null,\"dueDate\":null,\"officialTotal\":\"0.00\"},\"items\":[]}";
+        var statement = CreditCardStatementAgentSchemaTests.Valid;
         var apiResponse = System.Text.Json.JsonSerializer.Serialize(new { output = new[] { new { content = new[] { new { type = "output_text", text = statement } } } } });
         var handler = new RecordingHandler(_ => new(HttpStatusCode.OK)
         { Content = new StringContent(apiResponse, Encoding.UTF8, "application/json") });
@@ -48,10 +48,42 @@ public sealed class OpenAiCreditCardStatementAgentProviderTests
         Assert.Contains("json_schema", handler.Body, StringComparison.Ordinal);
         Assert.Contains("strict", handler.Body, StringComparison.Ordinal);
         using var requestJson = System.Text.Json.JsonDocument.Parse(handler.Body);
+        var format = requestJson.RootElement.GetProperty("text").GetProperty("format");
+        Assert.True(format.GetProperty("strict").GetBoolean());
+        var schema = format.GetProperty("schema");
+        AssertContract<CreditCardStatementAgentDocument>(schema);
+        var header = schema.GetProperty("properties").GetProperty("header");
+        AssertContract<CreditCardStatementAgentHeader>(header);
+        var items = schema.GetProperty("properties").GetProperty("items");
+        Assert.Equal(2000, items.GetProperty("maxItems").GetInt32());
+        var item = items.GetProperty("items");
+        AssertContract<CreditCardStatementAgentItem>(item);
+        Assert.Equal("date", item.GetProperty("properties").GetProperty("transactionDate").GetProperty("format").GetString());
+        Assert.Equal("^[0-9]{4}$", header.GetProperty("properties").GetProperty("cardLastDigits").GetProperty("pattern").GetString());
+        Assert.True(CreditCardStatementAgentSchema.TryValidate(result, 1, out _, out var schemaError), schemaError);
+        // Every value offered by the provider's enum contract is accepted by C#.
+        foreach (var field in new[] { "nature", "type", "section", "confidence", "categoryConfidence" })
+        foreach (var value in item.GetProperty("properties").GetProperty(field).GetProperty("enum").EnumerateArray())
+        {
+            var candidate = System.Text.Json.Nodes.JsonNode.Parse(statement)!;
+            candidate["items"]![0]![field] = value.ValueKind == System.Text.Json.JsonValueKind.Null ? null : System.Text.Json.Nodes.JsonValue.Create(value.GetString());
+            Assert.True(CreditCardStatementAgentSchema.TryValidate(candidate.ToJsonString(), 1, out _, out schemaError), schemaError);
+        }
+        foreach (var field in new[] { "officialTotal" })
+            Assert.Matches(header.GetProperty("properties").GetProperty(field).GetProperty("pattern").GetString()!, "10.00");
         Assert.Equal(CreditCardStatementAgentPrompt.System,
             requestJson.RootElement.GetProperty("input")[0].GetProperty("content")[0].GetProperty("text").GetString());
         Assert.Equal("Bearer", handler.AuthorizationScheme);
         Assert.Equal("secret", handler.AuthorizationParameter);
+    }
+
+    private static void AssertContract<T>(System.Text.Json.JsonElement schema)
+    {
+        Assert.Equal("object", schema.GetProperty("type").GetString());
+        Assert.False(schema.GetProperty("additionalProperties").GetBoolean());
+        var properties = schema.GetProperty("properties").EnumerateObject().Select(p => p.Name).Order().ToArray();
+        Assert.Equal(properties, schema.GetProperty("required").EnumerateArray().Select(p => p.GetString()!).Order().ToArray());
+        Assert.Equal(typeof(T).GetProperties().Select(p => System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(p.Name)).Order().ToArray(), properties);
     }
 
     [Fact]

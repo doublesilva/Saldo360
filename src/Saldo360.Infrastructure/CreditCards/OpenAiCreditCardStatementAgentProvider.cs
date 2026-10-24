@@ -21,24 +21,24 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
         "header":{"type":"object","additionalProperties":false,
           "required":["issuer","cardLastDigits","competence","closingDate","dueDate","officialTotal","cardProduct","holderName","identityEvidence","identityPage"],
           "properties":{
-            "issuer":{"type":["string","null"]},"cardLastDigits":{"type":["string","null"]},
-            "competence":{"type":["string","null"]},"closingDate":{"type":["string","null"]},
-            "dueDate":{"type":["string","null"]},"officialTotal":{"type":["string","null"]},
-            "cardProduct":{"type":["string","null"]},"holderName":{"type":["string","null"]},
-            "identityEvidence":{"type":["string","null"]},"identityPage":{"type":["integer","null"]}
+            "issuer":{"type":["string","null"],"minLength":1,"maxLength":120},"cardLastDigits":{"type":["string","null"],"pattern":"^[0-9]{4}$"},
+            "competence":{"type":["string","null"],"pattern":"^[0-9]{4}-(0[1-9]|1[0-2])$"},"closingDate":{"type":["string","null"],"format":"date"},
+            "dueDate":{"type":["string","null"],"format":"date"},"officialTotal":{"type":["string","null"],"pattern":"^(0|[1-9][0-9]{0,12})\\.[0-9]{2}$"},
+            "cardProduct":{"type":["string","null"],"minLength":1,"maxLength":120},"holderName":{"type":["string","null"],"minLength":1,"maxLength":200},
+            "identityEvidence":{"type":["string","null"],"minLength":1,"maxLength":1000},"identityPage":{"type":["integer","null"],"minimum":1}
           }},
-        "items":{"type":"array","items":{"type":"object","additionalProperties":false,
+        "items":{"type":"array","maxItems":2000,"items":{"type":"object","additionalProperties":false,
           "required":["originalDescription","amount","nature","type","installmentNumber","installmentCount","section","includedInCurrentTotal","page","evidence","confidence","transactionDate","normalizedDescription","suggestedCategory","categoryConfidence"],
           "properties":{
-            "originalDescription":{"type":"string"},"amount":{"type":"string"},
-            "transactionDate":{"type":["string","null"]},"normalizedDescription":{"type":["string","null"]},
-            "suggestedCategory":{"type":["string","null"]},"categoryConfidence":{"type":["string","null"],"enum":["High","Medium","Low",null]},
+            "originalDescription":{"type":"string","minLength":1,"maxLength":500},"amount":{"type":"string","pattern":"^(0|[1-9][0-9]{0,12})\\.[0-9]{2}$"},
+            "transactionDate":{"type":["string","null"],"format":"date"},"normalizedDescription":{"type":["string","null"],"minLength":1,"maxLength":500},
+            "suggestedCategory":{"type":["string","null"],"minLength":1,"maxLength":100},"categoryConfidence":{"type":["string","null"],"enum":["High","Medium","Low",null]},
             "nature":{"type":"string","enum":["Debit","Credit"]},
             "type":{"type":"string","enum":["Purchase","Installment","Payment","Fee","Credit","Refund","PreviousBalance","FinancedBalance","Unknown"]},
-            "installmentNumber":{"type":["integer","null"]},"installmentCount":{"type":["integer","null"]},
+            "installmentNumber":{"type":["integer","null"],"minimum":1},"installmentCount":{"type":["integer","null"],"minimum":1},
             "section":{"type":"string","enum":["CurrentInvoice","FutureInstallments","Payments","PreviousBalance","Fees","Other"]},
-            "includedInCurrentTotal":{"type":"boolean"},"page":{"type":"integer"},
-            "evidence":{"type":"string"},"confidence":{"type":"string","enum":["High","Medium","Low"]}
+            "includedInCurrentTotal":{"type":"boolean"},"page":{"type":"integer","minimum":1},
+            "evidence":{"type":"string","minLength":1,"maxLength":300},"confidence":{"type":"string","enum":["High","Medium","Low"]}
           }}}
       }
     }

@@ -54,7 +54,7 @@ public sealed class CreditCardStatementAgentUnavailableException(string message,
 
 public static class CreditCardStatementAgentPrompt
 {
-    public const string Version = "2026-10-24.3";
+    public const string Version = "2026-10-24.4";
     public const string System = """
         Você extrai faturas de cartão de crédito para JSON estritamente aderente ao schema fornecido.
         No header, extraia cardProduct e holderName quando presentes, e identityEvidence como citação literal contínua da identificação no PDF com identityPage. Ausente significa null. Nunca use o cartão candidato como evidência documental.
@@ -65,9 +65,12 @@ public static class CreditCardStatementAgentPrompt
         Uma parcela intermediária permanece apenas a parcela exibida: nunca multiplique seu valor nem reconstrua a compra completa.
         Dinheiro deve ser string decimal positiva canônica com duas casas; Nature Debit/Credit determina o sinal financeiro.
         Na dúvida, use Type=Unknown e Confidence=Low. Não tente associar o documento a dados externos.
-        Para documento que não seja fatura de cartão ou não tenha evidência suficiente, retorne header nulo, items vazio e nunca fabrique uma fatura.
+        Para documento que não seja fatura de cartão ou não tenha evidência suficiente, retorne header como objeto com todos os campos null, items vazio e nunca fabrique uma fatura. O objeto header nunca é null.
         A saída deve conter somente JSON compatível com o schema.
         Use schemaVersion=2.0. transactionDate é a data individual yyyy-MM-dd ou null, nunca a data de vencimento como substituto.
+        competence usa yyyy-MM; closingDate e dueDate usam yyyy-MM-dd. cardLastDigits contém exatamente quatro dígitos ou null.
+        Todos os campos definidos pelo schema devem estar presentes; para fatos opcionais ausentes use null, nunca string vazia nem a string "null".
+        Respeite os limites: issuer/cardProduct 120, holderName 200, identityEvidence 1000, originalDescription/normalizedDescription 500, evidence 300 e suggestedCategory 100 caracteres. Evidence deve permanecer uma citação literal contínua, sem reescrever o documento.
         normalizedDescription preserva o significado da descrição; suggestedCategory é somente um nome, nunca um identificador.
         categoryConfidence é High, Medium ou Low. Use categorias existentes ou histórico confirmado quando compatíveis.
         Para Mercado Livre, Shopee e intermediadores genéricos sem evidência do produto, sugira Compras Online ou Outros.
@@ -175,35 +178,57 @@ public static class CreditCardStatementAgentSchema
     public static bool TryValidate(string json, int pageCount, out CreditCardStatementAgentDocument? document, out string error)
     {
         document = null;
-        error = "A resposta do agente não corresponde ao schema esperado.";
-        try { document = JsonSerializer.Deserialize<CreditCardStatementAgentDocument>(json, Json); }
-        catch (JsonException) { return false; }
-        if (document is null || document.SchemaVersion is not (Version or CategorizedVersion) || document.Header is null || document.Items is null || document.Items.Count > 2000) return false;
-        if (document.SchemaVersion == CategorizedVersion)
+        error = string.Empty;
+        JsonDocument structured;
+        try { structured = JsonDocument.Parse(json); }
+        catch (JsonException) { return Fail("SchemaInvalidJson", "$", out error); }
+        using (structured)
         {
-            using var structured = JsonDocument.Parse(json);
-            if (!structured.RootElement.TryGetProperty("header", out var header) || header.ValueKind != JsonValueKind.Object
-                || new[] { "issuer", "cardLastDigits", "competence", "closingDate", "dueDate", "officialTotal" }.Any(field => !header.TryGetProperty(field, out _))
-                || !structured.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array
-                || items.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.Object
-                || new[] { "transactionDate", "normalizedDescription", "suggestedCategory", "categoryConfidence" }.Any(field => !item.TryGetProperty(field, out _)))) return false;
+            var root = structured.RootElement;
+            if (!Shape(root, ["schemaVersion", "header", "items"], ["schemaVersion", "header", "items"], "$", out error)) return false;
+            if (root.GetProperty("schemaVersion").ValueKind != JsonValueKind.String) return Fail("SchemaIncompatibleType", "$.schemaVersion", out error);
+            var version = root.GetProperty("schemaVersion").GetString();
+            if (version is not (Version or CategorizedVersion)) return Fail("SchemaVersionInvalid", "$.schemaVersion", out error);
+            string[] headerFields = ["issuer", "cardLastDigits", "competence", "closingDate", "dueDate", "officialTotal"];
+            if (!Shape(root.GetProperty("header"), [.. headerFields, "cardProduct", "holderName", "identityEvidence", "identityPage"], headerFields, "$.header", out error)) return false;
+            var items = root.GetProperty("items");
+            if (items.ValueKind != JsonValueKind.Array) return Fail("SchemaIncompatibleType", "$.items", out error);
+            if (items.GetArrayLength() > 2000) return Fail("SchemaItemLimitExceeded", "$.items", out error);
+            string[] baseFields = ["originalDescription", "amount", "nature", "type", "installmentNumber", "installmentCount", "section", "includedInCurrentTotal", "page", "evidence", "confidence"];
+            string[] categoryFields = ["transactionDate", "normalizedDescription", "suggestedCategory", "categoryConfidence"];
+            foreach (var item in items.EnumerateArray())
+                if (!Shape(item, [.. baseFields, .. categoryFields], version == CategorizedVersion ? [.. baseFields, .. categoryFields] : baseFields, "$.items[]", out error)) return false;
+            try { document = JsonSerializer.Deserialize<CreditCardStatementAgentDocument>(json, Json); }
+            // Do not expose JsonException.Message/Path: property names and values are provider-controlled.
+            catch (JsonException) { return Fail("SchemaDeserializationFailed", "$", out error); }
         }
-        if (!OptionalText(document.Header.Issuer, 120) || !OptionalDigits(document.Header.CardLastDigits, 4)
-            || !OptionalText(document.Header.CardProduct, 120) || !OptionalText(document.Header.HolderName, 200)
-            || !OptionalText(document.Header.IdentityEvidence, 1000)
-            || document.Header.IdentityPage is { } identityPage && (identityPage < 1 || identityPage > pageCount)
-            || !OptionalCompetence(document.Header.Competence) || !OptionalDate(document.Header.ClosingDate)
-            || !OptionalDate(document.Header.DueDate) || !OptionalMoney(document.Header.OfficialTotal)) return false;
+        if (document is null) return Fail("SchemaDeserializationFailed", "$", out error);
+        if (!OptionalText(document.Header.Issuer, 120)) return Fail("SchemaInvalidIdentity", "$.header.issuer", out error);
+        if (!OptionalDigits(document.Header.CardLastDigits, 4)) return Fail("SchemaInvalidIdentity", "$.header.cardLastDigits", out error);
+        if (!OptionalText(document.Header.CardProduct, 120)) return Fail("SchemaInvalidIdentity", "$.header.cardProduct", out error);
+        if (!OptionalText(document.Header.HolderName, 200)) return Fail("SchemaInvalidIdentity", "$.header.holderName", out error);
+        if (!OptionalText(document.Header.IdentityEvidence, 1000)) return Fail("SchemaInvalidEvidence", "$.header.identityEvidence", out error);
+        if (document.Header.IdentityPage is { } identityPage && (identityPage < 1 || identityPage > pageCount)) return Fail("SchemaInvalidEvidence", "$.header.identityPage", out error);
+        if (!OptionalCompetence(document.Header.Competence)) return Fail("SchemaInvalidDate", "$.header.competence", out error);
+        if (!OptionalDate(document.Header.ClosingDate)) return Fail("SchemaInvalidDate", "$.header.closingDate", out error);
+        if (!OptionalDate(document.Header.DueDate)) return Fail("SchemaInvalidDate", "$.header.dueDate", out error);
+        if (!OptionalMoney(document.Header.OfficialTotal)) return Fail("SchemaInvalidMoney", "$.header.officialTotal", out error);
         var normalized = new List<CreditCardStatementAgentItem>(document.Items.Count);
         foreach (var item in document.Items)
         {
-            if (item is null || string.IsNullOrWhiteSpace(item.OriginalDescription) || item.OriginalDescription.Length > 500
-                || !OptionalDate(item.TransactionDate) || !OptionalText(item.NormalizedDescription, 500)
-                || !OptionalText(item.SuggestedCategory, 100) || (item.CategoryConfidence is not null && !Confidences.Contains(item.CategoryConfidence))
-                || !TryMoney(item.Amount, out var amount) || amount < 0m || !Natures.Contains(item.Nature)
-                || !Types.Contains(item.Type) || !Sections.Contains(item.Section) || !Confidences.Contains(item.Confidence)
-                || item.Page < 1 || item.Page > pageCount || string.IsNullOrWhiteSpace(item.Evidence) || item.Evidence.Length > 300
-                || !ValidInstallment(item)) return false;
+            if (string.IsNullOrWhiteSpace(item.OriginalDescription) || item.OriginalDescription.Length > 500) return Fail("SchemaInvalidText", "$.items[].originalDescription", out error);
+            if (!OptionalDate(item.TransactionDate)) return Fail("SchemaInvalidDate", "$.items[].transactionDate", out error);
+            if (!OptionalText(item.NormalizedDescription, 500)) return Fail("SchemaInvalidText", "$.items[].normalizedDescription", out error);
+            if (!OptionalText(item.SuggestedCategory, 100)) return Fail("SchemaInvalidText", "$.items[].suggestedCategory", out error);
+            if (item.CategoryConfidence is not null && !Confidences.Contains(item.CategoryConfidence)) return Fail("SchemaInvalidEnum", "$.items[].categoryConfidence", out error);
+            if (!TryMoney(item.Amount, out var amount)) return Fail("SchemaInvalidMoney", "$.items[].amount", out error);
+            if (!Natures.Contains(item.Nature)) return Fail("SchemaInvalidEnum", "$.items[].nature", out error);
+            if (!Types.Contains(item.Type)) return Fail("SchemaInvalidEnum", "$.items[].type", out error);
+            if (!Sections.Contains(item.Section)) return Fail("SchemaInvalidEnum", "$.items[].section", out error);
+            if (!Confidences.Contains(item.Confidence)) return Fail("SchemaInvalidEnum", "$.items[].confidence", out error);
+            if (item.Page < 1 || item.Page > pageCount) return Fail("SchemaInvalidEvidence", "$.items[].page", out error);
+            if (string.IsNullOrWhiteSpace(item.Evidence) || item.Evidence.Length > 300) return Fail("SchemaInvalidEvidence", "$.items[].evidence", out error);
+            if (!ValidInstallment(item)) return Fail("SchemaInvalidInstallment", "$.items[]", out error);
             var type = item.Confidence == "Low" ? "Unknown" : item.Type;
             var included = item.IncludedInCurrentTotal;
             if (type == "Payment" || item.Section is "FutureInstallments" or "Payments") included = false;
@@ -212,6 +237,22 @@ public static class CreditCardStatementAgentSchema
         document = document with { Items = normalized };
         error = string.Empty;
         return true;
+    }
+
+    private static bool Fail(string code, string path, out string error) { error = code + ":" + path; return false; }
+
+    private static bool Shape(JsonElement value, string[] allowed, string[] required, string path, out string error)
+    {
+        if (value.ValueKind != JsonValueKind.Object) return Fail("SchemaIncompatibleType", path, out error);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var field in value.EnumerateObject())
+        {
+            if (!allowed.Contains(field.Name, StringComparer.Ordinal)) return Fail("SchemaUnexpectedProperty", path, out error);
+            if (!names.Add(field.Name)) return Fail("SchemaDuplicateProperty", path, out error);
+        }
+        foreach (var field in required)
+            if (!names.Contains(field)) return Fail("SchemaRequiredFieldMissing", path + "." + field, out error);
+        error = string.Empty; return true;
     }
 
     private static bool ValidInstallment(CreditCardStatementAgentItem item) =>

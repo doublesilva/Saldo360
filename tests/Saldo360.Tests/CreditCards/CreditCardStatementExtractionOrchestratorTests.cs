@@ -76,6 +76,18 @@ public sealed class CreditCardStatementExtractionOrchestratorTests
     }
 
     [Fact]
+    public async Task SchemaFailureKeepsSpecificSafeCodeAndNeverPromotesParserShadow()
+    {
+        var parser = new FakeParser(Json("100.00", Item("PARSER", "100.00")));
+        var invalid = CreditCardStatementAgentSchemaTests.Valid.Replace("\"amount\":\"10.00\"", "\"amount\":\"private-invalid-value\"");
+        var result = await Run(CreditCardStatementAgentMode.AgentPrimary, parser, new FakeProvider(invalid));
+        Assert.Null(result.Primary); Assert.NotNull(result.ParserShadow);
+        Assert.Equal("Agent", result.PrimarySource); Assert.Equal(AgentExtractionAssessment.Rejected, result.Assessment);
+        Assert.Equal("SchemaInvalidMoney:$.items[].amount", result.AgentError);
+        Assert.DoesNotContain("private-invalid-value", JsonSerializer.Serialize(result));
+    }
+
+    [Fact]
     public async Task DivergenceAndLowConfidenceProduceNeedsReview()
     {
         var parser = new FakeParser(Json("10.00", Item("CURRENT", "10.00")));
