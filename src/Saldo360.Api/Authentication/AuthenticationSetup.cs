@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Saldo360.Infrastructure.Authentication;
+using Saldo360.Application.Users;
 
 namespace Saldo360.Api.Authentication;
 
@@ -17,12 +18,14 @@ public static class AuthenticationSetup
     public const string OidcScheme = OpenIdConnectDefaults.AuthenticationScheme;
     public const string CsrfHeaderName = "X-CSRF-TOKEN";
 
-    // Claims de exibição guardadas na sessão, além de iss e sub. Tokens e demais claims do provedor são descartados.
+    // Claims de exibição guardadas na sessão, além de iss e sub. CPF e claims adicionais são descartados.
+    // Só access token elegível de perfil é retido em properties protegidas no ticket do servidor.
     private static readonly HashSet<string> ProfileClaimTypes = ["name", "preferred_username", "email"];
 
     // Identidade do ID token validado, mantida só durante o callback. As ClaimActions padrão do handler
     // apagam a claim "iss" depois do OnTokenValidated, então ela não pode ser relida do principal depois.
     private static readonly object ValidatedIdentityKey = new();
+    private static readonly object ProfileAccessKey = new();
 
     private const string OidcHandlerLogCategory = "Microsoft.AspNetCore.Authentication.OpenIdConnect";
 
@@ -54,6 +57,17 @@ public static class AuthenticationSetup
         var backchannelCa = string.IsNullOrWhiteSpace(oidc.BackchannelCaCertificatePath)
             ? null
             : LoadCaCertificate(Path.GetFullPath(oidc.BackchannelCaCertificatePath, environment.ContentRootPath));
+
+        services.AddHttpClient<AccessGatewayProfileClient>(client => client.Timeout = TimeSpan.FromSeconds(4))
+            .ConfigurePrimaryHttpMessageHandler(() =>
+            {
+                var handler = backchannelCa is null ? new SocketsHttpHandler { AllowAutoRedirect = false }
+                    : CreateHandlerTrustingOnly(backchannelCa, allowAutoRedirect: false);
+                handler.UseCookies = false; // No pooled cookie jar shared between users; only the session bearer authenticates.
+                return handler;
+            })
+            .RemoveAllLoggers();
+        services.AddScoped<ICurrentUserCpf, CurrentUserCpf>();
 
         // Em desenvolvimento o frontend e a API rodam em HTTP local; fora dele os cookies só trafegam em HTTPS.
         var securePolicy = environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
@@ -127,18 +141,20 @@ public static class AuthenticationSetup
 
                 // iss e sub vêm do ID token já validado pelo middleware (assinatura, emissor, audiência, nonce),
                 // nunca da requisição, do navegador ou da configuração (Authority).
-                options.Events.OnTokenValidated = context =>
+                options.Events.OnTokenValidated = async context =>
                 {
                     var issuer = context.SecurityToken?.Issuer;
                     var subject = context.SecurityToken?.Subject;
                     if (!ExternalIdentity.IsValid(issuer) || !ExternalIdentity.IsValid(subject))
                     {
                         context.Fail(new OidcIdentityException("O ID token não contém issuer ou subject válidos."));
-                        return Task.CompletedTask;
+                        return;
                     }
 
                     context.HttpContext.Items[ValidatedIdentityKey] = new ExternalIdentity(issuer, subject);
-                    return Task.CompletedTask;
+                    context.HttpContext.Items[ProfileAccessKey] = await ProfileAccessTokenValidation.ValidateAsync(
+                        context.TokenEndpointResponse?.AccessToken, context.TokenEndpointResponse?.TokenType,
+                        new ExternalIdentity(issuer, subject), context.Options, context.HttpContext.RequestAborted);
                 };
                 options.Events.OnTicketReceived = context =>
                 {
@@ -149,6 +165,12 @@ public static class AuthenticationSetup
                     }
 
                     context.Principal = CreateSessionPrincipal(context.Principal!, identity);
+                    var profileAccess = context.HttpContext.Items[ProfileAccessKey] as ProfileSessionAccess;
+                    context.Properties ??= new AuthenticationProperties();
+                    // SaveTokens remains false: never retain ID/refresh tokens or CPF in claims/properties.
+                    context.Properties.StoreTokens(profileAccess?.Token is { } accessToken
+                        ? [new AuthenticationToken { Name = "access_token", Value = accessToken }] : []);
+                    context.Properties.Items[ProfileAccessTokenValidation.SessionStatus] = (profileAccess?.Status ?? UserCpfStatus.SessionInvalid).ToString();
                     return Task.CompletedTask;
                 };
                 options.Events.OnRemoteFailure = context =>
@@ -275,8 +297,9 @@ public static class AuthenticationSetup
     /// <summary>
     /// Handler que só aceita certificados emitidos pela CA informada (sem cair no repositório do sistema).
     /// </summary>
-    private static SocketsHttpHandler CreateHandlerTrustingOnly(X509Certificate2 ca) => new()
+    private static SocketsHttpHandler CreateHandlerTrustingOnly(X509Certificate2 ca, bool allowAutoRedirect = true) => new()
     {
+        AllowAutoRedirect = allowAutoRedirect,
         SslOptions =
         {
             RemoteCertificateValidationCallback = (_, certificate, presentedChain, errors) =>

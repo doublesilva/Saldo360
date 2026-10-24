@@ -13,6 +13,8 @@ export interface CurrentUser {
   displayName: string
   username: string | null
   email: string | null
+  /** Disponibilidade apenas; CPF completo nunca faz parte deste contrato. */
+  cpfStatus?: 'Available' | 'NotRegistered' | 'SessionInvalid' | 'AccessDenied' | 'Unavailable'
 }
 
 /** Usuário da sessão atual, ou null quando não há sessão (401). */

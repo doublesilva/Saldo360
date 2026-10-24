@@ -2,6 +2,13 @@ using System.Net;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Tests.Support;
+using System.Text.Json;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.DependencyInjection;
+using Saldo360.Api.Authentication;
+using Saldo360.Application.Users;
+using Saldo360.Infrastructure.Authentication;
 
 namespace Saldo360.Tests.Api;
 
@@ -12,6 +19,89 @@ namespace Saldo360.Tests.Api;
 /// </summary>
 public sealed class OidcCallbackTests : ApiTestBase
 {
+    private const string SyntheticCpf = "52998224725";
+    [Theory]
+    [InlineData("valid", "Available")]
+    [InlineData("absent", "NotRegistered")]
+    [InlineData("denied", "AccessDenied")]
+    [InlineData("unauthorized", "SessionInvalid")]
+    [InlineData("missing-grant", "AccessDenied")]
+    [InlineData("wrong-subject", "SessionInvalid")]
+    [InlineData("wrong-issuer", "SessionInvalid")]
+    [InlineData("malformed", "Unavailable")]
+    [InlineData("bad-cpf", "Unavailable")]
+    [InlineData("network", "Unavailable")]
+    [InlineData("unavailable", "Unavailable")]
+    public async Task ProfileUsesOnlySessionAccessTokenAndNeverExposesOrPersistsCpf(string scenario, string expected)
+    {
+        Factory.OidcProvider.ProfileTokenScenario = "valid";
+        Factory.OidcProvider.IdTokenClaims["sub"] = Subject; Factory.OidcProvider.UserInfo["sub"] = Subject;
+        Factory.OidcProvider.UserInfo["cpf"] = SyntheticCpf; // This claim must never enter the session.
+        Factory.ProfileGateway.Status = scenario switch
+        { "denied" => HttpStatusCode.Forbidden, "unauthorized" => HttpStatusCode.Unauthorized, "unavailable" => HttpStatusCode.ServiceUnavailable, _ => HttpStatusCode.OK };
+        Factory.ProfileGateway.ThrowNetwork = scenario == "network";
+        Factory.ProfileGateway.Body = scenario switch
+        {
+            "absent" => JsonSerializer.Serialize(new { issuer = FakeOidcProvider.Issuer, subject = Subject, cpfRegistered = false }),
+            "missing-grant" => JsonSerializer.Serialize(new { issuer = FakeOidcProvider.Issuer, subject = Subject }),
+            "malformed" => "not-json",
+            _ => JsonSerializer.Serialize(new { issuer = scenario == "wrong-issuer" ? "https://other.invalid" : FakeOidcProvider.Issuer, subject = scenario == "wrong-subject" ? "other" : Subject, cpfRegistered = true, cpf = scenario == "bad-cpf" ? "11111111111" : SyntheticCpf })
+        };
+        var callback = await CompleteLoginAsync(); Assert.Equal(HttpStatusCode.Redirect, callback.StatusCode);
+        var session = FindCookie(callback, SessionCookieName);
+        var response = await SendAsync(HttpMethod.Get, "/api/me", session);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(expected, JsonDocument.Parse(body).RootElement.GetProperty("cpfStatus").GetString());
+        Assert.DoesNotContain(SyntheticCpf, body); Assert.DoesNotContain(Factory.OidcProvider.LastAccessToken!, body);
+        Assert.Equal(Factory.OidcProvider.LastAccessToken, Factory.ProfileGateway.LastBearer);
+        Assert.Equal(1, Factory.ProfileGateway.Calls);
+        await WithDbAsync(async db =>
+        {
+            var row = await db.UserSessions.SingleAsync();
+            var protector = Factory.Services.GetRequiredService<IDataProtectionProvider>().CreateProtector(DatabaseTicketStore.ProtectorPurpose);
+            var ticket = TicketSerializer.Default.Deserialize(protector.Unprotect(row.ProtectedTicket))!;
+            Assert.DoesNotContain(ticket.Principal.Claims, c => c.Type.Contains("cpf", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal("access_token", Assert.Single(ticket.Properties.GetTokens()).Name);
+            Assert.Null(ticket.Properties.GetTokenValue("id_token")); Assert.Null(ticket.Properties.GetTokenValue("refresh_token"));
+            Assert.Equal(FakeOidcProvider.Issuer, row.Issuer); Assert.Equal(Subject, row.Subject);
+        });
+        Assert.DoesNotContain(Factory.Logs.Entries, text => text.Contains(SyntheticCpf) || text.Contains(Factory.OidcProvider.LastAccessToken!));
+        Assert.DoesNotContain(SyntheticCpf, session);
+    }
+
+    [Theory]
+    [InlineData("audience", "AccessDenied")]
+    [InlineData("client", "AccessDenied")]
+    [InlineData("id-token", "AccessDenied")]
+    [InlineData("cpf-claim", "AccessDenied")]
+    [InlineData("signature", "SessionInvalid")]
+    [InlineData("expired", "SessionInvalid")]
+    [InlineData("subject", "SessionInvalid")]
+    [InlineData("issuer", "SessionInvalid")]
+    public async Task IneligibleAccessTokenNeverLeavesSaldoAndDoesNotBreakLogin(string scenario, string expected)
+    {
+        Factory.OidcProvider.ProfileTokenScenario = scenario;
+        Factory.OidcProvider.IdTokenClaims["sub"] = Subject; Factory.OidcProvider.UserInfo["sub"] = Subject;
+        var callback = await CompleteLoginAsync(); Assert.Equal(HttpStatusCode.Redirect, callback.StatusCode);
+        var session = FindCookie(callback, SessionCookieName);
+        var me = await GetMeAsync(session);
+        Assert.Equal(expected, me.CpfStatus); Assert.Equal(Subject, me.Subject); Assert.Equal(0, Factory.ProfileGateway.Calls);
+        await WithDbAsync(async db =>
+        {
+            var protector = Factory.Services.GetRequiredService<IDataProtectionProvider>().CreateProtector(DatabaseTicketStore.ProtectorPurpose);
+            var ticket = TicketSerializer.Default.Deserialize(protector.Unprotect((await db.UserSessions.SingleAsync()).ProtectedTicket))!;
+            Assert.Empty(ticket.Properties.GetTokens());
+        });
+    }
+
+    [Fact]
+    public void SensitiveCpfResultCannotLeakThroughDefaultSerializationOrToString()
+    {
+        var result = new UserCpfResult(UserCpfStatus.Available, SyntheticCpf);
+        Assert.Equal(SyntheticCpf, result.FullValue);
+        Assert.DoesNotContain(SyntheticCpf, result.ToString()); Assert.DoesNotContain(SyntheticCpf, JsonSerializer.Serialize(result));
+    }
     private const string Subject = "Usuário-Não-Guid|ÇÃO-42";
 
     [Fact]

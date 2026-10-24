@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Saldo360.Infrastructure.Authentication;
+using Saldo360.Application.Users;
 
 namespace Saldo360.Api.Authentication;
 
@@ -55,7 +56,7 @@ public static class AuthEndpoints
         return Results.NoContent();
     }
 
-    private static IResult GetCurrentUser(HttpContext context, ClaimsPrincipal user)
+    private static async Task<IResult> GetCurrentUser(HttpContext context, ClaimsPrincipal user, ICurrentUserCpf cpf, CancellationToken ct)
     {
         if (!ExternalIdentity.TryFromPrincipal(user, out var identity))
         {
@@ -63,6 +64,7 @@ public static class AuthEndpoints
         }
 
         var username = user.FindFirstValue("preferred_username");
+        var profile = await cpf.GetAsync(ct);
         context.Response.Headers.CacheControl = "no-store";
         return Results.Ok(new CurrentUserResponse(
             Id: identity.Subject,
@@ -70,7 +72,8 @@ public static class AuthEndpoints
             Subject: identity.Subject,
             DisplayName: user.FindFirstValue("name") ?? username ?? identity.Subject,
             Username: username,
-            Email: user.FindFirstValue("email")));
+            Email: user.FindFirstValue("email"),
+            CpfStatus: profile.Status.ToString()));
     }
 
     // Mesma regra do UrlHelper do MVC: caminho absoluto local, sem "//" ou "/\" (que levariam a outro host).
@@ -95,7 +98,8 @@ public sealed record CurrentUserResponse(
     string Subject,
     string DisplayName,
     string? Username,
-    string? Email);
+    string? Email,
+    string CpfStatus = "SessionInvalid");
 
 public sealed record CsrfTokenResponse(string Token);
 

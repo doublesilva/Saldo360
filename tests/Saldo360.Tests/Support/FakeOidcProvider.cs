@@ -37,6 +37,8 @@ public sealed class FakeOidcProvider : HttpMessageHandler
 
     /// <summary>Anuncia e atende o endpoint de PAR (como o Authelia do servidor).</summary>
     public bool EnablePushedAuthorization { get; set; }
+    public string? ProfileTokenScenario { get; set; }
+    public string? LastAccessToken { get; private set; }
 
     /// <summary>Requisições recebidas, por endpoint ("/par", "/token", "/userinfo").</summary>
     public ConcurrentQueue<ReceivedRequest> Requests { get; } = new();
@@ -84,7 +86,7 @@ public sealed class FakeOidcProvider : HttpMessageHandler
             },
             "/token" => Json(new Dictionary<string, object>
             {
-                ["access_token"] = "access-token-de-teste",
+                ["access_token"] = LastAccessToken = ProfileTokenScenario is null ? "access-token-de-teste" : CreateProfileToken(),
                 ["token_type"] = "Bearer",
                 ["expires_in"] = 300,
                 ["id_token"] = CreateIdToken(),
@@ -112,6 +114,27 @@ public sealed class FakeOidcProvider : HttpMessageHandler
             NotBefore = now,
             Expires = now.AddMinutes(5),
             SigningCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.RsaSha256),
+        });
+    }
+
+    private string CreateProfileToken()
+    {
+        var now = DateTime.UtcNow;
+        var key = ProfileTokenScenario == "signature" ? new RsaSecurityKey(RSA.Create(2048)) { KeyId = "wrong-key" } : _signingKey;
+        var claims = new Dictionary<string, object>
+        {
+            ["sub"] = ProfileTokenScenario == "subject" ? "other" : IdTokenClaims["sub"],
+            ["client_id"] = ProfileTokenScenario == "client" ? "other-client" : ClientId
+        };
+        if (ProfileTokenScenario == "cpf-claim") claims["cpf"] = "52998224725";
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = ProfileTokenScenario == "issuer" ? "https://other.invalid" : Issuer,
+            Audience = ProfileTokenScenario == "audience" ? ClientId : "accessgateway-profile",
+            TokenType = ProfileTokenScenario == "id-token" ? "JWT" : "at+jwt", Claims = claims,
+            IssuedAt = now.AddMinutes(-10), NotBefore = now.AddMinutes(-10),
+            Expires = ProfileTokenScenario == "expired" ? now.AddMinutes(-1) : now.AddMinutes(5),
+            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256)
         });
     }
 

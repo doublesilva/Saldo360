@@ -50,6 +50,7 @@ public sealed class Saldo360ApiFactory(
     public CapturingLoggerProvider Logs { get; } = new();
 
     public FakeOidcProvider OidcProvider { get; } = new();
+    public FakeProfileGateway ProfileGateway { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -69,6 +70,7 @@ public sealed class Saldo360ApiFactory(
 
         builder.ConfigureTestServices(services =>
         {
+            services.AddHttpClient<AccessGatewayProfileClient>().ConfigurePrimaryHttpMessageHandler(() => ProfileGateway);
             services.PostConfigure<OpenIdConnectOptions>(AuthenticationSetup.OidcScheme, options =>
             {
                 var configuration = OidcProvider.Configuration;
