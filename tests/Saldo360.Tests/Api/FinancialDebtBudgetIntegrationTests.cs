@@ -3,6 +3,7 @@ using System.Text.Json;
 using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialDebtBudgetIntegrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
  [Fact]
@@ -14,6 +15,13 @@ public sealed class FinancialDebtBudgetIntegrationTests(PostgresFixture postgres
   var target=await SendWithCsrfAsync(HttpMethod.Post,$"/api/financial-workspaces/{family.Id}/budgets/{budgetId}/targets",user,new{name="Financiamento",groupingType="Category",categoryId,plannedAmount="1500.00"});Assert.Equal(HttpStatusCode.Created,target.StatusCode);
   var debt=await SendWithCsrfAsync(HttpMethod.Post,$"/api/financial-workspaces/{family.Id}/debts",user,new{name="Dívida",debtType="Other",originalPrincipal="1000.00",contractDate="2026-01-01"});using var dj=JsonDocument.Parse(await debt.Content.ReadAsStringAsync());var debtId=dj.RootElement.GetProperty("id").GetGuid();
   var installment=await SendWithCsrfAsync(HttpMethod.Post,$"/api/financial-workspaces/{family.Id}/debts/{debtId}/installments",user,new{installmentNumber=1,dueDate="2026-11-10",scheduledAmount="1000.00",categoryId});Assert.Equal(HttpStatusCode.Created,installment.StatusCode);
-  var execution=await SendAsync(HttpMethod.Get,$"/api/financial-workspaces/{family.Id}/budgets/{budgetId}/execution",user);Assert.Equal(HttpStatusCode.OK,execution.StatusCode);var text=await execution.Content.ReadAsStringAsync();Assert.Contains("targets",text,StringComparison.OrdinalIgnoreCase);
+  var execution=await SendAsync(HttpMethod.Get,$"/api/financial-workspaces/{family.Id}/budgets/{budgetId}/execution",user);
+  Assert.Equal(HttpStatusCode.OK,execution.StatusCode);
+  using var result=JsonDocument.Parse(await execution.Content.ReadAsStringAsync());
+  var amounts=Assert.Single(result.RootElement.GetProperty("targets").EnumerateArray());
+  Assert.Equal("1000.00",amounts.GetProperty("committed").GetString());
+  Assert.Equal("1000.00",amounts.GetProperty("projectedConsumption").GetString());
+  Assert.Equal("0.00",amounts.GetProperty("realized").GetString());
+  Assert.Equal("1000.00",result.RootElement.GetProperty("total").GetProperty("committed").GetString());
  }
 }

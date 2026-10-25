@@ -6,6 +6,7 @@ using Saldo360.Api.Workspaces;
 
 namespace Saldo360.Tests.Api;
 
+[Trait("Category", "CORE")]
 public sealed class FinancialWriteMiddlewareTests
 {
     [Theory]

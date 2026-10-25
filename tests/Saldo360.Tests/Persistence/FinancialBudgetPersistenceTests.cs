@@ -45,6 +45,7 @@ public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : 
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task DatabaseEnforcesOneBudgetPerFamilyAndCompetenceIncludingArchived()
     {
@@ -56,6 +57,7 @@ public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : 
         await AddBudgetAsync(Budget(_familyB.Id));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task DatabaseEnforcesUniqueGroupingAndSameFamilyExpenseCategory()
     {
@@ -74,6 +76,7 @@ public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : 
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, wrongType.SqlState);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("-0.01", "23514")]
     [InlineData("1.001", "23514")]
@@ -92,6 +95,7 @@ public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : 
         Assert.Equal(sqlState, exception.SqlState);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task HistoricalReferencesAreRestrictedAndArchiveDoesNotDeleteRows()
     {
@@ -110,6 +114,7 @@ public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : 
         Assert.Equal(1, await verify.FinancialBudgetTargets.CountAsync());
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task MigrationPreservesExistingFamiliesAndCategories()
     {

@@ -6,6 +6,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialPlannedInvoiceReconciliationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly Today = BusinessCalendar.Today(DateTimeOffset.UtcNow);

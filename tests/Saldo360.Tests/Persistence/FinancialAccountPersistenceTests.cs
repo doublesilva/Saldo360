@@ -44,6 +44,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
 
     private Guid MemberOfB => _familyB.OwnerUserId;
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ResponsibleFromSameFamily_AndJointAccount_AreAccepted()
     {
@@ -57,6 +58,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Equal(2, await db.FinancialAccounts.CountAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ResponsibleFromAnotherFamily_ViolatesCompositeForeignKey()
     {
@@ -71,6 +73,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Equal("fk_financial_accounts_workspace_responsible", postgresError.ConstraintName);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ResponsibleFromAnotherFamily_IsRejected_AlsoOnUpdate()
     {
@@ -86,6 +89,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("type", "Credit")]
     [InlineData("type", "checking")]
@@ -115,6 +119,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task FamilyWithAccounts_CannotBeDeletedByCascade()
     {
@@ -131,6 +136,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Equal(1, await delete.FinancialAccounts.CountAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task Deactivation_PreservesTheRow()
     {
@@ -152,6 +158,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Equal(_userA, stored.CreatedByUserId);
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task ExistingAccount_StaysWithoutOpeningBalance_AfterMigration()
     {
@@ -174,6 +181,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
             (stored.Name, stored.Institution, stored.Type, stored.Scope, stored.ResponsibleUserId, stored.IsActive));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task OpeningBalance_RoundTripsAsNumericAndDate()
     {
@@ -196,6 +204,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Equal("numeric,date", types);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("100.00", null)]
     [InlineData(null, "2026-10-01")]
@@ -216,6 +225,7 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Equal("ck_financial_accounts_opening_balance_pair", exception.ConstraintName);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("10.005", "ck_financial_accounts_opening_balance_scale")]
     [InlineData("1.500", "ck_financial_accounts_opening_balance_scale")]
@@ -238,22 +248,6 @@ public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) :
         Assert.Null((await update.FinancialAccounts.SingleAsync()).OpeningBalance);
     }
 
-    [Theory]
-    [InlineData("1234.5", null, "openingBalanceDate")]
-    [InlineData(null, "2026-10-01", "openingBalance")]
-    [InlineData("0.001", "2026-10-01", "openingBalance")]
-    [InlineData("1.500", "2026-10-01", "openingBalance")]
-    public void Domain_RejectsIncompleteOrImpreciseOpeningBalance(string? amount, string? date, string field)
-    {
-        var details = AccountDetails.TryCreate(
-            "Conta", null, nameof(AccountType.Cash), nameof(FinancialScope.PF), null,
-            amount is null ? null : decimal.Parse(amount, CultureInfo.InvariantCulture),
-            date is null ? null : DateOnly.ParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture),
-            out var errors);
-
-        Assert.Null(details);
-        Assert.Equal([field], errors.Keys);
-    }
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 

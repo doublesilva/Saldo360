@@ -10,6 +10,7 @@ using Saldo360.Domain.Workspaces;
 
 namespace Saldo360.Tests.Api;
 
+[Trait("Category", "CORE")]
 public sealed class AuthenticatedDocumentPasswordProviderTests
 {
     [Theory]

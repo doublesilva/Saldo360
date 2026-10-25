@@ -6,6 +6,8 @@ using UglyToad.PdfPig.Writer;
 namespace Saldo360.Tests.CreditCards;
 
 // Explicitly executed inside Dockerfile.ocr-tests with native dependencies. Never silently skipped.
+[Trait("Category", "INFRA")]
+[Trait("Dependency", "NativeOCR")]
 public sealed class RealOcrToolTests
 {
     [Theory]

@@ -21,6 +21,7 @@ namespace Saldo360.Tests.Api;
 [Collection(PostgresCollection.Name)]
 public sealed class KnownStatementImportTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ProcessingRequiresOneDocumentConfirmationAndPreservesNineUnknownDates()
     {
@@ -49,6 +50,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal("Conflict", (await f.Analysis.CorrectCategoryAsync(f.W, f.Doc.Id, "row0", f.Category.Id, f.User, default)).Status);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task CompatibleInvoiceIsUsedWithoutClosingItOrCountingFutureTwice()
     {
@@ -68,6 +70,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(60m, await FinancialCreditCardInvoiceTotals.TotalAsync(db, f.W, invoice.Id, default));
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("stale")]
     [InlineData("hash")]
@@ -109,6 +112,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.False(db.ChangeTracker.HasChanges());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ConcurrentConfirmationCommitsOnceAndNeverRepeatsTheProvider()
     {
@@ -120,6 +124,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(9, await db.FinancialCreditCardImportedInstallments.CountAsync()); Assert.Equal(1, f.Pipeline.Calls);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task FinalSaveFailureRollsBackAllRowsAndConfirmationJournal()
     {
@@ -135,6 +140,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.False(db.ChangeTracker.HasChanges()); await AssertNoInventedFinancialEntities(db);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task AuthenticatedHttpProcessingDoesNotConfirmAndConfirmationIgnoresClientAmounts()
     {
@@ -164,6 +170,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         await AssertNoInventedFinancialEntities(db);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task KnownCommitmentsReachExistingProjectionsOnceBeforeAndAfterInvoiceAttachment()
     {
@@ -191,6 +198,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(30m, await FinancialCreditCardInvoiceTotals.TotalAsync(db, f.W, november.Id, default));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ConfirmedDocumentCanLinkLaterInvoicesWithoutAnotherExtractionOrConfirmation()
     {
@@ -213,6 +221,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(new[] { 30m, 60m }, totals);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task LegacyPdfConfirmationCannotDuplicateAKnownDocument()
     {
@@ -224,6 +233,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Empty(await db.FinancialCreditCardImportBatches.ToListAsync()); await AssertNoInventedFinancialEntities(db);
     }
 
+    [Trait("Category", "REGRESSION")]
     [Fact]
     public async Task AnalysisRechecksStoredHashBeforeContactingTheAgent()
     {
@@ -233,6 +243,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(0, f.Pipeline.Calls); Assert.Empty(await db.FinancialCreditCardImportedInstallments.ToListAsync());
     }
 
+    [Trait("Category", "REGRESSION")]
     [Fact]
     public async Task StaleTrackedDocumentCannotRepeatAnAlreadyCompletedExtraction()
     {
@@ -247,6 +258,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(1, f.Pipeline.Calls);
     }
 
+    [Trait("Category", "REGRESSION")]
     [Fact]
     public async Task DisablingProfileCannotFallBackToLegacyForAnAlreadyDocumentaryDocument()
     {
@@ -257,6 +269,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(1, f.Pipeline.Calls); Assert.Empty(await db.FinancialCreditCardImportedInstallments.ToListAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task AnotherDocumentWithTheSameKnownObligationsAddsOnlyProvenance()
     {
@@ -271,6 +284,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(20, await db.FinancialBootstrapProvenance.CountAsync()); Assert.Single(await db.FinancialCategories.ToListAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task LegitimatelyEqualCurrentRowsRemainSeparateObligations()
     {
@@ -281,6 +295,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(70m, await db.FinancialCreditCardImportedInstallments.Where(k => k.Competence == new DateOnly(2026,10,1)).SumAsync(k => k.Amount));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ExplicitPurchaseDatesArePreservedWithoutReconstructingTheOriginalPurchase()
     {
@@ -290,6 +305,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         await AssertNoInventedFinancialEntities(db);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task FaithfulFutureRowsWithoutUniqueMonthlyAnchorAreNotFinanciallyEligible()
     {
@@ -301,6 +317,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal("NeedsReview", (await Confirm(f)).Status); Assert.Empty(await db.FinancialCreditCardImportedInstallments.ToListAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ExistingKnownAndOriginalPurchaseInstallmentsAreReusedNotDuplicated()
     {
@@ -320,6 +337,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Equal(20m, (await db.FinancialCreditCardPurchases.SingleAsync()).TotalAmount);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task AuthorizationPrecedesStorageAndAnotherCardOrInvalidDocumentCannotImport()
     {
@@ -336,6 +354,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
         Assert.Empty(await db.FinancialCreditCardImportedInstallments.ToListAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("identity")]
     [InlineData("omission")]

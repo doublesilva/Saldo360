@@ -6,6 +6,7 @@ using Saldo360.Tests.CreditCards;
 
 namespace Saldo360.Tests.Api;
 
+[Trait("Category", "CORE")]
 public sealed class ServiceAccountApiTests() : ApiTestBase(settings: ServiceAccountResolverTests.Settings)
 {
     private const string Root = "/api/me/service-accounts";

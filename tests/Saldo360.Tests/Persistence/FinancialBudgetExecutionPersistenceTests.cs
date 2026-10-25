@@ -18,6 +18,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private static readonly DateOnly Competence = new(2026, 10, 1);

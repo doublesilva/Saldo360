@@ -4,6 +4,7 @@ using Saldo360.Domain.Workspaces;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Category", "REGRESSION")]
 public sealed class FinancialDebtReconciliationRaceTests
 {
     [Theory]

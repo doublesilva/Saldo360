@@ -12,6 +12,7 @@ namespace Saldo360.Tests.Api;
 /// cancelar o lançamento efetivo.
 /// </summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class PlannedRealizationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);

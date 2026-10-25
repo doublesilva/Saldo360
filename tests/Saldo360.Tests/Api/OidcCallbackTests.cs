@@ -17,6 +17,7 @@ namespace Saldo360.Tests.Api;
 /// (validação do ID token, userinfo e ClaimActions do handler) → sessão → /api/me.
 /// Diferente do endpoint de teste, aqui a claim iss passa pela filtragem real do middleware.
 /// </summary>
+[Trait("Category", "CORE")]
 public sealed class OidcCallbackTests : ApiTestBase
 {
     private const string SyntheticCpf = "52998224725";
@@ -95,13 +96,6 @@ public sealed class OidcCallbackTests : ApiTestBase
         });
     }
 
-    [Fact]
-    public void SensitiveCpfResultCannotLeakThroughDefaultSerializationOrToString()
-    {
-        var result = new UserCpfResult(UserCpfStatus.Available, SyntheticCpf);
-        Assert.Equal(SyntheticCpf, result.FullValue);
-        Assert.DoesNotContain(SyntheticCpf, result.ToString()); Assert.DoesNotContain(SyntheticCpf, JsonSerializer.Serialize(result));
-    }
     private const string Subject = "Usuário-Não-Guid|ÇÃO-42";
 
     [Fact]

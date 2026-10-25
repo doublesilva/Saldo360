@@ -8,6 +8,7 @@ namespace Saldo360.Tests.Application;
 
 public sealed class BudgetBootstrapDomainTests
 {
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, true)]
@@ -17,6 +18,7 @@ public sealed class BudgetBootstrapDomainTests
         Assert.Throws<ArgumentException>(() => FinancialRecurrence.Create(Guid.NewGuid(), details, DateTimeOffset.UtcNow));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public void KnownInstallment_DoesNotInferMissingNumbersDatesOrTotals()
     {
@@ -24,6 +26,7 @@ public sealed class BudgetBootstrapDomainTests
         Assert.Null(row.TransactionDate); Assert.Null(row.InstallmentNumber); Assert.Null(row.InstallmentCount); Assert.Null(row.InvoiceId); Assert.Null(row.DueDate);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(7, 6)]
     [InlineData(0, 6)]
@@ -31,12 +34,14 @@ public sealed class BudgetBootstrapDomainTests
     public void KnownInstallment_RejectsInvalidExplicitNumbering(int number, int count) => Assert.Throws<ArgumentException>(() =>
         FinancialCreditCardImportedInstallment.CreateKnown(Guid.NewGuid(), Guid.NewGuid(), null, "Invalid", 1m, number, count, new(2026, 11, 1), null, "BudgetSpreadsheet", "row", Guid.NewGuid(), DateTimeOffset.UtcNow));
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(-1)]
     [InlineData(1.001)]
     public void Target_RejectsNegativeOrExcessScale(decimal amount) => Assert.Throws<ArgumentException>(() =>
         FinancialMonthlyAggregateTarget.Create(Guid.NewGuid(), new(2026, 11, 1), MonthlyAggregateTargetType.TotalExpenses, amount, DateTimeOffset.UtcNow));
 
+    [Trait("Category", "CORE")]
     [Fact]
     public void ZeroRecoveryIsAnIndependentValidSnapshot()
     {
@@ -44,6 +49,7 @@ public sealed class BudgetBootstrapDomainTests
         Assert.Equal(0m, target.Amount);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("1270.3759999999995", "1270.38")]
     [InlineData("1501.2445000000016", "1501.24")]
@@ -55,6 +61,7 @@ public sealed class BudgetBootstrapDomainTests
         Assert.Contains(raw, result.MetadataJson);
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public void DryRun_EnumeratesAllFiveDispositions_WithoutTreatingUnmappedAsImported()
     {
@@ -62,6 +69,7 @@ public sealed class BudgetBootstrapDomainTests
         Assert.True(report.ZeroWrite); Assert.False(report.CanExecute); Assert.All(report.Counts.Values, x => Assert.Equal(1, x));
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public void Fingerprint_PreservesIdentityAndMetadata_ButNotIrrelevantDecimalScale()
     {
@@ -71,6 +79,7 @@ public sealed class BudgetBootstrapDomainTests
         Assert.NotEqual(fingerprint, BootstrapContentFingerprint.Compute("Target", first with { Source = first.Source with { MetadataJson = "{\"raw\":12.001}" } }));
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public void ApprovedExcludedRemote_RemainsUnmapped_ButIsNeverACreateCandidate()
     {

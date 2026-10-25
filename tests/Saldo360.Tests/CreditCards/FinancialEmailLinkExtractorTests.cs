@@ -2,6 +2,7 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "CORE")]
 public sealed class FinancialEmailLinkExtractorTests
 {
     private readonly FinancialEmailLinkExtractor extractor = new();

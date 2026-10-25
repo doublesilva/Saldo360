@@ -2,6 +2,7 @@ using Saldo360.Application.Calendar;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Category", "CORE")]
 public sealed class CreditCardBalanceProjectionTests
 {
     [Fact]

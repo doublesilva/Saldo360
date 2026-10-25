@@ -4,6 +4,7 @@ using Saldo360.Domain.Recurrences;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Category", "CORE")]
 public sealed class FinancialRecurrenceCalendarTests
 {
     private static FinancialRecurrence Recurrence(RecurrenceFrequency frequency, DateOnly start, int day = 1, int interval = 1, int? count = null, DateOnly? end = null)

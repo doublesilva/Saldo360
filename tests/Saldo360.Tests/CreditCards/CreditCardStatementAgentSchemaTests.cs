@@ -11,6 +11,7 @@ public sealed class CreditCardStatementAgentSchemaTests
         "items":[{"originalDescription":"SHOP","amount":"10.00","nature":"Debit","type":"Purchase","installmentNumber":null,"installmentCount":null,"section":"CurrentInvoice","includedInCurrentTotal":true,"page":1,"evidence":"SHOP 10.00","confidence":"High","transactionDate":null,"normalizedDescription":null,"suggestedCategory":null,"categoryConfidence":null}]}
         """;
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("{", "SchemaInvalidJson:$")]
     [InlineData("null", "SchemaIncompatibleType:$")]
@@ -18,6 +19,7 @@ public sealed class CreditCardStatementAgentSchemaTests
     [InlineData("{}", "SchemaRequiredFieldMissing:$.schemaVersion")]
     public void InvalidJsonAndRootHaveSafeSpecificCodes(string json, string code) => Reject(json, code);
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("schemaVersion", "3.0", "SchemaVersionInvalid:$.schemaVersion")]
     [InlineData("header.officialTotal", "10,00", "SchemaInvalidMoney:$.header.officialTotal")]
@@ -46,6 +48,7 @@ public sealed class CreditCardStatementAgentSchemaTests
         Reject(node.ToJsonString(), code);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("includedInCurrentTotal")]
     [InlineData("installmentNumber")]
@@ -57,6 +60,7 @@ public sealed class CreditCardStatementAgentSchemaTests
         Reject(node.ToJsonString(), "SchemaRequiredFieldMissing:$.items[]." + field);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public void UnknownPropertiesAndDuplicatesNeverEchoUntrustedNamesOrValues()
     {
@@ -65,6 +69,7 @@ public sealed class CreditCardStatementAgentSchemaTests
         Reject(Valid.Replace("\"schemaVersion\":\"2.0\"", "\"schemaVersion\":\"2.0\",\"schemaVersion\":\"2.0\""), "SchemaDuplicateProperty:$");
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public void IncompatibleDtoTypesNullHeaderAndInvalidEvidenceRemainRejected()
     {
@@ -80,6 +85,7 @@ public sealed class CreditCardStatementAgentSchemaTests
         Reject(node.ToJsonString(), "SchemaInvalidInstallment:$.items[]");
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public void NullableFactsAreAcceptedButDoNotInventStatementEvidence()
     {
@@ -92,6 +98,7 @@ public sealed class CreditCardStatementAgentSchemaTests
         Assert.False(CreditCardStatementAgentEvaluator.TryEvaluate(node.ToJsonString(), "synthetic.pdf", 1, out _, out _));
     }
 
+    [Trait("Category", "REGRESSION")]
     [Fact]
     public void LegacyVersionStillAcceptedAndFinancialDifferenceStillRequiresReview()
     {

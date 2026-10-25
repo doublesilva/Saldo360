@@ -32,6 +32,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         return (session, w, (await ReadAsync<JsonElement>(category)).GetProperty("id").GetGuid(), (await ReadAsync<JsonElement>(card)).GetProperty("id").GetGuid(), accountId);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task CardRecurrence_MaterializesNormalChargesOnce_WithoutBankRowsOrPayments()
     {
@@ -57,6 +58,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         Assert.Empty(db.FinancialPlannedTransactions); Assert.Empty(db.FinancialTransactions); Assert.Empty(db.FinancialCreditCardInvoicePayments); Assert.Empty(db.Families);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(true, true)]
     [InlineData(false, false)]
@@ -69,6 +71,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         await using var db = Db(); Assert.Empty(db.FinancialRecurrences);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task AggregateTargets_AreIndependentUniqueSnapshots_KeepRawRecoveryMetadata()
     {
@@ -94,6 +97,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task KnownSchedule_PreservesCentsNumbersAndUnknowns_NoInvoiceOrPurchase_Idempotent()
     {
@@ -116,6 +120,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         Assert.Empty(db.FinancialCreditCardInvoices); Assert.Empty(db.FinancialCreditCardPurchases); Assert.Empty(db.FinancialTransactions); Assert.Empty(db.FinancialPlannedTransactions);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task KnownObligation_ParticipatesInLimitAccountProjectionAndCategoryExecution_WithoutInvoice()
     {
@@ -142,6 +147,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         Assert.Equal(HttpStatusCode.OK, balances.StatusCode);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ExtensionAuthorization_RejectsOtherOwnerAndCrossWorkspaceCard()
     {
@@ -153,6 +159,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         await using var db = Db(); Assert.Empty(db.FinancialCreditCardImportedInstallments); Assert.Empty(db.FinancialBootstrapProvenance); Assert.Empty(db.Families);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ProvenanceInspectionAndDryRunContracts_AreZeroWrite()
     {
@@ -164,6 +171,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         await using var db = Db(); Assert.Empty(db.FinancialBootstrapProvenance); Assert.Empty(db.FinancialMonthlyAggregateTargets); Assert.Empty(db.FinancialCreditCardImportedInstallments);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ResetInventory_CoversNewTablesAndCardMaterializations()
     {
@@ -180,6 +188,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         await using var db = Db(); Assert.Empty(db.FinancialBootstrapProvenance); Assert.Empty(db.FinancialMonthlyAggregateTargets); Assert.Empty(db.FinancialRecurrenceMaterializations); Assert.Empty(db.FinancialCreditCardPurchases); Assert.Single(db.FinancialWorkspaces);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task KnownInstallment_CanAttachOnlyToCompatibleRealInvoice_WithoutInventingPurchaseDate()
     {
@@ -200,6 +209,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         Assert.Empty(check.FinancialTransactions); Assert.Empty(check.FinancialCreditCardInvoicePayments);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ConcurrentSameSource_CreatesOneRecord_AndSourceIsIsolatedByWorkspace()
     {
@@ -212,6 +222,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         await using var db = Db(); Assert.Equal(2, await db.FinancialBootstrapProvenance.CountAsync()); Assert.Equal(2, await db.FinancialMonthlyAggregateTargets.CountAsync());
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task Migration_PreservesPreviouslyValidImportRowOne_WithoutBackfill()
     {
@@ -234,6 +245,7 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         Assert.Null(row.SourceSystem); Assert.Null(row.Competence);
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task MigrationDown_RefusesNewSnapshotsInsteadOfLosingThem()
     {

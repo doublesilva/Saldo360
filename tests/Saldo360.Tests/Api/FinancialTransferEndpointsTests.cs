@@ -12,6 +12,7 @@ namespace Saldo360.Tests.Api;
 /// convite) e uma família estranha com conta própria.
 /// </summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);

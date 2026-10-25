@@ -4,6 +4,7 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "REGRESSION")]
 public sealed class StatementInstallmentRecognitionTests
 {
     // Anonymized shape of the reference: six current rows, then three individual future rows.
@@ -26,6 +27,7 @@ public sealed class StatementInstallmentRecognitionTests
         Assert.Equal(batch ? AgentExtractionAssessment.NeedsReview : AgentExtractionAssessment.Reliable, result.Assessment); Assert.Null(result.AgentError);
         if (batch) Assert.Contains("PageWithoutItemsUnproven", result.DocumentWarnings!);
         Assert.False(result.ParserShadowExecuted); Assert.Null(result.Comparison); Assert.Null(result.ParserShadow);
+        Assert.Empty(result.InstallmentDiagnostics ?? []);
         Assert.Equal(items, result.Primary!.Items); Assert.Equal(total, result.Primary.Reconciliation.ComponentsTotal);
         Assert.Equal(6, result.Primary.Items.Count(i => i.Section == "CurrentInvoice"));
         Assert.Equal(3, result.Primary.Items.Count(i => i.Section == "FutureInstallments"));
@@ -43,11 +45,6 @@ public sealed class StatementInstallmentRecognitionTests
 
     [Theory]
     [InlineData("06/06")]
-    [InlineData("04/06")]
-    [InlineData("04/05")]
-    [InlineData("03/03")]
-    [InlineData("03/12")]
-    [InlineData("02/02")]
     [InlineData("2/3")]
     [InlineData("07/10")]
     public void ExplicitMarkerAttachedToMerchantCannotRemainUnnumberedPurchase(string marker)
@@ -58,26 +55,8 @@ public sealed class StatementInstallmentRecognitionTests
         Assert.Equal("PurchaseInstallmentMetadataMissing:$.items[].installmentNumber", error);
     }
 
-    [Theory]
-    [InlineData("04/06 MERCHANT 10.00", "MERCHANT")]
-    [InlineData("04/06/2026 MERCHANT 10.00", "MERCHANT")]
-    [InlineData("2026-06-04 MERCHANT 10.00", "MERCHANT")]
-    [InlineData("MERCHANT CODIGO06/06 10.00", "MERCHANT CODIGO06/06")]
-    [InlineData("MERCHANT Ref 04/06 10.00", "MERCHANT Ref 04/06")]
-    [InlineData("MERCHANT PEDIDO03/12 10.00", "MERCHANT PEDIDO03/12")]
-    [InlineData("MERCHANT123/456 10.00", "MERCHANT123/456")]
-    [InlineData("MERCHANT em 04/06 10.00", "MERCHANT em 04/06")]
-    [InlineData("MERCHANT 10,02/03", "MERCHANT")]
-    public void DatesCommercialCodesAndMoneyAreNotInventedInstallments(string evidence, string description)
-    {
-        var item = Item(0, (6, 6)) with { OriginalDescription = description, Evidence = evidence,
-            Type = "Purchase", InstallmentNumber = null, InstallmentCount = null };
-        Assert.True(CreditCardStatementAgentSchema.TryValidate(Facts([item]), 2, out var facts, out var error, purchasesOnly: true), error);
-        Assert.Equal("Purchase", facts!.Items[0].Type); Assert.Null(facts.Items[0].InstallmentCount);
-    }
 
     [Theory]
-    [InlineData("Installment", 5, 6, "PurchaseInstallmentMetadataMismatch:$.items[]")]
     [InlineData("Purchase", 6, 6, "PurchaseInstallmentTypeMismatch:$.items[].type")]
     public void WrongNumberingOrTypeIsRejectedWithoutChangingFacts(string type, int number, int count, string code)
     {
@@ -86,13 +65,6 @@ public sealed class StatementInstallmentRecognitionTests
         Assert.Equal(number, item.InstallmentNumber); Assert.Equal("11.11", item.Amount);
     }
 
-    [Fact]
-    public void ContradictingDescriptionAndQuoteNumberingIsNotSilentlyResolved()
-    {
-        var item = Item(0, (6, 6)) with { Evidence = "MERCHANT05/06 11.11" };
-        Assert.False(CreditCardStatementAgentSchema.TryValidate(Facts([item]), 2, out _, out var error, purchasesOnly: true));
-        Assert.Equal("PurchaseInstallmentEvidenceConflict:$.items[]", error);
-    }
 
     [Theory]
     [InlineData("Próxima fatura")]

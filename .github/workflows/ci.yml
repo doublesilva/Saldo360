@@ -23,6 +23,8 @@ jobs:
       backend: ${{ steps.detect.outputs.backend }}
       frontend: ${{ steps.detect.outputs.frontend }}
       infra: ${{ steps.detect.outputs.infra }}
+      backend_specific: ${{ steps.detect.outputs.backend_specific }}
+      ocr: ${{ steps.detect.outputs.ocr }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -58,12 +60,12 @@ jobs:
             fi
           fi
           if [ "$all" = true ]; then
-            backend=true; frontend=true; infra=true
+            backend=true; frontend=true; infra=true; backend_specific=true; ocr=true
           else
             cat "$changed"
             eval "$(bash scripts/ci/classify-changes.sh < "$changed")"
           fi
-          printf 'backend=%s\nfrontend=%s\ninfra=%s\n' "$backend" "$frontend" "$infra" >> "$GITHUB_OUTPUT"
+          printf 'backend=%s\nfrontend=%s\ninfra=%s\nbackend_specific=%s\nocr=%s\n' "$backend" "$frontend" "$infra" "$backend_specific" "$ocr" >> "$GITHUB_OUTPUT"
           {
             echo '### Incremental CI'; echo
             echo "- event: \`$EVENT_NAME\`"
@@ -73,6 +75,8 @@ jobs:
             echo "| backend | $backend |"
             echo "| frontend | $frontend |"
             echo "| infra | $infra |"
+            echo "| backend specific (migrations/tooling/deploy contracts) | $backend_specific |"
+            echo "| native OCR | $ocr |"
             if [ -s "$changed" ]; then
               echo; echo '<details><summary>Changed files</summary>'; echo
               sed 's/^/- `/' "$changed" | sed 's/$/`/'
@@ -109,6 +113,7 @@ jobs:
       - name: Build backend (Release)
         run: dotnet build Saldo360.slnx --configuration Release --no-restore
       - name: Install native OCR tools for integration tests
+        if: needs.changes.outputs.ocr == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -117,8 +122,21 @@ jobs:
           command -v pdftoppm
           command -v tesseract
           tesseract --list-langs | grep -Fxq por
-      - name: Test backend with PostgreSQL diagnostics
-        run: dotnet test Saldo360.slnx --configuration Release --no-build --logger "console;verbosity=normal"
+      - name: Test CORE and essential REGRESSION (real PostgreSQL)
+        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "Category!=INFRA" --logger "trx;LogFileName=normal.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
+      - name: Test migrations, administrative tooling and deployment contracts
+        if: needs.changes.outputs.backend_specific == 'true'
+        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "Category=INFRA&Dependency!=NativeOCR" --logger "trx;LogFileName=specific.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
+      - name: Test real native OCR
+        if: needs.changes.outputs.ocr == 'true'
+        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "Dependency=NativeOCR" --logger "trx;LogFileName=ocr.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
+      - name: Preserve test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-results
+          path: TestResults/*.trx
+          if-no-files-found: ignore
       - name: Build API image
         run: docker build --file Dockerfile.api --tag "$IMAGE" .
       - name: Smoke API image

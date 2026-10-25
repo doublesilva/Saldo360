@@ -8,6 +8,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.CreditCards;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class CreditCardPdfPreReconciliationRepositoryTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]

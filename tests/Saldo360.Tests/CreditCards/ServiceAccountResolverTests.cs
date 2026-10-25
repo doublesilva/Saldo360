@@ -9,6 +9,7 @@ using Saldo360.Infrastructure.ServiceAccounts;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "CORE")]
 public sealed class ServiceAccountResolverTests
 {
     internal static readonly IReadOnlyDictionary<string, string?> Settings = new Dictionary<string, string?>

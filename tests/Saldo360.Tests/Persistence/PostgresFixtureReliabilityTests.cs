@@ -4,6 +4,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "INFRA")]
 public sealed class PostgresFixtureReliabilityTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private readonly string _databaseA = postgres.NewDatabaseConnectionString();

@@ -16,6 +16,7 @@ public sealed class StatementLabReferenceValidationTests
         ValidationStatus = "Valid", PageCoverage = [new(1, "Native", "NativeWithImage", true)],
         OutputCoverage = new(1, [new(1, 1, true, true, true, 2, "ReturnedValidUnproven", null)], [new(1, [1], 2, "ReturnedValidUnproven", null)])
     };
+    [Trait("Category", "INFRA")]
     [Fact]
     public void ExactReferenceMatchesWithoutChangingFinancialAssessmentOrCoverage()
     {
@@ -24,6 +25,7 @@ public sealed class StatementLabReferenceValidationTests
         Assert.True(evaluated.Approved); Assert.Empty(evaluated.Diagnostics);
         Assert.Equal(AgentExtractionAssessment.Reliable, original.Assessment); Assert.False(original.OutputCoverage!.RecognitionComplete);
     }
+    [Trait("Category", "INFRA")]
     [Theory]
     [InlineData("number")]
     [InlineData("amount")]
@@ -42,6 +44,7 @@ public sealed class StatementLabReferenceValidationTests
         Assert.False(compared.Approved); Assert.False(compared.ExactMatch);
         var json = JsonSerializer.Serialize(compared); Assert.DoesNotContain("PRIVATE-MERCHANT", json); Assert.DoesNotContain("20.00", json);
     }
+    [Trait("Category", "INFRA")]
     [Fact]
     public void MissingRowsAndExtraCopiesFailButLegitimateIdenticalRowsAreNotDeduplicated()
     {
@@ -51,6 +54,7 @@ public sealed class StatementLabReferenceValidationTests
         var missing = Result with { Primary = Result.Primary! with { Items = [Facts.Items[0]] } };
         Assert.False(StatementLabReferenceValidation.Compare(Hash, new(Hash, 1, Facts), missing).ExactMatch);
     }
+    [Trait("Category", "INFRA")]
     [Fact]
     public void RejectionUnknownSourceCoverageAndOcrAreNeverApprovedByExactMoneyAlone()
     {
@@ -63,6 +67,7 @@ public sealed class StatementLabReferenceValidationTests
                 $"source={result.PrimarySource}; assessment={result.Assessment}; validation={result.ValidationStatus}; primary={result.Primary is not null}; coverage={result.OutputCoverage is not null}; warnings={string.Join(',', result.DocumentWarnings ?? [])}");
         Assert.False(StatementLabReferenceValidation.Compare("wrong-source", new(Hash, 1, Facts), Result).Approved);
     }
+    [Trait("Category", "CORE")]
     [Fact]
     public void NativeCoordinatePreparationKeepsAllWordsAndSeparatesTableColumnsWithoutParsingFinancialFacts()
     {
@@ -72,6 +77,7 @@ public sealed class StatementLabReferenceValidationTests
         Assert.Equal("unchanged", CreditCardPdfTextExtractor.ReflowNativeWords([], "unchanged"));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public void LargeRasterRegionWithOnlyNativeFooterCannotProveCoverageButTranscribedBackgroundIsNotBlank()
     {
@@ -82,6 +88,7 @@ public sealed class StatementLabReferenceValidationTests
         Assert.False(CreditCardPdfTextExtractor.UntranscribedRasterRegion(native, 0, 0, 595, 842, 595 * 842));
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public void DocumentaryReferenceCannotOverrideIncompleteCoverageEvenWithReliableAssessment()
     {

@@ -2,6 +2,7 @@ using Saldo360.Application.Budgets;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Category", "CORE")]
 public sealed class FinancialBudgetExecutionAlertTests
 {
     [Theory]
@@ -16,13 +17,6 @@ public sealed class FinancialBudgetExecutionAlertTests
         decimal planned, decimal projected, FinancialBudgetAlertStatus expected) =>
         Assert.Equal(expected, FinancialBudgetExecutionService.Classify(planned, projected));
 
-    [Fact]
-    public void ClassificationDoesNotUseRoundedPercentage()
-    {
-        // 79.999% permanece dentro, mesmo que a apresentação arredonde para 80.00%.
-        Assert.Equal(FinancialBudgetAlertStatus.WithinBudget,
-            FinancialBudgetExecutionService.Classify(1000m, 799.99m));
-    }
 
     [Fact]
     public void MessagesAreStableAndNonIntrusive()

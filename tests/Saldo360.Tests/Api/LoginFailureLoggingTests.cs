@@ -7,6 +7,7 @@ namespace Saldo360.Tests.Api;
 /// Falhas de login com dados sensíveis fictícios: o log deve conter só o motivo controlado e o id de
 /// correlação, nunca o code, tokens, segredos ou o texto devolvido pelo provedor.
 /// </summary>
+[Trait("Category", "CORE")]
 public sealed class LoginFailureLoggingTests : ApiTestBase
 {
     private const string FakeCode = "CODIGO-AUTORIZACAO-FICTICIO-9f8e7d";

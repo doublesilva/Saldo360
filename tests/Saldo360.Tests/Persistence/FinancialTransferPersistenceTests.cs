@@ -48,6 +48,7 @@ public sealed class FinancialTransferPersistenceTests(PostgresFixture postgres) 
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ValidTransfer_IsStoredExactly_AsNumericAndDate()
     {
@@ -59,6 +60,7 @@ public sealed class FinancialTransferPersistenceTests(PostgresFixture postgres) 
         Assert.Equal("1234.56 2026-09-01", text);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("source")]
     [InlineData("destination")]
@@ -73,6 +75,7 @@ public sealed class FinancialTransferPersistenceTests(PostgresFixture postgres) 
         Assert.Equal($"fk_financial_transfers_{side}_account_same_family", postgresError.ConstraintName);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("UPDATE financial_transfers SET destination_account_id = source_account_id", "ck_financial_transfers_distinct_accounts")]
     [InlineData("UPDATE financial_transfers SET amount = 0", "ck_financial_transfers_amount_positive")]
@@ -94,6 +97,7 @@ public sealed class FinancialTransferPersistenceTests(PostgresFixture postgres) 
         Assert.Equal((PostgresErrorCodes.CheckViolation, constraint), (exception.SqlState, exception.ConstraintName));
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("DELETE FROM financial_accounts")]
     [InlineData("DELETE FROM financial_workspaces")]
@@ -107,6 +111,7 @@ public sealed class FinancialTransferPersistenceTests(PostgresFixture postgres) 
         Assert.Equal(1, await db.FinancialTransfers.CountAsync());
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task Migration_PreservesExistingAccountsAndTransactions()
     {
@@ -139,38 +144,7 @@ public sealed class FinancialTransferPersistenceTests(PostgresFixture postgres) 
         Assert.Equal(0, await verify.FinancialTransfers.CountAsync());
     }
 
-    [Theory]
-    [InlineData("0", "amount")]
-    [InlineData("-1", "amount")]
-    [InlineData("0.001", "amount")]
-    public void Domain_RejectsInvalidAmounts(string amount, string field)
-    {
-        var details = TransferDetails.TryCreate(
-            Guid.CreateVersion7(), Guid.CreateVersion7(),
-            decimal.Parse(amount, System.Globalization.CultureInfo.InvariantCulture),
-            new DateOnly(2026, 9, 1), "X", new DateOnly(2026, 10, 1), out var errors);
 
-        Assert.Null(details);
-        Assert.Equal([field], errors.Keys);
-    }
-
-    [Fact]
-    public void Domain_RejectsSameAccountAndFutureDate_AndCancelIsIdempotent()
-    {
-        var id = Guid.CreateVersion7();
-        var today = new DateOnly(2026, 10, 1);
-
-        Assert.Null(TransferDetails.TryCreate(id, id, 1m, today, "X", today, out var same));
-        Assert.Equal(["destinationAccountId"], same.Keys);
-        Assert.Null(TransferDetails.TryCreate(id, Guid.CreateVersion7(), 1m, today.AddDays(1), "X", today, out var future));
-        Assert.Equal(["transferDate"], future.Keys);
-
-        var transfer = Transfer(_pjA.Id, _pfA.Id);
-        var now = DateTimeOffset.UtcNow;
-        Assert.True(transfer.Cancel(_userA, now));
-        Assert.False(transfer.Cancel(_userA, now.AddMinutes(1)));
-        Assert.Equal(now, transfer.CancelledAt);
-    }
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 

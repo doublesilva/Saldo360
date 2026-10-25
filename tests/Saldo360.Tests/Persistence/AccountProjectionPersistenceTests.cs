@@ -18,6 +18,7 @@ namespace Saldo360.Tests.Persistence;
 
 /// <summary>Projeção no PostgreSQL real: agregação das previsões pendentes e leitura num único snapshot.</summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class AccountProjectionPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);

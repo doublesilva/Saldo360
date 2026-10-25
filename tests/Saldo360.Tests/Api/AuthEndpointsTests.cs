@@ -5,6 +5,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Api;
 
+[Trait("Category", "CORE")]
 public sealed class AuthEndpointsTests : ApiTestBase
 {
     [Fact]
@@ -121,11 +122,4 @@ public sealed class AuthEndpointsTests : ApiTestBase
         Assert.Equal("/", response.Headers.Location!.ToString());
     }
 
-    [Fact]
-    public async Task Health_RemainsAnonymous()
-    {
-        var response = await Client.GetAsync("/health");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
 }

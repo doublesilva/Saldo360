@@ -15,6 +15,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialResetConcurrencyTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private async Task<(string Session, WorkspaceDto Workspace)> Arrange()

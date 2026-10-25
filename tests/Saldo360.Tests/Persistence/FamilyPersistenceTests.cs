@@ -24,6 +24,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task Users_SameIssuerAndSubject_ViolateUniqueIndex()
     {
@@ -37,6 +38,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal(PostgresErrorCodes.UniqueViolation, Assert.IsType<PostgresException>(exception.InnerException).SqlState);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(Issuer, "Usuario", Issuer, "usuario")] // caixa diferente no subject
     [InlineData(Issuer, "usuario", "https://AUTH.test.invalid", "usuario")] // caixa diferente no issuer
@@ -52,6 +54,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal(2, await db.Users.CountAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task FamilyMembers_SameFamilyAndUser_ViolateUniqueIndex()
     {
@@ -68,6 +71,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal(PostgresErrorCodes.UniqueViolation, exception.SqlState);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task FamilyMembers_UnknownRole_ViolatesCheckConstraint()
     {
@@ -87,6 +91,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task FamilyStructure_IsNotLimitedToTwoPeople()
     {
@@ -106,6 +111,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal(5, await db.FamilyMembers.CountAsync(m => m.FamilyId == family.Id));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task CreateFamily_WhenOwnerLinkFails_PersistsNothing()
     {
@@ -123,6 +129,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal(0, await verify.FamilyMembers.CountAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task CreateFamily_PersistsFamilyWithExactlyOneOwner()
     {
@@ -142,6 +149,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal(FamilyRole.Owner, member.Role);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ResolveUser_RepeatedCalls_ReturnSameUser_AndUpdateDisplayName()
     {
@@ -155,6 +163,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal("Nome novo", user.DisplayName);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ResolveUser_ConcurrentFirstLogins_CreateASingleUser()
     {
@@ -170,6 +179,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal(1, await verify.Users.CountAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ResolveUser_SameSubjectInTwoIssuers_CreatesTwoUsers()
     {
@@ -181,6 +191,7 @@ public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLif
         Assert.Equal(2, await db.Users.CountAsync());
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task Migration_KeepsAuthenticationTables()
     {

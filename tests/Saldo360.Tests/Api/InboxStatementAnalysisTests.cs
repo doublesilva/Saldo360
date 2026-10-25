@@ -13,6 +13,7 @@ namespace Saldo360.Tests.Api;
 [Collection(PostgresCollection.Name)]
 public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(null)]
     [InlineData("divergent")]
@@ -52,6 +53,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.False(db.ChangeTracker.HasChanges());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ReadOnlyDiagnosticRejectsUnauthorizedUserBeforeStorageOrProvider()
     {
@@ -63,6 +65,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         var report = await diagnostic.RunAsync(f.Workspace, f.Item.Id, f.Card.Id, Guid.NewGuid(), null, default);
         Assert.Equal("NotFound", report.Status); Assert.Equal(0, f.Provider.Calls); Assert.Equal(0, f.Storage.Reads);
     }
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task GmailAlreadyReceivedContinuesThroughAgentAndAtomicConsolidationExactlyOnce()
     {
@@ -99,6 +102,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         public Task<Stream> OpenAttachmentAsync(string id, string attachment, CancellationToken ct) => Task.FromResult<Stream>(new MemoryStream("%PDF-1.4 synthetic"u8.ToArray()));
         public Task<FinancialEmailBody> GetBodyAsync(string id, CancellationToken ct) => throw new InvalidOperationException();
     }
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("insufficient", "Reliable", 1)]
     [InlineData("wrong-card", "Reliable", 1)]
@@ -117,6 +121,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task PasswordResumeUsesStoredDocumentAndDoesNotReupload()
     {
@@ -128,6 +133,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.Single(await db.FinancialDocumentInboxItems.ToListAsync()); Assert.Null(f.Item.CreditCardId);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("no-issuer")]
     [InlineData("no-digits")]
@@ -147,6 +153,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.Empty(await db.FinancialCreditCardInvoicePayments.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ArchivedCardNeverReachesDocumentExtraction()
     {
@@ -156,6 +163,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.Equal(0, f.Provider.Calls); Assert.Equal(0, f.Storage.Reads);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task AgentIdentifyingAnotherRegisteredCardDoesNotConsolidateSearchCandidate()
     {
@@ -169,6 +177,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.Null(f.Item.CreditCardId); Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task AutomaticPathDoesNotEnableDisabledAgentOrUseCandidateToResolveAmbiguity()
     {
@@ -183,6 +192,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.Equal("Reliable", ambiguous.Status); Assert.Null(ambiguous.Analysis!.FailureCode);
         Assert.Equal(f.Card.Id, ambiguous.Analysis.CardId); Assert.Equal("CardIdentityUnresolved", ambiguous.Analysis.ConsolidationBlockReason);
     }
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary)]
     [InlineData(FinancialDocumentSource.Manual, CreditCardStatementAgentMode.AgentPrimary)]
@@ -215,6 +225,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.Equal(HttpStatusCode.Unauthorized, (await Client.PostAsync(endpoint, null)).StatusCode);
     }
 
+    [Trait("Category", "REGRESSION")]
     [Fact]
     public async Task ConfirmedPurchaseHistoryWinsAndManualCorrectionSurvivesReanalysis()
     {
@@ -247,6 +258,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Put, endpoint, f.Session, new { categoryId = f.Other.Id })).StatusCode);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("provider")]
     [InlineData("json")]
@@ -266,6 +278,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         Assert.Empty(await db.FinancialEmailCollectorCheckpoints.ToListAsync()); Assert.Equal(2, await db.FinancialCategories.CountAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task UnauthorizedContextsAndImportedDocumentNeverReachStorageOrAgent()
     {

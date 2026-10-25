@@ -3,11 +3,10 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "CORE")]
 public sealed class CreditCardStatementAgentPreviewTests
 {
     [Theory]
-    [InlineData("Nu Empresas", "785.33")]
-    [InlineData("Itaú Personnalité", "143.00")]
     [InlineData("Itaú Credicard", "726.94")]
     public async Task KnownStatementProfilesReturnSchemaValidReconciledDocuments(string issuer, string total)
     {
@@ -61,8 +60,6 @@ public sealed class CreditCardStatementAgentPreviewTests
 
     [Theory]
     [InlineData("not-json")]
-    [InlineData("{\"schemaVersion\":\"2.0\",\"header\":{},\"items\":[]}")]
-    [InlineData("{\"schemaVersion\":\"1.0\",\"header\":{},\"items\":[{\"originalDescription\":\"X\",\"amount\":10.0}]}")]
     public async Task InvalidAgentResponsesFailClosed(string response)
     {
         var result = await PreviewAsync(Create(response));

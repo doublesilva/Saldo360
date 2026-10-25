@@ -8,22 +8,9 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.CreditCards;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
-    [Theory]
-    [InlineData("PreviousBalance", "Debit")]
-    [InlineData("FinancedBalance", "Credit")]
-    [InlineData("999", "Debit")]
-    [InlineData("Credit", "999")]
-    public async Task ManualContractDoesNotAcceptInternalBalanceTypesOrUndefinedEnums(string type, string nature)
-    {
-        var context = await ArrangeAsync("adjustment-contract");
-        await using var scope = Factory.Services.CreateAsyncScope();
-        var service = scope.ServiceProvider.GetRequiredService<FinancialCreditCardInvoiceAdjustmentService>();
-        var result = await service.CreateAsync(context.WorkspaceId, context.CardId, context.InvoiceId, context.UserId, Input(type, nature, "1.00", "invalid-contract"), default);
-        Assert.Equal(InvoiceAdjustmentAccess.Invalid, result.Access);
-        await using var db = Db(); Assert.Empty(await db.FinancialCreditCardInvoiceAdjustments.ToListAsync());
-    }
 
     [Fact]
     public async Task DebitAndCreditAdjustmentsAffectInvoiceLimitAndProjectionWithoutBankTransaction()

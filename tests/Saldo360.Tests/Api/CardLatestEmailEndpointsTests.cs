@@ -10,6 +10,7 @@ using Saldo360.Infrastructure.Workspaces;
 namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class CardLatestEmailEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private sealed class PendingProcessing : IInboxStatementProcessingService

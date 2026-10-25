@@ -8,6 +8,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "CORE")]
 public sealed class ServiceBillConfirmationServiceTests
 {
     [Theory]
@@ -54,6 +55,7 @@ public sealed class ServiceBillConfirmationServiceTests
 }
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class ServiceBillConfirmationPersistenceTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]

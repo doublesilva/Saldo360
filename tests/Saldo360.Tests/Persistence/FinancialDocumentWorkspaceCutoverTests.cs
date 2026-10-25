@@ -10,6 +10,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "INFRA")]
 public sealed class FinancialDocumentWorkspaceCutoverTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private sealed class Files : IDisposable

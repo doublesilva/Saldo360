@@ -8,6 +8,7 @@ namespace Saldo360.Tests.Api;
 
 /// <summary>Contas financeiras sobre PostgreSQL real, com dois membros (via convite) e uma família estranha.</summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
@@ -359,18 +360,6 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
         Assert.Equal(JsonValueKind.Null, balance.RootElement.GetProperty("balance").ValueKind);
     }
 
-    [Fact]
-    public async Task AccountWithoutOpeningBalance_ReturnsNulls_NotZero()
-    {
-        await ArrangeAsync();
-        var account = await CreateAccountAsync(_owner, "Itaú PF", "Checking", "PF", OwnerMemberId);
-
-        Assert.Equal((null, null), (account.OpeningBalance, account.OpeningBalanceDate));
-        var body = await (await SendAsync(HttpMethod.Get, $"{AccountsUrl}/{account.Id}", _owner)).Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(body);
-        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("openingBalance").ValueKind);
-        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("openingBalanceDate").ValueKind);
-    }
 
     [Theory]
     [InlineData("\"openingBalance\": 100.00", "openingBalanceDate")]

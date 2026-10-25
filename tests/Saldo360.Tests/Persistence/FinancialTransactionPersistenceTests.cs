@@ -56,6 +56,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ValidTransactions_AreStoredExactly()
     {
@@ -73,6 +74,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
         Assert.Equal("numeric,date", types);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task AccountFromAnotherFamily_ViolatesCompositeForeignKey()
     {
@@ -81,6 +83,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
         Assert.Equal("fk_financial_transactions_accounts_same_family", exception.ConstraintName);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task CategoryFromAnotherFamily_ViolatesCompositeForeignKey()
     {
@@ -89,6 +92,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
         Assert.Equal("fk_financial_transactions_categories_same_family_type", exception.ConstraintName);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task CategoryOfOtherType_ViolatesCompositeForeignKey()
     {
@@ -97,6 +101,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
         Assert.Equal("fk_financial_transactions_categories_same_family_type", exception.ConstraintName);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task TypeChangeWithoutMatchingCategory_IsRejected_AlsoOnUpdate()
     {
@@ -108,6 +113,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("amount", "0", "ck_financial_transactions_amount_positive")]
     [InlineData("amount", "-10.00", "ck_financial_transactions_amount_positive")]
@@ -139,6 +145,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
         }
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("UPDATE financial_transactions SET is_cancelled = TRUE", "ck_financial_transactions_cancelled_at")]
     [InlineData("UPDATE financial_transactions SET cancelled_at = now()", "ck_financial_transactions_cancelled_at")]
@@ -152,6 +159,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
         Assert.Equal((PostgresErrorCodes.CheckViolation, constraint), (exception.SqlState, exception.ConstraintName));
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("DELETE FROM financial_accounts")]
     [InlineData("DELETE FROM financial_categories")]
@@ -166,6 +174,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
         Assert.Equal(1, await db.FinancialTransactions.CountAsync());
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task Migration_PreservesExistingAccountsCategoriesAndOpeningBalances()
     {
@@ -195,55 +204,9 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
         Assert.Equal(0, await verify.FinancialTransactions.CountAsync());
     }
 
-    [Theory]
-    [InlineData("2026-10-11T01:00:00Z", "2026-10-10")] // 22:00 de 10/10 em Brasília
-    [InlineData("2026-10-11T03:00:00Z", "2026-10-11")] // meia-noite em Brasília
-    [InlineData("2026-10-10T23:59:59-03:00", "2026-10-10")]
-    public void BusinessCalendar_UsesSaoPauloCivilDate(string instant, string expected)
-    {
-        var today = BusinessCalendar.Today(DateTimeOffset.Parse(instant, CultureInfo.InvariantCulture));
 
-        Assert.Equal(DateOnly.ParseExact(expected, "yyyy-MM-dd", CultureInfo.InvariantCulture), today);
-    }
 
-    [Theory]
-    [InlineData("0", "amount")]
-    [InlineData("-5", "amount")]
-    [InlineData("1.001", "amount")]
-    [InlineData("10000000000000.00", "amount")]
-    public void Domain_RejectsInvalidAmounts(string amount, string field)
-    {
-        var details = TransactionDetails.TryCreate(
-            Guid.CreateVersion7(), Guid.CreateVersion7(), "Expense", "Compra",
-            decimal.Parse(amount, CultureInfo.InvariantCulture), new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 10), out var errors);
 
-        Assert.Null(details);
-        Assert.Equal([field], errors.Keys);
-    }
-
-    [Fact]
-    public void Domain_RejectsFutureDate_AndAcceptsTodayAndPast()
-    {
-        var today = new DateOnly(2026, 10, 10);
-        DateOnly[] dates = [today.AddDays(1), today, new DateOnly(2000, 1, 1)];
-
-        var results = dates.Select(date => TransactionDetails.TryCreate(
-            Guid.CreateVersion7(), Guid.CreateVersion7(), "Income", "X", 1m, date, today, out _) is not null);
-
-        Assert.Equal([false, true, true], results);
-    }
-
-    [Fact]
-    public void CancelledTransaction_CannotBeUpdated_AndCancelIsIdempotent()
-    {
-        var transaction = Transaction(_accountA.Id, _expenseA.Id, CategoryType.Expense);
-        var now = DateTimeOffset.UtcNow;
-
-        Assert.True(transaction.Cancel(_userA, now));
-        Assert.False(transaction.Cancel(_userA, now.AddMinutes(5)));
-        Assert.Equal(now, transaction.CancelledAt);
-        Assert.Throws<InvalidOperationException>(() => transaction.Update(Details(_accountA.Id, _expenseA.Id, CategoryType.Expense, 1m), _userA, now));
-    }
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 

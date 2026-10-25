@@ -7,6 +7,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Api;
 
+[Trait("Category", "CORE")]
 public sealed class ApiExceptionHandlerTests
 {
     [Fact]

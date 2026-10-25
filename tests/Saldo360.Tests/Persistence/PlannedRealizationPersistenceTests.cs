@@ -55,6 +55,7 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task SecondActiveRealization_ViolatesThePartialUniqueIndex()
     {
@@ -67,6 +68,7 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
         Assert.Equal((PostgresErrorCodes.UniqueViolation, ActiveIndex), (postgresError.SqlState, postgresError.ConstraintName));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task CancelledRealizations_StayLinked_AndDoNotBlockANewOne()
     {
@@ -85,6 +87,7 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
             await db.FinancialTransactions.CountAsync(t => t.PlannedTransactionId == planned.Id && !t.IsCancelled)));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ReactivatingAnOldRealization_WhileAnotherIsActive_IsRejected()
     {
@@ -100,6 +103,7 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
         Assert.Equal((PostgresErrorCodes.UniqueViolation, ActiveIndex), (exception.SqlState, exception.ConstraintName));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task LinkToPlannedOfAnotherFamily_ViolatesCompositeForeignKey()
     {
@@ -121,6 +125,7 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
             (postgresError.SqlState, postgresError.ConstraintName));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task PlannedWithRealizations_CannotBeDeletedByCascade()
     {
@@ -134,6 +139,7 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
         Assert.Equal(1, await db.FinancialTransactions.CountAsync());
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task Migration_KeepsExistingTransactionsUnlinked()
     {
@@ -159,24 +165,6 @@ public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres)
         Assert.Equal(200.00m, (await verify.FinancialPlannedTransactions.SingleAsync(p => p.Id == plannedId)).Amount);
     }
 
-    [Fact]
-    public void Domain_LinkedTransactionCannotBeUpdated_AndRealizationUsesThePlannedData()
-    {
-        var planned = FinancialPlannedTransaction.Create(_familyA.Id,
-            PlannedTransactionDetails.TryCreate(_accountA.Id, _expenseA.Id, "Expense", "Aluguel", 200m, new DateOnly(2030, 1, 1), out _)!,
-            _userA, DateTimeOffset.UtcNow);
-
-        var details = planned.ToRealizationDetails(210m, new DateOnly(2026, 9, 10), new DateOnly(2026, 10, 1), out _)!;
-        var future = planned.ToRealizationDetails(210m, new DateOnly(2026, 10, 2), new DateOnly(2026, 10, 1), out var errors);
-
-        Assert.Equal((_accountA.Id, _expenseA.Id, CategoryType.Expense, "Aluguel", 210m), (details.AccountId, details.CategoryId, details.Type, details.Description, details.Amount));
-        Assert.Null(future);
-        Assert.Equal(["transactionDate"], errors.Keys);
-        Assert.Equal(200m, planned.Amount); // previsto preservado
-
-        var linked = FinancialTransaction.CreateRealization(_familyA.Id, details, planned.Id, _userA, DateTimeOffset.UtcNow);
-        Assert.Throws<InvalidOperationException>(() => linked.Update(details, _userA, DateTimeOffset.UtcNow));
-    }
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 

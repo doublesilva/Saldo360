@@ -8,6 +8,7 @@ namespace Saldo360.Tests.Api;
 /// A API recebe HTTP interno do proxy; o callback OIDC precisa usar a origem pública (HTTPS + host externo),
 /// mas só quando os headers encaminhados vêm de um proxy ou rede explicitamente confiável.
 /// </summary>
+[Trait("Category", "CORE")]
 public sealed class ForwardedHeadersTests() : ApiTestBase(
     new Dictionary<string, string?>
     {

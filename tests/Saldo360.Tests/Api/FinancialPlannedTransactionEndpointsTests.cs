@@ -12,6 +12,7 @@ namespace Saldo360.Tests.Api;
 /// categoria próprias. Previsões nunca viram lançamentos nem mexem no saldo realizado.
 /// </summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialPlannedTransactionEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);

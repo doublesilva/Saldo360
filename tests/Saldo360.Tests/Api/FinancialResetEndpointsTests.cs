@@ -7,6 +7,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialResetEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static string Path(Guid w) => $"/api/financial-workspaces/{w}/financial-reset";

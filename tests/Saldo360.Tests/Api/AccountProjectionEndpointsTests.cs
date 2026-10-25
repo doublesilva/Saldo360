@@ -9,6 +9,7 @@ namespace Saldo360.Tests.Api;
 /// Saldo projetado sobre PostgreSQL real: saldo realizado de hoje + previsões pendentes vencidas e até a data-alvo.
 /// </summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class AccountProjectionEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);

@@ -25,6 +25,7 @@ public sealed class ServiceAccountPersistenceTests(PostgresFixture postgres) : I
         await using var db = Db(); var user = ApplicationUser.Create("https://synthetic.invalid", subject, null, DateTimeOffset.UtcNow);
         db.Users.Add(user); await db.SaveChangesAsync(); return user.Id;
     }
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task MigrationAppliesAndRevertsOnlyNewStructures()
     {
@@ -39,6 +40,7 @@ public sealed class ServiceAccountPersistenceTests(PostgresFixture postgres) : I
         Assert.Contains(serviceMigration, await db.Database.GetAppliedMigrationsAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task PostgreSqlEnforcesConcurrentUniquenessAndResolverIsolation()
     {
@@ -67,6 +69,7 @@ public sealed class ServiceAccountPersistenceTests(PostgresFixture postgres) : I
         Assert.NotEmpty(stored.ProtectedNormalizedValue); Assert.DoesNotContain("98765432100", System.Text.Encoding.UTF8.GetString(stored.ProtectedNormalizedValue));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task CompoundForeignKeyRejectsDifferentOwnerEvenWithKnownAccountId()
     {

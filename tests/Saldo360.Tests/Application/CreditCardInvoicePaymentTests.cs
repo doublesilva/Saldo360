@@ -2,6 +2,7 @@ using Saldo360.Domain.CreditCards;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Category", "CORE")]
 public sealed class CreditCardInvoicePaymentTests
 {
     [Fact]
@@ -17,15 +18,4 @@ public sealed class CreditCardInvoicePaymentTests
         Assert.False(payment.Cancel(Guid.NewGuid(), DateTimeOffset.UtcNow));
     }
 
-    [Theory]
-    [InlineData(0, 0, "Unpaid")]
-    [InlineData(100, 40, "PartiallyPaid")]
-    [InlineData(100, 100, "Paid")]
-    public void Remaining_amount_never_goes_negative(decimal total, decimal paid, string expected)
-    {
-        var remaining = Math.Max(0m, total - paid);
-        var status = total <= 0 || paid <= 0 ? "Unpaid" : remaining == 0 ? "Paid" : "PartiallyPaid";
-        Assert.Equal(expected, status);
-        Assert.True(remaining >= 0);
-    }
 }

@@ -11,6 +11,7 @@ namespace Saldo360.Tests.Api;
 /// compra, parcelas, fatura, pagamento, conta, projeção e orçamento.
 /// </summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly OpeningDate = new(2026, 1, 1);

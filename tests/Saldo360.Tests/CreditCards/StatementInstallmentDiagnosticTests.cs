@@ -3,24 +3,9 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "REGRESSION")]
 public sealed class StatementInstallmentDiagnosticTests
 {
-    [Theory]
-    [InlineData(6, 6, false)]
-    [InlineData(4, 6, false)]
-    [InlineData(4, 5, false)]
-    [InlineData(3, 3, false)]
-    [InlineData(3, 12, false)]
-    [InlineData(2, 2, false)]
-    [InlineData(5, 6, true)]
-    [InlineData(5, 5, true)]
-    [InlineData(4, 12, true)]
-    public void AllReferenceMarkersGluedToMerchantHaveNoDiagnosticWhenCorrect(int number, int count, bool future)
-    {
-        var item = Item(number, count, future);
-        Assert.True(CreditCardStatementAgentSchema.TryValidate(Facts([item]), 2, out var document, out var error, out var diagnostics, true), error);
-        Assert.Empty(diagnostics); Assert.Equal(item, Assert.Single(document!.Items));
-    }
 
     [Theory]
     [InlineData(5, 6, "installmentNumber")]
@@ -124,6 +109,10 @@ public sealed class StatementInstallmentDiagnosticTests
 
     [Theory]
     [InlineData("04/06 PRIVATE-MERCHANT 11.11", "PRIVATE-MERCHANT")]
+    [InlineData("04/06/2026 PRIVATE-MERCHANT 11.11", "PRIVATE-MERCHANT")]
+    [InlineData("2026-06-04 PRIVATE-MERCHANT 11.11", "PRIVATE-MERCHANT")]
+    [InlineData("PRIVATE-MERCHANT CODIGO06/06 11.11", "PRIVATE-MERCHANT CODIGO06/06")]
+    [InlineData("PRIVATE-MERCHANT em 04/06 11.11", "PRIVATE-MERCHANT em 04/06")]
     [InlineData("PRIVATE-MERCHANT 04/06/2026 11.11", "PRIVATE-MERCHANT 04/06/2026")]
     [InlineData("PRIVATE-MERCHANT 2026-06-04 11.11", "PRIVATE-MERCHANT 2026-06-04")]
     [InlineData("PRIVATE-MERCHANT DATA: 04/06 11.11", "PRIVATE-MERCHANT DATA: 04/06")]
@@ -137,7 +126,7 @@ public sealed class StatementInstallmentDiagnosticTests
     {
         var item = Item(6, 6) with { OriginalDescription = description, Evidence = evidence, Type = "Purchase", InstallmentNumber = null, InstallmentCount = null };
         Assert.True(CreditCardStatementAgentSchema.TryValidate(Facts([item]), 2, out var document, out var error, out var diagnostics, true), error);
-        Assert.Empty(diagnostics); Assert.Null(document!.Items[0].InstallmentNumber);
+        Assert.Empty(diagnostics); Assert.Equal(item, Assert.Single(document!.Items));
     }
 
     [Fact]

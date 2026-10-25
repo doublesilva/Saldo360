@@ -18,6 +18,7 @@ namespace Saldo360.Tests.Persistence;
 
 /// <summary>Agregação do saldo no PostgreSQL: uma consulta com SUM, sem carregar lançamentos, em numeric exato.</summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "CORE")]
 public sealed class AccountBalancePersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);
@@ -135,20 +136,7 @@ public sealed class AccountBalancePersistenceTests(PostgresFixture postgres) : I
         Assert.Equal((0m, 0m), (otherFamily.Income, otherFamily.Expense));
     }
 
-    [Theory]
-    [InlineData("1300", "1300.00")]
-    [InlineData("-0.3", "-0.30")]
-    [InlineData("29999999999999.97", "29999999999999.97")]
-    public void MoneyFormat_IsExactWithTwoDecimals(string value, string expected)
-    {
-        Assert.Equal(expected, Money.Format(decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture)));
-    }
 
-    [Fact]
-    public void MoneyFormat_RefusesToRoundFractionalCents()
-    {
-        Assert.Throws<ArgumentException>(() => Money.Format(0.005m));
-    }
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 

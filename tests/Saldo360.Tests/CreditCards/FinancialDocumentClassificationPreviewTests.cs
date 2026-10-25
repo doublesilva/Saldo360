@@ -3,6 +3,7 @@ using Saldo360.Domain.CreditCards;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "CORE")]
 public sealed class FinancialDocumentClassificationPreviewTests
 {
     private static readonly Guid WorkspaceId = Guid.NewGuid();

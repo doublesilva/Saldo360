@@ -9,6 +9,7 @@ namespace Saldo360.Tests.Api;
 /// Validação do certificado do provedor quando uma CA própria é configurada (ex.: CA interna do Caddy,
 /// que emite por uma intermediária). Usa uma cadeia raiz → intermediária → folha gerada no teste.
 /// </summary>
+[Trait("Category", "CORE")]
 public sealed class BackchannelCertificateValidationTests : IDisposable
 {
     private const string ServerAuth = "1.3.6.1.5.5.7.3.1";

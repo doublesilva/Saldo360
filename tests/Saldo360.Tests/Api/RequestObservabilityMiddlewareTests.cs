@@ -13,6 +13,7 @@ namespace Saldo360.Tests.Api;
 
 public sealed class RequestObservabilityMiddlewareTests
 {
+    [Trait("Category", "REGRESSION")]
     [Fact]
     public async Task HandledException_PreservesOriginalRouteAfterEndpointIsCleared()
     {
@@ -54,6 +55,7 @@ public sealed class RequestObservabilityMiddlewareTests
         Assert.DoesNotContain("InvalidOperationException", body);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task RequestLog_UsesNormalizedRouteAndStructuredSafeProperties()
     {
@@ -92,6 +94,7 @@ public sealed class RequestObservabilityMiddlewareTests
         Assert.DoesNotContain("family-secret", entry.Message);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task SuccessfulRequest_IsInformationAndDoesNotWriteFinancialData()
     {
@@ -111,6 +114,7 @@ public sealed class RequestObservabilityMiddlewareTests
         Assert.Equal("NONE", entry.Properties["ErrorCode"]);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task RequestWithoutActivity_UsesServerTraceIdentifier_AndIgnoresClientCorrelationValue()
     {

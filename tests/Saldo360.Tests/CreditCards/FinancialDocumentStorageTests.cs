@@ -3,6 +3,7 @@ using Saldo360.Infrastructure.CreditCards;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "CORE")]
 public sealed class FinancialDocumentStorageTests
 {
     [Fact]

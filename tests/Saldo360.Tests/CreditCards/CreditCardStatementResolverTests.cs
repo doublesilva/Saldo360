@@ -4,6 +4,7 @@ namespace Saldo360.Tests.CreditCards;
 
 public sealed class CreditCardStatementResolverTests
 {
+    [Trait("Category", "REGRESSION")]
     [Fact]
     public void LegacyHeadersRetainTheirSerializedShapeForOfficialJournalHashes()
     {
@@ -12,6 +13,7 @@ public sealed class CreditCardStatementResolverTests
         Assert.Equal(legacy, System.Text.Json.JsonSerializer.Serialize(header, CreditCardStatementAgentSchema.Json));
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("Diego Silva", CreditCardStatementResolutionStatus.Matched)]
     [InlineData("Outro Titular", CreditCardStatementResolutionStatus.InsufficientEvidence)]
@@ -24,6 +26,7 @@ public sealed class CreditCardStatementResolverTests
         Assert.Equal(CreditCardStatementResolutionStatus.InsufficientEvidence, (await resolver.ResolveDocumentAsync(Guid.NewGuid(), header with { CardLastDigits = null }, default)).Status);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ResolvesExactIssuerAndDigitsWithKnownAccentNormalization()
     {
@@ -33,6 +36,7 @@ public sealed class CreditCardStatementResolverTests
         Assert.Equal(id, result.CardId);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task NeverMatchesByIssuerAloneOrByUnrelatedFacts()
     {
@@ -42,6 +46,7 @@ public sealed class CreditCardStatementResolverTests
         Assert.Equal(CreditCardStatementResolutionStatus.NotFound, (await Resolve(cards, "Outro Banco", "1234")).Status);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ReturnsAmbiguousInsteadOfSelectingFirst()
     {
@@ -53,6 +58,7 @@ public sealed class CreditCardStatementResolverTests
         Assert.Equal(CreditCardStatementResolutionStatus.Ambiguous, (await Resolve(cards, "Banco", "1234")).Status);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task UsesTrustedHolderWhenProvided()
     {

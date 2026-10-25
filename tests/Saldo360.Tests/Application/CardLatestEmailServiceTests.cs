@@ -7,6 +7,7 @@ namespace Saldo360.Tests.Application;
 
 public sealed class CardLatestEmailServiceTests
 {
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("missing-query", "QueryMissing")]
     [InlineData("missing-card", "NotFound")]
@@ -26,6 +27,7 @@ public sealed class CardLatestEmailServiceTests
         Assert.Equal(expected, result.Status); Assert.Equal(0, f.Searches); Assert.Empty(f.Received);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -42,6 +44,7 @@ public sealed class CardLatestEmailServiceTests
         Assert.DoesNotContain("gmail:", System.Text.Json.JsonSerializer.Serialize(result));
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("provider", "Unavailable", "EmailSearchUnavailable")]
     [InlineData("download", "Unavailable", "EmailSearchUnavailable")]
@@ -55,6 +58,7 @@ public sealed class CardLatestEmailServiceTests
         Assert.DoesNotContain("secret", System.Text.Json.JsonSerializer.Serialize(result));
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("empty")]
     [InlineData("no-pdf")]
@@ -69,6 +73,7 @@ public sealed class CardLatestEmailServiceTests
         Assert.Equal("NoMatch", (await f.Run()).Status); Assert.Empty(f.Received);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("unknown")]
     [InlineData("password")]
@@ -81,6 +86,7 @@ public sealed class CardLatestEmailServiceTests
         Assert.Equal("Found", result.Status); Assert.True(f.Review); Assert.Single(f.Received); Assert.Equal(1, f.Processed);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task AmbiguousAttachmentsNeverPickArbitrarily()
     {
@@ -88,6 +94,7 @@ public sealed class CardLatestEmailServiceTests
         Assert.Equal("NeedsReview", (await f.Run()).Status); Assert.Empty(f.Received);
     }
 
+    [Trait("Category", "REGRESSION")]
     [Fact]
     public async Task ExistingNewestDocumentDoesNotFallBackWhenParserNoLongerRecognizesIt()
     {

@@ -12,6 +12,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Infrastructure;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Category", "INFRA")]
 public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]

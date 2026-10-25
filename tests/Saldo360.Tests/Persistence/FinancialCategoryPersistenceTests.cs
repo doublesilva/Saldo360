@@ -41,6 +41,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("mercado")]
     [InlineData("MERCADO")]
@@ -54,6 +55,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         Assert.Equal(UniqueIndex, exception.ConstraintName);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task UniqueIndex_IgnoresCase_ForAccentedLetters_ButKeepsAccentsDistinct()
     {
@@ -66,6 +68,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         Assert.Equal(2, await db.FinancialCategories.CountAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task UniqueIndex_IncludesInactiveCategories()
     {
@@ -76,6 +79,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         await AssertUniqueViolationAsync(() => AddAsync(Category("academia")));
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task SameName_IsAccepted_InOtherTypeOrOtherFamily()
     {
@@ -87,6 +91,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         Assert.Equal(3, await db.FinancialCategories.CountAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task Repository_ConcurrentInsert_ReturnsFalse_InsteadOfDuplicating()
     {
@@ -105,6 +110,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         Assert.Equal("Farmácia", (await verify.FinancialCategories.SingleAsync()).Name);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task Repository_ConcurrentRename_ReturnsFalse_AndKeepsOriginalName()
     {
@@ -129,6 +135,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         Assert.Equal("Sacolão", (await verify.FinancialCategories.SingleAsync(c => c.Id == sacolao.Id)).Name);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("type", "Saving", PostgresErrorCodes.CheckViolation)]
     [InlineData("type", "expense", PostgresErrorCodes.CheckViolation)]
@@ -155,6 +162,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         Assert.Equal(sqlState, exception.SqlState);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task FamilyWithCategories_CannotBeDeletedByCascade()
     {
@@ -166,6 +174,7 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task Migration_PreservesExistingAccountsAndOpeningBalances()
     {

@@ -6,6 +6,7 @@ using Saldo360.Domain.Families;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Category", "REGRESSION")]
 public sealed class FinancialSixMonthPlanningTests
 {
     [Fact]

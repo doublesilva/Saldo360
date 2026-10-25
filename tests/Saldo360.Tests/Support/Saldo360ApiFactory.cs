@@ -66,7 +66,9 @@ public sealed class Saldo360ApiFactory(
             builder.UseSetting(key, value);
         }
 
-        builder.ConfigureLogging(logging => logging.AddProvider(Logs));
+        // Keep every application log available to secrecy/observability assertions without also
+        // formatting it through console/debug providers for every disposable API host.
+        builder.ConfigureLogging(logging => logging.ClearProviders().AddProvider(Logs));
 
         builder.ConfigureTestServices(services =>
         {

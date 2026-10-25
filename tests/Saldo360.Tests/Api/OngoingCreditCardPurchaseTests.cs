@@ -20,6 +20,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
     private object Input(string amount = "1000.00", int count = 4, int paid = 2, string? first = "2030-11-01", string mode = "Total", string date = "2026-03-26", string description = "Compra sintética") =>
         new { description, purchaseDate = date, totalAmount = amount, installmentCount = count, categoryId = category, amountMode = mode, previouslyPaidInstallments = paid, firstPendingCompetence = first };
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task HistoricalScheduleCreatesOnlyPendingObligationsAndNoBankPayment()
     {
@@ -51,6 +52,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Empty(await verify.FinancialTransfers.ToListAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("100.00", 3, "Total", "100.00", "33.34", "33.33")]
     [InlineData("320.71", 10, "Installment", "3207.10", "320.71", "320.71")]
@@ -69,6 +71,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Equal(HttpStatusCode.Created, (await PostAsync("/purchases", Input(amount, count, 0, "2030-11-01", mode))).StatusCode);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task EditPreservesPurchaseAndInstallmentIdentitiesAndMovesFutureInvoicesWithoutDuplicates()
     {
@@ -100,6 +103,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Equal("0.00", (await GetAsync("/limit")).GetProperty("usedLimit").GetString());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task PaidHistoryAndClosedInvoicesRejectEditingWithoutPartialWrites()
     {
@@ -122,6 +126,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Equal(new DateOnly(2030, 11, 1), stored.FirstPendingCompetence);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task InvalidInputsIsolationCsrfAndPortfolioRemainScoped()
     {
@@ -151,6 +156,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Single(await db.FinancialCreditCardPurchases.ToListAsync());
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task DowngradeRefusesLossOfExplicitHistory()
     {
@@ -162,6 +168,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Equal(2, (await db.FinancialCreditCardPurchases.SingleAsync()).PreviouslyPaidInstallments);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task KnownObligationExplainsUsedLimitWithoutInventingAnInvoice()
     {
@@ -186,6 +193,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Single(await verify.FinancialCreditCardImportedInstallments.ToListAsync());
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task MovingToClosedDestinationRollsBackAllStagedChanges()
     {
@@ -204,6 +212,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Equal(3, await db.FinancialCreditCardInvoices.CountAsync());
     }
 
+    [Trait("Category", "REGRESSION")]
     [Fact]
     public async Task ExplicitCompetenceCannotSilentlyShiftWhenClosingAndDueDaysClampToSameDate()
     {

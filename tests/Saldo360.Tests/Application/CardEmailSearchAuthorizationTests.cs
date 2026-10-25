@@ -4,6 +4,7 @@ using Saldo360.Domain.Workspaces;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Category", "CORE")]
 public sealed class CardEmailSearchAuthorizationTests
 {
     [Theory]

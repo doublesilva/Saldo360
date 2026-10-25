@@ -5,6 +5,7 @@ namespace Saldo360.Tests.CreditCards;
 
 public sealed class StatementPurchaseExtractionTests
 {
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("Payment")]
     [InlineData("Credit")]
@@ -21,6 +22,7 @@ public sealed class StatementPurchaseExtractionTests
         Assert.Equal("PurchaseScopeInvalidType:$.items[].type", result.AgentError);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("Lançamentos atuais")]
     [InlineData("Total desta fatura")]
@@ -41,6 +43,7 @@ public sealed class StatementPurchaseExtractionTests
         Assert.Null(result.Primary);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -60,6 +63,7 @@ public sealed class StatementPurchaseExtractionTests
         Assert.True(provider.Last!.PurchasesOnly); Assert.Equal(CreditCardStatementAgentPrompt.PurchasesOnly, provider.Last.SystemPrompt.Split("\nEste é um lote independente.")[0]);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("Credit", "CurrentInvoice", true, "PurchaseScopeInvalidNature:$.items[].nature")]
     [InlineData("Debit", "Payments", false, "PurchaseScopeInvalidSection:$.items[].section")]
@@ -71,6 +75,7 @@ public sealed class StatementPurchaseExtractionTests
         Assert.Equal(code, result.AgentError); Assert.Null(result.Primary);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task HeaderSummaryCannotSupplyEvidenceForASeparateMerchant()
     {
@@ -78,6 +83,7 @@ public sealed class StatementPurchaseExtractionTests
         Assert.Equal("PurchaseSummaryNotAllowed:$.items[]", result.AgentError);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -93,6 +99,7 @@ public sealed class StatementPurchaseExtractionTests
         Assert.Equal(1, provider.Calls); Assert.Equal(0, parser.Calls);
     }
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task RewrittenEvidenceIsStillRejectedAndNoParserFallbackOccurs()
     {
@@ -100,6 +107,7 @@ public sealed class StatementPurchaseExtractionTests
         Assert.Equal("FinancialEvidenceInvalid", result.AgentError); Assert.Equal(AgentExtractionAssessment.Rejected, result.Assessment);
     }
 
+    [Trait("Category", "REGRESSION")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -109,6 +117,7 @@ public sealed class StatementPurchaseExtractionTests
         Assert.Equal("PurchaseScopeInvalidType:$.items[].type", result.AgentError); Assert.Null(result.Primary);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

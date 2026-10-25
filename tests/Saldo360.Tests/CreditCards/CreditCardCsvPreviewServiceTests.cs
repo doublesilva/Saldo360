@@ -8,6 +8,7 @@ using Saldo360.Domain.Families;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "CORE")]
 public sealed class CreditCardCsvPreviewServiceTests
 {
     private static readonly Guid Family = Guid.NewGuid();

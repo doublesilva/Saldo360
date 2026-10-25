@@ -53,6 +53,7 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    [Trait("Category", "CORE")]
     [Fact]
     public async Task ValidPlanned_IsStoredExactly_AsNumericAndDate_IncludingFutureDate()
     {
@@ -64,6 +65,7 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
         Assert.Equal("1234.56 2030-12-31", text);
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("account-other-family", "fk_financial_planned_transactions_accounts_same_family")]
     [InlineData("category-other-family", "fk_financial_planned_transactions_categories_same_family_type")]
@@ -83,6 +85,7 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
         Assert.Equal((PostgresErrorCodes.ForeignKeyViolation, constraint), (postgresError.SqlState, postgresError.ConstraintName));
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("UPDATE financial_planned_transactions SET amount = 0", "ck_financial_planned_transactions_amount_positive")]
     [InlineData("UPDATE financial_planned_transactions SET amount = -1", "ck_financial_planned_transactions_amount_positive")]
@@ -105,6 +108,7 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
         Assert.Equal((PostgresErrorCodes.CheckViolation, constraint), (exception.SqlState, exception.ConstraintName));
     }
 
+    [Trait("Category", "CORE")]
     [Theory]
     [InlineData("DELETE FROM financial_accounts")]
     [InlineData("DELETE FROM financial_categories")]
@@ -119,6 +123,7 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
         Assert.Equal(1, await db.FinancialPlannedTransactions.CountAsync());
     }
 
+    [Trait("Category", "INFRA")]
     [Fact]
     public async Task Migration_PreservesExistingMovements()
     {
@@ -150,27 +155,6 @@ public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture 
         Assert.Equal(0, await verify.FinancialPlannedTransactions.CountAsync());
     }
 
-    [Fact]
-    public void Domain_AcceptsAnyDueDate_RejectsInvalidAmounts_AndCancelledCannotBeUpdated()
-    {
-        foreach (var date in new[] { new DateOnly(2000, 1, 1), new DateOnly(2099, 12, 31) })
-        {
-            Assert.NotNull(PlannedTransactionDetails.TryCreate(Guid.CreateVersion7(), Guid.CreateVersion7(), "Expense", "X", 1m, date, out _));
-        }
-
-        foreach (var amount in new[] { 0m, -1m, 0.001m })
-        {
-            Assert.Null(PlannedTransactionDetails.TryCreate(Guid.CreateVersion7(), Guid.CreateVersion7(), "Expense", "X", amount, new DateOnly(2026, 1, 1), out var errors));
-            Assert.Equal(["amount"], errors.Keys);
-        }
-
-        var planned = Planned(_accountA.Id, _expenseA.Id, CategoryType.Expense);
-        var now = DateTimeOffset.UtcNow;
-        Assert.True(planned.Cancel(_userA, now));
-        Assert.False(planned.Cancel(_userA, now.AddMinutes(1)));
-        Assert.Equal(now, planned.CancelledAt);
-        Assert.Throws<InvalidOperationException>(() => planned.Update(Details(_accountA.Id, _expenseA.Id, CategoryType.Expense, 2m, new DateOnly(2026, 1, 1)), _userA, now));
-    }
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);
 

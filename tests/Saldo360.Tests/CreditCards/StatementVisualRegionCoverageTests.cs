@@ -4,6 +4,7 @@ using Saldo360.Infrastructure.CreditCards;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Category", "REGRESSION")]
 public sealed class StatementVisualRegionCoverageTests
 {
     private const string Legal = "O pagamento da fatura deve observar as condicoes estabelecidas no contrato.\nOs encargos e juros seguem as regras de financiamento previamente informadas ao cliente.";
