@@ -7,10 +7,23 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
+// Explicit lab-only transport tuning. The API's existing constructor/defaults are unchanged.
+internal sealed record OpenAiStatementRequestTuning(string ReasoningEffort, int MaxOutputTokens, string ImageDetail)
+{
+    public void Validate(string model)
+    {
+        if (model is not ("gpt-6.1-sol" or "gpt-6-astra") || ReasoningEffort is not ("medium" or "high")
+            || MaxOutputTokens is < 25000 or > 65536 || ImageDetail is not ("high" or "original")
+            || ImageDetail == "original" && model != "gpt-6-astra")
+            throw new ArgumentException("LabModelConfigurationInvalid");
+    }
+}
+
 internal sealed class OpenAiCreditCardStatementAgentProvider(
     IHttpClientFactory clients,
     CreditCardStatementAgentOptions options,
-    ILogger<OpenAiCreditCardStatementAgentProvider> logger) : ICreditCardStatementAgentProvider
+    ILogger<OpenAiCreditCardStatementAgentProvider> logger,
+    OpenAiStatementRequestTuning? tuning = null) : ICreditCardStatementAgentProvider
 {
     private static readonly JsonElement OutputSchema = JsonDocument.Parse("""
     {
@@ -65,6 +78,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
     {
         if (!options.Enabled || options.Mode == CreditCardStatementAgentMode.Disabled || !string.Equals(options.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase))
             throw new CreditCardStatementAgentUnavailableException("Provider desabilitado.", failureCode: "AgentUnavailable");
+        tuning?.Validate(options.Model);
         var key = ReadSecret(options.ApiKeyFile, options.ApiKey);
         var client = clients.CreateClient("CreditCardStatementAgent");
         using var message = new HttpRequestMessage(HttpMethod.Post, "responses");
@@ -79,20 +93,22 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
                 || !png.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }))
                 throw new CreditCardStatementAgentUnavailableException("Imagem indisponível.", failureCode: "InvalidVisualInput");
             content.Add(new { type = "input_text", text = $"--- IMAGE PAGE {page.Number} ---" });
-            content.Add(new { type = "input_image", image_url = "data:image/png;base64," + Convert.ToBase64String(png), detail = "high" });
+            content.Add(new { type = "input_image", image_url = "data:image/png;base64," + Convert.ToBase64String(png), detail = tuning?.ImageDetail ?? "high" });
         }
-        message.Content = JsonContent.Create(new
+        var payload = new Dictionary<string, object>
         {
-            model = options.Model,
-            store = false,
-            max_output_tokens = 12000,
-            input = new object[]
+            ["model"] = options.Model,
+            ["store"] = false,
+            ["max_output_tokens"] = tuning?.MaxOutputTokens ?? 12000,
+            ["input"] = new object[]
             {
                 new { role = "system", content = new[] { new { type = "input_text", text = request.SystemPrompt } } },
                 new { role = "user", content = content.ToArray() },
             },
-            text = new { format = new { type = "json_schema", name = request.SchemaName, strict = true, schema = request.PurchasesOnly ? PurchasesOnlySchema : request.OutputSchema ?? OutputSchema } },
-        });
+            ["text"] = new { format = new { type = "json_schema", name = request.SchemaName, strict = true, schema = request.PurchasesOnly ? PurchasesOnlySchema : request.OutputSchema ?? OutputSchema } },
+        };
+        if (tuning is not null) payload["reasoning"] = new { effort = tuning.ReasoningEffort };
+        message.Content = JsonContent.Create(payload);
         var started = System.Diagnostics.Stopwatch.StartNew();
         try
         {

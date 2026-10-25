@@ -8,6 +8,56 @@ namespace Saldo360.Tests.CreditCards;
 
 public sealed class OpenAiCreditCardStatementAgentProviderTests
 {
+    [Theory]
+    [InlineData("gpt-6.1-sol", "medium", "high", 32768)]
+    [InlineData("gpt-6.1-sol", "high", "high", 65536)]
+    [InlineData("gpt-6-astra", "medium", "original", 32768)]
+    public async Task LabReasoningModelsUseExplicitBoundedReasoningAndAllTableImages(string model, string effort, string detail, int tokens)
+    {
+        var body = System.Text.Json.JsonSerializer.Serialize(new { status = "completed", output = new object[] {
+            new { type = "reasoning", summary = Array.Empty<object>() },
+            new { type = "message", content = new[] { new { type = "output_text", text = CreditCardStatementAgentSchemaTests.Valid } } } } });
+        var handler = new RecordingHandler(_ => new(HttpStatusCode.OK) { Content = new StringContent(body) });
+        var provider = new OpenAiCreditCardStatementAgentProvider(new Factory(handler), new()
+        { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary, ApiKey = "synthetic", Model = model },
+            NullLogger<OpenAiCreditCardStatementAgentProvider>.Instance, new(effort, tokens, detail));
+        var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
+        var result = await provider.CompleteAsync(new("scope", "native table text and OCR")
+        { PurchasesOnly = true, ImagePages = [new(1, "native") { ImagePng = png }, new(2, "native table") { ImagePng = png }, new(3, "ocr") { ImagePng = png, TextSource = "OCR" }] }, default);
+        Assert.Equal(CreditCardStatementAgentSchemaTests.Valid, result);
+        using var json = System.Text.Json.JsonDocument.Parse(handler.Body);
+        var root = json.RootElement;
+        Assert.Equal(model, root.GetProperty("model").GetString()); Assert.False(root.GetProperty("store").GetBoolean());
+        Assert.Equal(effort, root.GetProperty("reasoning").GetProperty("effort").GetString());
+        Assert.Equal(tokens, root.GetProperty("max_output_tokens").GetInt32());
+        Assert.False(root.TryGetProperty("temperature", out _)); Assert.False(root.TryGetProperty("tools", out _));
+        var images = root.GetProperty("input")[1].GetProperty("content").EnumerateArray().Where(c => c.GetProperty("type").GetString() == "input_image").ToArray();
+        Assert.Equal(3, images.Length); Assert.All(images, image => Assert.Equal(detail, image.GetProperty("detail").GetString()));
+        Assert.True(root.GetProperty("text").GetProperty("format").GetProperty("strict").GetBoolean());
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task ApiProviderKeepsMiniDefaultWithoutReasoningOrLargerBudget()
+    {
+        var body = System.Text.Json.JsonSerializer.Serialize(new { output = new[] { new { content = new[] { new { type = "output_text", text = CreditCardStatementAgentSchemaTests.Valid } } } } });
+        var handler = new RecordingHandler(_ => new(HttpStatusCode.OK) { Content = new StringContent(body) });
+        await Create(handler, new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary, ApiKey = "synthetic" }).CompleteAsync(new("scope", "text"), default);
+        using var json = System.Text.Json.JsonDocument.Parse(handler.Body);
+        Assert.Equal("gpt-4o-mini", json.RootElement.GetProperty("model").GetString());
+        Assert.Equal(12000, json.RootElement.GetProperty("max_output_tokens").GetInt32());
+        Assert.False(json.RootElement.TryGetProperty("reasoning", out _));
+    }
+
+    [Theory]
+    [InlineData("gpt-6.1-sol", "none", 32768, "high")]
+    [InlineData("gpt-6.1-sol", "medium", 12000, "high")]
+    [InlineData("gpt-6.1-sol", "medium", 65537, "high")]
+    [InlineData("gpt-6.1-sol", "medium", 32768, "original")]
+    [InlineData("gpt-4o-mini", "medium", 32768, "high")]
+    public void InvalidOrUnconfirmedLabConfigurationCannotStartPaidWork(string model, string effort, int tokens, string detail)
+        => Assert.Throws<ArgumentException>(() => new StatementExtractionLabPipeline("synthetic", model, "synthetic", 1, effort, tokens, detail));
+
     [Fact]
     public async Task PurchasesOnlyUsesRestrictedEnumsWithoutChangingSharedSchemaShapeOrDefaultContract()
     {

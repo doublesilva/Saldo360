@@ -30,5 +30,15 @@ public sealed class RealOcrToolTests
         Assert.Equal("Native", extracted.Pages[0].TextSource); Assert.True(extracted.Pages[1].TextSource == "OCR", extracted.Pages[1].PreparationFailureCode);
         Assert.Equal(2, extracted.Pages[1].Number); Assert.Equal("OCRWithImage", extracted.Pages[1].ProcessingStatus);
         Assert.NotEmpty(extracted.Pages[1].Text);
+
+        var allPages = new PdfDocumentBuilder(); allPages.AddPage(document, 1); allPages.AddPage(document, 1);
+        allPages.AddPage(595, 842).AddPng(visual.ImagePng!, new UglyToad.PdfPig.Core.PdfRectangle(0, 0, 595, 842));
+        await using var tables = new MemoryStream(allPages.Build());
+        var lab = await new CreditCardPdfTextExtractor(reader, batchPages: true, renderAllPages: true).ExtractAsync(tables, 50, [], default);
+        Assert.Equal(3, lab.Pages.Count); Assert.All(lab.Pages, page => Assert.NotNull(page.ImagePng));
+        Assert.All(document.GetPage(1).GetWords(), word => Assert.Contains(word.Text, lab.Pages[1].Text, StringComparison.Ordinal));
+        Assert.Equal("Native", lab.Pages[1].TextSource);
+        Assert.Equal("NativeWithImage", lab.Pages[1].ProcessingStatus); // Native table on page 2, not just the cover.
+        Assert.Equal("OCR", lab.Pages[2].TextSource); Assert.Equal("OCRWithImage", lab.Pages[2].ProcessingStatus);
     }
 }

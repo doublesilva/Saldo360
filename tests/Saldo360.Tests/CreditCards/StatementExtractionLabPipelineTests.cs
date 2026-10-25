@@ -25,7 +25,7 @@ public sealed class StatementExtractionLabPipelineTests
     public async Task ProtectedDocumentWithoutPasswordNeverCallsOpenAiOrAuthenticatedCpfProvider()
     {
         var source = (string)typeof(CreditCardPdfPreviewTests).GetField("ProtectedPdfBase64", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetRawConstantValue()!;
-        using var pipeline = new StatementExtractionLabPipeline("synthetic-not-a-real-key", "gpt-4o-mini", "synthetic", 1);
+        using var pipeline = new StatementExtractionLabPipeline("synthetic-not-a-real-key", "gpt-6.1-sol", "synthetic", 1);
         await using var pdf = new MemoryStream(Convert.FromBase64String(source));
         var failure = await Assert.ThrowsAsync<CreditCardPdfReadException>(() => pipeline.ExtractAsync(pdf, null, default));
         Assert.Equal(CreditCardPdfReadFailure.PasswordRequired, failure.Failure); Assert.Equal(0, pipeline.Calls);

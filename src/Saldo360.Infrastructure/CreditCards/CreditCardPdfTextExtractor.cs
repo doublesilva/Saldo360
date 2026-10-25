@@ -6,7 +6,7 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
-internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageReader = null, bool batchPages = false) : ICreditCardPdfTextExtractor
+internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageReader = null, bool batchPages = false, bool renderAllPages = false) : ICreditCardPdfTextExtractor
 {
     private readonly CreditCardPdfParserResolver _parsers = new();
     private static readonly Regex DateRegex = new(@"(?<!\d)(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2})(?!\d)", RegexOptions.Compiled);
@@ -46,9 +46,9 @@ internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageR
                         word.BoundingBox.Right,
                         page.Height - word.BoundingBox.Bottom))
                     .ToList();
-                var extracted = new CreditCardPdfExtractedPage(pageNumber, page.Text, words);
+                var extracted = new CreditCardPdfExtractedPage(pageNumber, renderAllPages ? ReflowNativeWords(words, page.Text) : page.Text, words);
                 var needsOcr = !LocalStatementPageReader.Usable(page.Text);
-                if (pageReader is not null && (pageNumber == 1 || needsOcr))
+                if (pageReader is not null && (renderAllPages || pageNumber == 1 || needsOcr))
                 {
                     if (++images > (batchPages ? maxPages : 12) || preparation.Elapsed > TimeSpan.FromSeconds(90)) extracted = extracted with { ProcessingStatus = "ImageLimitExceeded" };
                     else
@@ -77,6 +77,21 @@ internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageR
         {
             throw new CreditCardPdfReadException(CreditCardPdfReadFailure.Corrupt, exception);
         }
+    }
+
+    // Geometric text preparation only, not a transaction parser. Keep every native word; insert row/column
+    // separators so a glued PdfPig page.Text does not merge X/Y with the amount in another table column.
+    // Opt-in with the lab's all-page visual profile; legacy callers keep their original native text.
+    internal static string ReflowNativeWords(IReadOnlyList<CreditCardPdfExtractedWord> words, string fallback)
+    {
+        if (words.Count == 0) return fallback;
+        var lines = new List<List<CreditCardPdfExtractedWord>>();
+        foreach (var word in words.OrderBy(w => w.Top).ThenBy(w => w.X))
+        {
+            if (lines.Count == 0 || Math.Abs(lines[^1][0].Top - word.Top) > 2.5) lines.Add([]);
+            lines[^1].Add(word);
+        }
+        return string.Join('\n', lines.Select(line => string.Join(' ', line.OrderBy(w => w.X).Select(w => w.Text))));
     }
 
     public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat)

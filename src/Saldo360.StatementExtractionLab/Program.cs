@@ -10,9 +10,9 @@ try
 {
     if (args.SequenceEqual(new[] { "--help" }))
     {
-        Console.WriteLine("--allow-openai --input PDF_OR_DIRECTORY --output-dir NEW_PRIVATE_DIRECTORY --repository-root REPO --key-file PRIVATE_FILE | --key-env-file EXPLICIT_ENV_FILE [--password-file PRIVATE_FILE] [--model gpt-4o-mini] [--max-calls 1] [--ocr-image saldo360-ocr-tests:local]"); return 0;
+        Console.WriteLine("--allow-openai --input PDF_OR_DIRECTORY --output-dir NEW_PRIVATE_DIRECTORY --repository-root REPO --key-file PRIVATE_FILE | --key-env-file EXPLICIT_ENV_FILE [--password-file PRIVATE_FILE] [--model gpt-6.1-sol|gpt-6-astra] [--reasoning-effort medium|high] [--max-output-tokens 32768] [--image-detail high|original] [--reference-file PRIVATE_JSON] [--max-calls 1] [--ocr-image saldo360-ocr-tests:local]"); return 0;
     }
-    var flags = new Dictionary<string, string>(StringComparer.Ordinal); var allowed = new HashSet<string>(["--input", "--output-dir", "--repository-root", "--key-file", "--key-env-file", "--password-file", "--model", "--max-calls", "--ocr-image"]);
+    var flags = new Dictionary<string, string>(StringComparer.Ordinal); var allowed = new HashSet<string>(["--input", "--output-dir", "--repository-root", "--key-file", "--key-env-file", "--password-file", "--model", "--max-calls", "--ocr-image", "--reasoning-effort", "--max-output-tokens", "--image-detail", "--reference-file"]);
     var consent = false;
     for (var i = 0; i < args.Length; i++)
     {
@@ -52,12 +52,19 @@ try
     if (string.IsNullOrWhiteSpace(key) || key.Any(char.IsControl)) throw new ArgumentException();
     var password = flags.TryGetValue("--password-file", out var passwordFile) ? ReadPrivate(passwordFile, 512, true) : null;
     if (password?.Length > 128) throw new ArgumentException();
-    var model = flags.GetValueOrDefault("--model", "gpt-4o-mini"); var image = flags.GetValueOrDefault("--ocr-image", "saldo360-ocr-tests:local");
+    var model = flags.GetValueOrDefault("--model", "gpt-6.1-sol"); var image = flags.GetValueOrDefault("--ocr-image", "saldo360-ocr-tests:local");
+    var reasoningEffort = flags.GetValueOrDefault("--reasoning-effort", "medium");
+    var imageDetail = flags.GetValueOrDefault("--image-detail", "high");
+    if (!int.TryParse(flags.GetValueOrDefault("--max-output-tokens", "32768"), out var maxOutputTokens)) throw new ArgumentException();
     if (!Regex.IsMatch(model, "^[A-Za-z0-9.-]{1,80}$") || !Regex.IsMatch(image, "^[A-Za-z0-9/_.:-]{1,150}$")) throw new ArgumentException();
     if (!int.TryParse(flags.GetValueOrDefault("--max-calls", "1"), out var maxCalls) || maxCalls is < 1 or > 20) throw new ArgumentException();
     var input = Path.GetFullPath(flags["--input"]);
     var files = Directory.Exists(input) ? Directory.GetFiles(input, "*.pdf").Order(StringComparer.Ordinal).ToArray() : [input];
     if (files.Length is 0 or > 20 || files.Any(f => !f.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || new FileInfo(f).Length is <= 0 or > 10 * 1024 * 1024)) throw new ArgumentException();
+    var reference = flags.TryGetValue("--reference-file", out var referenceFile)
+        ? JsonSerializer.Deserialize<StatementLabReference>(ReadPrivate(referenceFile, 1024 * 1024, true), new JsonSerializerOptions(JsonSerializerDefaults.Web)
+            { UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow }) ?? throw new ArgumentException() : null;
+    if (reference is not null && files.Length != 1) throw new ArgumentException();
     // A private, new operation directory is also a durable no-overwrite reservation. No automatic retry.
     Directory.CreateDirectory(output);
     if (OperatingSystem.IsWindows())
@@ -69,7 +76,7 @@ try
         new DirectoryInfo(output).SetAccessControl(security);
     }
     else File.SetUnixFileMode(output, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    using var pipeline = new StatementExtractionLabPipeline(key, model, image, maxCalls);
+    using var pipeline = new StatementExtractionLabPipeline(key, model, image, maxCalls, reasoningEffort, maxOutputTokens, imageDetail);
     var summary = new List<object>();
     var failed = false;
     var stopPaidCalls = false;
@@ -84,10 +91,15 @@ try
         try
         {
             if (stopPaidCalls) throw new CreditCardStatementAgentUnavailableException("Execução interrompida.", failureCode: "LabStoppedAfterFailure");
+            if (reference is not null && reference.DocumentHash != hash)
+                throw new CreditCardStatementAgentUnavailableException("Referência incompatível com a fonte.", failureCode: "LabReferenceSourceMismatch");
             var extraction = await pipeline.ExtractAsync(pdf, password, deadline.Token);
-            failed |= extraction.Primary is null || extraction.OutputCoverage?.FailedPages > 0;
-            stopPaidCalls |= extraction.OutputCoverage?.Batches.Any(b => b.FailureCode is not null) == true;
-            data = new { documentHash = hash, provider = "OpenAI", model, scope = "PurchasesOnly", promptVersion = CreditCardStatementAgentPrompt.PurchasesOnlyVersion, extraction, financialMutationExecuted = false };
+            var referenceValidation = reference is null ? null : StatementLabReferenceValidation.Compare(hash, reference, extraction);
+            failed |= extraction.Primary is null || extraction.Assessment != AgentExtractionAssessment.Reliable || extraction.OutputCoverage?.FailedPages > 0;
+            failed |= referenceValidation?.Approved == false;
+            stopPaidCalls |= extraction.Assessment != AgentExtractionAssessment.Reliable || referenceValidation?.Approved == false
+                || extraction.OutputCoverage?.Batches.Any(b => b.FailureCode is not null) == true;
+            data = new { documentHash = hash, provider = "OpenAI", model, reasoningEffort, maxOutputTokens, imageDetail, renderAllPages = true, scope = "PurchasesOnly", promptVersion = CreditCardStatementAgentPrompt.PurchasesOnlyVersion, extraction, referenceValidation, financialProcessingAllowed = false, financialMutationExecuted = false };
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -99,7 +111,7 @@ try
         summary.Add(new { documentHash = hash, report = hash + ".json" });
     }
     await using var summaryFile = new FileStream(Path.Combine(output, "summary.json"), FileMode.CreateNew, FileAccess.Write, FileShare.None);
-    await JsonSerializer.SerializeAsync(summaryFile, new { provider = "OpenAI", model, scope = "PurchasesOnly", promptVersion = CreditCardStatementAgentPrompt.PurchasesOnlyVersion, calls = pipeline.Calls, maxCalls, documents = summary, financialMutationExecuted = false }, cancellationToken: deadline.Token);
+    await JsonSerializer.SerializeAsync(summaryFile, new { provider = "OpenAI", model, reasoningEffort, maxOutputTokens, imageDetail, renderAllPages = true, scope = "PurchasesOnly", promptVersion = CreditCardStatementAgentPrompt.PurchasesOnlyVersion, calls = pipeline.Calls, maxCalls, documents = summary, financialMutationExecuted = false }, cancellationToken: deadline.Token);
     Console.WriteLine(JsonSerializer.Serialize(new { documents = files.Length, calls = pipeline.Calls, maxCalls, financialMutationExecuted = false })); return failed ? 2 : 0;
 }
 catch (LabSetupException error) { Console.Error.WriteLine(error.Code + "; no provider call executed."); return 1; }
