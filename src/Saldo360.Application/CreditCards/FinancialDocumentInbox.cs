@@ -18,6 +18,8 @@ public interface IFinancialDocumentInboxRepository
     Task<FinancialDocumentInboxItem?> FindByHashAsync(Guid workspaceId, string hash, CancellationToken cancellationToken);
     Task<FinancialDocumentInboxItem?> FindByExternalIdAsync(Guid workspaceId, FinancialDocumentSource source, string externalId, CancellationToken cancellationToken);
     Task<FinancialDocumentInboxItem?> GetAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken cancellationToken);
+    Task<FinancialDocumentInboxItem?> GetForAnalysisAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken cancellationToken)
+        => GetAsync(workspaceId, id, userId, cancellationToken);
     Task<IReadOnlyList<FinancialDocumentInboxItem>> ListAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken);
     Task<bool> TryAddAsync(FinancialDocumentInboxItem item, CancellationToken cancellationToken);
     Task SaveAsync(CancellationToken cancellationToken);
@@ -48,7 +50,8 @@ public sealed class FinancialDocumentInboxService(
     FinancialDocumentClassificationOptions classificationOptions,
     IFinancialDocumentClassifier classifier,
     IFinancialDocumentAnalysisRouter analysisRouter,
-    TimeProvider clock, ICreditCardPdfPasswordProvider? documentPasswords = null) : ICardEmailDocumentReceiver
+    TimeProvider clock, ICreditCardPdfPasswordProvider? documentPasswords = null,
+    CreditCardStatementAgentOptions? statementOptions = null, InboxStatementAnalysisService? statementAnalysis = null) : ICardEmailDocumentReceiver
 {
     public async Task<FinancialDocumentInboxDto?> FindKnownEmailAsync(Guid workspaceId, Guid userId, string externalSourceId, string hash, CancellationToken cancellationToken)
     {
@@ -203,6 +206,14 @@ public sealed class FinancialDocumentInboxService(
 
     private async Task ProcessCoreAsync(FinancialDocumentInboxItem item, Guid userId, Guid? selectedCardId, string? password, CancellationToken cancellationToken)
     {
+        if ((statementOptions?.DocumentaryImport.Enabled == true || InboxStatementAnalysisService.Read(item.StatementAnalysisJson)?.Workflow == StatementKnownInstallmentImport.Workflow)
+            && selectedCardId is { } selected)
+        {
+            if (statementAnalysis is null) { item.RequireReview("DocumentaryPipelineUnavailable", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
+            // An explicitly selected card routes this document; generic/service-bill routing is unchanged.
+            await statementAnalysis.AnalyzeAsync(item.WorkspaceId, item.Id, selected, userId, password, cancellationToken, automatic: true);
+            return;
+        }
         item.StartAnalysis(clock.GetUtcNow()); await repository.SaveAsync(cancellationToken);
         await using var stored = await storage.OpenReadAsync(item.StorageReference, cancellationToken);
         if (stored is null) { item.Fail("StorageObjectMissing", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
@@ -290,6 +301,8 @@ public sealed class FinancialDocumentInboxReviewService(
     {
         var item = await repository.GetAsync(workspaceId, inboxItemId, userId, cancellationToken);
         if (item is null) return new(CreditCardPdfPreviewAccess.NotFound, null, null);
+        if (InboxStatementAnalysisService.Read(item.StatementAnalysisJson)?.Workflow == StatementKnownInstallmentImport.Workflow)
+            return new(CreditCardPdfPreviewAccess.Invalid, null, new Dictionary<string, string[]> { ["document"] = ["Use a confirmação única do documento, sem revisão de lançamentos."] });
         await using var content = await storage.OpenReadAsync(item.StorageReference, cancellationToken);
         if (content is null) return new(CreditCardPdfPreviewAccess.Invalid, null,
             new Dictionary<string, string[]> { ["document"] = ["O documento armazenado não está disponível."] });
@@ -309,6 +322,8 @@ public sealed class FinancialDocumentInboxConfirmationService(
     {
         var item = await repository.GetAsync(workspaceId, inboxItemId, userId, cancellationToken);
         if (item is null) return new(CreditCardPdfConfirmationAccess.NotFound);
+        if (InboxStatementAnalysisService.Read(item.StatementAnalysisJson)?.Workflow == StatementKnownInstallmentImport.Workflow)
+            return new(CreditCardPdfConfirmationAccess.Invalid, null, new Dictionary<string, string[]> { ["document"] = ["Use a confirmação única do documento."] });
         await using var content = await storage.OpenReadAsync(item.StorageReference, cancellationToken);
         if (content is null) return new(CreditCardPdfConfirmationAccess.Invalid, null,
             new Dictionary<string, string[]> { ["document"] = ["O documento armazenado não está disponível."] });

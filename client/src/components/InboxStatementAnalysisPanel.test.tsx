@@ -12,6 +12,52 @@ const props = { workspaceId: 'personal', documentId: 'doc', cardId: 'card', pass
 beforeEach(() => { get.mockReset().mockResolvedValue({ status: 'NotAnalyzed', analysis: null }); analyze.mockReset(); correct.mockReset(); props.onBusy.mockClear(); props.onAnalyzed.mockClear() })
 afterEach(cleanup)
 
+it('perfil documental separa extração, elegibilidade e confirmação sem editor de linhas', async () => {
+  const response = result()
+  response.workflow = 'KnownInstallments'
+  response.analysis!.workflow = 'KnownInstallments'
+  response.analysis!.knownInstallmentImport = { eligible: true, stage: 'EligibleAwaitingConfirmation', associationBasis: 'ExplicitDocumentConfirmationRequired', blockers: [], rows: [{ itemIndex: 0, competence: '2026-10-01', dueDate: '2026-10-13', transactionDate: null }] }
+  response.analysis!.extraction!.primary!.items[0].transactionDate = null
+  get.mockResolvedValue(response)
+  vi.mocked(consolidateStatement).mockReset().mockResolvedValue({ ok: true, value: { status: 'Imported', invoiceId: null, version: null, officialTotal: null, failureCode: null } })
+  render(<InboxStatementAnalysisPanel {...props} />)
+  await screen.findByText(/elegível, aguardando confirmação única/)
+  expect(screen.queryByLabelText(/Corrigir categoria/)).toBeNull()
+  expect(screen.getByText(/Data não identificada/)).toBeTruthy()
+  expect(consolidateStatement).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar importação do documento neste cartão' }))
+  await screen.findByText(/confirmada e persistida/)
+  expect(consolidateStatement).toHaveBeenCalledExactlyOnceWith('personal', 'doc', 'card')
+  expect(correct).not.toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: /Confirmar importação/ })).toBeNull()
+})
+
+it('perfil documental bloqueado não oferece confirmação nem edição', async () => {
+  const response = result('Rejected')
+  response.workflow = 'KnownInstallments'
+  response.analysis!.consolidationBlockReason = 'FaithfulDocumentExtractionRequired'
+  response.analysis!.knownInstallmentImport = { eligible: false, stage: 'Blocked', associationBasis: 'ExplicitDocumentConfirmationRequired', blockers: ['FaithfulDocumentExtractionRequired'], rows: [] }
+  get.mockResolvedValue(response)
+  render(<InboxStatementAnalysisPanel {...props} />)
+  await screen.findByText(/Importação: não elegível/)
+  expect(screen.queryByLabelText(/Corrigir categoria/)).toBeNull()
+  expect(screen.queryByRole('button', { name: /Confirmar importação/ })).toBeNull()
+})
+
+it('documento confirmado permite somente vínculo posterior sem nova extração', async () => {
+  const response = result()
+  response.workflow = 'KnownInstallments'
+  get.mockResolvedValue(response)
+  vi.mocked(consolidateStatement).mockReset().mockResolvedValue({ ok: true, value: { status: 'InvoicesLinked', invoiceId: null, version: null, officialTotal: null, failureCode: null } })
+  analyze.mockReset(); vi.mocked(processStatement).mockReset()
+  render(<InboxStatementAnalysisPanel {...props} imported />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Vincular faturas compatíveis existentes' }))
+  await screen.findByText('Faturas compatíveis vinculadas')
+  expect(consolidateStatement).toHaveBeenCalledExactlyOnceWith('personal', 'doc', 'card')
+  expect(analyze).not.toHaveBeenCalled(); expect(processStatement).not.toHaveBeenCalled()
+  expect(screen.queryByLabelText(/Corrigir categoria/)).toBeNull()
+})
+
 it('separa prévia financeira válida, alerta documental e bloqueio da consolidação', async () => {
   const response = result()
   response.analysis!.consolidationBlockReason = 'CardIdentityUnresolved'

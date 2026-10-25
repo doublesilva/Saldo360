@@ -23,7 +23,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
     IHttpClientFactory clients,
     CreditCardStatementAgentOptions options,
     ILogger<OpenAiCreditCardStatementAgentProvider> logger,
-    OpenAiStatementRequestTuning? tuning = null) : ICreditCardStatementAgentProvider
+    OpenAiStatementRequestTuning? tuning = null, string clientName = "CreditCardStatementAgent") : ICreditCardStatementAgentProvider
 {
     private static readonly JsonElement OutputSchema = JsonDocument.Parse("""
     {
@@ -80,7 +80,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
             throw new CreditCardStatementAgentUnavailableException("Provider desabilitado.", failureCode: "AgentUnavailable");
         tuning?.Validate(options.Model);
         var key = ReadSecret(options.ApiKeyFile, options.ApiKey);
-        var client = clients.CreateClient("CreditCardStatementAgent");
+        var client = clients.CreateClient(clientName);
         using var message = new HttpRequestMessage(HttpMethod.Post, "responses");
         message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
         var content = new List<object> { new { type = "input_text", text = request.DocumentText } };

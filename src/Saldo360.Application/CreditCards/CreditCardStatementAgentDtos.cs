@@ -39,6 +39,22 @@ public sealed class CreditCardStatementAgentOptions
     public string ApiKey { get; set; } = string.Empty;
     public string ApiKeyFile { get; set; } = string.Empty;
     public int TimeoutSeconds { get; set; } = 60;
+    // Independent opt-in. Does not enable the legacy agent, classifiers or collectors.
+    public StatementDocumentaryImportOptions DocumentaryImport { get; set; } = new();
+}
+
+public sealed class StatementDocumentaryImportOptions
+{
+    public bool Enabled { get; set; }
+    public string Model { get; set; } = "gpt-6.1-sol";
+    public string ReasoningEffort { get; set; } = "medium";
+    public int MaxOutputTokens { get; set; } = 32768;
+}
+
+public interface IStatementDocumentaryPipeline
+{
+    Task<CreditCardStatementExtractionResult> ExtractAsync(Stream pdf, PdfPasswordContext context, string? password,
+        string fileName, string? competence, StatementCategoryContext? categories, CancellationToken ct);
 }
 
 public sealed record CreditCardStatementAgentProviderRequest(string SystemPrompt, string DocumentText)

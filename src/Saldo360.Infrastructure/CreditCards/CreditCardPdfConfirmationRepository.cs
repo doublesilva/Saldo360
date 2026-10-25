@@ -19,6 +19,9 @@ internal sealed partial class CreditCardPdfConfirmationRepository(Saldo360DbCont
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", cancellationToken);
+        if (await db.FinancialBootstrapProvenance.AnyAsync(p => p.WorkspaceId == workspaceId && p.SourceSystem == StatementKnownInstallmentImport.SourceSystem
+            && p.SourceDocument == confirmation.DocumentHash && p.ExternalReference == "document", cancellationToken))
+            return await AbortConflict(transaction, "Documento já confirmado pelo fluxo de parcelas conhecidas da Inbox.", cancellationToken);
         var existing = await db.FinancialCreditCardImportBatches.Include(batch => batch.Items)
             .SingleOrDefaultAsync(batch => batch.WorkspaceId == workspaceId && batch.CreditCardId == cardId
                 && batch.Source == FinancialCreditCardImportSource.Pdf && batch.DocumentHash == confirmation.DocumentHash, cancellationToken);

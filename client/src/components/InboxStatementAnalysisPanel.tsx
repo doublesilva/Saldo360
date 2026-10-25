@@ -22,7 +22,8 @@ export function InboxStatementAnalysisPanel({ workspaceId, documentId, cardId, p
     finally { if (alive.current) { pending.current = false; setBusy(false); onBusy(false) } }
   }
   const analysis = result?.analysis && (!cardId || result.analysis.cardId === cardId) ? result.analysis : null
-  const consolidated = imported || !!financial && ['Imported', 'AlreadyImported', 'NewVersionConsolidated'].includes(financial.status)
+  const known = (result?.workflow ?? analysis?.workflow) === 'KnownInstallments'
+  const consolidated = imported || !!financial && ['Imported', 'AlreadyImported', 'NewVersionConsolidated', 'InvoicesLinked'].includes(financial.status)
   const process = async (onlyConsolidate: boolean) => {
     if (pending.current || blocked || !cardId) return
     pending.current = true; version.current++; setBusy(true); onBusy(true); setError(null)
@@ -37,32 +38,39 @@ export function InboxStatementAnalysisPanel({ workspaceId, documentId, cardId, p
     finally { if (alive.current) { pending.current = false; setBusy(false); onBusy(false) } }
   }
   const extraction = analysis?.extraction?.primary
+  const financialLabel = financial && ((known ? {
+    Imported: 'Parcelas conhecidas importadas', AlreadyImported: 'Documento já confirmado', InvoicesLinked: 'Faturas compatíveis vinculadas',
+    AwaitingConfirmation: 'Aguardando confirmação única', NeedsReview: 'Importação bloqueada',
+  } as Record<string, string> : {})[financial.status] ?? ({ Imported: 'Fatura oficial importada', AlreadyImported: 'Fatura já importada', NewVersionConsolidated: 'Nova versão consolidada', NeedsReview: 'Revisão necessária', Conflict: 'Conflito financeiro', Busy: 'Processamento já em andamento. Tente novamente.', NotFound: 'Documento ou cartão indisponível' } as Record<string, string>)[financial.status] ?? 'Processamento bloqueado')
   return <section className="card" aria-label="Análise estruturada da fatura" aria-live="polite">
-    <h4>Análise e categorias da fatura</h4>
+    <h4>{known ? 'Extração documental e parcelas conhecidas' : 'Análise e categorias da fatura'}</h4>
     <button type="button" disabled={!cardId || blocked || busy || imported} onClick={() => void run(() => analyzeStatement(workspaceId, documentId, cardId, password || undefined))}>{busy ? 'Analisando fatura…' : 'Analisar fatura armazenada'}</button>
-    <button type="button" disabled={!cardId || blocked || busy} onClick={() => void process(false)}>{busy ? 'Processando / consolidando…' : 'Processar e consolidar fatura'}</button>
-    {analysis?.status === 'Reliable' && !analysis.consolidationBlockReason && !consolidated && <button type="button" disabled={blocked || busy} onClick={() => void process(true)}>Solicitar consolidação — revalidar análise</button>}
-    {financial && <p role={financial.status === 'Conflict' ? 'alert' : 'status'}>{({ Imported: 'Fatura oficial importada', AlreadyImported: 'Fatura já importada', NewVersionConsolidated: 'Nova versão consolidada', NeedsReview: 'Revisão necessária', Conflict: 'Conflito financeiro', Busy: 'Processamento já em andamento. Tente novamente.', NotFound: 'Documento ou cartão indisponível' } as Record<string, string>)[financial.status] ?? 'Revisão necessária'}{financial.version ? ` · versão ${financial.version}` : ''}{financial.officialTotal ? ` · ${formatBrlDecimal(financial.officialTotal)}` : ''}{financial.failureCode ? ` · ${financial.failureCode}` : ''}</p>}
+    <button type="button" disabled={!cardId || blocked || busy || known && consolidated} onClick={() => void process(false)}>{busy ? 'Processando / consolidando…' : known ? 'Processar sem importar' : 'Processar e consolidar fatura'}</button>
+    {analysis?.status === 'Reliable' && !analysis.consolidationBlockReason && !consolidated && <button type="button" disabled={blocked || busy} onClick={() => void process(true)}>{known ? 'Confirmar importação do documento neste cartão' : 'Solicitar consolidação — revalidar análise'}</button>}
+    {known && consolidated && <button type="button" disabled={!cardId || blocked || busy} onClick={() => void process(true)}>Vincular faturas compatíveis existentes</button>}
+    {known && <p>Extração: {analysis?.status === 'Reliable' ? 'concluída' : 'pendente ou bloqueada'} · Importação: {consolidated ? 'confirmada e persistida' : analysis?.knownInstallmentImport?.eligible ? 'elegível, aguardando confirmação única' : 'não elegível'}. A confirmação associa este documento ao cartão selecionado. Datas desconhecidas não serão preenchidas; nenhuma fatura será criada.</p>}
+    {known && financial?.status === 'AwaitingConfirmation' && <p role="status">Nenhum dado financeiro gravado. Confirme o documento para registrar as parcelas conhecidas.</p>}
+    {financial && <p role={financial.status === 'Conflict' ? 'alert' : 'status'}>{financialLabel}{financial.version ? ` · versão ${financial.version}` : ''}{financial.officialTotal ? ` · ${formatBrlDecimal(financial.officialTotal)}` : ''}{financial.failureCode ? ` · ${financial.failureCode}` : ''}</p>}
     {!cardId && <p>Selecione explicitamente o cartão para analisar sem novo upload.</p>}
     {error && <p role="alert">{error}</p>}
     <PdfPasswordHint code={analysis?.passwordResolutionCode} />
     {analysis && <><p>Resultado: {analysis.status} · modo {analysis.extraction?.mode ?? 'Indisponível'} · tentativas {analysis.extraction?.attempts ?? 0}</p>
       <p>Prévia financeira: {extraction ? 'disponível' : 'indisponível'} · Validação: {analysis.extraction?.validationStatus ?? analysis.extraction?.assessment ?? 'Indisponível'} · Conciliação: {extraction?.reconciliation.status ?? 'Indisponível'}</p>
-      {analysis.consolidationBlockReason && <p role="status">Prévia não autoriza consolidação. Revisão necessária: {analysis.consolidationBlockReason}.</p>}
+      {analysis.consolidationBlockReason && <p role="status">{known ? 'Importação bloqueada para diagnóstico técnico' : 'Prévia não autoriza consolidação. Revisão necessária'}: {analysis.consolidationBlockReason}.</p>}
       {analysis.extraction?.documentWarnings?.map(code => <p key={code}>{({ DocumentIdentityIncomplete: 'Identificação documental incompleta; o cartão selecionado foi mantido como contexto.', IdentityEvidenceUnverified: 'Evidência de identidade não corroborada; revise antes de consolidar.', ParserAgentDifference: 'Há diferenças diagnósticas entre parser e agente.', CardMismatch: 'Identificação incompatível com o cartão selecionado. Consolidação bloqueada.', ParserContextUnavailable: 'Comparação documental do parser indisponível.' } as Record<string, string>)[code] ?? 'Alerta documental para revisão.'}</p>)}
-      {analysis.status !== 'Reliable' && <p>Há divergências ou evidências pendentes. Revisão necessária; nenhum lançamento foi importado.</p>}
+      {analysis.status !== 'Reliable' && <p>{known ? 'Divergência técnica ou evidência pendente; importação bloqueada, sem edição manual de linhas.' : 'Há divergências ou evidências pendentes. Revisão necessária; nenhum lançamento foi importado.'}</p>}
       {analysis.extraction?.comparison && <details><summary>Diferenças entre parser e agente</summary><p>Componentes somente no parser: {analysis.extraction.comparison.itemsOnlyInParser.join(' · ') || 'Nenhum'}</p><p>Componentes somente no agente: {analysis.extraction.comparison.itemsOnlyInAgent.join(' · ') || 'Nenhum'}</p></details>}
       {extraction && <><p>Total oficial: {extraction.reconciliation.officialTotal ? formatBrlDecimal(extraction.reconciliation.officialTotal) : 'Indisponível'} · Componentes: {extraction.reconciliation.componentsTotal ? formatBrlDecimal(extraction.reconciliation.componentsTotal) : 'Indisponível'} · Diferença: {extraction.reconciliation.difference ? formatBrlDecimal(extraction.reconciliation.difference) : 'Indisponível'}</p>
         <div className="import-rows">{extraction.items.map((item, index) => { const category = analysis.categories.find(c => c.itemIndex === index); return <article className="import-row" key={index}>
           <strong>{item.normalizedDescription ?? item.originalDescription}</strong>{item.normalizedDescription && item.normalizedDescription !== item.originalDescription && <small>Original: {item.originalDescription}</small>}<span>{item.transactionDate ?? 'Data não identificada'} · {formatBrlDecimal(item.amount)} · {item.nature} · {item.type}</span>
           <small>{item.section} · {item.includedInCurrentTotal ? 'Integra a fatura atual' : 'Informativo / futuro'}</small>
           {category && <><p>{consolidated ? 'Categoria da análise' : category.isProposal ? 'Proposta de categoria' : 'Categoria'}: {category.categoryName} · {category.confidence} · {category.source}</p>
-            <label>Corrigir categoria de {item.originalDescription}<select value={category.categoryId ?? ''} disabled={blocked || busy || !!consolidated} onChange={event => { if (event.target.value) void run(() => correctStatementCategory(workspaceId, documentId, category.key, event.target.value)) }}>
+            {!known && <label>Corrigir categoria de {item.originalDescription}<select value={category.categoryId ?? ''} disabled={blocked || busy || !!consolidated} onChange={event => { if (event.target.value) void run(() => correctStatementCategory(workspaceId, documentId, category.key, event.target.value)) }}>
               <option value="">{category.isProposal && !consolidated ? `${category.categoryName} (proposta, não criada)` : category.categoryName}</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select></label></>}
+            </select></label>}</>}
         </article> })}</div></>}
     </>}
-    <p className="meta">Analisar mantém a revisão sem escrita financeira. Processar consolida automaticamente apenas quando análise, categorias e conciliação forem confiáveis. Propostas são criadas na mesma transação da fatura; nenhum pagamento é gerado.</p>
-    {consolidated && <p className="meta">A composição oficial preserva correções manuais correspondentes de versões anteriores, mesmo quando a análise sugere outra categoria.</p>}
+    {!known && <p className="meta">Analisar mantém a revisão sem escrita financeira. Processar consolida automaticamente apenas quando análise, categorias e conciliação forem confiáveis. Propostas são criadas na mesma transação da fatura; nenhum pagamento é gerado.</p>}
+    {consolidated && !known && <p className="meta">A composição oficial preserva correções manuais correspondentes de versões anteriores, mesmo quando a análise sugere outra categoria.</p>}
   </section>
 }

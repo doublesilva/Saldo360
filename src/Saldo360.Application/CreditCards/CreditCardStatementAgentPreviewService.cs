@@ -4,7 +4,8 @@ public sealed class CreditCardStatementAgentPreviewService(
     ICreditCardPdfContextRepository context,
     ICreditCardPdfTextExtractor pdfExtractor,
     ICreditCardPdfPasswordProvider passwords,
-    ICreditCardStatementExtractionOrchestrator orchestrator) : ICreditCardStatementAgentPreviewService
+    ICreditCardStatementExtractionOrchestrator orchestrator,
+    CreditCardStatementAgentOptions? options = null, IStatementDocumentaryPipeline? documentary = null) : ICreditCardStatementAgentPreviewService
 {
     public Task<CreditCardStatementAgentPreviewResult> PreviewDiagnosticAsync(Guid workspaceId, Guid cardId, Guid userId, Stream pdf,
         long length, string fileName, string? competence, string? password, StatementCategoryContext categories, CancellationToken ct) =>
@@ -31,6 +32,23 @@ public sealed class CreditCardStatementAgentPreviewService(
         if (password?.Length > 128) return Invalid("password", "A senha informada excede o limite permitido.");
         using var content = new MemoryStream((int)length);
         await pdf.CopyToAsync(content, cancellationToken);
+        if (options?.DocumentaryImport.Enabled == true && categories is not null && allowCorrectionRetry)
+        {
+            try
+            {
+                content.Position = 0;
+                if (documentary is null) return Invalid("agent", "Perfil documental indisponível.") with { FailureCode = "DocumentaryPipelineUnavailable" };
+                var documentaryResult = await documentary.ExtractAsync(content, new(workspaceId, userId, cardId, Card: card), password,
+                    fileName, competence, categories, cancellationToken);
+                return new(CreditCardPdfPreviewAccess.Allowed, documentaryResult, null);
+            }
+            catch (CreditCardPdfReadException e) when (e.Failure is CreditCardPdfReadFailure.PasswordRequired or CreditCardPdfReadFailure.PasswordRejected)
+            { return Invalid("password", CreditCardPdfPreviewService.PasswordMessage(e.PasswordResolutionCode)) with { FailureCode = "PasswordRequired", PasswordResolutionCode = e.PasswordResolutionCode }; }
+            catch (CreditCardStatementAgentUnavailableException e)
+            { return Invalid("agent", "Extração documental indisponível.") with { FailureCode = e.FailureCode ?? "AgentUnavailable" }; }
+            catch (Exception e) when (e is not OperationCanceledException)
+            { return Invalid("file", "Preparação documental indisponível.") with { FailureCode = "StatementDocumentPreparationFailed" }; }
+        }
         CreditCardPdfExtractedDocument extracted;
         try { extracted = (await new PdfPasswordReader(pdfExtractor, passwords).ReadAsync(content, new(workspaceId, userId, cardId, Card: card), password, cancellationToken, allowAutomatic: allowCorrectionRetry)).Document; }
         catch (CreditCardPdfReadException exception) when (exception.Failure == CreditCardPdfReadFailure.PasswordRequired)

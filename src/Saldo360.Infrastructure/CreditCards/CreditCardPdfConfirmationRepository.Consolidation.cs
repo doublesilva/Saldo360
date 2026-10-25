@@ -35,6 +35,11 @@ internal sealed partial class CreditCardPdfConfirmationRepository
                 var actualHash = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, ct));
                 if (actualHash != document.ContentHash) return await Abort("Conflict", "DocumentHashMismatch");
             }
+            if (analysis.Workflow == StatementKnownInstallmentImport.Workflow)
+                return await ConfirmKnownDocumentAsync(document, card, analysis, userId, now, tx, ct);
+            if (agentOptions.DocumentaryImport.Enabled) return await Abort("NeedsReview", "DocumentaryAnalysisRequired");
+            if (await db.FinancialBootstrapProvenance.AnyAsync(p => p.WorkspaceId == workspaceId && p.SourceSystem == StatementKnownInstallmentImport.SourceSystem
+                && p.SourceDocument == document.ContentHash && p.ExternalReference == "document", ct)) return await Abort("Conflict", "DocumentAlreadyConfirmedAsKnownInstallments");
             var decisionHash = OfficialStatementAnalysisValidation.DecisionHash(analysis);
             var previousDocument = await db.FinancialCreditCardInvoiceConsolidations.SingleOrDefaultAsync(v => v.WorkspaceId == workspaceId && v.CreditCardId == cardId && v.DocumentHash == document.ContentHash, ct);
             if (previousDocument is not null)

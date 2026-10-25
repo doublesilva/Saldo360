@@ -47,7 +47,7 @@ public sealed class FinancialCreditCardImportedInstallment : Entity
     /// <summary>Only explicitly known obligations; no invented purchase date, original total or invoice.</summary>
     public static FinancialCreditCardImportedInstallment CreateKnown(Guid workspaceId, Guid cardId, Guid? categoryId,
         string description, decimal amount, int? number, int? count, DateOnly competence, DateOnly? dueDate,
-        string sourceSystem, string externalReference, Guid userId, DateTimeOffset now)
+        string sourceSystem, string externalReference, Guid userId, DateTimeOffset now, DateOnly? transactionDate = null)
     {
         if (workspaceId == Guid.Empty || cardId == Guid.Empty || categoryId == Guid.Empty || string.IsNullOrWhiteSpace(description)
             || description.Trim().Length > 200 || amount <= 0 || Saldo360.Domain.Common.Money.Validate(amount, "Parcela") is not null
@@ -55,7 +55,7 @@ public sealed class FinancialCreditCardImportedInstallment : Entity
             || string.IsNullOrWhiteSpace(sourceSystem) || sourceSystem.Length > 80 || string.IsNullOrWhiteSpace(externalReference) || externalReference.Length > 200)
             throw new ArgumentException("Parcela conhecida inválida.");
         return new() { WorkspaceId = workspaceId, CreditCardId = cardId, CategoryId = categoryId, Description = description.Trim(),
-            Amount = amount, InstallmentNumber = number, InstallmentCount = count, Competence = competence, DueDate = dueDate,
+            Amount = amount, InstallmentNumber = number, InstallmentCount = count, Competence = competence, DueDate = dueDate, TransactionDate = transactionDate,
             SourceSystem = sourceSystem, ExternalReference = externalReference, IsHistorical = true,
             Status = FinancialCreditCardImportedInstallmentStatus.Active, CreatedByUserId = userId, CreatedAt = now };
     }

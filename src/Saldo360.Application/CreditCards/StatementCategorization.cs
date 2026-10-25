@@ -21,12 +21,17 @@ public sealed record InboxStatementAnalysis(string SchemaVersion, Guid CardId, s
     IReadOnlyDictionary<string, Guid> ManualOverrides, string? FailureCode = null)
 {
     public IReadOnlyList<StatementManualDecision> ManualDecisions { get; init; } = [];
+    public string? Workflow { get; init; }
+    public StatementKnownInstallmentEligibility? KnownInstallmentImport { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? PasswordResolutionCode { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? ConsolidationBlockReason { get; init; }
 }
-public sealed record InboxStatementAnalysisResult(string Status, InboxStatementAnalysis? Analysis = null, IDictionary<string, string[]>? Errors = null);
+public sealed record InboxStatementAnalysisResult(string Status, InboxStatementAnalysis? Analysis = null, IDictionary<string, string[]>? Errors = null)
+{
+    public string? Workflow { get; init; }
+}
 
 public static class StatementCategorization
 {

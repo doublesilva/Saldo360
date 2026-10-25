@@ -19,7 +19,8 @@ public sealed class CardLatestEmailService(
     ICreditCardPdfPreviewService preview,
     ICardEmailDocumentReceiver inbox,
     IFinancialEmailCollectorLock operationLock,
-    IInboxStatementProcessingService processing)
+    IInboxStatementProcessingService processing, CreditCardStatementAgentOptions? statementOptions = null,
+    ICreditCardPdfTextExtractor? documentReader = null)
 {
     public const int MessageLimit = 200;
 
@@ -68,6 +69,16 @@ public sealed class CardLatestEmailService(
                                 continue;
                             }
                             content.Position = 0;
+                            if (statementOptions?.DocumentaryImport.Enabled == true)
+                            {
+                                // Container validation only. Never run the traditional financial parser before this profile.
+                                if (documentReader is null) { content.Dispose(); return new("Unavailable", cardId, FailureCode: "DocumentaryPipelineUnavailable"); }
+                                try { await documentReader.ExtractAsync(content, CreditCardPdfPreviewService.MaxPages, [], ct); }
+                                catch (CreditCardPdfReadException e) when (e.Failure is CreditCardPdfReadFailure.PasswordRequired or CreditCardPdfReadFailure.PasswordRejected) { }
+                                catch (CreditCardPdfReadException) { content.Dispose(); continue; }
+                                candidates.Add((attachment, content, true));
+                                continue;
+                            }
                             var check = await preview.PreviewAsync(workspaceId, cardId, userId, content, content.Length,
                                 attachment.FileName, null, null, null, null, ct);
                             if (check.Access == CreditCardPdfPreviewAccess.NotFound) { content.Dispose(); return new("NotFound", cardId); }

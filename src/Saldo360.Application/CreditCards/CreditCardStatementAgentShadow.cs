@@ -47,6 +47,8 @@ public sealed record CreditCardStatementExtractionResult(
     public StatementPurchaseDocumentValidation? PurchaseDocumentValidation { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public StatementExtractionSuitability? Suitability { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public StatementFinancialCalendarEvidence? FinancialCalendarEvidence { get; init; }
 }
 public sealed record StatementExtractionSuitability(bool FaithfulExtraction, bool PurchaseDatesComplete,
     bool KnownInstallmentAllowsMissingTransactionDate, bool PersistenceEligible, IReadOnlyList<string> PersistenceBlockers);

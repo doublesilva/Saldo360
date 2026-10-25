@@ -22,6 +22,12 @@ internal sealed class FinancialDocumentInboxRepository(Saldo360DbContext db) : I
         await db.FinancialDocumentInboxItems.AsNoTracking().Where(item => item.WorkspaceId == workspaceId
             && db.FinancialWorkspaces.Any(member => member.Id == workspaceId && member.OwnerUserId == userId && member.IsActive && member.Type == Saldo360.Domain.Workspaces.FinancialWorkspaceType.Personal))
             .OrderByDescending(item => item.ReceivedAt).Take(200).ToListAsync(cancellationToken);
+    public async Task<FinancialDocumentInboxItem?> GetForAnalysisAsync(Guid workspaceId, Guid id, Guid userId, CancellationToken ct)
+    {
+        var item = await GetAsync(workspaceId, id, userId, ct);
+        if (item is not null) await db.Entry(item).ReloadAsync(ct);
+        return item;
+    }
     public async Task<bool> TryAddAsync(FinancialDocumentInboxItem item, CancellationToken cancellationToken)
     {
         await db.FinancialDocumentInboxItems.AddAsync(item, cancellationToken);
