@@ -108,6 +108,15 @@ jobs:
         run: dotnet restore Saldo360.slnx
       - name: Build backend (Release)
         run: dotnet build Saldo360.slnx --configuration Release --no-restore
+      - name: Install native OCR tools for integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-por
+          command -v pdftoppm
+          command -v tesseract
+          tesseract --list-langs | grep -Fxq por
       - name: Test backend with PostgreSQL diagnostics
         run: dotnet test Saldo360.slnx --configuration Release --no-build --logger "console;verbosity=normal"
       - name: Build API image
