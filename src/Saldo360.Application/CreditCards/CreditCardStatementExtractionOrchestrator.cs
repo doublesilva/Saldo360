@@ -11,7 +11,7 @@ public sealed class CreditCardStatementExtractionOrchestrator(
 
     public async Task<CreditCardStatementExtractionResult> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
     {
-        if (request.RequireAgent)
+        if (request.RequireAgent || request.PurchasesOnly)
         {
             if (!options.Enabled || options.Mode == CreditCardStatementAgentMode.Disabled)
                 return new(options.Mode.ToString(), "Agent", null, AgentExtractionAssessment.Rejected, false, null, null, null, "AgentUnavailable");
@@ -28,11 +28,18 @@ public sealed class CreditCardStatementExtractionOrchestrator(
     private async Task<CreditCardStatementExtractionResult> AgentPrimaryAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
     {
         (CreditCardStatementAgentPreview? Preview, string? Error) parserResult = (null, null);
-        var agentResult = await EvaluateAsync(agent, "agent", request, cancellationToken);
+        var batched = request.BatchPages ? await agent.ExtractBatchesAsync(request, cancellationToken) : null;
+        CreditCardStatementAgentPreview? financial = null;
+        var validationError = batched?.Coverage.Batches.FirstOrDefault(b => b.FailureCode is not null)?.FailureCode ?? "OutputCoverageIncomplete";
+        if (batched?.Document is not null)
+            CreditCardStatementAgentEvaluator.TryEvaluate(System.Text.Json.JsonSerializer.Serialize(batched.Document, CreditCardStatementAgentSchema.Json),
+                request.FileName, request.Document.Pages.Max(p => p.Number), out financial, out validationError);
+        (CreditCardStatementAgentPreview? Preview, string? Error) agentResult = batched is null
+            ? await EvaluateAsync(agent, "agent", request, cancellationToken) : (financial, financial is null ? validationError : null);
         var attempts = 1;
-        // The parser is diagnostic, never the authority for the agent's document facts.
+        // No successful batch is repeated within the operation; divergence is returned for review.
         var officialAnchor = agentResult.Preview?.Header.OfficialTotal;
-        if (request.ReconcileWithRetry && request.AllowCorrectionRetry && agentResult.Preview?.Reconciliation.Status == "Divergent")
+        if (batched is null && !request.PurchasesOnly && request.ReconcileWithRetry && request.AllowCorrectionRetry && agentResult.Preview?.Reconciliation.Status == "Divergent")
         {
             attempts++;
             agentResult = await EvaluateAsync(agent, "agent", request with
@@ -44,7 +51,8 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         {
             Record(options.Mode, "agent", request.Document.Pages.Count, null, AgentExtractionAssessment.Rejected, false);
             return new(options.Mode.ToString(), "Agent", null, AgentExtractionAssessment.Rejected, false,
-                parserResult.Preview, null, null, agentResult.Error) { Attempts = attempts, ValidationStatus = "Rejected" };
+                parserResult.Preview, null, null, agentResult.Error) { Attempts = attempts, ValidationStatus = "Rejected", OutputCoverage = batched?.Coverage, StructuredDocument = batched?.Document,
+                    PageCoverage = batched is null ? null : request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray() };
         }
         var comparison = parserResult.Preview is null ? null : CreditCardStatementAgentEvaluator.Compare(parserResult.Preview, agentResult.Preview);
         var assessment = CreditCardStatementAgentEvaluator.Assess(agentResult.Preview);
@@ -58,8 +66,10 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         var ocrReview = request.Document.Pages.Any(p => p.TextSource == "OCR");
         var changedTotal = officialAnchor != agentResult.Preview.Header.OfficialTotal;
         if (invalidEvidence || changedTotal) assessment = AgentExtractionAssessment.Rejected;
-        else if (visualReview || incomplete || ocrReview) assessment = AgentExtractionAssessment.NeedsReview;
+        else if (visualReview || incomplete || ocrReview || batched is not null && (batched.Warnings.Count > 0 || !batched.Coverage.TechnicalComplete)) assessment = AgentExtractionAssessment.NeedsReview;
         var warnings = IdentityWarnings(agentResult.Preview.Header, request.Document).ToList();
+        if (batched is not null) { warnings.AddRange(batched.Warnings); warnings.Add("RecognitionCoverageUnproven"); }
+        if (request.PurchasesOnly) warnings.Add("PurchasesOnlyScope");
         if (visualReview) warnings.Add("VisualEvidenceRequiresReview");
         if (incomplete) warnings.Add("DocumentCoverageIncomplete");
         if (ocrReview) warnings.Add("OCRRequiresReview");
@@ -69,7 +79,7 @@ public sealed class CreditCardStatementExtractionOrchestrator(
             parserResult.Preview, comparison, comparison is null ? null : CreditCardStatementAgentEvaluator.Summarize(comparison),
             invalidEvidence ? "FinancialEvidenceInvalid" : changedTotal ? "OfficialTotalChanged" : null)
         { Attempts = attempts, ValidationStatus = invalidEvidence || changedTotal ? "Rejected" : visualReview || incomplete || ocrReview ? "NeedsReview" : "Valid", DocumentWarnings = warnings.Count == 0 ? null : warnings,
-            PageCoverage = request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray() };
+            PageCoverage = request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray(), OutputCoverage = batched?.Coverage, StructuredDocument = batched?.Document };
     }
 
     private async Task<CreditCardStatementExtractionResult> ParserPrimaryAsync(CreditCardStatementAgentRequest request, bool shadow, CancellationToken cancellationToken)
@@ -92,6 +102,10 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         try
         {
             var json = await extractor.ExtractAsync(request, cancellationToken);
+            if (request.PurchasesOnly)
+            {
+                if (!CreditCardStatementAgentSchema.TryValidate(json, request.Document.Pages.Count, out _, out var schemaError, purchasesOnly: true)) return (null, schemaError);
+            }
             return CreditCardStatementAgentEvaluator.TryEvaluate(json, request.FileName, request.Document.Pages.Count, out var preview, out var error)
                 ? (preview, null) : (null, error);
         }

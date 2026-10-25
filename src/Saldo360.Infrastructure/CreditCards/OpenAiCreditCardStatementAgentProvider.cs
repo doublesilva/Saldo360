@@ -44,6 +44,17 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
     }
     """).RootElement.Clone();
 
+    private static readonly JsonElement PurchasesOnlySchema = CreatePurchasesOnlySchema();
+    private static JsonElement CreatePurchasesOnlySchema()
+    {
+        var schema = System.Text.Json.Nodes.JsonNode.Parse(OutputSchema.GetRawText())!;
+        var properties = schema["properties"]!["items"]!["items"]!["properties"]!;
+        properties["nature"]!["enum"] = new System.Text.Json.Nodes.JsonArray("Debit");
+        properties["type"]!["enum"] = new System.Text.Json.Nodes.JsonArray("Purchase", "Installment");
+        properties["section"]!["enum"] = new System.Text.Json.Nodes.JsonArray("CurrentInvoice", "FutureInstallments");
+        return JsonSerializer.SerializeToElement(schema);
+    }
+
     public async Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken cancellationToken)
     {
         if (!options.Enabled || options.Mode == CreditCardStatementAgentMode.Disabled || !string.Equals(options.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase))
@@ -68,12 +79,13 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
         {
             model = options.Model,
             store = false,
+            max_output_tokens = 12000,
             input = new object[]
             {
                 new { role = "system", content = new[] { new { type = "input_text", text = request.SystemPrompt } } },
                 new { role = "user", content = content.ToArray() },
             },
-            text = new { format = new { type = "json_schema", name = request.SchemaName, strict = true, schema = request.OutputSchema ?? OutputSchema } },
+            text = new { format = new { type = "json_schema", name = request.SchemaName, strict = true, schema = request.PurchasesOnly ? PurchasesOnlySchema : request.OutputSchema ?? OutputSchema } },
         });
         var started = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -81,7 +93,23 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
             using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (!response.IsSuccessStatusCode)
                 throw new CreditCardStatementAgentUnavailableException("Provider recusou a solicitação.", failureCode: await FailureCodeAsync(response, cancellationToken));
-            using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var bounded = new MemoryStream();
+            var chunk = new byte[8192];
+            int length;
+            while ((length = await body.ReadAsync(chunk, cancellationToken)) > 0)
+            {
+                if (bounded.Length + length > 4 * 1024 * 1024)
+                    throw new CreditCardStatementAgentUnavailableException("Limite de resposta excedido.", failureCode: "ProviderResponseLimitExceeded");
+                bounded.Write(chunk, 0, length);
+            }
+            using var json = JsonDocument.Parse(bounded.GetBuffer().AsMemory(0, (int)bounded.Length));
+            if (json.RootElement.TryGetProperty("status", out var responseStatus) && responseStatus.GetString() is { } status && status != "completed")
+            {
+                var truncated = json.RootElement.TryGetProperty("incomplete_details", out var detail) && detail.ValueKind == JsonValueKind.Object
+                    && detail.TryGetProperty("reason", out var reason) && reason.GetString() == "max_output_tokens";
+                throw new CreditCardStatementAgentUnavailableException("Resposta incompleta.", failureCode: truncated ? "ProviderOutputTruncated" : "ProviderIncompleteResponse");
+            }
             var outputText = json.RootElement.GetProperty("output").EnumerateArray()
                 .SelectMany(item => item.TryGetProperty("content", out var content) ? content.EnumerateArray().ToArray() : [])
                 .FirstOrDefault(item => item.TryGetProperty("type", out var type) && type.GetString() == "output_text");

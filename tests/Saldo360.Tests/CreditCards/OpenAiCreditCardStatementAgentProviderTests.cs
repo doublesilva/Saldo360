@@ -8,6 +8,41 @@ namespace Saldo360.Tests.CreditCards;
 
 public sealed class OpenAiCreditCardStatementAgentProviderTests
 {
+    [Fact]
+    public async Task PurchasesOnlyUsesRestrictedEnumsWithoutChangingSharedSchemaShapeOrDefaultContract()
+    {
+        var body = System.Text.Json.JsonSerializer.Serialize(new { output = new[] { new { content = new[] { new { type = "output_text", text = CreditCardStatementAgentSchemaTests.Valid } } } } });
+        var handler = new RecordingHandler(_ => new(HttpStatusCode.OK) { Content = new StringContent(body) });
+        var provider = Create(handler, new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary, ApiKey = "synthetic" });
+        await provider.CompleteAsync(new("scope", "synthetic") { PurchasesOnly = true }, default);
+        using var json = System.Text.Json.JsonDocument.Parse(handler.Body);
+        var schema = json.RootElement.GetProperty("text").GetProperty("format").GetProperty("schema");
+        AssertContract<CreditCardStatementAgentDocument>(schema);
+        AssertContract<CreditCardStatementAgentHeader>(schema.GetProperty("properties").GetProperty("header"));
+        var item = schema.GetProperty("properties").GetProperty("items").GetProperty("items");
+        AssertContract<CreditCardStatementAgentItem>(item);
+        var properties = item.GetProperty("properties");
+        Assert.Equal(new[] { "Purchase", "Installment" }, properties.GetProperty("type").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal(new[] { "Debit" }, properties.GetProperty("nature").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal(new[] { "CurrentInvoice", "FutureInstallments" }, properties.GetProperty("section").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal("2.0", schema.GetProperty("properties").GetProperty("schemaVersion").GetProperty("enum")[0].GetString());
+        await provider.CompleteAsync(new("original", "synthetic"), default);
+        using var original = System.Text.Json.JsonDocument.Parse(handler.Body);
+        var allowed = original.RootElement.GetProperty("text").GetProperty("format").GetProperty("schema").GetProperty("properties").GetProperty("items").GetProperty("items").GetProperty("properties").GetProperty("type").GetProperty("enum");
+        Assert.Contains(allowed.EnumerateArray(), e => e.GetString() == "Payment");
+    }
+    [Theory]
+    [InlineData("max_output_tokens", "ProviderOutputTruncated")]
+    [InlineData("content_filter", "ProviderIncompleteResponse")]
+    public async Task IncompleteResponseIsRejectedEvenWhenOutputContainsValidJson(string reason, string code)
+    {
+        var body = System.Text.Json.JsonSerializer.Serialize(new { status = "incomplete", incomplete_details = new { reason },
+            output = new[] { new { content = new[] { new { type = "output_text", text = CreditCardStatementAgentSchemaTests.Valid } } } } });
+        var handler = new RecordingHandler(_ => new(HttpStatusCode.OK) { Content = new StringContent(body) });
+        var provider = Create(handler, new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary, ApiKey = "synthetic" });
+        var failure = await Assert.ThrowsAsync<CreditCardStatementAgentUnavailableException>(() => provider.CompleteAsync(new("prompt", "document"), default));
+        Assert.Equal(code, failure.FailureCode); Assert.Equal(1, handler.Calls);
+    }
     [Theory]
     [InlineData(401, "invalid_api_key", "ProviderAuthenticationFailed")]
     [InlineData(403, "", "ProviderPermissionDenied")]

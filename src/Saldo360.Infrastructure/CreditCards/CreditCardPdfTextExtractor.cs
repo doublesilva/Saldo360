@@ -6,7 +6,7 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
-internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageReader = null) : ICreditCardPdfTextExtractor
+internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageReader = null, bool batchPages = false) : ICreditCardPdfTextExtractor
 {
     private readonly CreditCardPdfParserResolver _parsers = new();
     private static readonly Regex DateRegex = new(@"(?<!\d)(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2})(?!\d)", RegexOptions.Compiled);
@@ -50,14 +50,14 @@ internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageR
                 var needsOcr = !LocalStatementPageReader.Usable(page.Text);
                 if (pageReader is not null && (pageNumber == 1 || needsOcr))
                 {
-                    if (++images > 12 || preparation.Elapsed > TimeSpan.FromSeconds(90)) extracted = extracted with { ProcessingStatus = "ImageLimitExceeded" };
+                    if (++images > (batchPages ? maxPages : 12) || preparation.Elapsed > TimeSpan.FromSeconds(90)) extracted = extracted with { ProcessingStatus = "ImageLimitExceeded" };
                     else
                     {
                         var builder = new UglyToad.PdfPig.Writer.PdfDocumentBuilder();
                         builder.AddPage(document, pageNumber); // Already unlocked in memory; no password in process arguments.
                         extracted = await pageReader.ReadAsync(builder.Build(), extracted, needsOcr, cancellationToken);
                         imageBytes += extracted.ImagePng?.Length ?? 0;
-                        if (imageBytes > 24L * 1024 * 1024) extracted = extracted with { ImagePng = null, ProcessingStatus = "ImageLimitExceeded" };
+                        if (imageBytes > (batchPages ? 64L : 24L) * 1024 * 1024) extracted = extracted with { ImagePng = null, ProcessingStatus = "ImageLimitExceeded" };
                     }
                 }
                 pages.Add(extracted);

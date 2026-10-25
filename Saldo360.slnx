@@ -7,6 +7,7 @@
     <Project Path="src/Saldo360.DocumentCutover/Saldo360.DocumentCutover.csproj" />
     <Project Path="src/Saldo360.BudgetBootstrap/Saldo360.BudgetBootstrap.csproj" />
     <Project Path="src/Saldo360.StatementDiagnostic/Saldo360.StatementDiagnostic.csproj" />
+    <Project Path="src/Saldo360.StatementExtractionLab/Saldo360.StatementExtractionLab.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Saldo360.Tests/Saldo360.Tests.csproj" />

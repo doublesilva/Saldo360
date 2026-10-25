@@ -81,6 +81,8 @@ public sealed record CreditCardPdfExtractedPage(
 {
     public string TextSource { get; init; } = "Native";
     public string ProcessingStatus { get; init; } = "Native";
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PreparationFailureCode { get; init; }
     [System.Text.Json.Serialization.JsonIgnore] public byte[]? ImagePng { get; init; }
 }
 public sealed record CreditCardPdfExtractedWord(string Text, double X, double Top, double Right, double Bottom);

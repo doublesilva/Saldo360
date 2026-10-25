@@ -35,6 +35,10 @@ public sealed record CreditCardStatementExtractionResult(
     public IReadOnlyList<string>? DocumentWarnings { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<StatementPageCoverage>? PageCoverage { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public StatementOutputCoverage? OutputCoverage { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public CreditCardStatementAgentDocument? StructuredDocument { get; init; }
 }
 public sealed record StatementPageCoverage(int Page, string TextSource, string Status, bool HasImage);
 public interface ICreditCardStatementExtractionOrchestrator
