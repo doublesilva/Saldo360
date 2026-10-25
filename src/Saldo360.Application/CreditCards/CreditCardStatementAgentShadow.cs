@@ -43,6 +43,8 @@ public sealed record CreditCardStatementExtractionResult(
     public IReadOnlyList<StatementEvidenceDiagnostic>? EvidenceDiagnostics { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<StatementInstallmentDiagnostic>? InstallmentDiagnostics { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public StatementPurchaseDocumentValidation? PurchaseDocumentValidation { get; init; }
 }
 public sealed record StatementEvidenceDiagnostic(string Code, string Path, int? Page = null, int? ItemIndex = null);
 public sealed record StatementPageCoverage(int Page, string TextSource, string Status, bool HasImage);

@@ -81,6 +81,7 @@ public sealed record CreditCardPdfExtractedPage(
 {
     public string TextSource { get; init; } = "Native";
     public string ProcessingStatus { get; init; } = "Native";
+    public bool HasUntranscribedImageRegion { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? PreparationFailureCode { get; init; }
     [System.Text.Json.Serialization.JsonIgnore] public byte[]? ImagePng { get; init; }

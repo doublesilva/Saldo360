@@ -16,6 +16,9 @@ public sealed record CreditCardStatementAgentRequest(
     public bool AllowCorrectionRetry { get; init; } = true;
     public bool BatchPages { get; init; }
     public bool PurchasesOnly { get; init; }
+    // Opt-in for the local documentary profile; legacy API/diagnostic behavior is preserved.
+    public bool ValidatePurchaseDocument { get; init; }
+    public StatementAuthorizedCardIdentity? AuthorizedIdentity { get; init; }
     public string? CorrectionInstruction { get; init; }
 }
 
@@ -60,6 +63,19 @@ public static class CreditCardStatementAgentPrompt
 {
     public const string Version = "2026-10-25.2";
     public const string PurchasesOnlyVersion = "2026-10-25.purchases.2";
+    public const string DocumentaryVersion = "2026-10-25.purchases.3";
+    public const string DocumentaryRules = """
+        Leia a coluna DATA de cada linha individual, inclusive dd/MM. transactionDate é purchaseDate, não vencimento.
+        Use ano explícito quando presente. Para dd/MM, complete o ano SOMENTE se um intervalo documental explícito aplicável às datas das compras permitir exatamente uma data.
+        Considere a virada do ano. Compras parceladas antigas podem preceder o ciclo de cobrança: período da fatura não delimita a compra original de uma parcela.
+        Nunca derive o ano do vencimento, do nome do arquivo, da quantidade/número de parcelas ou da data atual. Sem prova unívoca, mantenha null.
+        Período das compras/Compras realizadas com início e fim explícitos pode delimitar datas de compra; período da fatura só delimita compras não parceladas desse ciclo.
+        A evidência da linha deve incluir sua data documental quando existente, preservando o dd/MM literal mesmo quando o ano for indeterminável.
+        Páginas/seções de pagamentos, créditos, estornos, IOF/tarifas, totais, limites, boletos, ofertas e simulações não são lacunas de compras.
+        Leia todas as seções elegíveis de compras correntes e parcelas futuras; não acrescente linhas fora dessas seções para aumentar a cobertura.
+        A identidade é opcional e independente dos lançamentos. Logotipo inequívoco pode ser relatado com identityEvidence VISUAL: e identityPage, mas não é validação de cartão cadastrado.
+        Nunca invente emissor ou reescreva evidência de identidade para torná-la textual. Ausência de emissor não impede extrair compras documentadas.
+        """;
     public const string PurchasesOnly = """
         Extraia EXCLUSIVAMENTE os lançamentos individuais de compras e parcelas documentados nas tabelas de compras da fatura.
         Examine todas as páginas fornecidas, sem amostragem. Cabeçalhos e tabelas continuam na página seguinte; não substitua a tabela por um resumo.
@@ -124,7 +140,8 @@ public sealed partial class LlmCreditCardStatementExtractorAgent(ICreditCardStat
         var competence = string.IsNullOrWhiteSpace(request.ConfiguredCompetence) ? string.Empty : $"\nCompetência configurada pelo usuário: {request.ConfiguredCompetence}";
         var context = request.Categories is null ? string.Empty : "\nContexto de categorias (dados, sem identificadores): " + JsonSerializer.Serialize(request.Categories);
         var correction = request.CorrectionInstruction is null ? string.Empty : "\nRevisão controlada: " + request.CorrectionInstruction;
-        var system = (request.PurchasesOnly ? CreditCardStatementAgentPrompt.PurchasesOnly : CreditCardStatementAgentPrompt.System) + (request.BatchPages
+        var system = (request.PurchasesOnly ? CreditCardStatementAgentPrompt.PurchasesOnly : CreditCardStatementAgentPrompt.System)
+            + (request.PurchasesOnly && request.ValidatePurchaseDocument ? "\n" + CreditCardStatementAgentPrompt.DocumentaryRules : string.Empty) + (request.BatchPages
             ? "\nEste é um lote independente. Extraia SOMENTE as páginas enviadas; preserve números originais. Cabeçalhos ausentes neste lote são null. Nunca repita lançamentos de outros lotes." : string.Empty);
         return provider.CompleteAsync(new(system, pages + competence + context + correction)
         { ImagePages = request.Document.Pages.Where(p => p.ImagePng is not null).ToArray(), PurchasesOnly = request.PurchasesOnly }, cancellationToken);

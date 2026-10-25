@@ -29,7 +29,8 @@ public sealed class StatementExtractionLabPipeline : IDisposable
             new(Guid.Empty, Guid.Empty), password, ct, allowAutomatic: false);
         if (read.Document.Pages.Sum(p => (long)p.Text.Length) > 200000 || read.Document.Pages.Any(p => p.Text.Length > 40000))
             throw new CreditCardStatementAgentUnavailableException("Limite de entrada excedido.", failureCode: "LabTextLimitExceeded");
-        var request = new CreditCardStatementAgentRequest("local-statement.pdf", read.Document, null) { RequireAgent = true, AllowCorrectionRetry = false, BatchPages = true, PurchasesOnly = true };
+        var request = new CreditCardStatementAgentRequest("local-statement.pdf", read.Document, null)
+        { RequireAgent = true, AllowCorrectionRetry = false, BatchPages = true, PurchasesOnly = true, ValidatePurchaseDocument = true };
         // Render failure on native-text pages must not silently downgrade the lab to text-only extraction.
         if (read.Document.Pages.Any(p => p.ImagePng is null || p.ProcessingStatus is "Unavailable" or "Unreadable" or "ImageLimitExceeded"))
             throw new CreditCardStatementAgentUnavailableException("Cobertura visual incompleta.", failureCode: "LabPageImagesIncomplete");

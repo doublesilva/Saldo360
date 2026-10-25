@@ -48,6 +48,11 @@ internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageR
                     .ToList();
                 var extracted = new CreditCardPdfExtractedPage(pageNumber, renderAllPages ? ReflowNativeWords(words, page.Text) : page.Text, words);
                 var needsOcr = !LocalStatementPageReader.Usable(page.Text);
+                // A large raster region plus a native footer must not prove the table was transcribed.
+                // Conservative opt-in metadata only; it does not inspect pixels or interpret transactions.
+                if (renderAllPages && !needsOcr && page.GetImages().Any(image => UntranscribedRasterRegion(words,
+                    image.Bounds.Left, page.Height - image.Bounds.Top, image.Bounds.Right, page.Height - image.Bounds.Bottom, page.Width * page.Height)))
+                    extracted = extracted with { HasUntranscribedImageRegion = true };
                 if (pageReader is not null && (renderAllPages || pageNumber == 1 || needsOcr))
                 {
                     if (++images > (batchPages ? maxPages : 12) || preparation.Elapsed > TimeSpan.FromSeconds(90)) extracted = extracted with { ProcessingStatus = "ImageLimitExceeded" };
@@ -92,6 +97,21 @@ internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageR
             lines[^1].Add(word);
         }
         return string.Join('\n', lines.Select(line => string.Join(' ', line.OrderBy(w => w.X).Select(w => w.Text))));
+    }
+
+    internal static bool UntranscribedRasterRegion(IReadOnlyList<CreditCardPdfExtractedWord> words,
+        double left, double top, double right, double bottom, double pageArea)
+    {
+        var area = (right - left) * (bottom - top);
+        if (area <= 0 || area < pageArea * 0.15) return false;
+        var overlapping = words.Where(w => w.X < right && w.Right > left && w.Top < bottom && w.Bottom > top).ToArray();
+        if (overlapping.Length == 0) return true;
+        var textArea = overlapping.Sum(w => Math.Max(0, Math.Min(w.Right, right) - Math.Max(w.X, left))
+            * Math.Max(0, Math.Min(w.Bottom, bottom) - Math.Max(w.Top, top)));
+        var span = Math.Min(bottom, overlapping.Max(w => w.Bottom)) - Math.Max(top, overlapping.Min(w => w.Top));
+        // Distinguish a native/transcribed page over a raster background from a table image with only
+        // a small native footer. This is geometric coverage metadata, not a claim about OCR accuracy.
+        return textArea < area * 0.05 || span < (bottom - top) * 0.5;
     }
 
     public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string fileName, string? competence, string? dateFormat)

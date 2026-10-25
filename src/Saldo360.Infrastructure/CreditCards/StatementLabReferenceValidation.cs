@@ -43,10 +43,14 @@ public static class StatementLabReferenceValidation
         var financialValid = result.PrimarySource == "Agent" && result.Assessment == AgentExtractionAssessment.Reliable && result.ValidationStatus == "Valid"
             && result.Primary.Reconciliation.Status == "Reconciled" && result.AgentError is null
             && result.ParserShadowExecuted == false && result.OutputCoverage?.TechnicalComplete == true
+            && (result.PurchaseDocumentValidation is null || result.PurchaseDocumentValidation is { HasContradiction: false, CoverageComplete: true }
+                && result.OutputCoverage.RecognitionComplete)
             && result.PageCoverage?.Count == reference.PageCount && result.PageCoverage.All(p => p.HasImage)
             && (result.EvidenceDiagnostics?.Count ?? 0) == 0 && (result.InstallmentDiagnostics?.Count ?? 0) == 0
-            // Reference equality cannot override an application review/rejection or incomplete coverage.
-            && (result.DocumentWarnings ?? []).All(w => w is "RecognitionCoverageUnproven" or "PurchasesOnlyScope");
+            // Identity provenance is reported independently; this does not authorize a card association.
+            && (result.DocumentWarnings ?? []).All(w => w is "RecognitionCoverageUnproven" or "PurchasesOnlyScope"
+                || result.PurchaseDocumentValidation is { HasContradiction: false, CoverageComplete: true }
+                    && w is "DocumentIdentityIncomplete" or "IdentityEvidenceUnverified" or "PurchaseDatesIncomplete");
         if (!financialValid) diagnostics.Add(new("FinancialOrCoverageValidationFailed", "$.extraction"));
         return new(exact, financialValid, diagnostics);
     }

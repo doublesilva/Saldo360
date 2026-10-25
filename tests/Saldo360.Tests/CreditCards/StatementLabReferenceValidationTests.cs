@@ -71,4 +71,31 @@ public sealed class StatementLabReferenceValidationTests
         Assert.Equal("04/07 SHOP03/12 10.00\nFOOTER", CreditCardPdfTextExtractor.ReflowNativeWords(words, "unseparated"));
         Assert.Equal("unchanged", CreditCardPdfTextExtractor.ReflowNativeWords([], "unchanged"));
     }
+
+    [Fact]
+    public void LargeRasterRegionWithOnlyNativeFooterCannotProveCoverageButTranscribedBackgroundIsNotBlank()
+    {
+        CreditCardPdfExtractedWord[] footer = [new("FOOTER", 10, 810, 200, 820)];
+        Assert.True(CreditCardPdfTextExtractor.UntranscribedRasterRegion(footer, 0, 0, 595, 842, 595 * 842));
+        var native = Enumerable.Range(0, 20).SelectMany(row => Enumerable.Range(0, 17)
+            .Select(column => new CreditCardPdfExtractedWord("NATIVE", 10 + column * 32, 20 + row * 35, 35 + column * 32, 28 + row * 35))).ToArray();
+        Assert.False(CreditCardPdfTextExtractor.UntranscribedRasterRegion(native, 0, 0, 595, 842, 595 * 842));
+    }
+
+    [Fact]
+    public void DocumentaryReferenceCannotOverrideIncompleteCoverageEvenWithReliableAssessment()
+    {
+        var documentary = new StatementPurchaseDocumentValidation(true, false, new("Unverified", false), [], []);
+        var original = Result with { PurchaseDocumentValidation = documentary,
+            OutputCoverage = Result.OutputCoverage! with { PurchasesOnlyRowsVerified = true },
+            DocumentWarnings = ["IdentityEvidenceUnverified", "PurchaseDatesIncomplete", "PurchasesOnlyScope"] };
+        Assert.True(StatementLabReferenceValidation.Compare(Hash, new(Hash, 1, Facts), original).Approved);
+        foreach (var incomplete in new[] {
+            original with { PurchaseDocumentValidation = documentary with { CoverageComplete = false } },
+            original with { OutputCoverage = original.OutputCoverage! with { PurchasesOnlyRowsVerified = false } },
+            original with { PurchaseDocumentValidation = documentary with { Diagnostics = [new("DocumentIdentityContradiction", "$.header", Contradiction: true)] } } })
+            Assert.False(StatementLabReferenceValidation.Compare(Hash, new(Hash, 1, Facts), incomplete).Approved);
+        Assert.False(original.PurchaseDocumentValidation!.Identity.AuthorizedIdentityConfirmed);
+        Assert.Equal(Facts.Items, original.Primary!.Items);
+    }
 }

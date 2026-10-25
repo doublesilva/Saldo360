@@ -57,6 +57,13 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         }
         var comparison = parserResult.Preview is null ? null : CreditCardStatementAgentEvaluator.Compare(parserResult.Preview, agentResult.Preview);
         var assessment = CreditCardStatementAgentEvaluator.Assess(agentResult.Preview);
+        var documentary = request.PurchasesOnly && request.ValidatePurchaseDocument
+            ? StatementPurchaseDocumentValidator.Validate(request.Document, agentResult.Preview, request.AuthorizedIdentity) : null;
+        var outputCoverage = batched?.Coverage;
+        if (documentary is not null && outputCoverage is not null)
+            outputCoverage = outputCoverage with { PurchasesOnlyRowsVerified = documentary.CoverageComplete,
+                Pages = outputCoverage.Pages.Select(p => documentary.Pages.FirstOrDefault(d => d.Page == p.Page) is { } d && p.ValidReturn
+                    ? p with { Status = d.Complete ? d.EligibleRows == 0 ? "NoEligiblePurchases" : "CoveredPurchasesOnly" : "Inconclusive" } : p).ToArray() };
         var evidenceDiagnostics = GroundingDiagnostics(agentResult.Preview, request.Document);
         var invalidEvidence = evidenceDiagnostics.Count > 0;
         var visualOnly = agentResult.Preview.Items.Where(i => i.Evidence.StartsWith("VISUAL:", StringComparison.Ordinal)).ToArray();
@@ -67,10 +74,13 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         var incomplete = request.Document.Pages.Any(p => p.ProcessingStatus is "Unavailable" or "Unreadable" or "ImageLimitExceeded");
         var ocrReview = request.Document.Pages.Any(p => p.TextSource == "OCR");
         var changedTotal = officialAnchor != agentResult.Preview.Header.OfficialTotal;
-        if (invalidEvidence || changedTotal) assessment = AgentExtractionAssessment.Rejected;
-        else if (visualReview || incomplete || ocrReview || batched is not null && (batched.Warnings.Count > 0 || !batched.Coverage.TechnicalComplete)) assessment = AgentExtractionAssessment.NeedsReview;
+        if (invalidEvidence || changedTotal || documentary?.HasContradiction == true) assessment = AgentExtractionAssessment.Rejected;
+        else if (visualReview || incomplete || ocrReview || documentary?.CoverageComplete == false
+            || batched is not null && (batched.Warnings.Count > 0 || !batched.Coverage.TechnicalComplete)) assessment = AgentExtractionAssessment.NeedsReview;
         var warnings = IdentityWarnings(agentResult.Preview.Header, request.Document).ToList();
-        if (batched is not null) { warnings.AddRange(batched.Warnings); warnings.Add("RecognitionCoverageUnproven"); }
+        if (batched is not null) { warnings.AddRange(batched.Warnings); if (outputCoverage?.RecognitionComplete != true) warnings.Add("RecognitionCoverageUnproven"); }
+        if (documentary?.CoverageComplete == false) warnings.Add("PurchaseCoverageIncomplete");
+        if (documentary?.DatesComplete == false) warnings.Add("PurchaseDatesIncomplete");
         if (request.PurchasesOnly) warnings.Add("PurchasesOnlyScope");
         if (visualReview) warnings.Add("VisualEvidenceRequiresReview");
         if (incomplete) warnings.Add("DocumentCoverageIncomplete");
@@ -79,9 +89,10 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         Record(options.Mode, "agent", request.Document.Pages.Count, agentResult.Preview, assessment, comparison is not null && !CreditCardStatementAgentEvaluator.Summarize(comparison).Matches);
         return new(request.RequireAgent ? "AgentPrimary" : options.Mode.ToString(), "Agent", agentResult.Preview, assessment, false,
             parserResult.Preview, comparison, comparison is null ? null : CreditCardStatementAgentEvaluator.Summarize(comparison),
-            invalidEvidence ? "FinancialEvidenceInvalid" : changedTotal ? "OfficialTotalChanged" : null)
-        { Attempts = attempts, ValidationStatus = invalidEvidence || changedTotal ? "Rejected" : visualReview || incomplete || ocrReview ? "NeedsReview" : "Valid", DocumentWarnings = warnings.Count == 0 ? null : warnings,
-            PageCoverage = request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray(), OutputCoverage = batched?.Coverage, StructuredDocument = batched?.Document,
+            invalidEvidence ? "FinancialEvidenceInvalid" : changedTotal ? "OfficialTotalChanged" : documentary?.HasContradiction == true ? "PurchaseDocumentContradiction" : null)
+        { Attempts = attempts, ValidationStatus = invalidEvidence || changedTotal || documentary?.HasContradiction == true ? "Rejected" : visualReview || incomplete || ocrReview || documentary?.CoverageComplete == false ? "NeedsReview" : "Valid", DocumentWarnings = warnings.Count == 0 ? null : warnings,
+            PageCoverage = request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray(), OutputCoverage = outputCoverage, StructuredDocument = batched?.Document,
+            PurchaseDocumentValidation = documentary,
             EvidenceDiagnostics = evidenceDiagnostics.Count == 0 ? null : evidenceDiagnostics,
             InstallmentDiagnostics = agentResult.InstallmentDiagnostics is { Count: > 0 } ? agentResult.InstallmentDiagnostics : null };
     }

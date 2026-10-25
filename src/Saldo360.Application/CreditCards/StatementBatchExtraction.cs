@@ -9,7 +9,8 @@ public sealed record StatementOutputBatch(int Batch, IReadOnlyList<int> Pages, i
 public sealed record StatementOutputCoverage(int TotalPages, IReadOnlyList<StatementOutputPage> Pages, IReadOnlyList<StatementOutputBatch> Batches)
 {
     public bool TechnicalComplete => Pages.Count == TotalPages && Pages.All(p => p.Prepared && p.Sent && p.ValidReturn);
-    public bool RecognitionComplete => false; // Neither JSON validity nor a model assertion proves recognition completeness.
+    public bool PurchasesOnlyRowsVerified { get; init; }
+    public bool RecognitionComplete => TechnicalComplete && PurchasesOnlyRowsVerified;
     public int PreparedPages => Pages.Count(p => p.Prepared);
     public int SentPages => Pages.Count(p => p.Sent);
     public int ValidReturnPages => Pages.Count(p => p.ValidReturn);
@@ -65,7 +66,8 @@ public sealed partial class LlmCreditCardStatementExtractorAgent
             foreach (var page in batch)
             {
                 var count = valid ? document!.Items.Count(i => i.Page == page.Number) : 0;
-                var inconclusive = valid && (count == 0 || HasUnrepresentedRows(page.Text, document!.Items.Where(i => i.Page == page.Number)));
+                var inconclusive = valid && !(request.PurchasesOnly && request.ValidatePurchaseDocument)
+                    && (count == 0 || HasUnrepresentedRows(page.Text, document!.Items.Where(i => i.Page == page.Number)));
                 var status = !valid ? "Failed" : inconclusive ? "Inconclusive" : "ReturnedValidUnproven";
                 outputPages.Add(new(page.Number, batchNumber, Prepared(page), sent, valid, count, status, failure));
                 if (inconclusive) warnings.Add(count == 0 ? "PageWithoutItemsUnproven" : "UnextractedDocumentRows");

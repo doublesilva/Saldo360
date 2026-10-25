@@ -99,7 +99,7 @@ try
             failed |= referenceValidation?.Approved == false;
             stopPaidCalls |= extraction.Assessment != AgentExtractionAssessment.Reliable || referenceValidation?.Approved == false
                 || extraction.OutputCoverage?.Batches.Any(b => b.FailureCode is not null) == true;
-            data = new { documentHash = hash, provider = "OpenAI", model, reasoningEffort, maxOutputTokens, imageDetail, renderAllPages = true, scope = "PurchasesOnly", promptVersion = CreditCardStatementAgentPrompt.PurchasesOnlyVersion, extraction, referenceValidation, financialProcessingAllowed = false, financialMutationExecuted = false };
+            data = new { documentHash = hash, provider = "OpenAI", model, reasoningEffort, maxOutputTokens, imageDetail, renderAllPages = true, scope = "PurchasesOnly", promptVersion = CreditCardStatementAgentPrompt.DocumentaryVersion, extraction, referenceValidation, financialProcessingAllowed = false, financialMutationExecuted = false };
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -111,7 +111,7 @@ try
         summary.Add(new { documentHash = hash, report = hash + ".json" });
     }
     await using var summaryFile = new FileStream(Path.Combine(output, "summary.json"), FileMode.CreateNew, FileAccess.Write, FileShare.None);
-    await JsonSerializer.SerializeAsync(summaryFile, new { provider = "OpenAI", model, reasoningEffort, maxOutputTokens, imageDetail, renderAllPages = true, scope = "PurchasesOnly", promptVersion = CreditCardStatementAgentPrompt.PurchasesOnlyVersion, calls = pipeline.Calls, maxCalls, documents = summary, financialMutationExecuted = false }, cancellationToken: deadline.Token);
+    await JsonSerializer.SerializeAsync(summaryFile, new { provider = "OpenAI", model, reasoningEffort, maxOutputTokens, imageDetail, renderAllPages = true, scope = "PurchasesOnly", promptVersion = CreditCardStatementAgentPrompt.DocumentaryVersion, calls = pipeline.Calls, maxCalls, documents = summary, financialMutationExecuted = false }, cancellationToken: deadline.Token);
     Console.WriteLine(JsonSerializer.Serialize(new { documents = files.Length, calls = pipeline.Calls, maxCalls, financialMutationExecuted = false })); return failed ? 2 : 0;
 }
 catch (LabSetupException error) { Console.Error.WriteLine(error.Code + "; no provider call executed."); return 1; }
