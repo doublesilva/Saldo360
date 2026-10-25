@@ -33,7 +33,10 @@ public sealed record CreditCardStatementExtractionResult(
     public string? ValidationStatus { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? DocumentWarnings { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<StatementPageCoverage>? PageCoverage { get; init; }
 }
+public sealed record StatementPageCoverage(int Page, string TextSource, string Status, bool HasImage);
 public interface ICreditCardStatementExtractionOrchestrator
 {
     Task<CreditCardStatementExtractionResult> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken);

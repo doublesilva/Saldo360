@@ -22,10 +22,10 @@ public sealed class CreditCardStatementExtractionOrchestratorTests
         var result = await service.ExtractAsync(new("synthetic.pdf", new([new(1, "SHOP 10.00\nSHOP 9.00\nTOTAL 10.00")]), null)
             { RequireAgent = true, ReconcileWithRetry = true, AllowCorrectionRetry = false }, default);
         Assert.Equal(expected, result.Assessment.ToString()); Assert.Equal(validation, result.ValidationStatus);
-        Assert.NotNull(result.Primary); Assert.Contains("ParserAgentDifference", result.DocumentWarnings!);
+        Assert.NotNull(result.Primary); Assert.False(result.ParserShadowExecuted); Assert.Null(result.Comparison);
         Assert.Contains("DocumentIdentityIncomplete", result.DocumentWarnings!);
         Assert.DoesNotContain("CardIdentificationRequired", result.AgentError ?? "");
-        Assert.Equal("ParserFinancialReviewRequired", OfficialStatementAnalysisValidation.ParserReviewReason(result));
+        Assert.Null(OfficialStatementAnalysisValidation.ParserReviewReason(result));
         if (expected == "Rejected") Assert.Equal("FinancialEvidenceInvalid", result.AgentError);
         if (expected == "NeedsReview") Assert.Equal("Divergent", result.Primary.Reconciliation.Status);
     }
@@ -87,8 +87,7 @@ public sealed class CreditCardStatementExtractionOrchestratorTests
         var result = await Run(CreditCardStatementAgentMode.AgentPrimary, parser, provider);
         Assert.Equal("Agent", result.PrimarySource); Assert.Equal("726.94", result.Primary!.Reconciliation.ComponentsTotal);
         Assert.Equal(AgentExtractionAssessment.Reliable, result.Assessment);
-        Assert.Equal("962.12", result.ParserShadow!.Reconciliation.ComponentsTotal);
-        Assert.True(result.ShadowSummary!.HasFinancialDifference);
+        Assert.Null(result.ParserShadow); Assert.Null(result.ShadowSummary); Assert.Equal(0, parser.Calls);
     }
 
     [Fact]
@@ -98,7 +97,7 @@ public sealed class CreditCardStatementExtractionOrchestratorTests
         var result = await Run(CreditCardStatementAgentMode.AgentPrimary, parser, new FakeProvider(error: true));
         Assert.Equal("Agent", result.PrimarySource); Assert.Null(result.Primary);
         Assert.Equal(AgentExtractionAssessment.Rejected, result.Assessment);
-        Assert.NotNull(result.ParserShadow); Assert.Contains("indisponível", result.AgentError!, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(result.ParserShadow); Assert.Equal(0, parser.Calls); Assert.Contains("indisponível", result.AgentError!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -107,7 +106,7 @@ public sealed class CreditCardStatementExtractionOrchestratorTests
         var parser = new FakeParser(Json("100.00", Item("PARSER", "100.00")));
         var invalid = CreditCardStatementAgentSchemaTests.Valid.Replace("\"amount\":\"10.00\"", "\"amount\":\"private-invalid-value\"");
         var result = await Run(CreditCardStatementAgentMode.AgentPrimary, parser, new FakeProvider(invalid));
-        Assert.Null(result.Primary); Assert.NotNull(result.ParserShadow);
+        Assert.Null(result.Primary); Assert.Null(result.ParserShadow); Assert.Equal(0, parser.Calls);
         Assert.Equal("Agent", result.PrimarySource); Assert.Equal(AgentExtractionAssessment.Rejected, result.Assessment);
         Assert.Equal("SchemaInvalidMoney:$.items[].amount", result.AgentError);
         Assert.DoesNotContain("private-invalid-value", JsonSerializer.Serialize(result));
@@ -146,7 +145,7 @@ public sealed class CreditCardStatementExtractionOrchestratorTests
     private static CreditCardStatementAgentItem Item(string description, string amount) =>
         new(description, amount, "Debit", "Purchase", null, null, "CurrentInvoice", true, 1, description + " " + amount, "High");
     private sealed class FakeParser(string response) : IParserBackedCreditCardStatementExtractorAgent
-    { public Task<string> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken) => Task.FromResult(response); }
+    { public int Calls; public Task<string> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken) { Calls++; return Task.FromResult(response); } }
     private sealed class FakeProvider(string? response = null, bool error = false) : ICreditCardStatementAgentProvider
     {
         public int Calls { get; private set; }

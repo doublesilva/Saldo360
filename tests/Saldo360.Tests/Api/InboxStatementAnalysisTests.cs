@@ -43,7 +43,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
             if (failure is not null) { Assert.Null(report.FailureCode); Assert.Equal("CardIdentityUnresolved", report.ConsolidationBlockReason); }
         }
         else if (failure == "divergent") Assert.Equal("Divergent", report.Extraction!.Primary!.Reconciliation.Status);
-        else if (failure == "wrong-card") { Assert.Equal("CardMismatch", report.FailureCode); Assert.NotNull(report.Extraction!.Primary); }
+        else if (failure == "wrong-card") { Assert.Null(report.FailureCode); Assert.NotNull(report.Extraction!.Primary); } // This fixture's contradiction was only in the removed parser.
         else if (failure == "password") Assert.Equal("PasswordRequired", report.FailureCode);
         Assert.Equal(before, JsonSerializer.Serialize(await db.FinancialDocumentInboxItems.AsNoTracking().SingleAsync()));
         Assert.Empty(await db.FinancialCreditCardPurchases.ToListAsync()); Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync());
@@ -101,7 +101,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
     }
     [Theory]
     [InlineData("insufficient", "Reliable", 1)]
-    [InlineData("wrong-card", "NeedsReview", 1)]
+    [InlineData("wrong-card", "Reliable", 1)]
     [InlineData("invented-identity", "Reliable", 1)]
     [InlineData("password", "Rejected", 0)]
     public async Task AutomaticPathReadsAgentBeforeResolvingDocumentaryIdentity(string scenario, string expected, int agentCalls)
@@ -111,7 +111,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         f.Extractor.Failure = scenario; f.Provider.Failure = scenario;
         var result = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true);
         Assert.Equal(expected, result.Status); Assert.Equal(agentCalls, f.Provider.Calls);
-        if (scenario == "wrong-card") { Assert.NotNull(result.Analysis!.Extraction!.Primary); Assert.Equal("CardMismatch", result.Analysis.ConsolidationBlockReason); }
+        if (scenario == "wrong-card") { Assert.NotNull(result.Analysis!.Extraction!.Primary); Assert.Null(result.Analysis.ConsolidationBlockReason); }
         if (scenario == "invented-identity") Assert.Equal("IdentityEvidenceUnverified", result.Analysis!.ConsolidationBlockReason);
         if (scenario == "password") Assert.Equal("PasswordRequired", result.Analysis!.FailureCode);
         Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
@@ -258,7 +258,8 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
         using var db = f.Db; f.Provider.Failure = failure; f.Extractor.Failure = failure;
         var result = await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default);
-        Assert.Equal(failure == "wrong-card" ? "NeedsReview" : "Rejected", result.Status); Assert.Equal(FinancialDocumentInboxStatus.NeedsReview, f.Item.Status);
+        Assert.Equal(failure == "wrong-card" ? "Reliable" : "Rejected", result.Status);
+        Assert.Equal(failure == "wrong-card" ? FinancialDocumentInboxStatus.ReadyForReview : FinancialDocumentInboxStatus.NeedsReview, f.Item.Status);
         if (failure is "password" or "no-text") Assert.Equal(0, f.Provider.Calls);
         if (failure == "wrong-card") { Assert.Equal(1, f.Provider.Calls); Assert.NotNull(result.Analysis!.Extraction!.Primary); }
         Assert.Empty(await db.FinancialCreditCardPurchases.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());

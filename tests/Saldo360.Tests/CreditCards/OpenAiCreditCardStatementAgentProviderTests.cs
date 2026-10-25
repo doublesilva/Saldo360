@@ -42,12 +42,19 @@ public sealed class OpenAiCreditCardStatementAgentProviderTests
         { Content = new StringContent(apiResponse, Encoding.UTF8, "application/json") });
         var provider = Create(handler, new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary, ApiKey = "secret", Model = "test-model" });
 
-        var result = await provider.CompleteAsync(new(CreditCardStatementAgentPrompt.System, "--- PAGE 1 ---\ntext"), CancellationToken.None);
+        var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
+        var result = await provider.CompleteAsync(new(CreditCardStatementAgentPrompt.System, "--- PAGE 1 ---\ntext")
+        { ImagePages = [new(1, "text") { ImagePng = png }] }, CancellationToken.None);
 
         Assert.Equal(statement, result);
         Assert.Contains("json_schema", handler.Body, StringComparison.Ordinal);
         Assert.Contains("strict", handler.Body, StringComparison.Ordinal);
         using var requestJson = System.Text.Json.JsonDocument.Parse(handler.Body);
+        var userContent = requestJson.RootElement.GetProperty("input")[1].GetProperty("content");
+        Assert.Equal("input_image", userContent[2].GetProperty("type").GetString());
+        Assert.Equal("data:image/png;base64," + Convert.ToBase64String(png), userContent[2].GetProperty("image_url").GetString());
+        Assert.Contains("PAGE 1", userContent[1].GetProperty("text").GetString());
+        Assert.False(requestJson.RootElement.GetProperty("store").GetBoolean());
         var format = requestJson.RootElement.GetProperty("text").GetProperty("format");
         Assert.True(format.GetProperty("strict").GetBoolean());
         var schema = format.GetProperty("schema");

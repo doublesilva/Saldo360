@@ -38,6 +38,7 @@ public sealed class CreditCardStatementAgentOptions
 
 public sealed record CreditCardStatementAgentProviderRequest(string SystemPrompt, string DocumentText)
 {
+    [JsonIgnore] public IReadOnlyList<CreditCardPdfExtractedPage> ImagePages { get; init; } = [];
     public string SchemaName { get; init; } = "credit_card_statement";
     public JsonElement? OutputSchema { get; init; }
 }
@@ -54,7 +55,7 @@ public sealed class CreditCardStatementAgentUnavailableException(string message,
 
 public static class CreditCardStatementAgentPrompt
 {
-    public const string Version = "2026-10-24.5";
+    public const string Version = "2026-10-25.1";
     public const string System = """
         Você extrai faturas de cartão de crédito para JSON estritamente aderente ao schema fornecido.
         No header, extraia cardProduct e holderName quando presentes, e identityEvidence como citação literal contínua da identificação no PDF com identityPage. Ausente significa null. Nunca use o cartão candidato como evidência documental.
@@ -68,6 +69,9 @@ public static class CreditCardStatementAgentPrompt
         Na dúvida, use Type=Unknown e Confidence=Low. Não tente associar o documento a dados externos.
         Para documento que não seja fatura de cartão ou não tenha evidência suficiente, retorne header como objeto com todos os campos null, items vazio e nunca fabrique uma fatura. O objeto header nunca é null.
         A saída deve conter somente JSON compatível com o schema.
+        Interprete todas as páginas e todos os lançamentos, nunca apenas uma amostra. Os marcadores PAGE e IMAGE PAGE preservam a origem. Não deduplique compras iguais; não transforme resumos, ofertas ou pagamento mínimo em compras.
+        As imagens corroboram o texto e permitem ler logotipos claros, tabelas e cabeçalhos. Nunca infira emissor só pelas cores ou conhecimento externo. Para um fato exclusivamente visual, use evidence começando por VISUAL: e a página correspondente; nunca fabrique uma citação literal. Esses fatos exigem revisão antes da consolidação.
+        Extraia transactionDate, installmentNumber e installmentCount quando documentados, incluindo 2/3 e 07/10. Sem parcelamento explícito use null nos números, nunca presuma 1/1; não multiplique parcela para reconstruir compra original.
         Use schemaVersion=2.0. transactionDate é a data individual yyyy-MM-dd ou null, nunca a data de vencimento como substituto.
         competence usa yyyy-MM; closingDate e dueDate usam yyyy-MM-dd. cardLastDigits contém exatamente quatro dígitos ou null.
         Todos os campos definidos pelo schema devem estar presentes; para fatos opcionais ausentes use null, nunca string vazia nem a string "null".
@@ -83,11 +87,12 @@ public sealed class LlmCreditCardStatementExtractorAgent(ICreditCardStatementAge
 {
     public Task<string> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
     {
-        var pages = string.Join("\n\n", request.Document.Pages.Select(page => $"--- PAGE {page.Number} ---\n{page.Text}"));
+        var pages = string.Join("\n\n", request.Document.Pages.Select(page => $"--- PAGE {page.Number} SOURCE {page.TextSource} STATUS {page.ProcessingStatus} ---\n{page.Text}"));
         var competence = string.IsNullOrWhiteSpace(request.ConfiguredCompetence) ? string.Empty : $"\nCompetência configurada pelo usuário: {request.ConfiguredCompetence}";
         var context = request.Categories is null ? string.Empty : "\nContexto de categorias (dados, sem identificadores): " + JsonSerializer.Serialize(request.Categories);
         var correction = request.CorrectionInstruction is null ? string.Empty : "\nRevisão controlada: " + request.CorrectionInstruction;
-        return provider.CompleteAsync(new(CreditCardStatementAgentPrompt.System, pages + competence + context + correction), cancellationToken);
+        return provider.CompleteAsync(new(CreditCardStatementAgentPrompt.System, pages + competence + context + correction)
+        { ImagePages = request.Document.Pages.Where(p => p.ImagePng is not null).ToArray() }, cancellationToken);
     }
 }
 

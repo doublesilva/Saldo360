@@ -40,8 +40,8 @@ public sealed class CreditCardStatementAgentPreviewService(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         { return Invalid("file", "O PDF está corrompido ou não pôde ser interpretado."); }
-        if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text)))
-            return Invalid("file", "Não foi possível extrair texto do PDF; OCR não é suportado.");
+        if (extracted.Pages.Count == 0 || extracted.Pages.All(page => string.IsNullOrWhiteSpace(page.Text) && page.ImagePng is null))
+            return Invalid("file", "Não foi possível recuperar texto ou imagens do PDF.");
 
         CreditCardStatementExtractionResult result;
         if (categories is not null)
@@ -56,7 +56,7 @@ public sealed class CreditCardStatementAgentPreviewService(
         var warnings = (result.DocumentWarnings ?? []).ToList();
         var mismatch = CreditCardStatementResolver.ContradictsSelectedContext(result.Primary.Header, card.Issuer, card.LastFourDigits);
         // Parser contradictions require context review, not loss of a valid financial preview.
-        if (categories is not null)
+        if (categories is not null && result.PrimarySource != "Agent")
         {
             try
             {

@@ -27,7 +27,7 @@ public sealed class CreditCardStatementExtractionOrchestrator(
 
     private async Task<CreditCardStatementExtractionResult> AgentPrimaryAsync(CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
     {
-        var parserResult = await EvaluateAsync(parser, "parser", request, cancellationToken);
+        (CreditCardStatementAgentPreview? Preview, string? Error) parserResult = (null, null);
         var agentResult = await EvaluateAsync(agent, "agent", request, cancellationToken);
         var attempts = 1;
         // The parser is diagnostic, never the authority for the agent's document facts.
@@ -43,21 +43,33 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         if (agentResult.Preview is null)
         {
             Record(options.Mode, "agent", request.Document.Pages.Count, null, AgentExtractionAssessment.Rejected, false);
-            return new(options.Mode.ToString(), "Agent", null, AgentExtractionAssessment.Rejected, true,
+            return new(options.Mode.ToString(), "Agent", null, AgentExtractionAssessment.Rejected, false,
                 parserResult.Preview, null, null, agentResult.Error) { Attempts = attempts, ValidationStatus = "Rejected" };
         }
         var comparison = parserResult.Preview is null ? null : CreditCardStatementAgentEvaluator.Compare(parserResult.Preview, agentResult.Preview);
         var assessment = CreditCardStatementAgentEvaluator.Assess(agentResult.Preview);
         var invalidEvidence = !Grounded(agentResult.Preview, request.Document);
+        var visualOnly = agentResult.Preview.Items.Where(i => i.Evidence.StartsWith("VISUAL:", StringComparison.Ordinal)).ToArray();
+        var visualReview = visualOnly.Length > 0 && visualOnly.All(i => request.Document.Pages.Any(p => p.Number == i.Page && p.ImagePng is not null))
+            && Grounded(agentResult.Preview with { Header = agentResult.Preview.Header with { OfficialTotal = null },
+                Items = agentResult.Preview.Items.Except(visualOnly).ToArray() }, request.Document);
+        if (visualReview) invalidEvidence = false; // Visual facts are reviewable, never declared text-grounded or reliable.
+        var incomplete = request.Document.Pages.Any(p => p.ProcessingStatus is "Unavailable" or "Unreadable" or "ImageLimitExceeded");
+        var ocrReview = request.Document.Pages.Any(p => p.TextSource == "OCR");
         var changedTotal = officialAnchor != agentResult.Preview.Header.OfficialTotal;
         if (invalidEvidence || changedTotal) assessment = AgentExtractionAssessment.Rejected;
+        else if (visualReview || incomplete || ocrReview) assessment = AgentExtractionAssessment.NeedsReview;
         var warnings = IdentityWarnings(agentResult.Preview.Header, request.Document).ToList();
+        if (visualReview) warnings.Add("VisualEvidenceRequiresReview");
+        if (incomplete) warnings.Add("DocumentCoverageIncomplete");
+        if (ocrReview) warnings.Add("OCRRequiresReview");
         if (comparison is not null && !CreditCardStatementAgentEvaluator.Summarize(comparison).Matches) warnings.Add("ParserAgentDifference");
         Record(options.Mode, "agent", request.Document.Pages.Count, agentResult.Preview, assessment, comparison is not null && !CreditCardStatementAgentEvaluator.Summarize(comparison).Matches);
-        return new(request.RequireAgent ? "AgentPrimary" : options.Mode.ToString(), "Agent", agentResult.Preview, assessment, true,
+        return new(request.RequireAgent ? "AgentPrimary" : options.Mode.ToString(), "Agent", agentResult.Preview, assessment, false,
             parserResult.Preview, comparison, comparison is null ? null : CreditCardStatementAgentEvaluator.Summarize(comparison),
             invalidEvidence ? "FinancialEvidenceInvalid" : changedTotal ? "OfficialTotalChanged" : null)
-        { Attempts = attempts, ValidationStatus = invalidEvidence || changedTotal ? "Rejected" : "Valid", DocumentWarnings = warnings.Count == 0 ? null : warnings };
+        { Attempts = attempts, ValidationStatus = invalidEvidence || changedTotal ? "Rejected" : visualReview || incomplete || ocrReview ? "NeedsReview" : "Valid", DocumentWarnings = warnings.Count == 0 ? null : warnings,
+            PageCoverage = request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray() };
     }
 
     private async Task<CreditCardStatementExtractionResult> ParserPrimaryAsync(CreditCardStatementAgentRequest request, bool shadow, CancellationToken cancellationToken)

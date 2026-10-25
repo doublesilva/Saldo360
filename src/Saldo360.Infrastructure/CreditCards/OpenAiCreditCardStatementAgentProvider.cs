@@ -52,6 +52,18 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
         var client = clients.CreateClient("CreditCardStatementAgent");
         using var message = new HttpRequestMessage(HttpMethod.Post, "responses");
         message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        var content = new List<object> { new { type = "input_text", text = request.DocumentText } };
+        if (request.ImagePages.Count > 12 || request.ImagePages.Select(p => p.Number).Distinct().Count() != request.ImagePages.Count
+            || request.ImagePages.Sum(p => (long)(p.ImagePng?.Length ?? 0)) > 24 * 1024 * 1024)
+            throw new CreditCardStatementAgentUnavailableException("Limite multimodal excedido.", failureCode: "VisualInputLimitExceeded");
+        foreach (var page in request.ImagePages.OrderBy(p => p.Number))
+        {
+            if (page.ImagePng is not { Length: > 0 and <= 4 * 1024 * 1024 } png || png.Length < 8
+                || !png.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }))
+                throw new CreditCardStatementAgentUnavailableException("Imagem indisponível.", failureCode: "InvalidVisualInput");
+            content.Add(new { type = "input_text", text = $"--- IMAGE PAGE {page.Number} ---" });
+            content.Add(new { type = "input_image", image_url = "data:image/png;base64," + Convert.ToBase64String(png), detail = "high" });
+        }
         message.Content = JsonContent.Create(new
         {
             model = options.Model,
@@ -59,7 +71,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
             input = new object[]
             {
                 new { role = "system", content = new[] { new { type = "input_text", text = request.SystemPrompt } } },
-                new { role = "user", content = new[] { new { type = "input_text", text = request.DocumentText } } },
+                new { role = "user", content = content.ToArray() },
             },
             text = new { format = new { type = "json_schema", name = request.SchemaName, strict = true, schema = request.OutputSchema ?? OutputSchema } },
         });

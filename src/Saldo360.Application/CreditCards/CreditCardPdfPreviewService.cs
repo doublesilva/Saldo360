@@ -77,7 +77,12 @@ public sealed class CreditCardPdfPreviewService(
 public sealed record CreditCardPdfExtractedPage(
     int Number,
     string Text,
-    IReadOnlyList<CreditCardPdfExtractedWord>? Words = null);
+    IReadOnlyList<CreditCardPdfExtractedWord>? Words = null)
+{
+    public string TextSource { get; init; } = "Native";
+    public string ProcessingStatus { get; init; } = "Native";
+    [System.Text.Json.Serialization.JsonIgnore] public byte[]? ImagePng { get; init; }
+}
 public sealed record CreditCardPdfExtractedWord(string Text, double X, double Top, double Right, double Bottom);
 public sealed record CreditCardPdfExtractedDocument(IReadOnlyList<CreditCardPdfExtractedPage> Pages);
 

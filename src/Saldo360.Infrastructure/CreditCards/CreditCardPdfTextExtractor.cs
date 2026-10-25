@@ -6,7 +6,7 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
-internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
+internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageReader = null) : ICreditCardPdfTextExtractor
 {
     private readonly CreditCardPdfParserResolver _parsers = new();
     private static readonly Regex DateRegex = new(@"(?<!\d)(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2})(?!\d)", RegexOptions.Compiled);
@@ -31,6 +31,9 @@ internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
             using var document = options is null ? PdfDocument.Open(input) : PdfDocument.Open(input, options);
             if (document.NumberOfPages > maxPages) throw new InvalidDataException("page limit");
             var pages = new List<CreditCardPdfExtractedPage>(document.NumberOfPages);
+            var images = 0;
+            long imageBytes = 0;
+            var preparation = System.Diagnostics.Stopwatch.StartNew();
             for (var pageNumber = 1; pageNumber <= document.NumberOfPages; pageNumber++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -43,7 +46,21 @@ internal sealed class CreditCardPdfTextExtractor : ICreditCardPdfTextExtractor
                         word.BoundingBox.Right,
                         page.Height - word.BoundingBox.Bottom))
                     .ToList();
-                pages.Add(new(pageNumber, page.Text, words));
+                var extracted = new CreditCardPdfExtractedPage(pageNumber, page.Text, words);
+                var needsOcr = !LocalStatementPageReader.Usable(page.Text);
+                if (pageReader is not null && (pageNumber == 1 || needsOcr))
+                {
+                    if (++images > 12 || preparation.Elapsed > TimeSpan.FromSeconds(90)) extracted = extracted with { ProcessingStatus = "ImageLimitExceeded" };
+                    else
+                    {
+                        var builder = new UglyToad.PdfPig.Writer.PdfDocumentBuilder();
+                        builder.AddPage(document, pageNumber); // Already unlocked in memory; no password in process arguments.
+                        extracted = await pageReader.ReadAsync(builder.Build(), extracted, needsOcr, cancellationToken);
+                        imageBytes += extracted.ImagePng?.Length ?? 0;
+                        if (imageBytes > 24L * 1024 * 1024) extracted = extracted with { ImagePng = null, ProcessingStatus = "ImageLimitExceeded" };
+                    }
+                }
+                pages.Add(extracted);
             }
             return new(pages);
         }

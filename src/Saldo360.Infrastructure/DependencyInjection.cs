@@ -131,6 +131,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialDebtInstallmentReconciliationRepository, FinancialDebtInstallmentReconciliationRepository>();
         services.AddScoped<IFinancialGoalRepository, FinancialGoalRepository>();
         services.AddScoped<IFinancialGoalAllocationRepository, FinancialGoalAllocationRepository>();
+        services.AddSingleton<LocalStatementPageReader>();
         services.AddSingleton<ICreditCardPdfTextExtractor, CreditCardPdfTextExtractor>();
         var statementAgent = configuration.GetSection("CreditCardStatementAgent").Get<CreditCardStatementAgentOptions>() ?? new CreditCardStatementAgentOptions();
         services.AddSingleton(statementAgent);
