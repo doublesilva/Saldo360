@@ -59,7 +59,7 @@ public sealed class CreditCardStatementAgentUnavailableException(string message,
 public static class CreditCardStatementAgentPrompt
 {
     public const string Version = "2026-10-25.2";
-    public const string PurchasesOnlyVersion = "2026-10-25.purchases.1";
+    public const string PurchasesOnlyVersion = "2026-10-25.purchases.2";
     public const string PurchasesOnly = """
         Extraia EXCLUSIVAMENTE os lançamentos individuais de compras e parcelas documentados nas tabelas de compras da fatura.
         Examine todas as páginas fornecidas, sem amostragem. Cabeçalhos e tabelas continuam na página seguinte; não substitua a tabela por um resumo.
@@ -69,9 +69,15 @@ public static class CreditCardStatementAgentPrompt
         Cada item deve corresponder a uma linha de compra, com descrição do estabelecimento, valor exato daquela linha e página original. Nunca use valor do boleto, totalizador, limite ou outro bloco como valor de compra.
         includedInCurrentTotal é true somente para compra/parcela corrente; FutureInstallments usa false e exige linha individual explícita, nunca o total consolidado de parcelas futuras.
         Não deduplique compras iguais. Não reconstrua a compra original nem multiplique parcelas; preserve 07/10 como 7 de 10. Sem parcelamento documentado, use null nos dois números.
+        Leia X/Y ao final do estabelecimento como número atual X e quantidade total Y, inclusive sem espaço: LOJA06/06, LOJA04/06, LOJA04/05, LOJA03/03, LOJA03/12 e LOJA02/02 são parcelas, não compras à vista.
+        Nesses casos use obrigatoriamente type Installment, installmentNumber X e installmentCount Y, removendo apenas os zeros à esquerda nos campos inteiros. Não deixe os números null nem classifique como Purchase.
+        Distinga a data na coluna DATA do X/Y após o estabelecimento: em 04/06 LOJA03/12 25,00, 04/06 é data, 03/12 é parcela e 25,00 é o valor individual. Não interprete códigos comerciais (Código/Ref/Pedido), datas completas ou valores como parcelamento.
+        A seção Compras parceladas - próximas faturas contém lançamentos individuais futuros. Leia todas essas linhas, use type Installment, section FutureInstallments e includedInCurrentTotal false. Próxima fatura, Demais faturas e Total para próximas faturas são totalizadores e não são itens.
+        Não misture a mesma compra corrente com sua próxima parcela: mantenha cada linha explicitamente exibida uma única vez, com seu próprio X/Y, valor e seção. Não gere as parcelas não exibidas.
         transactionDate vem da própria compra, yyyy-MM-dd ou null se não comprovável; nunca substitua por vencimento, fechamento ou data de pagamento. Datas não comprovadas permanecem null.
         amount é string decimal positiva com duas casas, sem arredondar ou corrigir o valor exibido. Na dúvida sobre a interpretação, use confidence Low, sem inventar uma compra.
         evidence deve ser uma citação literal contínua da linha de compra, contendo a descrição e seu valor. Não reescreva citações, não junte trechos de blocos distintos e não substitua por um rótulo do resumo.
+        Não concatene o final X/Y com o valor monetário nem reconstrua a linha a partir dos campos. Cite o texto efetivamente fornecido, com sua delimitação; não fabrique evidência para satisfazer a conciliação.
         Para fato exclusivamente visual, prefixe evidence com VISUAL: e informe a página da imagem; isso exige revisão e não constitui citação textual confirmada.
         header é somente contexto documental. issuer, cardLastDigits, cardProduct, holderName e identityEvidence/identityPage devem vir do PDF, nunca de um cartão candidato ou de conhecimento externo.
         officialTotal é apenas a referência oficial do cabeçalho, ou null; nunca vira item. A soma das compras pode diferir da fatura por componentes fora do escopo: preserve a diferença, não extraia pagamentos ou ajustes para fechá-la.

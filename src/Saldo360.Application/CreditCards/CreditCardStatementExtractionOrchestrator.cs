@@ -56,7 +56,8 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         }
         var comparison = parserResult.Preview is null ? null : CreditCardStatementAgentEvaluator.Compare(parserResult.Preview, agentResult.Preview);
         var assessment = CreditCardStatementAgentEvaluator.Assess(agentResult.Preview);
-        var invalidEvidence = !Grounded(agentResult.Preview, request.Document);
+        var evidenceDiagnostics = GroundingDiagnostics(agentResult.Preview, request.Document);
+        var invalidEvidence = evidenceDiagnostics.Count > 0;
         var visualOnly = agentResult.Preview.Items.Where(i => i.Evidence.StartsWith("VISUAL:", StringComparison.Ordinal)).ToArray();
         var visualReview = visualOnly.Length > 0 && visualOnly.All(i => request.Document.Pages.Any(p => p.Number == i.Page && p.ImagePng is not null))
             && Grounded(agentResult.Preview with { Header = agentResult.Preview.Header with { OfficialTotal = null },
@@ -79,7 +80,8 @@ public sealed class CreditCardStatementExtractionOrchestrator(
             parserResult.Preview, comparison, comparison is null ? null : CreditCardStatementAgentEvaluator.Summarize(comparison),
             invalidEvidence ? "FinancialEvidenceInvalid" : changedTotal ? "OfficialTotalChanged" : null)
         { Attempts = attempts, ValidationStatus = invalidEvidence || changedTotal ? "Rejected" : visualReview || incomplete || ocrReview ? "NeedsReview" : "Valid", DocumentWarnings = warnings.Count == 0 ? null : warnings,
-            PageCoverage = request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray(), OutputCoverage = batched?.Coverage, StructuredDocument = batched?.Document };
+            PageCoverage = request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray(), OutputCoverage = batched?.Coverage, StructuredDocument = batched?.Document,
+            EvidenceDiagnostics = evidenceDiagnostics.Count == 0 ? null : evidenceDiagnostics };
     }
 
     private async Task<CreditCardStatementExtractionResult> ParserPrimaryAsync(CreditCardStatementAgentRequest request, bool shadow, CancellationToken cancellationToken)
@@ -125,27 +127,42 @@ public sealed class CreditCardStatementExtractionOrchestrator(
     }
 
     private static bool Grounded(CreditCardStatementAgentPreview preview, CreditCardPdfExtractedDocument document)
+        => GroundingDiagnostics(preview, document).Count == 0;
+
+    public static IReadOnlyList<StatementEvidenceDiagnostic> GroundingDiagnostics(CreditCardStatementAgentPreview preview, CreditCardPdfExtractedDocument document)
     {
+        var diagnostics = new List<StatementEvidenceDiagnostic>();
         static bool HasAmount(string text, string money)
         {
             if (!decimal.TryParse(money, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out var amount)) return false;
             var variants = new[] { money, amount.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")), amount.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")) };
             return variants.Any(value => System.Text.RegularExpressions.Regex.IsMatch(text, $@"(?<![\d.,]){System.Text.RegularExpressions.Regex.Escape(value)}(?![\d.,])"));
         }
-        if (preview.Header.OfficialTotal is { } total && !document.Pages.Any(page => HasAmount(page.Text, total))) return false;
+        if (preview.Header.OfficialTotal is { } total && !document.Pages.Any(page => HasAmount(page.Text, total)))
+            diagnostics.Add(new("OfficialTotalEvidenceMissing", "$.header.officialTotal"));
         foreach (var duplicate in preview.Items.GroupBy(item => (item.Page, item.Evidence)).Where(group => group.Count() > 1))
         {
             var text = document.Pages.FirstOrDefault(page => page.Number == duplicate.Key.Page)?.Text ?? string.Empty;
             var count = 0; var position = 0;
             while ((position = text.IndexOf(duplicate.Key.Evidence, position, StringComparison.OrdinalIgnoreCase)) >= 0)
             { count++; position += duplicate.Key.Evidence.Length; }
-            if (count < duplicate.Count()) return false;
+            if (count < duplicate.Count()) diagnostics.Add(new("EvidenceOccurrenceMismatch", "$.items[].evidence", duplicate.Key.Page));
         }
-        if (preview.Items.Any(item => item.Type is "Purchase" or "Installment" or "Fee"
-            && StatementCategorization.Normalize(item.OriginalDescription) is "TOTAL" or "TOTALDAFATURA" or "VALORTOTAL" or "AJUSTEDECONCILIACAO")) return false;
-        return preview.Items.All(item => document.Pages.Any(page => page.Number == item.Page
-            && page.Text.Contains(item.Evidence, StringComparison.OrdinalIgnoreCase) && HasAmount(item.Evidence, item.Amount)
-            && StatementCategorization.Normalize(item.Evidence).Contains(StatementCategorization.Normalize(item.OriginalDescription), StringComparison.Ordinal)));
+        for (var index = 0; index < preview.Items.Count; index++)
+        {
+            var item = preview.Items[index];
+            var page = document.Pages.FirstOrDefault(p => p.Number == item.Page);
+            if (item.Type is "Purchase" or "Installment" or "Fee"
+                && StatementCategorization.Normalize(item.OriginalDescription) is "TOTAL" or "TOTALDAFATURA" or "VALORTOTAL" or "AJUSTEDECONCILIACAO")
+                diagnostics.Add(new("SummaryClassifiedAsPurchase", "$.items[].originalDescription", item.Page, index));
+            if (page is null) diagnostics.Add(new("EvidencePageMissing", "$.items[].page", item.Page, index));
+            else if (!page.Text.Contains(item.Evidence, StringComparison.OrdinalIgnoreCase))
+                diagnostics.Add(new("EvidenceQuoteNotFound", "$.items[].evidence", item.Page, index));
+            if (!HasAmount(item.Evidence, item.Amount)) diagnostics.Add(new("EvidenceAmountNotFound", "$.items[].amount", item.Page, index));
+            if (!StatementCategorization.Normalize(item.Evidence).Contains(StatementCategorization.Normalize(item.OriginalDescription), StringComparison.Ordinal))
+                diagnostics.Add(new("EvidenceDescriptionMismatch", "$.items[].originalDescription", item.Page, index));
+        }
+        return diagnostics;
     }
 
     private static void Record(CreditCardStatementAgentMode mode, string primarySource, int pages, CreditCardStatementAgentPreview? preview,

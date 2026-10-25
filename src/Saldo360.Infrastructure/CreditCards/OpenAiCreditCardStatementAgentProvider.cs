@@ -52,6 +52,12 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
         properties["nature"]!["enum"] = new System.Text.Json.Nodes.JsonArray("Debit");
         properties["type"]!["enum"] = new System.Text.Json.Nodes.JsonArray("Purchase", "Installment");
         properties["section"]!["enum"] = new System.Text.Json.Nodes.JsonArray("CurrentInvoice", "FutureInstallments");
+        properties["type"]!["description"] = "Use Installment whenever an explicit X/Y is associated with the purchase description, including MERCHANT06/06 without a space; Purchase only when no installment is documented.";
+        properties["installmentNumber"]!["description"] = "X in the documented X/Y marker; 06/06 means 6. Null only when no installment is documented. Not the day of a date.";
+        properties["installmentCount"]!["description"] = "Y in the documented X/Y marker; 03/12 means 12. Do not infer from money, dates or commercial codes.";
+        properties["amount"]!["description"] = "Exact individual amount of the displayed purchase/installment, not the original purchase total, a subtotal or an amount multiplied by Y.";
+        properties["transactionDate"]!["description"] = "Date of the individual transaction/purchase, yyyy-MM-dd or null. Never the invoice due date, closing date or a date inferred from X/Y.";
+        properties["section"]!["description"] = "Individual rows under Compras parceladas - próximas faturas belong to FutureInstallments with includedInCurrentTotal=false. Do not include section totals.";
         return JsonSerializer.SerializeToElement(schema);
     }
 

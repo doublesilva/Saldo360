@@ -11,6 +11,7 @@ public static class StatementPurchaseExtractionPolicy
         else if (item.Section is not ("CurrentInvoice" or "FutureInstallments")) error = "PurchaseScopeInvalidSection:$.items[].section";
         else if (item.IncludedInCurrentTotal != (item.Section == "CurrentInvoice")) error = "PurchaseScopeInvalidInclusion:$.items[].includedInCurrentTotal";
         else if (IsSummary(item.OriginalDescription) || IsSummary(item.Evidence)) error = "PurchaseSummaryNotAllowed:$.items[]";
+        else if (!StatementInstallmentEvidence.TryValidate(item, out var installmentError)) error = installmentError;
         return error.Length == 0;
     }
 
@@ -27,6 +28,7 @@ public static class StatementPurchaseExtractionPolicy
         "LANCAMENTOSATUAIS", "TOTALDESTAFATURA", "TOTALDAFATURA", "VALORTOTALDAFATURA", "VALORDODOCUMENTO",
         "TOTALDECOMPRAS", "TOTALDASCOMPRAS", "TOTALDELANCAMENTOS", "TOTALDOSLANCAMENTOS", "SUBTOTAL",
         "PAGAMENTOMINIMO", "PAGAMENTOEFETUADO", "PAGAMENTORECEBIDO", "RESUMODAFATURA", "RESUMODOMES",
-        "SALDOANTERIOR", "SALDOFINANCIADO", "LIMITEDECREDITO", "LIMITEDISPONIVEL", "TOTALDEPARCELASFUTURAS"
+        "SALDOANTERIOR", "SALDOFINANCIADO", "LIMITEDECREDITO", "LIMITEDISPONIVEL", "TOTALDEPARCELASFUTURAS",
+        "PROXIMAFATURA", "DEMAISFATURAS", "TOTALPARAPROXIMASFATURAS"
     ];
 }
