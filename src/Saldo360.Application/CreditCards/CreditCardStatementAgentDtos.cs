@@ -217,7 +217,13 @@ public static class CreditCardStatementAgentSchema
     private static readonly HashSet<string> Confidences = ["High", "Medium", "Low"];
 
     public static bool TryValidate(string json, int pageCount, out CreditCardStatementAgentDocument? document, out string error, bool purchasesOnly = false)
+        => TryValidate(json, pageCount, out document, out error, out _, purchasesOnly);
+
+    public static bool TryValidate(string json, int pageCount, out CreditCardStatementAgentDocument? document, out string error,
+        out IReadOnlyList<StatementInstallmentDiagnostic> installmentDiagnostics, bool purchasesOnly = false)
     {
+        var diagnostics = new List<StatementInstallmentDiagnostic>();
+        installmentDiagnostics = diagnostics;
         document = null;
         error = string.Empty;
         JsonDocument structured;
@@ -255,8 +261,10 @@ public static class CreditCardStatementAgentSchema
         if (!OptionalDate(document.Header.DueDate)) return Fail("SchemaInvalidDate", "$.header.dueDate", out error);
         if (!OptionalMoney(document.Header.OfficialTotal)) return Fail("SchemaInvalidMoney", "$.header.officialTotal", out error);
         var normalized = new List<CreditCardStatementAgentItem>(document.Items.Count);
-        foreach (var item in document.Items)
+        string? purchaseError = null;
+        for (var itemIndex = 0; itemIndex < document.Items.Count; itemIndex++)
         {
+            var item = document.Items[itemIndex];
             if (string.IsNullOrWhiteSpace(item.OriginalDescription) || item.OriginalDescription.Length > 500) return Fail("SchemaInvalidText", "$.items[].originalDescription", out error);
             if (!OptionalDate(item.TransactionDate)) return Fail("SchemaInvalidDate", "$.items[].transactionDate", out error);
             if (!OptionalText(item.NormalizedDescription, 500)) return Fail("SchemaInvalidText", "$.items[].normalizedDescription", out error);
@@ -270,12 +278,17 @@ public static class CreditCardStatementAgentSchema
             if (item.Page < 1 || item.Page > pageCount) return Fail("SchemaInvalidEvidence", "$.items[].page", out error);
             if (string.IsNullOrWhiteSpace(item.Evidence) || item.Evidence.Length > 300) return Fail("SchemaInvalidEvidence", "$.items[].evidence", out error);
             if (!ValidInstallment(item)) return Fail("SchemaInvalidInstallment", "$.items[]", out error);
-            if (purchasesOnly && !StatementPurchaseExtractionPolicy.TryValidateItem(item, out error)) return false;
+            if (purchasesOnly && !StatementPurchaseExtractionPolicy.TryValidateItem(item, out var scopeError, itemIndex, diagnostics))
+            {
+                purchaseError ??= scopeError;
+                continue; // Diagnose other items, but never return a partially accepted document.
+            }
             var type = item.Confidence == "Low" ? "Unknown" : item.Type;
             var included = item.IncludedInCurrentTotal;
             if (type == "Payment" || item.Section is "FutureInstallments" or "Payments") included = false;
             normalized.Add(item with { Amount = Money.Format(amount), Type = type, IncludedInCurrentTotal = included });
         }
+        if (purchaseError is not null) { document = null; error = purchaseError; return false; }
         document = document with { Items = normalized };
         error = string.Empty;
         return true;

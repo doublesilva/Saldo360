@@ -3,28 +3,58 @@ using System.Text.RegularExpressions;
 
 namespace Saldo360.Application.CreditCards;
 
+// Allowlisted metadata only. Never contains descriptions, amounts, quotes or provider payloads.
+// ItemIndex is zero-based within the provider response; Batch is one-based when batching is used.
+public sealed record StatementInstallmentDiagnostic(int ItemIndex, int Page, string Code, string Path,
+    string Field, string? Marker, int? InstallmentNumber, int? InstallmentCount, int? Batch = null);
+
 // Checks explicit numbering attached to an existing item. Never creates/corrects purchases or schedules.
 internal static partial class StatementInstallmentEvidence
 {
-    public static bool TryValidate(CreditCardStatementAgentItem item, out string error)
+    public static bool TryValidate(CreditCardStatementAgentItem item, out string error, int itemIndex = 0,
+        ICollection<StatementInstallmentDiagnostic>? diagnostics = null)
     {
         error = string.Empty;
         var description = Numbering(item.OriginalDescription);
         var evidence = Numbering(item.Evidence);
+        var explicitNumber = description ?? evidence;
+        void Add(string code, string field, (int Number, int Count)? marker) => diagnostics?.Add(new(itemIndex, item.Page, code,
+            "$.items[]." + field, field, marker is { } value ? FormattableString.Invariant($"{value.Number:00}/{value.Count:00}") : null,
+            item.InstallmentNumber, item.InstallmentCount));
         if (description is not null && evidence is not null && description != evidence)
+        {
             error = "PurchaseInstallmentEvidenceConflict:$.items[]";
-        else if ((description ?? evidence) is { } explicitNumber)
+            // Neither conflicting candidate is reported as an unequivocal document marker.
+            Add("PurchaseInstallmentEvidenceConflict", "evidence", null);
+        }
+        else if (explicitNumber is { } numbering)
         {
             if (item.InstallmentNumber is null || item.InstallmentCount is null)
+            {
                 error = "PurchaseInstallmentMetadataMissing:$.items[].installmentNumber";
-            else if (item.InstallmentNumber != explicitNumber.Number || item.InstallmentCount != explicitNumber.Count)
+                if (item.InstallmentNumber is null) Add("PurchaseInstallmentMetadataMissing", "installmentNumber", numbering);
+                if (item.InstallmentCount is null) Add("PurchaseInstallmentMetadataMissing", "installmentCount", numbering);
+            }
+            else if (item.InstallmentNumber != numbering.Number || item.InstallmentCount != numbering.Count)
+            {
                 error = "PurchaseInstallmentMetadataMismatch:$.items[]";
-            else if (item.Type != "Installment") error = "PurchaseInstallmentTypeMismatch:$.items[].type";
+                if (item.InstallmentNumber != numbering.Number) Add("PurchaseInstallmentMetadataMismatch", "installmentNumber", numbering);
+                if (item.InstallmentCount != numbering.Count) Add("PurchaseInstallmentMetadataMismatch", "installmentCount", numbering);
+            }
+            else if (item.Type != "Installment")
+            { error = "PurchaseInstallmentTypeMismatch:$.items[].type"; Add("PurchaseInstallmentTypeMismatch", "type", numbering); }
         }
         else if (item.Type == "Installment" && (item.InstallmentNumber is null || item.InstallmentCount is null))
+        {
             error = "PurchaseInstallmentMetadataMissing:$.items[].installmentNumber";
+            if (item.InstallmentNumber is null) Add("PurchaseInstallmentMetadataMissing", "installmentNumber", null);
+            if (item.InstallmentCount is null) Add("PurchaseInstallmentMetadataMissing", "installmentCount", null);
+        }
         else if (item.Type == "Purchase" && (item.InstallmentNumber is not null || item.Section == "FutureInstallments"))
+        {
             error = "PurchaseInstallmentTypeMismatch:$.items[].type";
+            Add("PurchaseInstallmentTypeMismatch", "type", null);
+        }
         return error.Length == 0;
     }
 

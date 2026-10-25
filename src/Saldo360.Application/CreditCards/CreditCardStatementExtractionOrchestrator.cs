@@ -34,8 +34,8 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         if (batched?.Document is not null)
             CreditCardStatementAgentEvaluator.TryEvaluate(System.Text.Json.JsonSerializer.Serialize(batched.Document, CreditCardStatementAgentSchema.Json),
                 request.FileName, request.Document.Pages.Max(p => p.Number), out financial, out validationError);
-        (CreditCardStatementAgentPreview? Preview, string? Error) agentResult = batched is null
-            ? await EvaluateAsync(agent, "agent", request, cancellationToken) : (financial, financial is null ? validationError : null);
+        ExtractionEvaluation agentResult = batched is null
+            ? await EvaluateAsync(agent, "agent", request, cancellationToken) : new(financial, financial is null ? validationError : null, batched.InstallmentDiagnostics);
         var attempts = 1;
         // No successful batch is repeated within the operation; divergence is returned for review.
         var officialAnchor = agentResult.Preview?.Header.OfficialTotal;
@@ -52,6 +52,7 @@ public sealed class CreditCardStatementExtractionOrchestrator(
             Record(options.Mode, "agent", request.Document.Pages.Count, null, AgentExtractionAssessment.Rejected, false);
             return new(options.Mode.ToString(), "Agent", null, AgentExtractionAssessment.Rejected, false,
                 parserResult.Preview, null, null, agentResult.Error) { Attempts = attempts, ValidationStatus = "Rejected", OutputCoverage = batched?.Coverage, StructuredDocument = batched?.Document,
+                    InstallmentDiagnostics = agentResult.InstallmentDiagnostics is { Count: > 0 } ? agentResult.InstallmentDiagnostics : null,
                     PageCoverage = batched is null ? null : request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray() };
         }
         var comparison = parserResult.Preview is null ? null : CreditCardStatementAgentEvaluator.Compare(parserResult.Preview, agentResult.Preview);
@@ -81,7 +82,8 @@ public sealed class CreditCardStatementExtractionOrchestrator(
             invalidEvidence ? "FinancialEvidenceInvalid" : changedTotal ? "OfficialTotalChanged" : null)
         { Attempts = attempts, ValidationStatus = invalidEvidence || changedTotal ? "Rejected" : visualReview || incomplete || ocrReview ? "NeedsReview" : "Valid", DocumentWarnings = warnings.Count == 0 ? null : warnings,
             PageCoverage = request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray(), OutputCoverage = batched?.Coverage, StructuredDocument = batched?.Document,
-            EvidenceDiagnostics = evidenceDiagnostics.Count == 0 ? null : evidenceDiagnostics };
+            EvidenceDiagnostics = evidenceDiagnostics.Count == 0 ? null : evidenceDiagnostics,
+            InstallmentDiagnostics = agentResult.InstallmentDiagnostics is { Count: > 0 } ? agentResult.InstallmentDiagnostics : null };
     }
 
     private async Task<CreditCardStatementExtractionResult> ParserPrimaryAsync(CreditCardStatementAgentRequest request, bool shadow, CancellationToken cancellationToken)
@@ -97,7 +99,10 @@ public sealed class CreditCardStatementExtractionOrchestrator(
             null, comparison, comparison is null ? null : CreditCardStatementAgentEvaluator.Summarize(comparison), agentResult.Error);
     }
 
-    private static async Task<(CreditCardStatementAgentPreview? Preview, string? Error)> EvaluateAsync(
+    private sealed record ExtractionEvaluation(CreditCardStatementAgentPreview? Preview, string? Error,
+        IReadOnlyList<StatementInstallmentDiagnostic>? InstallmentDiagnostics = null);
+
+    private static async Task<ExtractionEvaluation> EvaluateAsync(
         ICreditCardStatementExtractorAgent extractor, string source, CreditCardStatementAgentRequest request, CancellationToken cancellationToken)
     {
         var started = System.Diagnostics.Stopwatch.StartNew();
@@ -106,13 +111,14 @@ public sealed class CreditCardStatementExtractionOrchestrator(
             var json = await extractor.ExtractAsync(request, cancellationToken);
             if (request.PurchasesOnly)
             {
-                if (!CreditCardStatementAgentSchema.TryValidate(json, request.Document.Pages.Count, out _, out var schemaError, purchasesOnly: true)) return (null, schemaError);
+                if (!CreditCardStatementAgentSchema.TryValidate(json, request.Document.Pages.Count, out _, out var schemaError, out var diagnostics, purchasesOnly: true))
+                    return new(null, schemaError, diagnostics);
             }
             return CreditCardStatementAgentEvaluator.TryEvaluate(json, request.FileName, request.Document.Pages.Count, out var preview, out var error)
-                ? (preview, null) : (null, error);
+                ? new(preview, null) : new(null, error);
         }
-        catch (CreditCardStatementAgentUnavailableException exception) { return (null, exception.FailureCode ?? "Provider experimental indisponível."); }
-        catch (Exception exception) when (exception is not OperationCanceledException) { return (null, "Falha sanitizada na extração experimental."); }
+        catch (CreditCardStatementAgentUnavailableException exception) { return new(null, exception.FailureCode ?? "Provider experimental indisponível."); }
+        catch (Exception exception) when (exception is not OperationCanceledException) { return new(null, "Falha sanitizada na extração experimental."); }
         finally { Duration.Record(started.Elapsed.TotalMilliseconds, new KeyValuePair<string, object?>("source", source)); }
     }
 

@@ -3,7 +3,8 @@ namespace Saldo360.Application.CreditCards;
 // Scope guard, not a parser: it never creates, corrects, removes or reconciles transactions.
 public static class StatementPurchaseExtractionPolicy
 {
-    public static bool TryValidateItem(CreditCardStatementAgentItem item, out string error)
+    public static bool TryValidateItem(CreditCardStatementAgentItem item, out string error, int itemIndex = 0,
+        ICollection<StatementInstallmentDiagnostic>? diagnostics = null)
     {
         error = string.Empty;
         if (item.Type is not ("Purchase" or "Installment")) error = "PurchaseScopeInvalidType:$.items[].type";
@@ -11,7 +12,7 @@ public static class StatementPurchaseExtractionPolicy
         else if (item.Section is not ("CurrentInvoice" or "FutureInstallments")) error = "PurchaseScopeInvalidSection:$.items[].section";
         else if (item.IncludedInCurrentTotal != (item.Section == "CurrentInvoice")) error = "PurchaseScopeInvalidInclusion:$.items[].includedInCurrentTotal";
         else if (IsSummary(item.OriginalDescription) || IsSummary(item.Evidence)) error = "PurchaseSummaryNotAllowed:$.items[]";
-        else if (!StatementInstallmentEvidence.TryValidate(item, out var installmentError)) error = installmentError;
+        else if (!StatementInstallmentEvidence.TryValidate(item, out var installmentError, itemIndex, diagnostics)) error = installmentError;
         return error.Length == 0;
     }
 

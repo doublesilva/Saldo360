@@ -16,7 +16,10 @@ public sealed record StatementOutputCoverage(int TotalPages, IReadOnlyList<State
     public int InconclusivePages => Pages.Count(p => p.Status == "Inconclusive");
     public int FailedPages => Pages.Count(p => p.Status == "Failed");
 }
-public sealed record StatementBatchExtraction(CreditCardStatementAgentDocument? Document, StatementOutputCoverage Coverage, IReadOnlyList<string> Warnings);
+public sealed record StatementBatchExtraction(CreditCardStatementAgentDocument? Document, StatementOutputCoverage Coverage, IReadOnlyList<string> Warnings)
+{
+    public IReadOnlyList<StatementInstallmentDiagnostic> InstallmentDiagnostics { get; init; } = [];
+}
 
 public sealed partial class LlmCreditCardStatementExtractorAgent
 {
@@ -26,6 +29,7 @@ public sealed partial class LlmCreditCardStatementExtractorAgent
         if (pages.Length is 0 or > 50 || pages.Select(p => p.Number).Distinct().Count() != pages.Length || pages.Any(p => p.Number < 1))
             throw new CreditCardStatementAgentUnavailableException("Contexto de páginas inválido.", failureCode: "InvalidPageContext");
         var outputPages = new List<StatementOutputPage>(); var outputBatches = new List<StatementOutputBatch>();
+        var diagnostics = new List<StatementInstallmentDiagnostic>();
         var items = new List<CreditCardStatementAgentItem>(); var warnings = new HashSet<string>(StringComparer.Ordinal);
         var headers = new JsonObject(); var conflicts = new HashSet<string>(StringComparer.Ordinal);
         var fields = new[] { "issuer", "cardLastDigits", "competence", "closingDate", "dueDate", "officialTotal", "cardProduct", "holderName", "identityEvidence", "identityPage" };
@@ -41,9 +45,10 @@ public sealed partial class LlmCreditCardStatementExtractorAgent
             {
                 sent = true;
                 var json = await CompletePagesAsync(request with { Document = new(batch), BatchPages = true }, ct);
-                if (!CreditCardStatementAgentSchema.TryValidate(json, pages.Max(p => p.Number), out document, out var error, request.PurchasesOnly)) failure = error;
+                if (!CreditCardStatementAgentSchema.TryValidate(json, pages.Max(p => p.Number), out document, out var error, out var batchDiagnostics, request.PurchasesOnly)) failure = error;
                 else if (document!.SchemaVersion != "2.0") failure = "BatchSchemaVersionInvalid";
                 else if (document.Items.Any(i => !batch.Any(p => p.Number == i.Page)) || document.Header.IdentityPage is { } ip && !batch.Any(p => p.Number == ip)) failure = "BatchPageMismatch";
+                diagnostics.AddRange(batchDiagnostics.Select(d => d with { Batch = batchNumber }));
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (CreditCardStatementAgentUnavailableException e)
@@ -82,7 +87,8 @@ public sealed partial class LlmCreditCardStatementExtractorAgent
         if (items.Count > 2000) { warnings.Add("OutputItemLimitExceeded"); items = items.Take(2000).ToList(); }
         var merged = outputBatches.Any(b => b.Status != "Failed") ? new CreditCardStatementAgentDocument("2.0",
             headers.Deserialize<CreditCardStatementAgentHeader>(CreditCardStatementAgentSchema.Json)!, items) : null;
-        return new(merged, new(pages.Length, outputPages, outputBatches), warnings.Order(StringComparer.Ordinal).ToArray());
+        return new(merged, new(pages.Length, outputPages, outputBatches), warnings.Order(StringComparer.Ordinal).ToArray())
+        { InstallmentDiagnostics = diagnostics };
     }
 
     private static bool Prepared(CreditCardPdfExtractedPage page) => page.ProcessingStatus is not ("Unavailable" or "Unreadable" or "ImageLimitExceeded")
