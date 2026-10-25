@@ -72,7 +72,7 @@ public sealed class CreditCardStatementExtractionOrchestrator(
                 Items = agentResult.Preview.Items.Except(visualOnly).ToArray() }, request.Document);
         if (visualReview) invalidEvidence = false; // Visual facts are reviewable, never declared text-grounded or reliable.
         var incomplete = request.Document.Pages.Any(p => p.ProcessingStatus is "Unavailable" or "Unreadable" or "ImageLimitExceeded");
-        var ocrReview = request.Document.Pages.Any(p => p.TextSource == "OCR");
+        var ocrReview = request.Document.Pages.Any(p => p.TextSource == "OCR") || documentary?.UsesOcrPurchaseEvidence == true;
         var changedTotal = officialAnchor != agentResult.Preview.Header.OfficialTotal;
         if (invalidEvidence || changedTotal || documentary?.HasContradiction == true) assessment = AgentExtractionAssessment.Rejected;
         else if (visualReview || incomplete || ocrReview || documentary?.CoverageComplete == false
@@ -93,6 +93,11 @@ public sealed class CreditCardStatementExtractionOrchestrator(
         { Attempts = attempts, ValidationStatus = invalidEvidence || changedTotal || documentary?.HasContradiction == true ? "Rejected" : visualReview || incomplete || ocrReview || documentary?.CoverageComplete == false ? "NeedsReview" : "Valid", DocumentWarnings = warnings.Count == 0 ? null : warnings,
             PageCoverage = request.Document.Pages.Select(p => new StatementPageCoverage(p.Number, p.TextSource, p.ProcessingStatus, p.ImagePng is not null)).ToArray(), OutputCoverage = outputCoverage, StructuredDocument = batched?.Document,
             PurchaseDocumentValidation = documentary,
+            Suitability = documentary is null ? null : new(assessment == AgentExtractionAssessment.Reliable && documentary.CoverageComplete,
+                documentary.DatesComplete, true, false,
+                new[] { "PersistenceContextNotValidated", !documentary.DatesComplete ? "PurchaseDateRequired" : null,
+                    !documentary.Identity.AuthorizedIdentityConfirmed ? "AuthorizedCardIdentityRequired" : null,
+                    assessment != AgentExtractionAssessment.Reliable ? "FinancialExtractionUnproven" : null }.OfType<string>().ToArray()),
             EvidenceDiagnostics = evidenceDiagnostics.Count == 0 ? null : evidenceDiagnostics,
             InstallmentDiagnostics = agentResult.InstallmentDiagnostics is { Count: > 0 } ? agentResult.InstallmentDiagnostics : null };
     }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Infrastructure.CreditCards;
@@ -23,7 +24,47 @@ internal sealed class LocalStatementPageReader(string? dockerImage = null)
             var imagePath = prefix + ".png";
             if (new FileInfo(imagePath).Length is <= 8 or > 4 * 1024 * 1024) throw new InvalidDataException();
             var image = await File.ReadAllBytesAsync(imagePath, ct);
-            if (!ocr) return page with { ImagePng = image, ProcessingStatus = "NativeWithImage" };
+            if (!ocr)
+            {
+                var regions = new List<StatementVisualRegion>();
+                var regionBudget = Stopwatch.StartNew();
+                foreach (var region in page.VisualRegions)
+                {
+                    if (region.Status != "Pending") { regions.Add(region); continue; }
+                    if (regionBudget.Elapsed > TimeSpan.FromSeconds(60)) { regions.Add(region with { Status = "RegionBudgetExceeded" }); continue; }
+                    // Poppler crops the already-unlocked page; coordinates remain in original PDF points.
+                    var scale = 2200d / Math.Max(page.PageWidth, page.PageHeight);
+                    if (!double.IsFinite(scale) || scale <= 0 || region.Right <= region.Left || region.Bottom <= region.Top)
+                    { regions.Add(region with { Status = "InvalidBounds" }); continue; }
+                    var x = (int)Math.Floor(region.Left * scale); var y = (int)Math.Floor(region.Top * scale);
+                    var width = (int)Math.Ceiling(region.Right * scale) - x; var height = (int)Math.Ceiling(region.Bottom * scale) - y;
+                    var crop = Path.Combine(directory, "region-" + region.Index.ToString(CultureInfo.InvariantCulture));
+                    stage = "RegionRender";
+                    await RunAsync("pdftoppm", ["-f", "1", "-singlefile", "-scale-to", "2200", "-x", x.ToString(CultureInfo.InvariantCulture), "-y", y.ToString(CultureInfo.InvariantCulture),
+                        "-W", width.ToString(CultureInfo.InvariantCulture), "-H", height.ToString(CultureInfo.InvariantCulture), "-png", pdf, crop], directory, ct);
+                    if (new FileInfo(crop + ".png").Length is <= 8 or > 4 * 1024 * 1024) throw new InvalidDataException();
+                    // Bounded orientation handling, not another recognition engine. Map OCR boxes back below.
+                    var rotated = region.Bottom - region.Top > 3 * (region.Right - region.Left);
+                    var ocrImage = crop + ".png";
+                    if (rotated)
+                    {
+                        var rotatedPdf = new UglyToad.PdfPig.Writer.PdfDocumentBuilder();
+                        var rotatedPage = rotatedPdf.AddPage(width, height);
+                        rotatedPage.AddPng(await File.ReadAllBytesAsync(ocrImage, ct), new(0, 0, width, height));
+                        rotatedPage.SetRotation(new(90));
+                        await File.WriteAllBytesAsync(crop + "-rotated.pdf", rotatedPdf.Build(), ct);
+                        stage = "RegionOrient";
+                        await RunAsync("pdftoppm", ["-f", "1", "-singlefile", "-r", "72", "-png", crop + "-rotated.pdf", crop + "-rotated"], directory, ct);
+                        ocrImage = crop + "-rotated.png";
+                        if (new FileInfo(ocrImage).Length is <= 8 or > 4 * 1024 * 1024) throw new InvalidDataException();
+                    }
+                    stage = "RegionOcr";
+                    await RunAsync("tesseract", [ocrImage, crop, "-l", "por", "--psm", rotated ? "11" : "3", "tsv"], directory, ct);
+                    if (new FileInfo(crop + ".tsv").Length > 1024 * 1024) throw new InvalidDataException();
+                    regions.Add(ReadRegionTsv(region, await File.ReadAllTextAsync(crop + ".tsv", ct), x / scale, y / scale, scale, rotated ? height : null));
+                }
+                return StatementVisualRegionText.Merge(page with { ImagePng = image, ProcessingStatus = "NativeWithImage", VisualRegions = regions });
+            }
             var output = Path.Combine(directory, "ocr");
             stage = "Ocr";
             await RunAsync("tesseract", [imagePath, output, "-l", "por", "--psm", "3"], directory, ct);
@@ -50,6 +91,35 @@ internal sealed class LocalStatementPageReader(string? dockerImage = null)
             if (Path.GetFullPath(directory).StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 Directory.Delete(directory, recursive: true);
         }
+    }
+
+    internal static StatementVisualRegion ReadRegionTsv(StatementVisualRegion region, string tsv, double left, double top, double scale, int? rotatedHeight = null)
+    {
+        var words = new List<CreditCardPdfExtractedWord>(); var confidence = new List<double>();
+        foreach (var line in tsv.Split('\n').Skip(1))
+        {
+            var fields = line.TrimEnd('\r').Split('\t');
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (fields.Length != 12) return region with { Status = "Unreadable" };
+            if (fields[0] != "5" || string.IsNullOrWhiteSpace(fields[11])) continue;
+            if (!double.TryParse(fields[10], NumberStyles.Float, CultureInfo.InvariantCulture, out var score)
+                || !double.IsFinite(score) || score is < 0 or > 100
+                || !int.TryParse(fields[6], out var x) || !int.TryParse(fields[7], out var y)
+                || !int.TryParse(fields[8], out var width) || !int.TryParse(fields[9], out var height)
+                || x < 0 || y < 0 || width <= 0 || height <= 0 || scale <= 0 || !double.IsFinite(scale))
+                return region with { Status = "Unreadable" };
+            var word = rotatedHeight is { } rotated
+                ? new CreditCardPdfExtractedWord(fields[11], left + y / scale, top + (rotated - x - (double)width) / scale, left + (y + (double)height) / scale, top + (rotated - x) / scale)
+                : new CreditCardPdfExtractedWord(fields[11], left + x / scale, top + y / scale, left + (x + (double)width) / scale, top + (y + (double)height) / scale);
+            if (word.X < region.Left - 2 || word.Top < region.Top - 2 || word.Right > region.Right + 2 || word.Bottom > region.Bottom + 2 || words.Count >= 20000)
+                return region with { Status = "Unreadable" };
+            words.Add(word); confidence.Add(score);
+        }
+        var text = string.Join('\n', StatementVisualRegionText.Lines(words).Select(line => string.Join(' ', line.Select(w => w.Text))));
+        var usable = text.Count(char.IsLetterOrDigit) >= 3 && !text.Any(c => c == '\ufffd' || char.IsControl(c) && c is not ('\r' or '\n' or '\t'))
+            && text.Length <= 40000 && confidence.Count > 0 && confidence.Average() >= 70
+            && confidence.Count(c => c >= 40) >= confidence.Count * .9;
+        return region with { Words = words, Text = text, Status = usable ? "Readable" : "Unreadable" };
     }
 
     private async Task RunAsync(string executable, string[] args, string directory, CancellationToken ct)

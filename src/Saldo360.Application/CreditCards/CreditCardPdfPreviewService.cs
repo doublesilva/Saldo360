@@ -82,11 +82,20 @@ public sealed record CreditCardPdfExtractedPage(
     public string TextSource { get; init; } = "Native";
     public string ProcessingStatus { get; init; } = "Native";
     public bool HasUntranscribedImageRegion { get; init; }
+    public double PageWidth { get; init; }
+    public double PageHeight { get; init; }
+    public IReadOnlyList<StatementVisualRegion> VisualRegions { get; init; } = [];
+    [System.Text.Json.Serialization.JsonIgnore] public IReadOnlyList<CreditCardPdfExtractedWord>? NativeWords { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? PreparationFailureCode { get; init; }
     [System.Text.Json.Serialization.JsonIgnore] public byte[]? ImagePng { get; init; }
 }
 public sealed record CreditCardPdfExtractedWord(string Text, double X, double Top, double Right, double Bottom);
+public sealed record StatementVisualRegion(int Page, int Index, double Left, double Top, double Right, double Bottom, string Status = "Pending")
+{
+    [System.Text.Json.Serialization.JsonIgnore] public IReadOnlyList<CreditCardPdfExtractedWord> Words { get; init; } = [];
+    [System.Text.Json.Serialization.JsonIgnore] public string Text { get; init; } = string.Empty;
+}
 public sealed record CreditCardPdfExtractedDocument(IReadOnlyList<CreditCardPdfExtractedPage> Pages);
 
 public interface ICreditCardPdfTextExtractor

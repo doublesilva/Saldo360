@@ -8,6 +8,37 @@ namespace Saldo360.Tests.CreditCards;
 // Explicitly executed inside Dockerfile.ocr-tests with native dependencies. Never silently skipped.
 public sealed class RealOcrToolTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NativePageRasterRegionIsOcrReadWithOriginalCoordinates(bool purchase)
+    {
+        var reader = new LocalStatementPageReader(Environment.GetEnvironmentVariable("SALDO360_TEST_OCR_DOCKER_IMAGE"));
+        var raster = new PdfDocumentBuilder();
+        var font = raster.AddStandard14Font(UglyToad.PdfPig.Fonts.Standard14Fonts.Standard14Font.Helvetica);
+        var imagePage = raster.AddPage(595, 200);
+        string[] lines = purchase ? ["Lancamentos: compras e saques", "04/07 LOJA03/12 10,00"]
+            : ["Pagamento da fatura: observe o contrato.", "Encargos e juros seguem as condicoes gerais.", "Operacoes de financiamento exigem atencao."];
+        foreach (var (line, index) in lines.Select((line, index) => (line, index)))
+            imagePage.AddText(line, 15, new(30, 160 - index * 35), font);
+        var image = await reader.ReadAsync(raster.Build(), new(1, "synthetic native image"), false, default);
+        Assert.NotNull(image.ImagePng);
+        var hybrid = new PdfDocumentBuilder();
+        var nativeFont = hybrid.AddStandard14Font(UglyToad.PdfPig.Fonts.Standard14Fonts.Standard14Font.Helvetica);
+        var page = hybrid.AddPage(595, 842);
+        page.AddText("Native document header and financial table outside the raster region.", 12, new(30, 800), nativeFont);
+        page.AddPng(image.ImagePng!, new(30, 360, 330, 460)); // <15% of the page: cannot be ignored as small.
+        await using var pdf = new MemoryStream(hybrid.Build());
+        var read = await new CreditCardPdfTextExtractor(reader, batchPages: true, renderAllPages: true).ExtractAsync(pdf, 50, [], default);
+        var extracted = Assert.Single(read.Pages); var region = Assert.Single(extracted.VisualRegions);
+        Assert.Equal("Readable", region.Status); Assert.False(extracted.HasUntranscribedImageRegion);
+        Assert.Equal(1, region.Page); Assert.Equal(30, region.Left, 1); Assert.Equal(382, region.Top, 1);
+        Assert.Equal(330, region.Right, 1); Assert.Equal(482, region.Bottom, 1);
+        Assert.NotEmpty(region.Words); Assert.All(region.Words, w => { Assert.InRange(w.Top, 380, 484); Assert.InRange(w.X, 28, 332); });
+        Assert.Contains("Native document header", extracted.Text); Assert.NotNull(extracted.NativeWords);
+        Assert.Equal(purchase ? "PurchaseRows" : "ExcludedLegal", StatementVisualRegionText.Classify(region).Classification);
+    }
+
     [Fact]
     public async Task RealPopplerAndPortugueseTesseractRecoverProtectedSyntheticPage()
     {

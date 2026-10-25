@@ -45,7 +45,11 @@ public sealed record CreditCardStatementExtractionResult(
     public IReadOnlyList<StatementInstallmentDiagnostic>? InstallmentDiagnostics { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public StatementPurchaseDocumentValidation? PurchaseDocumentValidation { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public StatementExtractionSuitability? Suitability { get; init; }
 }
+public sealed record StatementExtractionSuitability(bool FaithfulExtraction, bool PurchaseDatesComplete,
+    bool KnownInstallmentAllowsMissingTransactionDate, bool PersistenceEligible, IReadOnlyList<string> PersistenceBlockers);
 public sealed record StatementEvidenceDiagnostic(string Code, string Path, int? Page = null, int? ItemIndex = null);
 public sealed record StatementPageCoverage(int Page, string TextSource, string Status, bool HasImage);
 public interface ICreditCardStatementExtractionOrchestrator

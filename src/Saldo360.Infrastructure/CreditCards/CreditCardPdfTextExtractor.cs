@@ -46,13 +46,20 @@ internal sealed class CreditCardPdfTextExtractor(LocalStatementPageReader? pageR
                         word.BoundingBox.Right,
                         page.Height - word.BoundingBox.Bottom))
                     .ToList();
-                var extracted = new CreditCardPdfExtractedPage(pageNumber, renderAllPages ? ReflowNativeWords(words, page.Text) : page.Text, words);
+                var extracted = new CreditCardPdfExtractedPage(pageNumber, renderAllPages ? ReflowNativeWords(words, page.Text) : page.Text, words)
+                { PageWidth = page.Width, PageHeight = page.Height };
                 var needsOcr = !LocalStatementPageReader.Usable(page.Text);
-                // A large raster region plus a native footer must not prove the table was transcribed.
-                // Conservative opt-in metadata only; it does not inspect pixels or interpret transactions.
-                if (renderAllPages && !needsOcr && page.GetImages().Any(image => UntranscribedRasterRegion(words,
-                    image.Bounds.Left, page.Height - image.Bounds.Top, image.Bounds.Right, page.Height - image.Bounds.Bottom, page.Width * page.Height)))
-                    extracted = extracted with { HasUntranscribedImageRegion = true };
+                // Every in-page raster region is OCR-checked in the opt-in laboratory profile, including
+                // small tables and native overlays. Native text alone never exempts a visual region.
+                if (renderAllPages && !needsOcr)
+                {
+                    var bounds = page.GetImages().Select(image => (Left: Math.Max(0, image.Bounds.Left), Top: Math.Max(0, page.Height - image.Bounds.Top),
+                        Right: Math.Min(page.Width, image.Bounds.Right), Bottom: Math.Min(page.Height, page.Height - image.Bounds.Bottom)))
+                        .Where(b => b.Right > b.Left && b.Bottom > b.Top).Distinct().OrderBy(b => b.Top).ThenBy(b => b.Left).ToArray();
+                    extracted = extracted with { HasUntranscribedImageRegion = bounds.Length > 0,
+                        VisualRegions = bounds.Select((b, index) => new StatementVisualRegion(pageNumber, index, b.Left, b.Top, b.Right, b.Bottom,
+                            bounds.Length > 16 ? "RegionLimitExceeded" : "Pending")).ToArray() };
+                }
                 if (pageReader is not null && (renderAllPages || pageNumber == 1 || needsOcr))
                 {
                     if (++images > (batchPages ? maxPages : 12) || preparation.Elapsed > TimeSpan.FromSeconds(90)) extracted = extracted with { ProcessingStatus = "ImageLimitExceeded" };
