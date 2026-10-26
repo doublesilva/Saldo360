@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Saldo360.Application.CreditCards;
 using Saldo360.Tests.Support;
 using Saldo360.Domain.CreditCards;
@@ -21,7 +22,7 @@ public sealed class CardLatestEmailEndpointsTests(PostgresFixture postgres) : Po
             Task.FromResult(new InboxStatementProcessingResult(new("NeedsReview"), new("NeedsReview", FailureCode: "AgentUnavailable")));
     }
     [Fact]
-    public async Task SuccessfulSearchOnlyReceivesDocumentAndPreservesCheckpointAndFinancialTables()
+    public async Task FailedProcessingIsNotSuccessAndReceiptRemainsIdempotentWithoutFinancialWrites()
     {
         var session = await SignInAsync("email-flow-synthetic-owner");
         var workspace = await CreateWorkspaceAsync(session);
@@ -43,7 +44,9 @@ public sealed class CardLatestEmailEndpointsTests(PostgresFixture postgres) : Po
         var service = new CardLatestEmailService(new(new FinancialWorkspaceRepository(db)), cards, new SyntheticSource(), preview, inbox, new PostgresFinancialEmailCollectorLock(ConnectionString), new PendingProcessing());
         var found = await service.SearchAsync(target, card.Id, workspace.OwnerUserId, default);
         var repeated = await service.SearchAsync(target, card.Id, workspace.OwnerUserId, default);
-        Assert.Equal("Found", found.Status); Assert.Equal("AlreadyReceived", repeated.Status);
+        Assert.Equal("Error", found.Status); Assert.Equal("Error", repeated.Status);
+        Assert.Equal("EmailDocumentProcessingFailed", found.FailureCode);
+        Assert.Equal("DocumentProcessing", found.FailureStage); Assert.Equal("Failed", found.FailureCategory);
         Assert.True(repeated.AlreadyExisted); Assert.Equal(found.DocumentId, repeated.DocumentId);
         Assert.Single(storage.Objects);
         db.ChangeTracker.Clear();
@@ -109,6 +112,38 @@ public sealed class CardLatestEmailEndpointsTests(PostgresFixture postgres) : Po
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await ReadAsync<CardLatestEmailResult>(response);
         Assert.Equal("QueryMissing", result.Status); Assert.Null(result.DocumentId);
+    }
+
+    [Fact]
+    public async Task MissingCredentialsReturnSafeDiagnosticThroughAuthorizedHttpEndpointBeforeNetworkAccess()
+    {
+        var session = await SignInAsync("gmail-diagnostic-owner");
+        var workspace = await CreateWorkspaceAsync(session);
+        var target = CardEmailSearchAuthorization.AuthorizedPersonalId;
+        using (var db = Db())
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE financial_workspaces SET id = {target} WHERE id = {workspace.Id}");
+            db.FinancialCreditCards.Add(FinancialCreditCard.Create(target,
+                new("Synthetic", "Bank", "1234", null, 100m, 5, 10, null, "private-synthetic-gmail-query"), workspace.OwnerUserId, DateTimeOffset.UtcNow));
+            await db.SaveChangesAsync();
+        }
+        // This host and database belong only to this test. Missing ClientId fails before OAuth/HTTP.
+        Factory.Services.GetRequiredService<FinancialEmailImportOptions>().Gmail = new() { Mailbox = "synthetic@example.invalid" };
+        using var check = Db();
+        var cardId = (await check.FinancialCreditCards.SingleAsync()).Id;
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{target}/credit-cards/{cardId}/imports/email/latest", session);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode); // Existing envelope compatibility, not processing success.
+        var result = await ReadAsync<CardLatestEmailResult>(response);
+        Assert.Equal("Unavailable", result.Status); Assert.Equal("GmailCredentialsMissing", result.FailureCode);
+        Assert.Equal("Credentials", result.FailureStage); Assert.Equal("Missing", result.FailureCategory);
+        Assert.Null(result.DocumentId);
+        var log = Assert.Single(Factory.Logs.StructuredEntries, x => x.EventId.Id == 16051);
+        Assert.Null(log.Exception); Assert.Equal("GmailCredentialsMissing", log.Properties["FailureCode"]);
+        Assert.DoesNotContain("private-synthetic-gmail-query", JsonSerializer.Serialize(log));
+        Assert.Empty(await check.FinancialDocumentInboxItems.ToListAsync());
+        Assert.Empty(await check.FinancialTransactions.ToListAsync());
+        Assert.Empty(await check.FinancialCreditCardPurchases.ToListAsync());
+        Assert.Empty(await check.FinancialCreditCardInvoices.ToListAsync());
     }
 
     private sealed class SyntheticSource : IFinancialEmailSource

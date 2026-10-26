@@ -23,10 +23,15 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
         {
             var url = $"gmail/v1/users/{Uri.EscapeDataString(Mailbox())}/messages?q={Uri.EscapeDataString(query)}&maxResults={Math.Min(100, limit)}";
             if (token is not null) url += $"&pageToken={Uri.EscapeDataString(token)}";
-            using var response = await SendAsync(HttpMethod.Get, url, cancellationToken);
-            var page = await response.Content.ReadFromJsonAsync<GmailMessageList>(cancellationToken: cancellationToken) ?? new();
+            using var response = await SendAsync(HttpMethod.Get, url, EmailFailureStage.GmailSearch, cancellationToken);
+            var page = await ReadJsonAsync<GmailMessageList>(response, EmailFailureStage.GmailSearch, cancellationToken);
+            if (page.Messages is null) throw new EmailSearchFailureException(EmailFailureStage.GmailSearch, EmailFailureCategory.InvalidResponse);
             foreach (var message in page.Messages)
-                if (string.IsNullOrWhiteSpace(message.Id) || (ids.Add(message.Id) && ids.Count > limit)) throw new LatestEmailSearchLimitException();
+            {
+                if (message is null || string.IsNullOrWhiteSpace(message.Id))
+                    throw new EmailSearchFailureException(EmailFailureStage.GmailSearch, EmailFailureCategory.InvalidResponse);
+                if (ids.Add(message.Id) && ids.Count > limit) throw new LatestEmailSearchLimitException();
+            }
             token = string.IsNullOrEmpty(page.NextPageToken) ? null : page.NextPageToken;
             // Gmail list order is not trusted. Never select from a truncated search.
             if (token is not null && (ids.Count >= limit || !tokens.Add(token) || tokens.Count >= limit)) throw new LatestEmailSearchLimitException();
@@ -35,8 +40,7 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
         foreach (var id in ids)
         {
             var metadata = await GetMessageAsync(id, cancellationToken);
-            if (!long.TryParse(metadata.InternalDate, out var milliseconds)) throw new InvalidDataException("Missing reception date.");
-            messages.Add(new(id, DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)));
+            messages.Add(new(id, ReceptionDate(metadata.InternalDate)));
         }
         return messages.OrderByDescending(x => x.ReceivedAt).ThenBy(x => x.Id, StringComparer.Ordinal).ToArray();
     }
@@ -45,8 +49,9 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
     {
         var q = $"({query}) after:{after.ToUnixTimeSeconds()}";
         var url = $"gmail/v1/users/{Uri.EscapeDataString(Mailbox())}/messages?q={Uri.EscapeDataString(q)}&maxResults={maxMessages}";
-        using var response = await SendAsync(HttpMethod.Get, url, cancellationToken);
-        var list = await response.Content.ReadFromJsonAsync<GmailMessageList>(cancellationToken: cancellationToken) ?? new();
+        using var response = await SendAsync(HttpMethod.Get, url, EmailFailureStage.GmailSearch, cancellationToken);
+        var list = await ReadJsonAsync<GmailMessageList>(response, EmailFailureStage.GmailSearch, cancellationToken);
+        if (list.Messages is null) throw new EmailSearchFailureException(EmailFailureStage.GmailSearch, EmailFailureCategory.InvalidResponse);
         var result = new List<FinancialEmailMessage>();
         foreach (var item in list.Messages.Take(maxMessages))
         {
@@ -58,7 +63,7 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
 
     public async Task<IReadOnlyList<FinancialEmailAttachment>> ListAttachmentsAsync(string messageId, CancellationToken cancellationToken)
     {
-        var message = await GetMessageAsync(messageId, cancellationToken); var result = new List<FinancialEmailAttachment>();
+        var message = await GetMessageAsync(messageId, cancellationToken, EmailFailureStage.GmailAttachments); var result = new List<FinancialEmailAttachment>();
         Visit(message.Payload, result); return result;
     }
 
@@ -79,23 +84,32 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
     public async Task<Stream> OpenAttachmentAsync(string messageId, string attachmentId, CancellationToken cancellationToken)
     {
         var url = $"gmail/v1/users/{Uri.EscapeDataString(Mailbox())}/messages/{Uri.EscapeDataString(messageId)}/attachments/{Uri.EscapeDataString(attachmentId)}";
-        using var response = await SendAsync(HttpMethod.Get, url, cancellationToken);
-        var body = await response.Content.ReadFromJsonAsync<GmailAttachmentBody>(cancellationToken: cancellationToken)
-            ?? throw new InvalidDataException("Resposta de anexo vazia.");
-        return new MemoryStream(DecodeBase64Url(body.Data), writable: false);
+        using var response = await SendAsync(HttpMethod.Get, url, EmailFailureStage.PdfDownload, cancellationToken);
+        var body = await ReadJsonAsync<GmailAttachmentBody>(response, EmailFailureStage.PdfDownload, cancellationToken);
+        if (string.IsNullOrWhiteSpace(body.Data)) throw new EmailSearchFailureException(EmailFailureStage.PdfDownload, EmailFailureCategory.InvalidResponse);
+        return new MemoryStream(DecodeBase64Url(body.Data, EmailFailureStage.PdfDownload), writable: false);
     }
 
-    private async Task<GmailMessage> GetMessageAsync(string id, CancellationToken cancellationToken)
+    private async Task<GmailMessage> GetMessageAsync(string id, CancellationToken cancellationToken, EmailFailureStage stage = EmailFailureStage.GmailMessage)
     {
         var url = $"gmail/v1/users/{Uri.EscapeDataString(Mailbox())}/messages/{Uri.EscapeDataString(id)}?format=full";
-        using var response = await SendAsync(HttpMethod.Get, url, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<GmailMessage>(cancellationToken: cancellationToken) ?? throw new InvalidDataException("Resposta de mensagem vazia.");
+        using var response = await SendAsync(HttpMethod.Get, url, stage, cancellationToken);
+        return await ReadJsonAsync<GmailMessage>(response, stage, cancellationToken);
     }
-    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, EmailFailureStage stage, CancellationToken cancellationToken)
     {
-        var client = clients.CreateClient("GmailFinancialEmail");
-        using var request = new HttpRequestMessage(method, url); request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetTokenAsync(cancellationToken));
-        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken); response.EnsureSuccessStatusCode(); return response;
+        try
+        {
+            var client = clients.CreateClient("GmailFinancialEmail");
+            using var request = new HttpRequestMessage(method, url); request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetTokenAsync(cancellationToken));
+            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (response.IsSuccessStatusCode) return response;
+            // Do not read an error body or retain an exception carrying the request URI.
+            var failure = EmailSearchFailureException.From(new HttpRequestException(null, null, response.StatusCode), stage);
+            response.Dispose(); throw failure;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception error) { throw EmailSearchFailureException.From(error, stage); }
     }
     private async Task<string> GetTokenAsync(CancellationToken cancellationToken)
     {
@@ -111,13 +125,40 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
             var client = clients.CreateClient("GmailFinancialEmailToken");
             using var response = await client.PostAsync("token", new FormUrlEncodedContent(new Dictionary<string, string>
             { ["client_id"] = clientId, ["client_secret"] = clientSecret, ["refresh_token"] = refreshToken, ["grant_type"] = "refresh_token" }), cancellationToken);
-            response.EnsureSuccessStatusCode();
-            var token = await response.Content.ReadFromJsonAsync<GmailTokenResponse>(cancellationToken: cancellationToken) ?? throw new InvalidDataException("Resposta OAuth vazia.");
+            if (!response.IsSuccessStatusCode)
+                throw EmailSearchFailureException.From(new HttpRequestException(null, null, response.StatusCode), EmailFailureStage.OAuthRefresh);
+            var token = await ReadJsonAsync<GmailTokenResponse>(response, EmailFailureStage.OAuthRefresh, cancellationToken);
+            if (string.IsNullOrWhiteSpace(token.AccessToken) || token.ExpiresIn <= 0)
+                throw new EmailSearchFailureException(EmailFailureStage.OAuthRefresh, EmailFailureCategory.InvalidResponse);
             accessToken = token.AccessToken; expiresAt = DateTimeOffset.UtcNow.AddSeconds(token.ExpiresIn); return accessToken;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception error) { throw EmailSearchFailureException.From(error, EmailFailureStage.OAuthRefresh); }
         finally { tokenLock.Release(); }
     }
-    private string Mailbox() => string.IsNullOrWhiteSpace(options.Gmail.Mailbox) ? throw new InvalidOperationException("Mailbox Gmail não configurada.") : options.Gmail.Mailbox;
+    private string Mailbox() => string.IsNullOrWhiteSpace(options.Gmail.Mailbox)
+        ? throw new EmailSearchFailureException(EmailFailureStage.Configuration, EmailFailureCategory.Missing) : options.Gmail.Mailbox;
+
+    private static DateTimeOffset ReceptionDate(string value)
+    {
+        if (long.TryParse(value, out var milliseconds))
+        {
+            try { return DateTimeOffset.FromUnixTimeMilliseconds(milliseconds); }
+            catch (ArgumentOutOfRangeException) { }
+        }
+        throw new EmailSearchFailureException(EmailFailureStage.GmailMessage, EmailFailureCategory.InvalidResponse);
+    }
+
+    private static async Task<T> ReadJsonAsync<T>(HttpResponseMessage response, EmailFailureStage stage, CancellationToken ct)
+    {
+        try
+        {
+            return await response.Content.ReadFromJsonAsync<T>(cancellationToken: ct)
+                ?? throw new EmailSearchFailureException(stage, EmailFailureCategory.InvalidResponse);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception error) { throw EmailSearchFailureException.From(error, stage); }
+    }
     private static void Visit(GmailPart? part, List<FinancialEmailAttachment> result)
     {
         if (part is null) return;
@@ -145,7 +186,11 @@ internal sealed class GmailFinancialEmailSource(IHttpClientFactory clients, Fina
         }
         foreach (var child in part.Parts ?? []) await VisitBodiesAsync(messageId, child, html, plain, cancellationToken, allowAttachmentDownloads);
     }
-    private static byte[] DecodeBase64Url(string value) { var normalized = value.Replace('-', '+').Replace('_', '/'); normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4) % 4, '='); return Convert.FromBase64String(normalized); }
+    private static byte[] DecodeBase64Url(string value, EmailFailureStage stage = EmailFailureStage.GmailMessage)
+    {
+        try { var normalized = value.Replace('-', '+').Replace('_', '/'); normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4) % 4, '='); return Convert.FromBase64String(normalized); }
+        catch (Exception error) { throw EmailSearchFailureException.From(error, stage); }
+    }
 
     private sealed class GmailMessageList { [JsonPropertyName("messages")] public List<GmailMessageRef> Messages { get; set; } = []; [JsonPropertyName("nextPageToken")] public string? NextPageToken { get; set; } }
     private sealed class GmailMessageRef { [JsonPropertyName("id")] public string Id { get; set; } = string.Empty; }
@@ -161,13 +206,22 @@ internal static class GmailSecretReader
     {
         if (!string.IsNullOrWhiteSpace(file))
         {
-            var path = Path.GetFullPath(file);
-            if (!File.Exists(path)) throw new InvalidOperationException($"Arquivo do segredo Gmail {name} não encontrado: '{path}'.");
-            var value = File.ReadAllText(path).TrimEnd('\r', '\n');
-            if (string.IsNullOrWhiteSpace(value)) throw new InvalidOperationException($"Arquivo do segredo Gmail {name} está vazio: '{path}'.");
-            return value;
+            try
+            {
+                var path = Path.GetFullPath(file);
+                if (Directory.Exists(path)) throw new EmailSearchFailureException(EmailFailureStage.Credentials, EmailFailureCategory.Unreadable);
+                var value = File.ReadAllText(path).TrimEnd('\r', '\n');
+                if (string.IsNullOrWhiteSpace(value)) throw new EmailSearchFailureException(EmailFailureStage.Credentials, EmailFailureCategory.Empty);
+                return value;
+            }
+            catch (EmailSearchFailureException) { throw; }
+            catch (Exception error)
+            {
+                throw new EmailSearchFailureException(EmailFailureStage.Credentials,
+                    error is FileNotFoundException or DirectoryNotFoundException ? EmailFailureCategory.FileNotFound : EmailFailureCategory.Unreadable);
+            }
         }
         if (!string.IsNullOrWhiteSpace(configuredValue)) return configuredValue;
-        throw new InvalidOperationException($"Credencial OAuth Gmail {name} não configurada.");
+        throw new EmailSearchFailureException(EmailFailureStage.Credentials, EmailFailureCategory.Missing);
     }
 }

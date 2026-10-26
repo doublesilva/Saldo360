@@ -40,7 +40,8 @@ public sealed class GmailFinancialEmailSourceTests
     {
         var gmail = new RecordingHandler(r => r.RequestUri!.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal)
             ? "{\"messages\":[{\"id\":\"one\"}]}" : "{}");
-        await Assert.ThrowsAsync<InvalidDataException>(() => LatestSource(gmail).SearchLatestAsync("q", 10, default));
+        var error = await Assert.ThrowsAsync<EmailSearchFailureException>(() => LatestSource(gmail).SearchLatestAsync("q", 10, default));
+        Assert.Equal("GmailMessageInvalidResponse", error.FailureCode);
     }
 
     private static GmailFinancialEmailSource LatestSource(RecordingHandler gmail) => new(new FakeHttpClientFactory(gmail,
@@ -121,12 +122,161 @@ public sealed class GmailFinancialEmailSourceTests
     public void MissingSecretFileFailsWithoutFallingBackToInlineValue()
     {
         var path = Path.Combine(Path.GetTempPath(), $"saldo360-missing-{Guid.NewGuid():N}");
-        var error = Assert.Throws<InvalidOperationException>(() => GmailSecretReader.Read(path, "fallback", "RefreshToken"));
-        Assert.Contains("não encontrado", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("fallback", error.Message, StringComparison.Ordinal);
+        var error = Assert.Throws<EmailSearchFailureException>(() => GmailSecretReader.Read(path, "fallback", "RefreshToken"));
+        Assert.Equal("GmailCredentialsFileNotFound", error.FailureCode);
+        Assert.DoesNotContain(path, error.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("fallback", error.ToString(), StringComparison.Ordinal);
+        Assert.Null(error.InnerException);
     }
 
-    private sealed class FakeHttpClientFactory(RecordingHandler gmail, RecordingHandler token) : IHttpClientFactory
+    [Theory]
+    [InlineData("search", 401, "GmailSearchUnauthorized")]
+    [InlineData("search", 403, "GmailSearchForbidden")]
+    [InlineData("search", 429, "GmailSearchRateLimited")]
+    [InlineData("message", 401, "GmailMessageUnauthorized")]
+    [InlineData("message", 403, "GmailMessageForbidden")]
+    [InlineData("message", 429, "GmailMessageRateLimited")]
+    [InlineData("attachments", 403, "GmailAttachmentsForbidden")]
+    [InlineData("download", 401, "EmailPdfDownloadUnauthorized")]
+    [InlineData("download", 403, "EmailPdfDownloadForbidden")]
+    [InlineData("download", 429, "EmailPdfDownloadRateLimited")]
+    [InlineData("oauth", 401, "GmailOAuthUnauthorized")]
+    [InlineData("oauth", 403, "GmailOAuthForbidden")]
+    [InlineData("oauth", 429, "GmailOAuthRateLimited")]
+    [InlineData("oauth", 400, "GmailOAuthUpstream")]
+    [InlineData("search", 503, "GmailSearchUpstream")]
+    public async Task HttpFailuresRetainStageAndSafeCategoryWithoutResponseOrRetry(string operation, int status, string code)
+    {
+        var failure = new FailureHandler((HttpStatusCode)status);
+        var gmail = operation == "oauth" ? (HttpMessageHandler)new RecordingHandler(_ => throw new InvalidOperationException("Gmail must not be called")) : failure;
+        var oauth = operation == "oauth" ? (HttpMessageHandler)failure : new RecordingHandler(_ => "{\"access_token\":\"private-access-token\",\"expires_in\":3600}");
+        var source = new GmailFinancialEmailSource(new FakeHttpClientFactory(gmail, oauth), ConfiguredOptions());
+        var error = await Assert.ThrowsAsync<EmailSearchFailureException>(async () =>
+        {
+            if (operation == "message") await source.GetBodyAsync("private-message-id", default);
+            else if (operation == "attachments") await source.ListAttachmentsAsync("private-message-id", default);
+            else if (operation == "download") await source.OpenAttachmentAsync("private-message-id", "private-attachment", default);
+            else await source.SearchLatestAsync("private-gmail-query", 10, default);
+        });
+        Assert.Equal(code, error.FailureCode); Assert.Equal(code, error.Message);
+        Assert.Null(error.InnerException); Assert.Equal(1, failure.Calls); Assert.True(failure.DisposedResponse);
+        Assert.DoesNotContain("private-", error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TimeoutsAreClassifiedAtTheFailingTransport(bool oauth)
+    {
+        var timeout = new FailureHandler(error: new TaskCanceledException("private-timeout-token-query"));
+        var source = new GmailFinancialEmailSource(new FakeHttpClientFactory(oauth ? new RecordingHandler(_ => "{}") : timeout,
+            oauth ? timeout : new RecordingHandler(_ => "{\"access_token\":\"synthetic\",\"expires_in\":3600}")), ConfiguredOptions());
+        var error = await Assert.ThrowsAsync<EmailSearchFailureException>(() => source.SearchLatestAsync("private-query", 10, default));
+        Assert.Equal(oauth ? "GmailOAuthTimeout" : "GmailSearchTimeout", error.FailureCode);
+        Assert.Equal(1, timeout.Calls); Assert.DoesNotContain("private-", error.Message);
+    }
+
+    [Fact]
+    public async Task CallerCancellationIsNotTurnedIntoTimeoutOrRetried()
+    {
+        using var cts = new CancellationTokenSource();
+        var handler = new FailureHandler(error: new TaskCanceledException());
+        var source = new GmailFinancialEmailSource(new FakeHttpClientFactory(handler, handler), ConfiguredOptions());
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => source.SearchLatestAsync("q", 10, cts.Token));
+        Assert.Equal(0, handler.Calls);
+    }
+
+    [Theory]
+    [InlineData("mailbox", "GmailConfigurationMissing")]
+    [InlineData("client-id", "GmailCredentialsMissing")]
+    [InlineData("client-secret", "GmailCredentialsMissing")]
+    [InlineData("refresh-token", "GmailCredentialsMissing")]
+    public async Task MissingConfigurationOrCredentialsNeverCallHttp(string missing, string code)
+    {
+        var options = ConfiguredOptions();
+        if (missing == "mailbox") options.Gmail.Mailbox = "";
+        if (missing == "client-id") options.Gmail.ClientId = "";
+        if (missing == "client-secret") options.Gmail.ClientSecret = "";
+        if (missing == "refresh-token") options.Gmail.RefreshToken = "";
+        var forbidden = new FailureHandler(error: new InvalidOperationException("HTTP forbidden"));
+        var source = new GmailFinancialEmailSource(new FakeHttpClientFactory(forbidden, forbidden), options);
+        var error = await Assert.ThrowsAsync<EmailSearchFailureException>(() => source.SearchLatestAsync("private-query", 10, default));
+        Assert.Equal(code, error.FailureCode); Assert.Equal(0, forbidden.Calls); Assert.Null(error.InnerException);
+    }
+
+    [Theory]
+    [InlineData("empty", "GmailCredentialsEmpty")]
+    [InlineData("directory", "GmailCredentialsUnreadable")]
+    [InlineData("invalid-path", "GmailCredentialsUnreadable")]
+    public void InvalidSecretFilesDoNotLeakPathsAndDoNotUseInlineFallback(string scenario, string code)
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var input = scenario == "directory" ? Path.GetTempPath() : scenario == "invalid-path" ? "private\0secret" : path;
+            var error = Assert.Throws<EmailSearchFailureException>(() => GmailSecretReader.Read(input, "private-inline-token", "untrusted-name"));
+            Assert.Equal(code, error.Message); Assert.Null(error.InnerException);
+            Assert.DoesNotContain(path, error.ToString()); Assert.DoesNotContain("private-inline-token", error.ToString());
+            Assert.DoesNotContain("untrusted-name", error.ToString());
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"access_token\":\"private-token\",\"expires_in\":0}")]
+    [InlineData("not-json-private-token")]
+    public async Task InvalidOAuthResponseFailsBeforeGmail(string response)
+    {
+        var gmail = new FailureHandler(error: new InvalidOperationException("Gmail forbidden"));
+        var source = new GmailFinancialEmailSource(new FakeHttpClientFactory(gmail, new RecordingHandler(_ => response)), ConfiguredOptions());
+        var error = await Assert.ThrowsAsync<EmailSearchFailureException>(() => source.SearchLatestAsync("q", 10, default));
+        Assert.Equal("GmailOAuthInvalidResponse", error.FailureCode); Assert.Equal(0, gmail.Calls);
+        Assert.DoesNotContain("private-token", error.ToString());
+    }
+
+    [Theory]
+    [InlineData("not-json", "GmailSearchInvalidResponse")]
+    [InlineData("null", "GmailSearchInvalidResponse")]
+    [InlineData("{\"messages\":null}", "GmailSearchInvalidResponse")]
+    [InlineData("{\"messages\":[null]}", "GmailSearchInvalidResponse")]
+    [InlineData("{\"messages\":[{}]}", "GmailSearchInvalidResponse")]
+    public async Task InvalidSearchResponseIsNotAnEmptySuccessfulSearch(string response, string code)
+    {
+        var error = await Assert.ThrowsAsync<EmailSearchFailureException>(() => LatestSource(new RecordingHandler(_ => response)).SearchLatestAsync("q", 10, default));
+        Assert.Equal(code, error.FailureCode);
+    }
+
+    [Theory]
+    [InlineData("{\"data\":\"%%%private%%%\"}")]
+    [InlineData("{}")]
+    public async Task InvalidAttachmentBodyIsDiagnosedAsDownload(string body)
+    {
+        var error = await Assert.ThrowsAsync<EmailSearchFailureException>(() => LatestSource(new RecordingHandler(_ => body)).OpenAttachmentAsync("m", "a", default));
+        Assert.Equal("EmailPdfDownloadInvalidResponse", error.FailureCode); Assert.Null(error.InnerException);
+    }
+
+    private static FinancialEmailImportOptions ConfiguredOptions() => new() { Gmail = new()
+        { Mailbox = "synthetic@example.invalid", ClientId = "synthetic", ClientSecret = "private-client-secret", RefreshToken = "private-refresh-token" } };
+
+    private sealed class FailureHandler(HttpStatusCode status = HttpStatusCode.OK, Exception? error = null) : HttpMessageHandler
+    {
+        public int Calls;
+        public bool DisposedResponse;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            if (error is not null) throw error;
+            return Task.FromResult(new HttpResponseMessage(status) { Content = new ObservedContent(() => DisposedResponse = true) });
+        }
+        private sealed class ObservedContent(Action disposed) : StringContent("private-response-body token query financial-content")
+        {
+            protected override void Dispose(bool disposing) { if (disposing) disposed(); base.Dispose(disposing); }
+        }
+    }
+
+    private sealed class FakeHttpClientFactory(HttpMessageHandler gmail, HttpMessageHandler token) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => name == "GmailFinancialEmailToken"
             ? new(token, false) { BaseAddress = new("https://oauth2.googleapis.com/") }
