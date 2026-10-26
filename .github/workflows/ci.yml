@@ -148,7 +148,7 @@ jobs:
             -e POSTGRES_DB=saldo360_ci -e POSTGRES_USER=saldo360 -e POSTGRES_PASSWORD=ci-only-not-a-secret \
             --health-cmd='pg_isready -U saldo360 -d saldo360_ci' --health-interval=2s --health-timeout=2s --health-retries=30 \
             postgres:17-alpine
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             [ "$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")" = healthy ] && break
             sleep 1
           done
@@ -163,7 +163,7 @@ jobs:
             -e ASPNETCORE_ENVIRONMENT=Production -e "ConnectionStrings__Saldo360=$CONNECTION" \
             -e Authentication__Oidc__Authority=https://example.invalid -e Authentication__Oidc__ClientId=saldo360 \
             -e Authentication__Oidc__ClientSecret=ci-only "$IMAGE"
-          for i in $(seq 1 90); do
+          for _ in $(seq 1 90); do
             health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER")"
             [ "$health" = healthy ] && break
             [ "$(docker inspect --format '{{.State.Status}}' "$CONTAINER")" = running ] || exit 1
@@ -223,7 +223,7 @@ jobs:
           # O nginx resolve o upstream na inicialização. O host local apenas satisfaz o DNS;
           # o smoke acessa exclusivamente /web-health e não simula uma API.
           docker run -d --name "$CONTAINER" --add-host api:127.0.0.1 -p 127.0.0.1:18081:8080 "$IMAGE"
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER")"
             [ "$health" = healthy ] && break
             [ "$(docker inspect --format '{{.State.Status}}' "$CONTAINER")" = running ] || exit 1

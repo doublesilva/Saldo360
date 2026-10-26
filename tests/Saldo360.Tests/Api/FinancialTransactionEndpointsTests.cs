@@ -10,7 +10,7 @@ namespace Saldo360.Tests.Api;
 /// <summary>
 /// Lançamentos sobre PostgreSQL real: dois membros (via convite) e uma família estranha com conta e categoria próprias.
 /// </summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {

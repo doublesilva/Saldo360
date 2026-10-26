@@ -32,6 +32,7 @@ assert_case 'src/Saldo360.Application/Goals/FinancialGoalService.cs' 'backend=tr
 assert_case 'src/Saldo360.Infrastructure/Persistence/Migrations/New.cs' 'backend=true frontend=false infra=false' true
 assert_case 'src/Saldo360.Infrastructure/CreditCards/LocalStatementPageReader.cs' 'backend=true frontend=false infra=false' true true
 assert_case 'src/Saldo360.BudgetBootstrap/Program.cs' 'backend=true frontend=false infra=false' true
+assert_case 'src/Saldo360.Infrastructure/Workspaces/FinancialDocumentWorkspaceCutover.cs' 'backend=true frontend=false infra=false' true
 assert_case 'Dockerfile.ocr-tests' 'backend=true frontend=false infra=false' false true
 assert_case $'docs/report.md\nsrc/Saldo360.Api/Accounts/FinancialAccountEndpoints.cs' 'backend=true frontend=false infra=false'
 assert_case $'src/Saldo360.Api/Accounts/FinancialAccountEndpoints.cs\nDockerfile.ocr-tests' 'backend=true frontend=false infra=false' false true

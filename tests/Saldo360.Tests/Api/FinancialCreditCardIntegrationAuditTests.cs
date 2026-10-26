@@ -10,7 +10,7 @@ namespace Saldo360.Tests.Api;
 /// Cenários de ponta a ponta da T09.7. PostgreSQL real é usado para verificar as invariantes entre
 /// compra, parcelas, fatura, pagamento, conta, projeção e orçamento.
 /// </summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {

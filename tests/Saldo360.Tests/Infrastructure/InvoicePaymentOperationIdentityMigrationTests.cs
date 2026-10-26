@@ -11,7 +11,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Infrastructure;
 
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "INFRA")]
 public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
@@ -38,7 +38,7 @@ public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixtur
             Assert.Equal(2, await before.FinancialTransactions.CountAsync(x => x.Origin == FinancialTransactionOrigin.CreditCardInvoicePayment));
         }
 
-        NpgsqlConnection.ClearAllPools();
+        using (var pool = new NpgsqlConnection(ConnectionString)) NpgsqlConnection.ClearPool(pool);
         await using (var migrationContext = Db())
         {
             // Exercise the historical operation-id transformation, not a destructive downgrade
@@ -54,7 +54,7 @@ public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixtur
                     .Replace("family_id", "workspace_id", StringComparison.Ordinal));
             await tx.CommitAsync();
         }
-        NpgsqlConnection.ClearAllPools();
+        using (var pool = new NpgsqlConnection(ConnectionString)) NpgsqlConnection.ClearPool(pool);
 
         await using var after = Db();
         var payments = await after.FinancialCreditCardInvoicePayments.AsNoTracking().OrderBy(x => x.Id).ToListAsync();

@@ -14,7 +14,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Persistence;
 
 /// <summary>Constraints das contas financeiras no PostgreSQL real.</summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 public sealed class FinancialAccountPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string PreviousMigration = "20261010161724_AddFinancialAccounts";

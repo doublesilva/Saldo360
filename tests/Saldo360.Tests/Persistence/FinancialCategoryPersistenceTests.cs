@@ -14,7 +14,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Persistence;
 
 /// <summary>Constraints, unicidade case-insensitive e concorrência das categorias no PostgreSQL real.</summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string PreviousMigration = "20261010165551_AddOpeningBalanceToFinancialAccounts";

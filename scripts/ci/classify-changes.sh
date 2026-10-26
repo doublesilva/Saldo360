@@ -14,7 +14,7 @@ while IFS= read -r path; do
   case "$path" in
     .github/workflows/ci.yml|scripts/ci/*|tests/*|Directory.*|global.json|*NuGet.config|*nuget.config|*.sln|*.slnx|*.csproj|.dockerignore)
       backend_specific=true; ocr=true ;;
-    src/Saldo360.Domain/*|src/*/Bootstrap/*|src/*/Persistence/*|src/Saldo360.BudgetBootstrap/*|src/Saldo360.DocumentCutover/*|src/Saldo360.StatementDiagnostic/*|src/Saldo360.StatementExtractionLab/*)
+    src/Saldo360.Domain/*|src/*/Bootstrap/*|src/*/Persistence/*|src/*/Workspaces/*|src/Saldo360.BudgetBootstrap/*|src/Saldo360.DocumentCutover/*|src/Saldo360.StatementDiagnostic/*|src/Saldo360.StatementExtractionLab/*)
       backend_specific=true ;;
     src/*/CreditCards/*)
       backend_specific=true; ocr=true ;;

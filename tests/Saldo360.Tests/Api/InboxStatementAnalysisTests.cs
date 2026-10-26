@@ -10,7 +10,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Api;
 
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Trait("Category", "CORE")]

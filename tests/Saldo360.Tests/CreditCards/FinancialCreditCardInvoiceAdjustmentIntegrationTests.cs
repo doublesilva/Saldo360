@@ -7,7 +7,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.CreditCards;
 
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {

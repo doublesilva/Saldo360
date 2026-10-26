@@ -17,6 +17,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     private readonly string _fixtureId = Guid.NewGuid().ToString("N")[..8];
     private readonly string _templateDatabase = $"saldo360_template_{Guid.NewGuid():N}";
     private readonly SemaphoreSlim _databaseLock = new(1, 1);
+    private readonly HashSet<string> _consumerConnections = [];
     // Cada consumidor cria um banco (e um pool) próprio: mais conexões que o padrão de 100.
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine")
         .WithCommand("-c", "max_connections=300")
@@ -65,7 +66,14 @@ public sealed class PostgresFixture : IAsyncLifetime
         {
             Log("lock", $"adquirido para '{database}' após {lockWatch.ElapsedMilliseconds} ms");
             Log("clone", $"início do banco '{database}'");
-            NpgsqlConnection.ClearAllPools();
+            // Only this collection's pools: a second isolated PostgreSQL collection can run
+            // concurrently without repeatedly evicting the other collection's connections.
+            foreach (var consumerConnection in _consumerConnections)
+            {
+                using var consumer = new NpgsqlConnection(consumerConnection);
+                NpgsqlConnection.ClearPool(consumer);
+            }
+            _consumerConnections.Add(connectionString);
             await using (var admin = new NpgsqlConnection(_container.GetConnectionString()))
             {
                 await admin.OpenAsync(lockTimeout.Token);
@@ -74,7 +82,6 @@ public sealed class PostgresFixture : IAsyncLifetime
                 await create.ExecuteNonQueryAsync(lockTimeout.Token);
             }
             Log("clone", $"banco '{database}' concluído após {lockWatch.ElapsedMilliseconds} ms");
-            NpgsqlConnection.ClearAllPools();
         }
         catch (Exception exception)
         {
@@ -120,7 +127,8 @@ public sealed class PostgresFixture : IAsyncLifetime
         {
             await db.Database.MigrateAsync(cancellationToken);
         }
-        NpgsqlConnection.ClearAllPools();
+        using (var template = new NpgsqlConnection(templateConnection))
+            NpgsqlConnection.ClearPool(template);
         Log("template", $"migrations concluídas em {watch.ElapsedMilliseconds} ms");
     }
 
@@ -132,4 +140,12 @@ public sealed class PostgresFixture : IAsyncLifetime
 public sealed class PostgresCollection : ICollectionFixture<PostgresFixture>
 {
     public const string Name = "postgres";
+}
+
+// Two bounded lanes, not one container per class/test. Each fixture owns its container,
+// migrated template and database names. Tests within either lane remain serialized.
+[CollectionDefinition(Name)]
+public sealed class PostgresSecondaryCollection : ICollectionFixture<PostgresFixture>
+{
+    public const string Name = "postgres-secondary";
 }

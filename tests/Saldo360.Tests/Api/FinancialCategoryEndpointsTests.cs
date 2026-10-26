@@ -7,7 +7,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 /// <summary>Categorias sobre PostgreSQL real, com dois membros (via convite) e uma família estranha.</summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {

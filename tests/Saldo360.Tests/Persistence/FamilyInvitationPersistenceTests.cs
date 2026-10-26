@@ -13,7 +13,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Persistence;
 
 /// <summary>Convites sobre PostgreSQL real: concorrência, transação, estados e constraints.</summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 public sealed class FamilyInvitationPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {

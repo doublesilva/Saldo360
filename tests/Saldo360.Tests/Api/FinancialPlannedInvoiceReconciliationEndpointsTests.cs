@@ -5,7 +5,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Api;
 
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 public sealed class FinancialPlannedInvoiceReconciliationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {

@@ -17,7 +17,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Persistence;
 
 /// <summary>Agregação do saldo no PostgreSQL: uma consulta com SUM, sem carregar lançamentos, em numeric exato.</summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 public sealed class AccountBalancePersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {

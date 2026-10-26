@@ -6,7 +6,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 /// <summary>Endpoints de convite sobre PostgreSQL real.</summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 public sealed class FamilyInvitationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {

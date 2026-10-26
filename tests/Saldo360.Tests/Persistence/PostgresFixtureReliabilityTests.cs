@@ -3,7 +3,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Persistence;
 
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "INFRA")]
 public sealed class PostgresFixtureReliabilityTests(PostgresFixture postgres) : IAsyncLifetime
 {

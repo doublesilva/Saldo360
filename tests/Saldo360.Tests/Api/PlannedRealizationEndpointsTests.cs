@@ -11,7 +11,7 @@ namespace Saldo360.Tests.Api;
 /// Realização de previsões sobre PostgreSQL real: vínculo, saldo, idempotência, concorrência e reabertura ao
 /// cancelar o lançamento efetivo.
 /// </summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 public sealed class PlannedRealizationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
