@@ -4,6 +4,7 @@ using Saldo360.Domain.CreditCards;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Services")]
 public sealed class ServiceBillPreviewServiceTests
 {
     private static readonly Guid WorkspaceId = Guid.NewGuid(); private static readonly Guid UserId = Guid.NewGuid();

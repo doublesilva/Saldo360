@@ -11,6 +11,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Api;
 
+[Trait("Area", "Platform")]
 public sealed class RequestObservabilityMiddlewareTests
 {
     [Trait("Category", "REGRESSION")]

@@ -4,6 +4,8 @@ using Saldo360.Infrastructure.CreditCards;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "REGRESSION")]
+[Trait("Area", "Documents")]
+[Trait("Area", "Cards")]
 public sealed class ItauCreditCardPdfParserTests
 {
     private readonly CreditCardPdfTextExtractor _extractor = new();

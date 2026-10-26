@@ -13,6 +13,8 @@ namespace Saldo360.Tests.Api;
 /// </summary>
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Transfers")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);
@@ -42,6 +44,7 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Acceptance_PJ2000_PF100_Transfer500_Gives1500And600_WithoutTouchingIncomeOrExpense()
     {
         await ArrangeAsync();
@@ -65,6 +68,7 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Cancel_RestoresBothBalances_IsIdempotent_AndPreservesTheRow()
     {
         await ArrangeAsync();
@@ -246,6 +250,7 @@ public sealed class FinancialTransferEndpointsTests(PostgresFixture postgres) : 
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Outsider_CannotReadOrCancel()
     {
         await ArrangeAsync();

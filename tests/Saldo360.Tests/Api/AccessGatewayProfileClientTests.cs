@@ -12,6 +12,8 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Security")]
+[Trait("Profile", "FAST")]
 public sealed class AccessGatewayProfileClientTests
 {
     [Fact]

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Saldo360.Tests.Api;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Platform")]
 public sealed class HealthEndpointTests
 {
     [Fact]

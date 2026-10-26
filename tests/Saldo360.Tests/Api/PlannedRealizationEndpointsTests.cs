@@ -13,6 +13,8 @@ namespace Saldo360.Tests.Api;
 /// </summary>
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Planning")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class PlannedRealizationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);
@@ -93,6 +95,7 @@ public sealed class PlannedRealizationEndpointsTests(PostgresFixture postgres) :
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task ConcurrentRealizations_CreateExactlyOneTransaction()
     {
         await ArrangeAsync();
@@ -182,6 +185,7 @@ public sealed class PlannedRealizationEndpointsTests(PostgresFixture postgres) :
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task CancellingTheEffectiveTransaction_ReopensThePlanned_RestoresBalance_AndAllowsRealizingAgain()
     {
         await ArrangeAsync();
@@ -305,6 +309,7 @@ public sealed class PlannedRealizationEndpointsTests(PostgresFixture postgres) :
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Isolation_Csrf_AndServerFields()
     {
         await ArrangeAsync();

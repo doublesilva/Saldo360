@@ -4,6 +4,8 @@ using Saldo360.Infrastructure.CreditCards;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Area", "Documents")]
+[Trait("Area", "Cards")]
 public sealed class StatementLabReferenceValidationTests
 {
     private const string Hash = "synthetic-sha256";

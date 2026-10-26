@@ -3,6 +3,7 @@ using Saldo360.Application.CreditCards;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Services")]
 public sealed class ServiceBillRecurringMatchTests
 {
     private static readonly Guid DocumentId = Guid.NewGuid();

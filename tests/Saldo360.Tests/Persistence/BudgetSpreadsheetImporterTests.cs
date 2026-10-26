@@ -12,6 +12,8 @@ namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "INFRA")]
+[Trait("Area", "Admin")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class BudgetSpreadsheetImporterTests(PostgresFixture postgres)
 {
     private sealed class NoDml : DbCommandInterceptor

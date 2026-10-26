@@ -3,6 +3,7 @@ using Saldo360.Application.CreditCards;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Documents")]
 public sealed class FinancialEmailScheduleTests
 {
     private readonly FinancialEmailSchedule schedule = new(new FinancialEmailImportOptions

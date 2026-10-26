@@ -18,6 +18,7 @@ namespace Saldo360.Tests.Api;
 /// Diferente do endpoint de teste, aqui a claim iss passa pela filtragem real do middleware.
 /// </summary>
 [Trait("Category", "CORE")]
+[Trait("Area", "Security")]
 public sealed class OidcCallbackTests : ApiTestBase
 {
     private const string SyntheticCpf = "52998224725";
@@ -99,6 +100,7 @@ public sealed class OidcCallbackTests : ApiTestBase
     private const string Subject = "Usuário-Não-Guid|ÇÃO-42";
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task ValidatedIssuer_SurvivesClaimFiltering_AndIsStoredWithTheSession()
     {
         Factory.OidcProvider.IdTokenClaims["sub"] = Subject;
@@ -135,6 +137,7 @@ public sealed class OidcCallbackTests : ApiTestBase
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task IdTokenWithoutSubject_IsRejected_AndNoSessionIsCreated()
     {
         Factory.OidcProvider.UserInfo["name"] = "Sem Sub";
@@ -148,6 +151,7 @@ public sealed class OidcCallbackTests : ApiTestBase
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task LoginWithoutOptionalPar_UsesPkceAndTokenClientSecretPost()
     {
         // O provedor anuncia PAR, mas a aplicação usa o fluxo OIDC convencional com PKCE.

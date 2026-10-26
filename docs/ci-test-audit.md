@@ -1,5 +1,7 @@
 # T-CI.1 — Auditoria dos testes backend
 
+Evolução posterior: [T-CI.2 — FAST/AFFECTED/FULL](ci-performance-tci2.md). Os perfis e tempos abaixo preservam a evidência histórica da T-CI.1, não a configuração mais recente da CI.
+
 26/10/2026 — **Auditoria concluída localmente**: 1.372 → 1.330 casos; todos os casos restantes aprovados. Etapa normal de testes 41,61% mais rápida na medição local, com build/lint aprovados. Uma lacuna funcional preexistente foi identificada e registrada, sem alteração das regras da aplicação.
 
 ## 1. Base, método e contagem

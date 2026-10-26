@@ -11,6 +11,10 @@ namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "INFRA")]
+[Trait("Area", "Infrastructure")]
+[Trait("Area", "Documents")]
+[Trait("Area", "Workspaces")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialDocumentWorkspaceCutoverTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private sealed class Files : IDisposable

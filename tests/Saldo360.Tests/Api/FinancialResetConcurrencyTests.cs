@@ -16,6 +16,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Workspaces")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialResetConcurrencyTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private async Task<(string Session, WorkspaceDto Workspace)> Arrange()
@@ -42,6 +44,7 @@ public sealed class FinancialResetConcurrencyTests(PostgresFixture postgres) : P
         await AssertEmpty(w.Id);
     }
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task FailureAfterDeletes_RollsBackAllContentAuditCleanupAndResetVersion()
     {
         var (session, w) = await Arrange();

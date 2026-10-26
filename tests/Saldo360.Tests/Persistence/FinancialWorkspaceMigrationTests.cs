@@ -13,6 +13,9 @@ namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "INFRA")]
+[Trait("Area", "Infrastructure")]
+[Trait("Area", "Workspaces")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialWorkspaceMigrationTests(PostgresFixture postgres)
 {
     [Theory]

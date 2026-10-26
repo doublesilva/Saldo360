@@ -19,6 +19,8 @@ namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Budgets")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private static readonly DateOnly Competence = new(2026, 10, 1);
@@ -79,6 +81,7 @@ public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture pos
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task ConcurrentRealizationCannotDisappearBetweenRealizedAndCommittedAggregates()
     {
         var planned = Planned(200m, Competence.AddDays(4));

@@ -9,6 +9,8 @@ namespace Saldo360.Tests.Api;
 /// <summary>Categorias sobre PostgreSQL real, com dois membros (via convite) e uma família estranha.</summary>
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Categories")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;

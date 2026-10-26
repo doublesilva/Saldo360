@@ -19,10 +19,14 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Area", "Cards")]
+[Trait("Area", "Documents")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class KnownStatementImportTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Trait("Category", "CORE")]
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task ProcessingRequiresOneDocumentConfirmationAndPreservesNineUnknownDates()
     {
         var f = await Arrange(); using var db = f.Db;
@@ -114,6 +118,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
 
     [Trait("Category", "CORE")]
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task ConcurrentConfirmationCommitsOnceAndNeverRepeatsTheProvider()
     {
         var f = await Arrange(); using var db = f.Db; await Analyze(f);
@@ -126,6 +131,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
 
     [Trait("Category", "CORE")]
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task FinalSaveFailureRollsBackAllRowsAndConfirmationJournal()
     {
         var f = await Arrange(); using var db = f.Db; await Analyze(f);

@@ -5,6 +5,8 @@ namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "INFRA")]
+[Trait("Area", "Infrastructure")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class PostgresFixtureReliabilityTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private readonly string _databaseA = postgres.NewDatabaseConnectionString();

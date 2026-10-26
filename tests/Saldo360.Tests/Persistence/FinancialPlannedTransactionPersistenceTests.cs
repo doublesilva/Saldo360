@@ -16,6 +16,8 @@ namespace Saldo360.Tests.Persistence;
 
 /// <summary>Constraints relacionais e de valor das previsões no PostgreSQL real.</summary>
 [Collection(PostgresSecondaryCollection.Name)]
+[Trait("Area", "Planning")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialPlannedTransactionPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string PreviousMigration = "20261011153211_AddFinancialTransfers";

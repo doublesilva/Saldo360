@@ -7,6 +7,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Planning")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialCalendarEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;

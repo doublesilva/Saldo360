@@ -3,6 +3,8 @@ using Saldo360.Domain.CreditCards;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Cards")]
+[Trait("Profile", "FAST")]
 public sealed class CreditCardInvoiceCalendarTests
 {
     [Fact]

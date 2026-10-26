@@ -10,6 +10,7 @@ namespace Saldo360.Tests.Api;
 /// que emite por uma intermediária). Usa uma cadeia raiz → intermediária → folha gerada no teste.
 /// </summary>
 [Trait("Category", "CORE")]
+[Trait("Area", "Security")]
 public sealed class BackchannelCertificateValidationTests : IDisposable
 {
     private const string ServerAuth = "1.3.6.1.5.5.7.3.1";

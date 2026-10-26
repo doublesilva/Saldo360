@@ -1,6 +1,7 @@
 namespace Saldo360.Tests.Infrastructure;
 
 [Trait("Category", "INFRA")]
+[Trait("Area", "Infrastructure")]
 public sealed class ProductionDeploymentContractTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();

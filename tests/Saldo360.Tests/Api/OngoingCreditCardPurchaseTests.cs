@@ -9,6 +9,9 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Area", "Cards")]
+[Trait("Area", "Planning")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string owner = null!;

@@ -7,6 +7,9 @@ using Saldo360.Domain.Categories;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Documents")]
+[Trait("Area", "Cards")]
+[Trait("Profile", "FAST")]
 public sealed class StatementCategorizationTests
 {
     private static readonly FinancialCategoryDto Health = new(Guid.NewGuid(), "Saúde", CategoryType.Expense, true, DateTimeOffset.UtcNow);

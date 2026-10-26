@@ -8,9 +8,12 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Platform")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class HealthReadinessPostgresTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Readiness_IsHealthy_WithMigratedPostgres_AndIntroducesNoFinancialWrites()
     {
         var response = await Client.GetAsync("/health/ready");

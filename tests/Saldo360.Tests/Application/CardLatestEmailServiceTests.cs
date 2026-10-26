@@ -5,6 +5,8 @@ using Saldo360.Domain.Workspaces;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Area", "Documents")]
+[Trait("Profile", "FAST")]
 public sealed class CardLatestEmailServiceTests
 {
     [Trait("Category", "CORE")]

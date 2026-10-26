@@ -17,6 +17,8 @@ namespace Saldo360.Tests.Persistence;
 
 /// <summary>Vínculo previsão ↔ lançamento efetivo no PostgreSQL real: unicidade ativa, mesma família, sem cascatas.</summary>
 [Collection(PostgresSecondaryCollection.Name)]
+[Trait("Area", "Planning")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class PlannedRealizationPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string PreviousMigration = "20261012152640_AddFinancialPlannedTransactions";

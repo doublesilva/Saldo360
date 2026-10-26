@@ -15,6 +15,8 @@ namespace Saldo360.Tests.Persistence;
 /// <summary>Convites sobre PostgreSQL real: concorrência, transação, estados e constraints.</summary>
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Families")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FamilyInvitationPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string Issuer = "https://auth.test.invalid";

@@ -6,6 +6,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Workspaces")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialWorkspaceEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]
@@ -37,6 +39,7 @@ public sealed class FinancialWorkspaceEndpointsTests(PostgresFixture postgres) :
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task TenConcurrentBootstraps_CreateExactlyOneEmptyPersonal_WithoutFamily()
     {
         var session = await SignInAsync("workspace-owner");
@@ -60,6 +63,7 @@ public sealed class FinancialWorkspaceEndpointsTests(PostgresFixture postgres) :
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Bootstrap_RequiresCsrf_AndDoesNotAcceptSharedParameters()
     {
         var session = await SignInAsync("workspace-owner");
@@ -88,6 +92,7 @@ public sealed class FinancialWorkspaceEndpointsTests(PostgresFixture postgres) :
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task SocialMembership_DoesNotGrantPersonalFinancialAccess_InEitherDirection()
     {
         var alice = await SignInAsync("alice");

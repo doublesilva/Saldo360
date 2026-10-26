@@ -14,6 +14,8 @@ namespace Saldo360.Tests.Persistence;
 /// O EF Core InMemory não aplica nenhuma delas, por isso estes testes usam o banco de verdade.
 /// </summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Area", "Families")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FamilyPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string Issuer = "https://auth.test.invalid";

@@ -3,6 +3,8 @@ using Saldo360.Application.Budgets;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Budgets")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialBudgetExecutionAlertTests
 {
     [Theory]

@@ -4,6 +4,7 @@ using Saldo360.Domain.CreditCards;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Documents")]
 public sealed class FinancialEmailCollectorTests
 {
     private static readonly Guid WorkspaceId = Guid.NewGuid();

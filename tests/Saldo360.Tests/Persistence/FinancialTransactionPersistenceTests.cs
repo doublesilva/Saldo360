@@ -18,6 +18,8 @@ namespace Saldo360.Tests.Persistence;
 
 /// <summary>Constraints relacionais e de valor dos lançamentos no PostgreSQL real.</summary>
 [Collection(PostgresCollection.Name)]
+[Trait("Area", "Transactions")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string PreviousMigration = "20261010171119_AddFinancialCategories";
@@ -76,6 +78,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
 
     [Trait("Category", "CORE")]
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task AccountFromAnotherFamily_ViolatesCompositeForeignKey()
     {
         var exception = await AssertViolationAsync(
@@ -124,6 +127,7 @@ public sealed class FinancialTransactionPersistenceTests(PostgresFixture postgre
     [InlineData("description", " Feira", "ck_financial_transactions_description_trimmed")]
     [InlineData("type", "Transfer", "ck_financial_transactions_type")]
     [InlineData("currency", "USD", "ck_financial_transactions_currency")]
+    [Trait("Profile", "FAST")]
     public async Task InvalidValues_ViolateCheckConstraints(string column, string value, string constraint)
     {
         await AddAsync(Transaction(_accountA.Id, _expenseA.Id, CategoryType.Expense));

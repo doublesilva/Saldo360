@@ -9,6 +9,8 @@ namespace Saldo360.Tests.Api;
 /// <summary>Endpoints de família sobre PostgreSQL real, com sessões criadas pelo endpoint de teste.</summary>
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Families")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FamilyEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private const string OtherIssuer = "https://outro-provedor.test.invalid";

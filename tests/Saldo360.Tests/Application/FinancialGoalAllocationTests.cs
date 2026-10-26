@@ -3,6 +3,8 @@ using Saldo360.Domain.Goals;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Goals")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialGoalAllocationTests
 {
     [Fact]

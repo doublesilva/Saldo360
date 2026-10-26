@@ -4,6 +4,8 @@ using Saldo360.Infrastructure.CreditCards;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "INFRA")]
+[Trait("Area", "Documents")]
+[Trait("Area", "Cards")]
 public sealed class StatementExtractionLabPipelineTests
 {
     [Fact]

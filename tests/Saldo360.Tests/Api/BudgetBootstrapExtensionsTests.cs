@@ -11,6 +11,10 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Area", "Admin")]
+[Trait("Area", "Cards")]
+[Trait("Area", "Planning")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static BootstrapSource Source(string reference, string? metadata = null) => new("BudgetSpreadsheet", "Synthetic test workbook", reference, metadata);

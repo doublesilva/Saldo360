@@ -7,6 +7,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Recurrences")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialRecurrenceMaterializationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]

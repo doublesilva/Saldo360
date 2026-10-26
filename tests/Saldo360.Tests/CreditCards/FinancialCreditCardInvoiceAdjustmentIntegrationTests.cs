@@ -9,6 +9,8 @@ namespace Saldo360.Tests.CreditCards;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Cards")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialCreditCardInvoiceAdjustmentIntegrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
 

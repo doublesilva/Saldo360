@@ -12,6 +12,8 @@ namespace Saldo360.Tests.Api;
 /// </summary>
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Cards")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly OpeningDate = new(2026, 1, 1);
@@ -25,6 +27,7 @@ public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture pos
     private static DateOnly Today => BusinessCalendar.Today(DateTimeOffset.UtcNow);
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task InstallmentsPaymentAndCancellationRemainConsistentAcrossFinancialModules()
     {
         await ArrangeAsync();

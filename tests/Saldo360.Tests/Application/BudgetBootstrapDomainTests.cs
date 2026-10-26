@@ -6,6 +6,9 @@ using Saldo360.Domain.Recurrences;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Area", "Admin")]
+[Trait("Area", "Cards")]
+[Trait("Area", "Planning")]
 public sealed class BudgetBootstrapDomainTests
 {
     [Trait("Category", "CORE")]

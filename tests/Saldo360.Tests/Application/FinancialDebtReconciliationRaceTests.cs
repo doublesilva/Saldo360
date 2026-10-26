@@ -5,6 +5,8 @@ using Saldo360.Domain.Workspaces;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "REGRESSION")]
+[Trait("Area", "Debts")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialDebtReconciliationRaceTests
 {
     [Theory]

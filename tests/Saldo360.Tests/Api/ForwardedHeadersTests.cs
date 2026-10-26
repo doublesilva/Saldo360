@@ -9,6 +9,7 @@ namespace Saldo360.Tests.Api;
 /// mas só quando os headers encaminhados vêm de um proxy ou rede explicitamente confiável.
 /// </summary>
 [Trait("Category", "CORE")]
+[Trait("Area", "Security")]
 public sealed class ForwardedHeadersTests() : ApiTestBase(
     new Dictionary<string, string?>
     {
@@ -27,6 +28,7 @@ public sealed class ForwardedHeadersTests() : ApiTestBase(
     [InlineData(TrustedProxy)]
     [InlineData("172.30.5.9")] // rede confiável
     [InlineData("127.0.0.1")] // loopback continua confiável (padrão do ASP.NET Core)
+    [Trait("Profile", "FAST")]
     public async Task TrustedProxy_ProducesHttpsCallbackWithPublicHost(string remoteIp)
     {
         var callback = await GetCallbackAsync(remoteIp, proto: "https", host: PublicHost);
@@ -38,6 +40,7 @@ public sealed class ForwardedHeadersTests() : ApiTestBase(
     [InlineData("203.0.113.7")] // internet
     [InlineData("172.31.0.1")] // fora da rede confiável
     [InlineData("10.0.0.11")] // vizinho do proxy, mas não ele
+    [Trait("Profile", "FAST")]
     public async Task UntrustedOrigin_ForwardedHeadersAreIgnored(string remoteIp)
     {
         var callback = await GetCallbackAsync(remoteIp, proto: "https", host: PublicHost);

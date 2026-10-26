@@ -11,6 +11,8 @@ namespace Saldo360.Tests.Application;
 // These contracts are pure domain behavior: no API host, PostgreSQL fixture or database clone.
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Accounts")]
+[Trait("Profile", "FAST")]
 public sealed class MoneyDomainTests
 {
     [Theory]
@@ -32,6 +34,8 @@ public sealed class MoneyDomainTests
 }
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Accounts")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialAccountDomainTests
 {
     [Theory]
@@ -55,6 +59,8 @@ public sealed class FinancialAccountDomainTests
 }
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Transactions")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialTransactionDomainTests
 {
     private static readonly Guid WorkspaceId = Guid.NewGuid();
@@ -120,6 +126,8 @@ public sealed class FinancialTransactionDomainTests
 }
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Transfers")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialTransferDomainTests
 {
     private static readonly Guid WorkspaceId = Guid.NewGuid();
@@ -166,6 +174,8 @@ public sealed class FinancialTransferDomainTests
 }
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Planning")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialPlannedTransactionDomainTests
 {
     private static readonly Guid WorkspaceId = Guid.NewGuid();
@@ -203,6 +213,8 @@ public sealed class FinancialPlannedTransactionDomainTests
 }
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Planning")]
+[Trait("Profile", "FAST")]
 public sealed class PlannedRealizationDomainTests
 {
     private static readonly Guid WorkspaceId = Guid.NewGuid();

@@ -8,6 +8,7 @@ namespace Saldo360.Tests.Api;
 /// correlação, nunca o code, tokens, segredos ou o texto devolvido pelo provedor.
 /// </summary>
 [Trait("Category", "CORE")]
+[Trait("Area", "Security")]
 public sealed class LoginFailureLoggingTests : ApiTestBase
 {
     private const string FakeCode = "CODIGO-AUTORIZACAO-FICTICIO-9f8e7d";

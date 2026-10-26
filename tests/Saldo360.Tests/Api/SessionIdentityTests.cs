@@ -13,6 +13,8 @@ namespace Saldo360.Tests.Api;
 
 /// <summary>Identidade externa (issuer + subject) nas sessões persistidas.</summary>
 [Trait("Category", "CORE")]
+[Trait("Area", "Security")]
+[Trait("Profile", "FAST")]
 public sealed class SessionIdentityTests : ApiTestBase
 {
     private const string OtherIssuer = "https://outro-provedor.test.invalid";

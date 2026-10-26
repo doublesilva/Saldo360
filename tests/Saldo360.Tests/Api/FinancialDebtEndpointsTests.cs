@@ -8,6 +8,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Debts")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialDebtEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]
@@ -68,6 +70,7 @@ public sealed class FinancialDebtEndpointsTests(PostgresFixture postgres) : Post
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Debt_InstallmentPayment_IsIdempotentAndCreatesOneBankTransaction()
     {
         var owner = await SignInAsync("debt-payment-owner");

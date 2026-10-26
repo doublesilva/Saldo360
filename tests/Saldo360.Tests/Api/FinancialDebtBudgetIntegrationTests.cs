@@ -5,6 +5,8 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Debts")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialDebtBudgetIntegrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
  [Fact]

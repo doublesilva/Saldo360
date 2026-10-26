@@ -11,6 +11,8 @@ using Saldo360.Domain.Workspaces;
 namespace Saldo360.Tests.Api;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Security")]
+[Trait("Area", "Documents")]
 public sealed class AuthenticatedDocumentPasswordProviderTests
 {
     [Theory]

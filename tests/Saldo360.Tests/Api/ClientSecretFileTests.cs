@@ -4,6 +4,8 @@ namespace Saldo360.Tests.Api;
 
 /// <summary>Segredo do client lido de arquivo (Authentication:Oidc:ClientSecretFile), como em /run/secrets.</summary>
 [Trait("Category", "CORE")]
+[Trait("Area", "Security")]
+[Trait("Profile", "FAST")]
 public sealed class ClientSecretFileTests : IDisposable
 {
     private const string SecretFromFile = "segredo-vindo-do-arquivo";

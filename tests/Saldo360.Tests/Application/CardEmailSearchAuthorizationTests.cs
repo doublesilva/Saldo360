@@ -5,6 +5,10 @@ using Saldo360.Domain.Workspaces;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Documents")]
+[Trait("Area", "Security")]
+[Trait("Area", "Workspaces")]
+[Trait("Profile", "FAST")]
 public sealed class CardEmailSearchAuthorizationTests
 {
     [Theory]

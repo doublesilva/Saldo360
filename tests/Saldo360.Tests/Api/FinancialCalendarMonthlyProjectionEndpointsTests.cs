@@ -7,6 +7,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Planning")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFixture postgres)
     : PostgresApiTestBase(postgres)
 {

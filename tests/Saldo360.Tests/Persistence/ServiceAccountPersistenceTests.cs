@@ -13,6 +13,8 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Area", "Services")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class ServiceAccountPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private readonly string connectionString = postgres.NewDatabaseConnectionString();

@@ -9,6 +9,8 @@ namespace Saldo360.Tests.Api;
 /// <summary>Contas financeiras sobre PostgreSQL real, com dois membros (via convite) e uma família estranha.</summary>
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Accounts")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
@@ -61,6 +63,7 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task OwnerSessions_SeeTheSameAccounts_AndCanCreateAndEdit()
     {
         await ArrangeAsync();
@@ -89,6 +92,7 @@ public sealed class FinancialAccountEndpointsTests(PostgresFixture postgres) : P
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Outsider_CannotReadOrChangeAccounts()
     {
         await ArrangeAsync();

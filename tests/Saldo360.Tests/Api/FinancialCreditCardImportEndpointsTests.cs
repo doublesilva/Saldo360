@@ -6,6 +6,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Cards")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialCreditCardImportEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]

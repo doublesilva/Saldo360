@@ -7,6 +7,9 @@ using Saldo360.Infrastructure.CreditCards;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Documents")]
+[Trait("Area", "Cards")]
+[Trait("Profile", "FAST")]
 public sealed class StatementDocumentaryConfigurationTests
 {
     [Fact]

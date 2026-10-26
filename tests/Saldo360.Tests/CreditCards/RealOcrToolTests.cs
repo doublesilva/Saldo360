@@ -8,6 +8,8 @@ namespace Saldo360.Tests.CreditCards;
 // Explicitly executed inside Dockerfile.ocr-tests with native dependencies. Never silently skipped.
 [Trait("Category", "INFRA")]
 [Trait("Dependency", "NativeOCR")]
+[Trait("Area", "Documents")]
+[Trait("Area", "Infrastructure")]
 public sealed class RealOcrToolTests
 {
     [Theory]

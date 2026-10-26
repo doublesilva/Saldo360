@@ -21,6 +21,9 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Cards")]
+[Trait("Area", "Documents")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class OfficialStatementConsolidationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]

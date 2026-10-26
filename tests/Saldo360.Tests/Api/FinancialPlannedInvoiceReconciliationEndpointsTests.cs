@@ -7,6 +7,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Planning")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialPlannedInvoiceReconciliationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly Today = BusinessCalendar.Today(DateTimeOffset.UtcNow);

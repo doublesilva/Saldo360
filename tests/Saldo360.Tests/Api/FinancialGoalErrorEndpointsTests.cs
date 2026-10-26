@@ -7,9 +7,12 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Goals")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialGoalErrorEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Contribution_StandardizesValidationConflictAndIdempotency_WithoutDuplicateAllocation()
     {
         var owner = await SignInAsync("goal-error-owner");

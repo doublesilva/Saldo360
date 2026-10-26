@@ -5,6 +5,9 @@ using Saldo360.Application.CreditCards;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "REGRESSION")]
+[Trait("Area", "Documents")]
+[Trait("Area", "Cards")]
+[Trait("Profile", "FAST")]
 public sealed class StatementInstallmentRecognitionTests
 {
     // Anonymized shape of the reference: six current rows, then three individual future rows.

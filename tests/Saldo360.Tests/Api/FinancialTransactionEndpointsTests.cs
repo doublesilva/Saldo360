@@ -12,6 +12,8 @@ namespace Saldo360.Tests.Api;
 /// </summary>
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Transactions")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
@@ -48,6 +50,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task IncomeAndExpense_PersistWithExactCentsAndDate()
     {
         await ArrangeAsync();
@@ -218,6 +221,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Update_CanChangeTypeAndCategoryTogether_ButNotToMismatchedPair()
     {
         await ArrangeAsync();
@@ -231,6 +235,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Cancel_IsIdempotent_PreservesRow_HidesByDefault_AndBlocksEdit()
     {
         await ArrangeAsync();
@@ -283,6 +288,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task Outsider_CannotReadOrChangeTransactions()
     {
         await ArrangeAsync();
@@ -308,6 +314,7 @@ public sealed class FinancialTransactionEndpointsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task WriteOperations_RequireCsrf()
     {
         await ArrangeAsync();

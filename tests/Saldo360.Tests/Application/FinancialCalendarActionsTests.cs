@@ -5,6 +5,8 @@ using Saldo360.Domain.Transactions;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Planning")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialCalendarActionsTests
 {
     [Theory]

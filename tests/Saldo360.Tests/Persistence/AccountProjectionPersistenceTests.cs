@@ -19,6 +19,9 @@ namespace Saldo360.Tests.Persistence;
 /// <summary>Projeção no PostgreSQL real: agregação das previsões pendentes e leitura num único snapshot.</summary>
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Accounts")]
+[Trait("Area", "Planning")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class AccountProjectionPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);
@@ -102,6 +105,7 @@ public sealed class AccountProjectionPersistenceTests(PostgresFixture postgres) 
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task ConsistentRead_SeesOneSnapshot_EvenIfARealizationCommitsInTheMiddle()
     {
         var planned = Planned(_expense, 200m, BaseDate.AddDays(3));
@@ -142,6 +146,7 @@ public sealed class AccountProjectionPersistenceTests(PostgresFixture postgres) 
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task ConsistentRead_UsesReadOnlyRepeatableRead_AndAggregatesInTheDatabase()
     {
         await using (var db = Db())

@@ -11,6 +11,8 @@ namespace Saldo360.Tests.Api;
 /// </summary>
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Accounts")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class AccountBalanceEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static readonly DateOnly Reference = new(2026, 9, 1);

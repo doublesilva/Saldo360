@@ -11,6 +11,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Documents")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class CardLatestEmailEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private sealed class PendingProcessing : IInboxStatementProcessingService

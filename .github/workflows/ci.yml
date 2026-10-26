@@ -6,6 +6,14 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      benchmark_area:
+        description: 'none = FULL; other choices benchmark declared dependencies and never authorize a release'
+        type: choice
+        default: none
+        options: [none, goals, documents, cards, security]
+  schedule:
+    - cron: '23 5 * * 1' # FULL weekly, UTC. Manual default is FULL; explicit benchmarks cannot authorize releases.
 
 permissions:
   contents: read
@@ -23,7 +31,9 @@ jobs:
       backend: ${{ steps.detect.outputs.backend }}
       frontend: ${{ steps.detect.outputs.frontend }}
       infra: ${{ steps.detect.outputs.infra }}
-      backend_specific: ${{ steps.detect.outputs.backend_specific }}
+      full: ${{ steps.detect.outputs.full }}
+      release_full: ${{ steps.detect.outputs.release_full }}
+      affected_filter: ${{ steps.detect.outputs.affected_filter }}
       ocr: ${{ steps.detect.outputs.ocr }}
     steps:
       - name: Checkout
@@ -32,11 +42,16 @@ jobs:
           fetch-depth: 0
       - name: Validate change classifier
         run: bash scripts/ci/test-classify-changes.sh
+      - name: Validate FULL release gate (synthetic, no remote calls)
+        run: bash scripts/ci/test-release-gate.sh
+      - name: Validate manual selection and release eligibility
+        run: bash scripts/ci/test-workflow-selection.sh
       - name: Detect changed components
         id: detect
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
+          BENCHMARK_AREA: ${{ inputs.benchmark_area || 'none' }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
@@ -44,10 +59,22 @@ jobs:
           set -euo pipefail
           changed="$RUNNER_TEMP/changed-files.txt"
           all=false
+          manual_benchmark=false
           base=''
-          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ "$BENCHMARK_AREA" != none ]; then
+            manual_benchmark=true
+            base='declared-benchmark-path'
+            case "$BENCHMARK_AREA" in
+              goals) path=src/Saldo360.Application/Goals/FinancialGoalService.cs ;;
+              documents) path=src/Saldo360.Infrastructure/CreditCards/LocalStatementPageReader.cs ;;
+              cards) path=src/Saldo360.Domain/CreditCards/FinancialCreditCardPurchase.cs ;;
+              security) path=src/Saldo360.Api/Authentication/AuthenticationSetup.cs ;;
+              *) echo '::error::Unknown benchmark area'; exit 1 ;;
+            esac
+            printf '%s\n' "$path" > "$changed"
+          elif [ "$EVENT_NAME" = workflow_dispatch ] || [ "$EVENT_NAME" = schedule ]; then
             all=true
-            echo 'workflow_dispatch: validating every component'
+            echo 'manual/scheduled FULL: validating every component'
           else
             if [ "$EVENT_NAME" = pull_request ]; then base="$PR_BASE_SHA"; else base="$PUSH_BEFORE_SHA"; fi
             if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ] \
@@ -60,12 +87,17 @@ jobs:
             fi
           fi
           if [ "$all" = true ]; then
-            backend=true; frontend=true; infra=true; backend_specific=true; ocr=true
+            backend=true; frontend=true; infra=true; full=true; ocr=true; affected_filter=''
           else
             cat "$changed"
             eval "$(bash scripts/ci/classify-changes.sh < "$changed")"
           fi
-          printf 'backend=%s\nfrontend=%s\ninfra=%s\nbackend_specific=%s\nocr=%s\n' "$backend" "$frontend" "$infra" "$backend_specific" "$ocr" >> "$GITHUB_OUTPUT"
+          release_full=$full
+          if [ "$manual_benchmark" = true ]; then
+            # Include every non-backend stage in timing; declared paths cannot mint a release check.
+            frontend=true; infra=true; release_full=false
+          fi
+          printf 'backend=%s\nfrontend=%s\ninfra=%s\nfull=%s\nrelease_full=%s\nocr=%s\naffected_filter=%s\n' "$backend" "$frontend" "$infra" "$full" "$release_full" "$ocr" "$affected_filter" >> "$GITHUB_OUTPUT"
           {
             echo '### Incremental CI'; echo
             echo "- event: \`$EVENT_NAME\`"
@@ -75,7 +107,10 @@ jobs:
             echo "| backend | $backend |"
             echo "| frontend | $frontend |"
             echo "| infra | $infra |"
-            echo "| backend specific (migrations/tooling/deploy contracts) | $backend_specific |"
+            echo "| FULL | $full |"
+            echo "| release-eligible FULL | $release_full |"
+            echo "| declared benchmark | $manual_benchmark |"
+            echo "| additional AFFECTED | ${affected_filter:+selected} |"
             echo "| native OCR | $ocr |"
             if [ -s "$changed" ]; then
               echo; echo '<details><summary>Changed files</summary>'; echo
@@ -90,12 +125,6 @@ jobs:
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      IMAGE: saldo360-api:ci
-      CONTAINER: saldo360-api-ci
-      POSTGRES_CONTAINER: saldo360-postgres-ci
-      NETWORK: saldo360-backend-ci
-      CONNECTION: Host=postgres;Port=5432;Database=saldo360_ci;Username=saldo360;Password=ci-only-not-a-secret
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -108,6 +137,64 @@ jobs:
             echo '::error::The hosted runner does not include a .NET 10 SDK.'
             exit 1
           fi
+      - name: Cache NuGet packages (never credentials or application output)
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-dotnet10-nuget-tci2-${{ hashFiles('**/*.csproj', 'Directory.*', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: ${{ runner.os }}-dotnet10-nuget-tci2-
+      - name: Restore
+        run: dotnet restore Saldo360.slnx
+      - name: Build backend (Release)
+        run: dotnet build Saldo360.slnx --configuration Release --no-restore
+      - name: Install native OCR tools for integration tests
+        if: needs.changes.outputs.full == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-por
+          command -v pdftoppm
+          command -v tesseract
+          tesseract --list-langs | grep -Fxq por
+      - name: Test FAST (critical contracts and real PostgreSQL sentinels)
+        if: needs.changes.outputs.full != 'true'
+        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "Profile=FAST" --logger "trx;LogFileName=fast.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
+      - name: Test FULL (all legitimate tests, PostgreSQL, migrations and native OCR)
+        if: needs.changes.outputs.full == 'true'
+        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --logger "trx;LogFileName=full.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
+      - name: Preserve test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-results
+          path: TestResults/*.trx
+          if-no-files-found: ignore
+
+  backend-affected:
+    name: backend-affected
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' && needs.changes.outputs.full != 'true' && needs.changes.outputs.affected_filter != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Verify .NET 10 SDK on hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet --info
+          if ! dotnet --list-sdks | grep -Eq '^10\.[0-9]+\.[0-9]+ '; then
+            echo '::error::The hosted runner does not include a .NET 10 SDK.'
+            exit 1
+          fi
+      - name: Cache NuGet packages (never credentials or application output)
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-dotnet10-nuget-tci2-${{ hashFiles('**/*.csproj', 'Directory.*', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: ${{ runner.os }}-dotnet10-nuget-tci2-
       - name: Restore
         run: dotnet restore Saldo360.slnx
       - name: Build backend (Release)
@@ -122,67 +209,48 @@ jobs:
           command -v pdftoppm
           command -v tesseract
           tesseract --list-langs | grep -Fxq por
-      - name: Test CORE and essential REGRESSION (real PostgreSQL)
-        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "Category!=INFRA" --logger "trx;LogFileName=normal.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
-      - name: Test migrations, administrative tooling and deployment contracts
-        if: needs.changes.outputs.backend_specific == 'true'
-        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "Category=INFRA&Dependency!=NativeOCR" --logger "trx;LogFileName=specific.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
-      - name: Test real native OCR
-        if: needs.changes.outputs.ocr == 'true'
-        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "Dependency=NativeOCR" --logger "trx;LogFileName=ocr.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
-      - name: Preserve test results
+      - name: Test AFFECTED (non-FAST reverse dependencies)
+        env:
+          AFFECTED_FILTER: ${{ needs.changes.outputs.affected_filter }}
+        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "$AFFECTED_FILTER" --logger "trx;LogFileName=affected.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
+      - name: Preserve affected test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: backend-test-results
+          name: backend-affected-test-results
           path: TestResults/*.trx
           if-no-files-found: ignore
-      - name: Build API image
-        run: docker build --file Dockerfile.api --tag "$IMAGE" .
+
+  backend-image:
+    name: backend-image
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      IMAGE: saldo360-api:ci
+      CONTAINER: saldo360-api-ci
+      POSTGRES_CONTAINER: saldo360-postgres-ci
+      NETWORK: saldo360-backend-ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build API image (cached, local only)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.api
+          tags: ${{ env.IMAGE }}
+          push: false
+          load: true
+          cache-from: type=gha,scope=saldo360-api-ci
+          cache-to: type=gha,scope=saldo360-api-ci,mode=max
       - name: Smoke API image
         shell: bash
         run: |
-          set -euo pipefail
-          docker network create "$NETWORK"
-          docker run -d --name "$POSTGRES_CONTAINER" --network "$NETWORK" --network-alias postgres \
-            -e POSTGRES_DB=saldo360_ci -e POSTGRES_USER=saldo360 -e POSTGRES_PASSWORD=ci-only-not-a-secret \
-            --health-cmd='pg_isready -U saldo360 -d saldo360_ci' --health-interval=2s --health-timeout=2s --health-retries=30 \
-            postgres:17-alpine
-          for _ in $(seq 1 60); do
-            [ "$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")" = healthy ] && break
-            sleep 1
-          done
-          [ "$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")" = healthy ]
-          docker run --rm --network "$NETWORK" -e ASPNETCORE_ENVIRONMENT=Production \
-              -e ServiceAccounts__IdentifierHmacKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
-            -e "ConnectionStrings__Saldo360=$CONNECTION" -e Authentication__Oidc__Authority=https://example.invalid \
-            -e Authentication__Oidc__ClientId=saldo360 -e Authentication__Oidc__ClientSecret=ci-only \
-            --entrypoint /app/efbundle "$IMAGE" --connection "$CONNECTION"
-          docker run -d --name "$CONTAINER" --network "$NETWORK" -p 127.0.0.1:18080:8080 \
-              -e ServiceAccounts__IdentifierHmacKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
-            -e ASPNETCORE_ENVIRONMENT=Production -e "ConnectionStrings__Saldo360=$CONNECTION" \
-            -e Authentication__Oidc__Authority=https://example.invalid -e Authentication__Oidc__ClientId=saldo360 \
-            -e Authentication__Oidc__ClientSecret=ci-only "$IMAGE"
-          for _ in $(seq 1 90); do
-            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER")"
-            [ "$health" = healthy ] && break
-            [ "$(docker inspect --format '{{.State.Status}}' "$CONTAINER")" = running ] || exit 1
-            sleep 2
-          done
-          [ "$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER")" = healthy ]
-          curl --fail --silent --show-error --max-time 10 http://127.0.0.1:18080/health/ready >/dev/null
-          [ "$(docker exec "$CONTAINER" id -u)" != 0 ]
-      - name: API container diagnostics
-        if: failure()
-        run: |
-          docker logs "$CONTAINER" || true
-          docker inspect "$CONTAINER" || true
-          docker logs "$POSTGRES_CONTAINER" || true
-      - name: Remove API smoke containers
-        if: always()
-        run: |
-          docker rm -f "$CONTAINER" "$POSTGRES_CONTAINER" 2>/dev/null || true
-          docker network rm "$NETWORK" 2>/dev/null || true
+          bash scripts/ci/smoke-api-image.sh
 
   frontend:
     name: frontend
@@ -214,8 +282,18 @@ jobs:
       - name: Lint frontend
         working-directory: client
         run: npm run lint
-      - name: Build web image
-        run: docker build --file Dockerfile.web --tag "$IMAGE" .
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build web image (cached, local only)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.web
+          tags: ${{ env.IMAGE }}
+          push: false
+          load: true
+          cache-from: type=gha,scope=saldo360-web-ci
+          cache-to: type=gha,scope=saldo360-web-ci,mode=max
       - name: Smoke web image
         shell: bash
         run: |
@@ -278,9 +356,26 @@ jobs:
       - name: Test privileged deploy wrapper
         run: bash deploy/server/test-deploy-saldo360-wrapper.sh
 
+  ci-full-success:
+    name: ci-full-success
+    needs: [changes, backend, backend-affected, backend-image, frontend, infra]
+    if: always() && needs.changes.outputs.release_full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: FULL and all relevant validations succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          [ "$(echo "$NEEDS" | jq -r '.changes.result')" = success ]
+          [ "$(echo "$NEEDS" | jq -r '.backend.result')" = success ]
+          failed="$(echo "$NEEDS" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"')"
+          [ -z "$failed" ] || { echo "::error::FULL validations failed: $failed"; exit 1; }
+
   ci-success:
     name: ci-success
-    needs: [changes, backend, frontend, infra]
+    needs: [changes, backend, backend-affected, backend-image, frontend, infra]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

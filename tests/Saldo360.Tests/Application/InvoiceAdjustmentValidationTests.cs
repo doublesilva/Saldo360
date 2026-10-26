@@ -3,6 +3,9 @@ using Saldo360.Application.CreditCards;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Documents")]
+[Trait("Area", "Cards")]
+[Trait("Profile", "FAST")]
 public sealed class InvoiceAdjustmentValidationTests
 {
     [Theory]

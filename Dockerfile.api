@@ -6,9 +6,15 @@ WORKDIR /src
 COPY Directory.Build.props ./
 COPY dotnet-tools.json ./
 COPY Saldo360.slnx ./
-COPY src ./src
+COPY src/Saldo360.Domain/Saldo360.Domain.csproj ./src/Saldo360.Domain/
+COPY src/Saldo360.Application/Saldo360.Application.csproj ./src/Saldo360.Application/
+COPY src/Saldo360.Infrastructure/Saldo360.Infrastructure.csproj ./src/Saldo360.Infrastructure/
+COPY src/Saldo360.Api/Saldo360.Api.csproj ./src/Saldo360.Api/
 
 RUN dotnet restore src/Saldo360.Api/Saldo360.Api.csproj
+RUN dotnet tool restore
+
+COPY src ./src
 RUN dotnet publish src/Saldo360.Api/Saldo360.Api.csproj \
     --configuration Release \
     --no-restore \
@@ -16,8 +22,7 @@ RUN dotnet publish src/Saldo360.Api/Saldo360.Api.csproj \
     /p:UseAppHost=false
 
 # Valores somente de build: o bundle é criado sem acessar banco ou provedor.
-RUN dotnet tool restore \
-    && DOTNET_ENVIRONMENT=Production \
+RUN DOTNET_ENVIRONMENT=Production \
        ASPNETCORE_ENVIRONMENT=Production \
        ConnectionStrings__Saldo360='Host=localhost;Port=5432;Database=saldo360;Username=saldo360;Password=build-only' \
        Authentication__Oidc__Authority='https://example.invalid' \

@@ -8,6 +8,8 @@ using Saldo360.Domain.Families;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "REGRESSION")]
+[Trait("Area", "Planning")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialCalendarDailyBalanceTests
 {
     private static readonly DateOnly Today = new(2026, 10, 20);

@@ -15,6 +15,8 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Persistence;
 
 [Collection(PostgresCollection.Name)]
+[Trait("Area", "Budgets")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialBudgetPersistenceTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string PreviousMigration = "20261012215544_AddPlannedTransactionRealization";

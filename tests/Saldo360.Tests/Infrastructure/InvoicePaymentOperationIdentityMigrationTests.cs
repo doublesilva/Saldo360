@@ -13,6 +13,9 @@ namespace Saldo360.Tests.Infrastructure;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "INFRA")]
+[Trait("Area", "Infrastructure")]
+[Trait("Area", "Cards")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class InvoicePaymentOperationIdentityMigrationTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Fact]

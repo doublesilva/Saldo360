@@ -3,6 +3,9 @@ using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Tests.CreditCards;
 
+[Trait("Area", "Documents")]
+[Trait("Area", "Cards")]
+[Trait("Profile", "FAST")]
 public sealed class StatementPurchaseExtractionTests
 {
     [Trait("Category", "CORE")]

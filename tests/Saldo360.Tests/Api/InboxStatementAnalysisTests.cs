@@ -11,6 +11,9 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 [Collection(PostgresSecondaryCollection.Name)]
+[Trait("Area", "Documents")]
+[Trait("Area", "Cards")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     [Trait("Category", "CORE")]

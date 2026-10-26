@@ -7,6 +7,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "INFRA")]
+[Trait("Area", "Admin")]
 public sealed class BudgetSpreadsheetMapperTests
 {
     private static SpreadsheetImportPlan Map(SpreadsheetSnapshot? s = null) => new BudgetSpreadsheetMapper().Map(Guid.Parse("11111111-1111-4111-8111-111111111111"), s ?? BudgetSpreadsheetFixture.Source());

@@ -3,6 +3,8 @@ using Saldo360.Domain.Goals;
 namespace Saldo360.Tests.Application;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Goals")]
+[Trait("Profile", "FAST")]
 public sealed class FinancialGoalTests
 {
     private static FinancialGoal Goal() => FinancialGoal.Create(Guid.NewGuid(), new FinancialGoalDetails("Reserva", "Emergência", FinancialGoalType.EmergencyFund, 12500.34m, new DateOnly(2027, 12, 31), FinancialGoalPriority.High), DateTimeOffset.UnixEpoch);

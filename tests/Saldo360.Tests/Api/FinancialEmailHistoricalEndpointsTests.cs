@@ -7,6 +7,7 @@ using Saldo360.Tests.Support;
 namespace Saldo360.Tests.Api;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Documents")]
 public sealed class FinancialEmailHistoricalEndpointsTests : ApiTestBase
 {
     private const string Url = "/api/financial-email-import/Unknown/historical-scan";

@@ -7,6 +7,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Budgets")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private string _owner = null!;
@@ -202,6 +204,7 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task ExecutionAggregatesOnlyBudgetedExpenseCategoriesWithExactDecimals()
     {
         await ArrangeAsync();
@@ -242,6 +245,7 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task RealizationUsesEffectiveValueWithoutDuplicationAndCancellationReopensForecast()
     {
         await ArrangeAsync();

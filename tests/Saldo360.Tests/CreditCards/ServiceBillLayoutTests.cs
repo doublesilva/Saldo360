@@ -3,6 +3,7 @@ using Saldo360.Application.CreditCards;
 namespace Saldo360.Tests.CreditCards;
 
 [Trait("Category", "REGRESSION")]
+[Trait("Area", "Services")]
 public sealed class ServiceBillLayoutTests
 {
     // Synthetic values and structural labels only; no personal identifiers or actual financial values.

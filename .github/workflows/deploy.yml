@@ -87,10 +87,26 @@ jobs:
             exit 1
           fi
 
+          # FAST/AFFECTED may pass ordinary CI, but cannot authorize a release.
+          # Ignore skipped markers from ordinary runs; require the latest actual FULL
+          # on this exact SHA, without triggering CI or deployment automatically.
+          full_check="$(printf '%s' "$response" | jq -c '
+            [.check_runs[]
+              | select(.name == "ci-full-success" and .app.slug == "github-actions")
+              | select(.conclusion != "skipped")]
+            | sort_by(.id) | last // empty
+          ')"
+          if [ -z "$full_check" ] || ! printf '%s' "$full_check" | jq -e '
+            .status == "completed" and .conclusion == "success"' >/dev/null; then
+            echo "::error::O SHA $DEPLOY_SHA exige ci-full-success aprovado. Execute FULL manualmente na CI antes do Deploy."
+            exit 1
+          fi
+
           {
             echo "### Deploy gate"
             echo "- SHA: \`$DEPLOY_SHA\`"
             echo "- ci-success: **success**"
+            echo "- ci-full-success: **success**, mesmo SHA"
             [ -n "$details_url" ] && echo "- Check: $details_url"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -268,8 +284,8 @@ jobs:
         run: |
           {
             echo "### Saldo360 production"
-            echo "- Commit: `$DEPLOY_SHA`"
-            echo "- Host: `$DEPLOY_HOST`"
+            echo "- Commit: \`$DEPLOY_SHA\`"
+            echo "- Host: \`$DEPLOY_HOST\`"
             echo "- Status: deploy concluído"
           } >> "$GITHUB_STEP_SUMMARY"
 

@@ -7,6 +7,8 @@ using Saldo360.Api.Workspaces;
 namespace Saldo360.Tests.Api;
 
 [Trait("Category", "CORE")]
+[Trait("Area", "Workspaces")]
+[Trait("Area", "Platform")]
 public sealed class FinancialWriteMiddlewareTests
 {
     [Theory]

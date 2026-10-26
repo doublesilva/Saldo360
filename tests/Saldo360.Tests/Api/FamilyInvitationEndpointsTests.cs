@@ -8,6 +8,8 @@ namespace Saldo360.Tests.Api;
 /// <summary>Endpoints de convite sobre PostgreSQL real.</summary>
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Families")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FamilyInvitationEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private const string AcceptUrl = "/api/family-invitations/accept";

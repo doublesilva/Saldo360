@@ -8,6 +8,8 @@ namespace Saldo360.Tests.Api;
 
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
+[Trait("Area", "Workspaces")]
+[Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialResetEndpointsTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static string Path(Guid w) => $"/api/financial-workspaces/{w}/financial-reset";
