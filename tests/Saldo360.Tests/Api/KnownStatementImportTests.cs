@@ -26,6 +26,62 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
 {
     [Trait("Category", "CORE")]
     [Fact]
+    public async Task IntegralClassificationIsPersistedButCannotEnterEitherFinancialWriter()
+    {
+        var f = await Arrange(); using var db = f.Db;
+        f.Options.DocumentaryImport.IntegralClassificationEnabled = true; f.Pipeline.Integral = true;
+        var processing = new InboxStatementProcessingService(f.Analysis, new(f.Gate, new CreditCardPdfConfirmationRepository(db, f.Storage, f.Options), f.Locks, TimeProvider.System));
+        var response = await processing.ProcessAsync(f.W, f.Doc.Id, f.Card.Id, f.User, null, default);
+        var analysis = response.Analysis.Analysis!;
+        Assert.Equal(StatementFinancialClassifier.Workflow, analysis.Workflow);
+        Assert.Null(analysis.KnownInstallmentImport); Assert.NotNull(analysis.Extraction!.FinancialClassification);
+        Assert.Equal(StatementFinancialClassifier.ReadOnlyReason, analysis.ConsolidationBlockReason);
+        Assert.Equal("NeedsReview", response.Consolidation.Status);
+        Assert.Equal(StatementFinancialClassifier.Workflow, (await f.Analysis.GetAsync(f.W, f.Doc.Id, f.User, default)).Workflow);
+        Assert.Equal("Conflict", (await f.Analysis.CorrectCategoryAsync(f.W, f.Doc.Id, "row0", f.Category.Id, f.User, default)).Status);
+        Assert.False(StatementKnownInstallmentImport.Evaluate(analysis.Extraction, "Bank", "1234", 13).Eligible);
+        Assert.Equal(StatementFinancialClassifier.ReadOnlyReason, (await Confirm(f)).FailureCode);
+        // Disabling the profile cannot silently reinterpret a persisted integral analysis as legacy.
+        f.Options.DocumentaryImport.Enabled = false;
+        Assert.Equal(StatementFinancialClassifier.ReadOnlyReason, (await Confirm(f)).FailureCode);
+        Assert.Equal("Unavailable", (await f.Analysis.AnalyzeAsync(f.W, f.Doc.Id, f.Card.Id, f.User, null, default)).Status);
+        var reads = f.Storage.Reads;
+        var inbox = new FinancialDocumentInboxRepository(db); var pre = new ForbiddenPreReconciliation();
+        Assert.Equal(CreditCardPdfPreviewAccess.Invalid,
+            (await new FinancialDocumentInboxReviewService(inbox, f.Storage, pre).ReviewAsync(f.W, f.Doc.Id, f.Card.Id, f.User, null, default)).Access);
+        var legacy = new FinancialDocumentInboxConfirmationService(inbox, f.Storage,
+            new(pre, new CreditCardPdfConfirmationRepository(db, f.Storage, f.Options), TimeProvider.System), TimeProvider.System);
+        Assert.Equal(CreditCardPdfConfirmationAccess.Invalid, (await legacy.ConfirmAsync(f.W, f.Doc.Id, f.Card.Id, f.User, null, new(true, "synthetic", []), default)).Access);
+        Assert.Equal(reads, f.Storage.Reads);
+        Assert.Equal(1, f.Pipeline.Calls);
+        Assert.Empty(await db.FinancialCreditCardImportedInstallments.ToListAsync());
+        Assert.Empty(await db.FinancialBootstrapProvenance.ToListAsync());
+        await AssertNoInventedFinancialEntities(db);
+    }
+
+    [Trait("Category", "CORE")]
+    [Fact]
+    public async Task ObligationCandidatesAreReadOnlyScopedToWorkspaceCardAndActiveStatus()
+    {
+        var f = await Arrange(); using var db = f.Db;
+        var active = Known(f, 0); var cancelled = Known(f, 1); cancelled.Cancel(f.User, DateTimeOffset.UtcNow);
+        var otherCard = FinancialCreditCard.Create(f.W, new("Other", "Bank", "9999", null, 100m, 5, 13, null), f.User, DateTimeOffset.UtcNow);
+        var foreign = FinancialCreditCardImportedInstallment.CreateKnown(f.W, otherCard.Id, f.Category.Id, "OTHER", 77m, 1, 2,
+            new(2026, 10, 1), null, "Synthetic", "other", f.User, DateTimeOffset.UtcNow);
+        db.AddRange(active, cancelled, otherCard, foreign); await db.SaveChangesAsync();
+        f.Options.DocumentaryImport.IntegralClassificationEnabled = true;
+        var repository = new StatementCategoryContextRepository(db, f.Options);
+        var catalog = await repository.ReadAsync(f.W, f.Card.Id, f.Doc.Id, default);
+        var candidate = Assert.Single(catalog.Obligations!);
+        Assert.Equal(active.Description, candidate.Description); Assert.Equal(active.InstallmentNumber, candidate.Number);
+        Assert.Empty((await repository.ReadAsync(Guid.NewGuid(), f.Card.Id, f.Doc.Id, default)).Obligations!);
+        Assert.Equal("OTHER", Assert.Single((await repository.ReadAsync(f.W, otherCard.Id, f.Doc.Id, default)).Obligations!).Description);
+        Assert.Null((await new StatementCategoryContextRepository(db).ReadAsync(f.W, f.Card.Id, f.Doc.Id, default)).Obligations);
+        Assert.Equal(3, await db.FinancialCreditCardImportedInstallments.CountAsync());
+    }
+
+    [Trait("Category", "CORE")]
+    [Fact]
     [Trait("Profile", "FAST")]
     public async Task ProcessingRequiresOneDocumentConfirmationAndPreservesNineUnknownDates()
     {
@@ -443,7 +499,7 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
     }
     private sealed class SyntheticPipeline : IStatementDocumentaryPipeline
     {
-        public int Calls; public string? Failure; public bool FullDates; public bool DuplicateCurrent; public bool OrphanFuture;
+        public int Calls; public string? Failure; public bool FullDates; public bool DuplicateCurrent; public bool OrphanFuture; public bool Integral;
         public async Task<CreditCardStatementExtractionResult> ExtractAsync(Stream pdf, PdfPasswordContext context, string? password, string fileName, string? competence, StatementCategoryContext? categories, CancellationToken ct)
         {
             Calls++; Assert.NotEqual(Guid.Empty, context.UserId); Assert.NotNull(context.Card);
@@ -464,11 +520,18 @@ public sealed class KnownStatementImportTests(PostgresFixture postgres) : Postgr
             var result = await new CreditCardStatementExtractionOrchestrator(new() { Enabled = true, Mode = CreditCardStatementAgentMode.AgentPrimary }, new ForbiddenParser(), new(new Provider(facts)))
                 .ExtractAsync(new(fileName, source, competence) { RequireAgent = true, PurchasesOnly = true, ValidatePurchaseDocument = true,
                     BatchPages = true, AllowCorrectionRetry = false, AuthorizedIdentity = new(context.Card!.Issuer, context.Card.LastFourDigits) }, ct);
-            return result with { FinancialCalendarEvidence = StatementKnownInstallmentImport.CorroborateCalendar(source, result.Primary?.Header) };
+            return result with { FinancialCalendarEvidence = StatementKnownInstallmentImport.CorroborateCalendar(source, result.Primary?.Header),
+                FinancialClassification = Integral ? StatementFinancialClassifier.Evaluate(new("3.0", new("2.0", result.Primary!.Header, result.Primary.Items), []), source) : null };
         }
     }
     private sealed class Provider(string json) : ICreditCardStatementAgentProvider
     { public Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest r, CancellationToken ct) { Assert.True(r.PurchasesOnly); return Task.FromResult(json); } }
+    private sealed class ForbiddenPreReconciliation : ICreditCardPdfPreReconciliationService
+    {
+        public Task<CreditCardPdfPreReconciliationResult> PreReconcileAsync(Guid w, Guid card, Guid user, Stream pdf, long length,
+            string name, string? issuer, string? competence, string? format, string? password, CancellationToken ct) =>
+            throw new Xunit.Sdk.XunitException("Legacy financial review forbidden");
+    }
     private sealed class ForbiddenParser : IParserBackedCreditCardStatementExtractorAgent
     { public Task<string> ExtractAsync(CreditCardStatementAgentRequest r, CancellationToken ct) => throw new Xunit.Sdk.XunitException("Parser forbidden"); }
     private sealed class ForbiddenOrchestrator : ICreditCardStatementExtractionOrchestrator

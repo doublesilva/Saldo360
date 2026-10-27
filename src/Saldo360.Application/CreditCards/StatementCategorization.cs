@@ -9,7 +9,11 @@ namespace Saldo360.Application.CreditCards;
 
 public sealed record StatementCategoryHistory(string Description, string TransactionDate, string Amount, string CategoryName, string Source = "ConfirmedPurchase");
 public sealed record StatementCategoryContext(IReadOnlyList<string> ExistingCategories, IReadOnlyList<StatementCategoryHistory> History);
-public sealed record StatementCategoryCatalog(IReadOnlyList<FinancialCategoryDto> Categories, IReadOnlyList<StatementCategoryHistory> History);
+public sealed record StatementCategoryCatalog(IReadOnlyList<FinancialCategoryDto> Categories, IReadOnlyList<StatementCategoryHistory> History)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<StatementExistingObligation>? Obligations { get; init; }
+}
 public interface IStatementCategoryContextRepository
 {
     Task<StatementCategoryCatalog> ReadAsync(Guid workspaceId, Guid cardId, Guid excludedDocumentId, CancellationToken ct);

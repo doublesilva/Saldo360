@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using Saldo360.Application.CreditCards;
 
 namespace Saldo360.Infrastructure.CreditCards;
@@ -36,19 +37,34 @@ internal sealed class StatementDocumentaryPipeline(IHttpClientFactory clients, C
             categories = categories with { History = categories.History.Where(h => text.Contains(StatementCategorization.Normalize(h.Description), StringComparison.Ordinal)).Take(200).ToArray() };
         }
         var provider = new OpenAiCreditCardStatementAgentProvider(clients, configured, logger, tuning, "CreditCardStatementDocumentary");
-        var result = await new CreditCardStatementExtractionOrchestrator(configured, new ForbiddenParser(), new(provider)).ExtractAsync(
+        ICreditCardStatementAgentProvider extractionProvider = provider;
+        StatementFinancialClassification? financial = null;
+        if (profile.IntegralClassificationEnabled)
+        {
+            // One paid request at most, no correction/retry or parser fallback. Replay below is LOCAL
+            // validation of the purchase subset, not another provider request.
+            financial = await StatementFinancialClassifier.ExtractAsync(provider,
+                StatementFinancialClassifier.Schema(OpenAiCreditCardStatementAgentProvider.PurchasesOnlySchema), read.Document, ct);
+            extractionProvider = new LocalPurchaseResponse(JsonSerializer.Serialize(financial.Document.Purchases, CreditCardStatementAgentSchema.Json));
+        }
+        var result = await new CreditCardStatementExtractionOrchestrator(configured, new ForbiddenParser(), new(extractionProvider)).ExtractAsync(
             new(fileName, read.Document, competence)
             {
                 Categories = categories, PurchasesOnly = true, ValidatePurchaseDocument = true,
                 RequireAgent = true, BatchPages = true, AllowCorrectionRetry = false,
                 AuthorizedIdentity = context.Card is { } card ? new(card.Issuer, card.LastFourDigits) : null
             }, ct);
-        return result with { FinancialCalendarEvidence = StatementKnownInstallmentImport.CorroborateCalendar(read.Document, result.Primary?.Header) };
+        return result with { FinancialCalendarEvidence = StatementKnownInstallmentImport.CorroborateCalendar(read.Document, result.Primary?.Header),
+            FinancialClassification = financial };
     }
 
     private sealed class ForbiddenParser : IParserBackedCreditCardStatementExtractorAgent
     {
         public Task<string> ExtractAsync(CreditCardStatementAgentRequest request, CancellationToken ct) =>
             throw new InvalidOperationException("DocumentaryParserForbidden");
+    }
+    private sealed class LocalPurchaseResponse(string json) : ICreditCardStatementAgentProvider
+    {
+        public Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken ct) => Task.FromResult(json);
     }
 }

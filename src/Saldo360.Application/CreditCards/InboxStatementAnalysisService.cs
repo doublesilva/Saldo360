@@ -19,7 +19,8 @@ public sealed class InboxStatementAnalysisService(
         if (item is null) return new("NotFound");
         if (item.Status == FinancialDocumentInboxStatus.Analyzing) return new("Analyzing") { UpdatedAt = item.UpdatedAt };
         var analysis = Read(item.StatementAnalysisJson);
-        return new(analysis?.Status ?? "NotAnalyzed", analysis) { UpdatedAt = item.UpdatedAt, Workflow = options.DocumentaryImport.Enabled ? StatementKnownInstallmentImport.Workflow : analysis?.Workflow };
+        return new(analysis?.Status ?? "NotAnalyzed", analysis) { UpdatedAt = item.UpdatedAt, Workflow = analysis?.Workflow ??
+            (options.DocumentaryImport.Enabled ? options.DocumentaryImport.IntegralClassificationEnabled ? StatementFinancialClassifier.Workflow : StatementKnownInstallmentImport.Workflow : null) };
     }
 
     public async Task<InboxStatementAnalysisResult> AnalyzeAsync(Guid workspaceId, Guid documentId, Guid cardId, Guid userId, string? password, CancellationToken ct, bool automatic = false)
@@ -39,6 +40,9 @@ public sealed class InboxStatementAnalysisService(
             || (item.CreditCardId is { } associated && associated != cardId)) return new("Conflict");
         var catalog = await context.ReadAsync(workspaceId, cardId, documentId, ct);
         var previous = Read(item.StatementAnalysisJson);
+        if (previous?.Workflow == StatementFinancialClassifier.Workflow
+            && !(options.DocumentaryImport.Enabled && options.DocumentaryImport.IntegralClassificationEnabled))
+            return new("Unavailable", previous with { ConsolidationBlockReason = "FinancialClassificationDisabled" }) { Workflow = previous.Workflow };
         if (previous?.Workflow == StatementKnownInstallmentImport.Workflow && !options.DocumentaryImport.Enabled)
             return new("Unavailable", previous with { ConsolidationBlockReason = "DocumentaryImportDisabled",
                 KnownInstallmentImport = new(false, "Blocked", [], ["DocumentaryImportDisabled"]) }) { Workflow = previous.Workflow };
@@ -67,6 +71,9 @@ public sealed class InboxStatementAnalysisService(
             if (result.Access != CreditCardPdfPreviewAccess.Allowed || result.Preview is null)
                 return await FailAsync(item, cardId, hash, manual, result.FailureCode ?? "PdfAnalysisFailed", ct, result.PasswordResolutionCode);
             var extraction = result.Preview;
+            if (extraction.FinancialClassification is { } classification)
+                extraction = extraction with { FinancialClassification = classification with {
+                    Duplicates = StatementFinancialClassifier.FindDuplicates(classification.Document, catalog.Obligations ?? []) } };
             var primary = extraction.Primary;
             // Resolution is only the existing consolidation guard; never the source of CardId or financial validity.
             var resolution = primary is null ? null : await resolver.ResolveDocumentAsync(workspaceId, primary.Header, ct);
@@ -80,12 +87,14 @@ public sealed class InboxStatementAnalysisService(
             var block = primary is null ? extraction.AgentError ?? "AnalysisRequired" : mismatch ? "CardMismatch" : extraction.DocumentWarnings?.Contains("IdentityEvidenceUnverified") == true ? "IdentityEvidenceUnverified"
                 : resolution?.Status != CreditCardStatementResolutionStatus.Matched || resolution.CardId != cardId ? "CardIdentityUnresolved"
                 : OfficialStatementAnalysisValidation.ParserReviewReason(extraction);
-            var eligibility = documentary ? StatementKnownInstallmentImport.Evaluate(extraction, card.Issuer, card.LastFourDigits, card.DueDay) : null;
-            if (documentary) block = eligibility!.Blockers.FirstOrDefault();
+            var integral = extraction.FinancialClassification is not null || documentary && options.DocumentaryImport.IntegralClassificationEnabled;
+            var eligibility = documentary && !integral ? StatementKnownInstallmentImport.Evaluate(extraction, card.Issuer, card.LastFourDigits, card.DueDay) : null;
+            if (documentary && !integral) block = eligibility!.Blockers.FirstOrDefault();
+            if (integral) block = extraction.FinancialClassification is null ? "FinancialClassificationRequired" : StatementFinancialClassifier.ReadOnlyReason;
             var analysis = new InboxStatementAnalysis("2.0", cardId, hash, status, extraction, suggestions, manual,
                 mismatch ? "CardMismatch" : extraction.AgentError)
             { ManualDecisions = !documentary && previous?.CardId == cardId ? previous.ManualDecisions : [], ConsolidationBlockReason = block,
-                Workflow = documentary ? StatementKnownInstallmentImport.Workflow : null, KnownInstallmentImport = eligibility };
+                Workflow = integral ? StatementFinancialClassifier.Workflow : documentary ? StatementKnownInstallmentImport.Workflow : null, KnownInstallmentImport = eligibility };
             item.SetStatementAnalysis(JsonSerializer.Serialize(analysis), status == "Reliable" && block is null, clock.GetUtcNow());
             await documents.SaveAsync(ct); return new(status, analysis);
         }
@@ -103,7 +112,7 @@ public sealed class InboxStatementAnalysisService(
         await using var lease = await operationLock.TryAcquireAsync(workspaceId, $"statement-analysis:{documentId:N}", ct);
         if (lease is null) return new("Busy");
         var analysis = Read(item.StatementAnalysisJson);
-        if (analysis?.Workflow == StatementKnownInstallmentImport.Workflow) return new("Conflict");
+        if (analysis?.Workflow is StatementKnownInstallmentImport.Workflow or StatementFinancialClassifier.Workflow) return new("Conflict");
         if (analysis is null || !analysis.Categories.Any(c => c.Key == key)) return new("NotFound");
         var catalog = await context.ReadAsync(workspaceId, analysis.CardId, documentId, ct);
         var category = catalog.Categories.SingleOrDefault(c => c.Id == categoryId && c.IsActive && c.Type == Saldo360.Domain.Categories.CategoryType.Expense);
@@ -123,7 +132,8 @@ public sealed class InboxStatementAnalysisService(
     {
         var cardId = card.Id;
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
-        { item.ContentHash, cardId, card.LastFourDigits, card.Issuer, card.HolderUserId, card.ClosingDay, card.DueDay, options.Mode, options.Enabled, options.Model, options.Provider, options.Endpoint, options.DocumentaryImport, CreditCardStatementAgentPrompt.Version, CreditCardStatementAgentPrompt.DocumentaryVersion, catalog }))));
+        { item.ContentHash, cardId, card.LastFourDigits, card.Issuer, card.HolderUserId, card.ClosingDay, card.DueDay, options.Mode, options.Enabled, options.Model, options.Provider, options.Endpoint, options.DocumentaryImport, CreditCardStatementAgentPrompt.Version, CreditCardStatementAgentPrompt.DocumentaryVersion, catalog })
+            + (options.DocumentaryImport.IntegralClassificationEnabled ? StatementFinancialClassifier.Version : ""))));
     }
     private async Task<InboxStatementAnalysisResult> FailAsync(FinancialDocumentInboxItem item, Guid cardId, string hash, IReadOnlyDictionary<string, Guid> manual, string code, CancellationToken ct, string? passwordResolutionCode = null)
     {

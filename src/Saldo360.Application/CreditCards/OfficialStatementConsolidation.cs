@@ -37,7 +37,8 @@ public static class OfficialStatementAnalysisValidation
     public static bool Revalidate(InboxStatementAnalysis analysis, Guid card, out CreditCardStatementAgentPreview? preview)
     {
         preview = null;
-        if (analysis.SchemaVersion != "2.0" || analysis.CardId != card || analysis.Status != "Reliable" || analysis.ConsolidationBlockReason is not null
+        if (analysis.Workflow == StatementFinancialClassifier.Workflow || analysis.Extraction?.FinancialClassification is not null
+            || analysis.SchemaVersion != "2.0" || analysis.CardId != card || analysis.Status != "Reliable" || analysis.ConsolidationBlockReason is not null
             || analysis.Extraction is not { Assessment: AgentExtractionAssessment.Reliable, Primary: { } primary } extraction
             || !Enum.TryParse<CreditCardStatementAgentMode>(extraction.Mode, out var mode)
             || (mode == CreditCardStatementAgentMode.AgentPrimary ? extraction.PrimarySource != "Agent" : extraction.PrimarySource != "Parser")) return false;

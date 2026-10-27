@@ -29,6 +29,8 @@ internal sealed partial class CreditCardPdfConfirmationRepository
                 || document.CreditCardId is { } associated && associated != cardId) return await Abort("Conflict", "DocumentAssociationConflict");
             var analysis = InboxStatementAnalysisService.Read(document.StatementAnalysisJson);
             if (analysis is null || analysis.CardId != cardId || storage is null || agentOptions is null) return await Abort("NeedsReview", "AnalysisRequired");
+            if (analysis.Workflow == StatementFinancialClassifier.Workflow || analysis.Extraction?.FinancialClassification is not null)
+                return await Abort("NeedsReview", StatementFinancialClassifier.ReadOnlyReason);
             await using (var file = await storage.OpenReadAsync(document.StorageReference, ct))
             {
                 if (file is null || file.Length <= 0 || file.Length > CreditCardPdfPreviewService.MaxFileBytes) return await Abort("NeedsReview", "StoredDocumentUnavailable");

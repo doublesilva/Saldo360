@@ -57,7 +57,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
     }
     """).RootElement.Clone();
 
-    private static readonly JsonElement PurchasesOnlySchema = CreatePurchasesOnlySchema();
+    internal static readonly JsonElement PurchasesOnlySchema = CreatePurchasesOnlySchema();
     private static JsonElement CreatePurchasesOnlySchema()
     {
         var schema = System.Text.Json.Nodes.JsonNode.Parse(OutputSchema.GetRawText())!;

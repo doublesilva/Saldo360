@@ -58,7 +58,7 @@ internal static partial class StatementInstallmentEvidence
         return error.Length == 0;
     }
 
-    private static (int Number, int Count)? Numbering(string text)
+    internal static (int Number, int Count)? Numbering(string text)
     {
         if (text.StartsWith("VISUAL:", StringComparison.Ordinal)) text = text["VISUAL:".Length..];
         // Only a terminal marker after a description, optionally followed by a separated monetary value.

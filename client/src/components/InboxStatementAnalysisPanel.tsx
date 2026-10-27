@@ -3,6 +3,7 @@ import { analyzeStatement, consolidateStatement, correctStatementCategory, getFi
 import type { FinancialCategory } from '../api/categories'
 import { formatBrlDecimal } from '../money'
 import { PdfPasswordHint } from './PdfPasswordHint'
+import { StatementFinancialClassificationPanel } from './StatementFinancialClassificationPanel'
 
 export function InboxStatementAnalysisPanel({ workspaceId, documentId, cardId, password, categories, blocked, imported = false, documentUpdatedAt, onBusy, onAnalyzed, onPasswordResolution }: {
   workspaceId: string; documentId: string; cardId: string; password: string; categories: FinancialCategory[]; blocked: boolean; imported?: boolean; documentUpdatedAt?: string; onBusy: (busy: boolean) => void; onAnalyzed: (financial?: StatementConsolidationResult) => void; onPasswordResolution?: (code: string | null) => void
@@ -64,6 +65,7 @@ export function InboxStatementAnalysisPanel({ workspaceId, documentId, cardId, p
   const passwordCode = analysis?.passwordResolutionCode ?? analysis?.failureCode ?? null
   useEffect(() => { onPasswordResolution?.(passwordCode) }, [onPasswordResolution, passwordCode])
   const known = (result?.workflow ?? analysis?.workflow) === 'KnownInstallments'
+  const integral = analysis?.extraction?.financialClassification
   const consolidated = imported || !!financial && ['Imported', 'AlreadyImported', 'NewVersionConsolidated', 'InvoicesLinked'].includes(financial.status)
   const process = async (onlyConsolidate: boolean) => {
     if (!onlyConsolidate) { await run(() => analyzeStatement(workspaceId, documentId, cardId, password || undefined)); return }
@@ -88,7 +90,7 @@ export function InboxStatementAnalysisPanel({ workspaceId, documentId, cardId, p
     <button type="button" disabled={!cardId || blocked || busy || watching || imported} onClick={() => void run(() => analyzeStatement(workspaceId, documentId, cardId, password || undefined))}>{busy ? 'Analisando fatura…' : 'Analisar fatura armazenada'}</button>
     <button type="button" disabled={!cardId || blocked || busy || watching || consolidated} onClick={() => void process(false)}>{busy ? 'Analisando…' : 'Processar sem importar'}</button>
     {watching && <p role="status">Análise em andamento ou resultado ainda desconhecido. <button type="button" onClick={() => void consult()}>Consultar resultado</button> Nenhuma chamada paga será repetida automaticamente.</p>}
-    {analysis?.status === 'Reliable' && !analysis.consolidationBlockReason && !consolidated && <button type="button" disabled={blocked || busy || watching} onClick={() => void process(true)}>{known ? 'Confirmar importação do documento neste cartão' : 'Solicitar consolidação — revalidar análise'}</button>}
+    {!integral && analysis?.status === 'Reliable' && !analysis.consolidationBlockReason && !consolidated && <button type="button" disabled={blocked || busy || watching} onClick={() => void process(true)}>{known ? 'Confirmar importação do documento neste cartão' : 'Solicitar consolidação — revalidar análise'}</button>}
     {known && consolidated && <button type="button" disabled={!cardId || blocked || busy || watching} onClick={() => void process(true)}>Vincular faturas compatíveis existentes</button>}
     {known && <p>Extração: {analysis?.status === 'Reliable' ? 'concluída' : 'pendente ou bloqueada'} · Importação: {consolidated ? 'confirmada e persistida' : analysis?.knownInstallmentImport?.eligible ? 'elegível, aguardando confirmação única' : 'não elegível'}. A confirmação associa este documento ao cartão selecionado. Datas desconhecidas não serão preenchidas; nenhuma fatura será criada.</p>}
     {known && financial?.status === 'AwaitingConfirmation' && <p role="status">Nenhum dado financeiro gravado. Confirme o documento para registrar as parcelas conhecidas.</p>}
@@ -97,12 +99,13 @@ export function InboxStatementAnalysisPanel({ workspaceId, documentId, cardId, p
     {error && <p role="alert">{error}</p>}
     <PdfPasswordHint code={analysis?.passwordResolutionCode} />
     {analysis && <><p>Resultado: {analysis.status} · modo {analysis.extraction?.mode ?? 'Indisponível'} · tentativas {analysis.extraction?.attempts ?? 0}</p>
-      <p>Prévia financeira: {extraction ? 'disponível' : 'indisponível'} · Validação: {analysis.extraction?.validationStatus ?? analysis.extraction?.assessment ?? 'Indisponível'} · Conciliação: {extraction?.reconciliation.status ?? 'Indisponível'}</p>
+      {!integral && <p>Prévia financeira: {extraction ? 'disponível' : 'indisponível'} · Validação: {analysis.extraction?.validationStatus ?? analysis.extraction?.assessment ?? 'Indisponível'} · Conciliação: {extraction?.reconciliation.status ?? 'Indisponível'}</p>}
       {analysis.consolidationBlockReason && <p role="status">{known ? 'Importação bloqueada para diagnóstico técnico' : 'Prévia não autoriza consolidação. Revisão necessária'}: {analysis.consolidationBlockReason}.</p>}
       {analysis.extraction?.documentWarnings?.map(code => <p key={code}>{({ DocumentIdentityIncomplete: 'Identificação documental incompleta; o cartão selecionado foi mantido como contexto.', IdentityEvidenceUnverified: 'Evidência de identidade não corroborada; revise antes de consolidar.', ParserAgentDifference: 'Há diferenças diagnósticas entre parser e agente.', CardMismatch: 'Identificação incompatível com o cartão selecionado. Consolidação bloqueada.', ParserContextUnavailable: 'Comparação documental do parser indisponível.' } as Record<string, string>)[code] ?? 'Alerta documental para revisão.'}</p>)}
       {analysis.status !== 'Reliable' && <p>{known ? 'Divergência técnica ou evidência pendente; importação bloqueada, sem edição manual de linhas.' : 'Há divergências ou evidências pendentes. Revisão necessária; nenhum lançamento foi importado.'}</p>}
       {analysis.extraction?.comparison && <details><summary>Diferenças entre parser e agente</summary><p>Componentes somente no parser: {analysis.extraction.comparison.itemsOnlyInParser.join(' · ') || 'Nenhum'}</p><p>Componentes somente no agente: {analysis.extraction.comparison.itemsOnlyInAgent.join(' · ') || 'Nenhum'}</p></details>}
-      {extraction && <><p>Total oficial: {extraction.reconciliation.officialTotal ? formatBrlDecimal(extraction.reconciliation.officialTotal) : 'Indisponível'} · Componentes: {extraction.reconciliation.componentsTotal ? formatBrlDecimal(extraction.reconciliation.componentsTotal) : 'Indisponível'} · Diferença: {extraction.reconciliation.difference ? formatBrlDecimal(extraction.reconciliation.difference) : 'Indisponível'}</p>
+      {integral && <StatementFinancialClassificationPanel value={integral} />}
+      {extraction && !integral && <><p>Total oficial: {extraction.reconciliation.officialTotal ? formatBrlDecimal(extraction.reconciliation.officialTotal) : 'Indisponível'} · Componentes: {extraction.reconciliation.componentsTotal ? formatBrlDecimal(extraction.reconciliation.componentsTotal) : 'Indisponível'} · Diferença: {extraction.reconciliation.difference ? formatBrlDecimal(extraction.reconciliation.difference) : 'Indisponível'}</p>
         <div className="import-rows">{extraction.items.map((item, index) => { const category = analysis.categories.find(c => c.itemIndex === index); return <article className="import-row" key={index}>
           <strong>{item.normalizedDescription ?? item.originalDescription}</strong>{item.normalizedDescription && item.normalizedDescription !== item.originalDescription && <small>Original: {item.originalDescription}</small>}<span>{item.transactionDate ?? 'Data não identificada'} · {formatBrlDecimal(item.amount)} · {item.nature} · {item.type}</span>
           <small>{item.section} · {item.includedInCurrentTotal ? 'Integra a fatura atual' : 'Informativo / futuro'}</small>

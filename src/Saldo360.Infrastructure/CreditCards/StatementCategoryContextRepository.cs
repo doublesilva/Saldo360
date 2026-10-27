@@ -6,7 +6,7 @@ using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
-internal sealed class StatementCategoryContextRepository(Saldo360DbContext db) : IStatementCategoryContextRepository
+internal sealed class StatementCategoryContextRepository(Saldo360DbContext db, CreditCardStatementAgentOptions? options = null) : IStatementCategoryContextRepository
 {
     public async Task<StatementCategoryCatalog> ReadAsync(Guid workspaceId, Guid cardId, Guid excludedDocumentId, CancellationToken ct)
     {
@@ -39,6 +39,20 @@ internal sealed class StatementCategoryContextRepository(Saldo360DbContext db) :
                     history.Add(new(choice.Description, choice.TransactionDate, choice.Amount, category.Name, "ManualReview"));
             }
         }
-        return new(categories, history);
+        IReadOnlyList<StatementExistingObligation>? obligations = null;
+        if (options?.DocumentaryImport is { Enabled: true, IntegralClassificationEnabled: true })
+        {
+            var native = await (from i in db.FinancialCreditCardInstallments.AsNoTracking()
+                join p in db.FinancialCreditCardPurchases.AsNoTracking() on new { i.WorkspaceId, Id = i.PurchaseId } equals new { p.WorkspaceId, p.Id }
+                where i.WorkspaceId == workspaceId && p.CreditCardId == cardId && p.Status == CreditCardPurchaseStatus.Active && i.Status == CreditCardInstallmentStatus.Active
+                orderby i.Id select new { p.Description, i.Amount, i.InstallmentNumber, p.InstallmentCount }).ToArrayAsync(ct);
+            var imported = await db.FinancialCreditCardImportedInstallments.AsNoTracking()
+                .Where(i => i.WorkspaceId == workspaceId && i.CreditCardId == cardId && i.Status == FinancialCreditCardImportedInstallmentStatus.Active
+                    && i.InstallmentNumber != null && i.InstallmentCount != null)
+                .OrderBy(i => i.Id).Select(i => new { i.Description, i.Amount, i.InstallmentNumber, i.InstallmentCount }).ToArrayAsync(ct);
+            obligations = native.Select(i => new StatementExistingObligation(i.Description, Saldo360.Domain.Common.Money.Format(i.Amount), i.InstallmentNumber, i.InstallmentCount))
+                .Concat(imported.Select(i => new StatementExistingObligation(i.Description, Saldo360.Domain.Common.Money.Format(i.Amount), i.InstallmentNumber!.Value, i.InstallmentCount!.Value))).ToArray();
+        }
+        return new(categories, history) { Obligations = obligations };
     }
 }

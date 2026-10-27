@@ -46,6 +46,8 @@ public sealed class CreditCardStatementAgentOptions
 public sealed class StatementDocumentaryImportOptions
 {
     public bool Enabled { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IntegralClassificationEnabled { get; set; }
     public string Model { get; set; } = "gpt-6.1-sol";
     public string ReasoningEffort { get; set; } = "medium";
     public int MaxOutputTokens { get; set; } = 32768;

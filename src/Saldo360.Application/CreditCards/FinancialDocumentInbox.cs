@@ -211,7 +211,10 @@ public sealed class FinancialDocumentInboxService(
 
     private async Task ProcessCoreAsync(FinancialDocumentInboxItem item, Guid userId, Guid? selectedCardId, string? password, CancellationToken cancellationToken)
     {
-        if ((statementOptions?.DocumentaryImport.Enabled == true || InboxStatementAnalysisService.Read(item.StatementAnalysisJson)?.Workflow == StatementKnownInstallmentImport.Workflow)
+        var savedWorkflow = InboxStatementAnalysisService.Read(item.StatementAnalysisJson)?.Workflow;
+        if (savedWorkflow == StatementFinancialClassifier.Workflow && selectedCardId is null)
+        { item.RequireReview("FinancialClassificationCardRequired", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
+        if ((statementOptions?.DocumentaryImport.Enabled == true || savedWorkflow is StatementKnownInstallmentImport.Workflow or StatementFinancialClassifier.Workflow)
             && selectedCardId is { } selected)
         {
             if (statementAnalysis is null) { item.RequireReview("DocumentaryPipelineUnavailable", clock.GetUtcNow()); await repository.SaveAsync(cancellationToken); return; }
@@ -313,6 +316,8 @@ public sealed class FinancialDocumentInboxReviewService(
     {
         var item = await repository.GetAsync(workspaceId, inboxItemId, userId, cancellationToken);
         if (item is null) return new(CreditCardPdfPreviewAccess.NotFound, null, null);
+        if (InboxStatementAnalysisService.Read(item.StatementAnalysisJson)?.Workflow == StatementFinancialClassifier.Workflow)
+            return new(CreditCardPdfPreviewAccess.Invalid, null, new Dictionary<string, string[]> { ["document"] = ["Classificação integral é somente conferência, sem revisão para importação."] });
         if (InboxStatementAnalysisService.Read(item.StatementAnalysisJson)?.Workflow == StatementKnownInstallmentImport.Workflow)
             return new(CreditCardPdfPreviewAccess.Invalid, null, new Dictionary<string, string[]> { ["document"] = ["Use a confirmação única do documento, sem revisão de lançamentos."] });
         await using var content = await storage.OpenReadAsync(item.StorageReference, cancellationToken);
@@ -334,6 +339,8 @@ public sealed class FinancialDocumentInboxConfirmationService(
     {
         var item = await repository.GetAsync(workspaceId, inboxItemId, userId, cancellationToken);
         if (item is null) return new(CreditCardPdfConfirmationAccess.NotFound);
+        if (InboxStatementAnalysisService.Read(item.StatementAnalysisJson)?.Workflow == StatementFinancialClassifier.Workflow)
+            return new(CreditCardPdfConfirmationAccess.Invalid, null, new Dictionary<string, string[]> { ["document"] = ["Classificação integral é somente conferência, sem importação financeira."] });
         if (InboxStatementAnalysisService.Read(item.StatementAnalysisJson)?.Workflow == StatementKnownInstallmentImport.Workflow)
             return new(CreditCardPdfConfirmationAccess.Invalid, null, new Dictionary<string, string[]> { ["document"] = ["Use a confirmação única do documento."] });
         await using var content = await storage.OpenReadAsync(item.StorageReference, cancellationToken);

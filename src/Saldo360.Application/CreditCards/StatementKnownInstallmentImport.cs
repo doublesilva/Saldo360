@@ -22,6 +22,7 @@ public static partial class StatementKnownInstallmentImport
         string issuer, string? lastFour, int dueDay)
     {
         static StatementKnownInstallmentEligibility Block(string code) => new(false, "Blocked", [], [code]);
+        if (extraction?.FinancialClassification is not null) return Block(StatementFinancialClassifier.ReadOnlyReason);
         if (extraction is not { PrimarySource: "Agent", ParserShadowExecuted: false, ParserShadow: null,
             Assessment: AgentExtractionAssessment.Reliable, ValidationStatus: "Valid", Primary: { } primary,
             PurchaseDocumentValidation: { CoverageComplete: true, HasContradiction: false },
