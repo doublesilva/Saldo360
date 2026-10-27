@@ -7,6 +7,17 @@ public sealed class ProductionDeploymentContractTests
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
+    public void DocumentaryApiProxyAllowsPreparationAndNeverReplaysAPaidRequest()
+    {
+        var nginx = File.ReadAllText(Path.Combine(RepositoryRoot, "deploy", "nginx.conf"));
+        var api = nginx[nginx.IndexOf("location ^~ /api/", StringComparison.Ordinal)..];
+        api = api[..api.IndexOf('}')];
+        Assert.Contains("proxy_read_timeout 240s;", api);
+        Assert.Contains("proxy_send_timeout 240s;", api);
+        Assert.Contains("proxy_next_upstream off;", api);
+    }
+
+    [Fact]
     public void ProductionComposeRequiresImmutableImageTag()
     {
         var compose = File.ReadAllText(Path.Combine(RepositoryRoot, "docker-compose.production.yml"));

@@ -18,7 +18,8 @@ public sealed class CardLatestEmailEndpointsTests(PostgresFixture postgres) : Po
 {
     private sealed class PendingProcessing : IInboxStatementProcessingService
     {
-        public Task<InboxStatementProcessingResult> ProcessAsync(Guid workspace, Guid document, Guid candidate, Guid user, string? password, CancellationToken ct) =>
+        public Task<InboxStatementProcessingResult> ProcessAsync(Guid workspace, Guid document, Guid candidate, Guid user, string? password, CancellationToken ct) => throw new InvalidOperationException("No automatic financial import.");
+        public Task<InboxStatementProcessingResult> AnalyzeOnlyAsync(Guid workspace, Guid document, Guid candidate, Guid user, string? password, CancellationToken ct) =>
             Task.FromResult(new InboxStatementProcessingResult(new("NeedsReview"), new("NeedsReview", FailureCode: "AgentUnavailable")));
     }
     [Fact]

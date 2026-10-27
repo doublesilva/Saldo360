@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { analyzeStatement, processStatement, consolidateStatement, correctStatementCategory, getStatementAnalysis, type StatementAnalysisResult } from '../api/financialDocuments'
 import { InboxStatementAnalysisPanel } from './InboxStatementAnalysisPanel'
@@ -9,7 +9,7 @@ const result = (status = 'Reliable', proposed = false): StatementAnalysisResult 
   categories: [{ key: 'key', itemIndex: 0, categoryId: proposed ? null : 'health', categoryName: proposed ? 'Instrumentos' : 'Saúde', isProposal: proposed, confidence: 'High', source: proposed ? 'Proposed' : 'Existing' }],
   extraction: { mode: 'AgentPrimary', primarySource: 'Agent', assessment: status, attempts: 1, agentError: null, primary: { header: { officialTotal: '10.00' }, reconciliation: { status: status === 'Reliable' ? 'Reconciled' : 'Divergent', officialTotal: '10.00', componentsTotal: '10.00', difference: '0.00' }, items: [{ originalDescription: 'SHOP', normalizedDescription: 'Compra SHOP', transactionDate: '2026-10-01', amount: '10.00', type: 'Purchase', nature: 'Debit', section: 'CurrentInvoice', includedInCurrentTotal: true }] } } } })
 const props = { workspaceId: 'personal', documentId: 'doc', cardId: 'card', password: '', categories: [{ id: 'health', name: 'Saúde', type: 'Expense' as const, isActive: true, createdAt: '' }, { id: 'other', name: 'Outros', type: 'Expense' as const, isActive: true, createdAt: '' }], blocked: false, onBusy: vi.fn(), onAnalyzed: vi.fn() }
-beforeEach(() => { get.mockReset().mockResolvedValue({ status: 'NotAnalyzed', analysis: null }); analyze.mockReset(); correct.mockReset(); props.onBusy.mockClear(); props.onAnalyzed.mockClear() })
+beforeEach(() => { get.mockReset().mockResolvedValue({ status: 'NotAnalyzed', analysis: null }); analyze.mockReset(); correct.mockReset(); vi.mocked(processStatement).mockReset(); vi.mocked(consolidateStatement).mockReset(); props.onBusy.mockClear(); props.onAnalyzed.mockClear() })
 afterEach(cleanup)
 
 it('perfil documental separa extração, elegibilidade e confirmação sem editor de linhas', async () => {
@@ -73,10 +73,10 @@ it('separa prévia financeira válida, alerta documental e bloqueio da consolida
   expect(screen.queryByRole('button', { name: /Solicitar consolidação/ })).toBeNull()
 })
 
-it.each(['Imported', 'AlreadyImported', 'NewVersionConsolidated', 'NeedsReview', 'Conflict'])('processamento apresenta o resultado financeiro %s', async status => {
-  vi.mocked(processStatement).mockResolvedValue({ ok: true, value: { analysis: result(), consolidation: { status, invoiceId: 'invoice', version: 1, officialTotal: '10.00', failureCode: null } } })
+it.each(['Imported', 'AlreadyImported', 'NewVersionConsolidated', 'NeedsReview', 'Conflict'])('confirmação explícita apresenta o resultado financeiro %s', async status => {
+  get.mockResolvedValue(result()); vi.mocked(consolidateStatement).mockResolvedValue({ ok: true, value: { status, invoiceId: 'invoice', version: 1, officialTotal: '10.00', failureCode: null } })
   render(<InboxStatementAnalysisPanel {...props} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Processar e consolidar fatura' }))
+  fireEvent.click(await screen.findByRole('button', { name: /Solicitar consolidação/ }))
   await waitFor(() => expect(props.onAnalyzed).toHaveBeenCalledOnce())
   const labels: Record<string, string> = { Imported: 'Fatura oficial importada', AlreadyImported: 'Fatura já importada', NewVersionConsolidated: 'Nova versão consolidada', NeedsReview: 'Revisão necessária', Conflict: 'Conflito financeiro' }
   expect(screen.getByText(new RegExp(labels[status]))).toBeTruthy()
@@ -99,17 +99,17 @@ it('documento importado mantém consulta e replay mas não permite mudar decisõ
   expect(category.disabled).toBe(true)
   expect((screen.getByRole('button', { name: 'Analisar fatura armazenada' }) as HTMLButtonElement).disabled).toBe(true)
   expect(screen.queryByRole('button', { name: /Solicitar consolidação/ })).toBeNull()
-  expect((screen.getByRole('button', { name: 'Processar e consolidar fatura' }) as HTMLButtonElement).disabled).toBe(false)
+  expect((screen.getByRole('button', { name: 'Processar sem importar' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
-it('processamento financeiro bloqueia clique repetido e descarta resposta após trocar documento', async () => {
-  let resolve!: (value: Awaited<ReturnType<typeof processStatement>>) => void
-  vi.mocked(processStatement).mockReset().mockImplementation(() => new Promise(r => { resolve = r }))
+it('análise sem importação bloqueia clique repetido e descarta resposta após trocar documento', async () => {
+  let resolve!: (value: Awaited<ReturnType<typeof analyzeStatement>>) => void
+  analyze.mockReset().mockImplementation(() => new Promise(r => { resolve = r }))
   const view = render(<InboxStatementAnalysisPanel key="old" {...props} />)
-  const button = screen.getByRole('button', { name: 'Processar e consolidar fatura' })
-  fireEvent.click(button); fireEvent.click(button); expect(processStatement).toHaveBeenCalledOnce()
+  const button = screen.getByRole('button', { name: 'Processar sem importar' })
+  fireEvent.click(button); fireEvent.click(button); expect(analyze).toHaveBeenCalledOnce(); expect(processStatement).not.toHaveBeenCalled()
   view.rerender(<InboxStatementAnalysisPanel key="new" {...props} documentId="other-doc" />)
-  resolve({ ok: true, value: { analysis: result(), consolidation: { status: 'Imported', invoiceId: 'invoice', version: 1, officialTotal: '10.00', failureCode: null } } })
+  resolve({ ok: true, value: result() })
   await waitFor(() => expect(props.onAnalyzed).not.toHaveBeenCalled())
   expect(screen.queryByText(/Fatura oficial importada/)).toBeNull()
 })
@@ -181,6 +181,64 @@ it('GET atrasado não sobrescreve o resultado da análise concluída', async () 
   await screen.findByText(/Resultado: Reliable/)
   resolve({ status: 'NotAnalyzed', analysis: null })
   await waitFor(() => expect(screen.getByText(/Resultado: Reliable/)).toBeTruthy())
+})
+
+it('504 consulta apenas GET, ignora resultado antigo e recupera a conclusão sem repetir chamada paga', async () => {
+  const old = { ...result(), updatedAt: '2026-10-27T10:00:00.100+00:00' }
+  get.mockResolvedValue(old)
+  analyze.mockResolvedValue({ ok: false, status: 504, errors: {} })
+  render(<InboxStatementAnalysisPanel {...props} documentUpdatedAt="2026-10-27T10:00:00.1000000+00:00" />)
+  await screen.findByText(/Resultado: Reliable/)
+  fireEvent.click(screen.getByRole('button', { name: 'Analisar fatura armazenada' }))
+  await screen.findByText(/Resultado ainda não confirmado/)
+  const read = screen.getByRole('button', { name: 'Consultar resultado' })
+  fireEvent.click(read)
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+  expect((screen.getByRole('button', { name: 'Analisar fatura armazenada' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: /Solicitar consolidação/ }) as HTMLButtonElement).disabled).toBe(true)
+  get.mockResolvedValue({ status: 'Analyzing', analysis: null, updatedAt: '2026-10-27T10:01:00Z' })
+  fireEvent.click(read)
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(3))
+  get.mockResolvedValue({ ...result(), updatedAt: '2026-10-27T10:02:00Z' })
+  fireEvent.click(read)
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Consultar resultado' })).toBeNull())
+  expect(analyze).toHaveBeenCalledExactlyOnceWith('personal', 'doc', 'card', undefined)
+  expect(processStatement).not.toHaveBeenCalled(); expect(consolidateStatement).not.toHaveBeenCalled()
+})
+
+it('resultado persistido de senha expirada oferece reautenticação e não reabre PDF apenas para exibir', async () => {
+  const failed = result('Rejected')
+  failed.analysis!.passwordResolutionCode = 'CpfSessionInvalid'
+  get.mockResolvedValue(failed)
+  const passwordResolution = vi.fn()
+  render(<InboxStatementAnalysisPanel {...props} onPasswordResolution={passwordResolution} />)
+  const login = await screen.findByRole('link', { name: 'Autenticar novamente para o desbloqueio automático' })
+  expect(login.getAttribute('href')).toBe('/auth/login?reauthenticate=true&returnUrl=%2F')
+  expect(passwordResolution).toHaveBeenCalledWith('CpfSessionInvalid')
+  expect(analyze).not.toHaveBeenCalled(); expect(processStatement).not.toHaveBeenCalled()
+})
+
+it('polling periódico após timeout executa somente leituras', async () => {
+  vi.useFakeTimers()
+  try {
+    get.mockResolvedValueOnce({ status: 'NotAnalyzed', analysis: null }).mockResolvedValue({ status: 'Analyzing', analysis: null })
+    analyze.mockResolvedValue({ ok: false, status: 504, errors: {} })
+    await act(async () => { render(<InboxStatementAnalysisPanel {...props} />) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Analisar fatura armazenada' })) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(get).toHaveBeenCalledTimes(3)
+    expect(analyze).toHaveBeenCalledOnce(); expect(processStatement).not.toHaveBeenCalled(); expect(consolidateStatement).not.toHaveBeenCalled()
+    expect((screen.getByRole('button', { name: 'Analisar fatura armazenada' }) as HTMLButtonElement).disabled).toBe(true)
+  } finally { cleanup(); vi.useRealTimers() }
+})
+
+it('conflito de contexto não é apresentado como análise em andamento', async () => {
+  analyze.mockResolvedValue({ ok: false, status: 409, reason: 'Conflict', errors: { document: ['Documento em conflito.'] } })
+  render(<InboxStatementAnalysisPanel {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Analisar fatura armazenada' }))
+  await screen.findByText('Documento em conflito.')
+  expect(screen.queryByRole('button', { name: 'Consultar resultado' })).toBeNull()
+  expect(consolidateStatement).not.toHaveBeenCalled(); expect(analyze).toHaveBeenCalledOnce()
 })
 
 it('não mostra análise de outro cartão e sanitiza erros inesperados', async () => {

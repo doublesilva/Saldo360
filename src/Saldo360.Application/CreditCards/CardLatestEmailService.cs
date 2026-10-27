@@ -117,8 +117,10 @@ public sealed class CardLatestEmailService(
                     var item = received.Item;
                     receivedItem = item;
                     alreadyReceived = received.Result == "AlreadyExists";
+                    if (item.Status == "Imported")
+                        return new("AlreadyReceived", cardId, item.Id, item.ReceivedAt, item.OriginalFileName, item.Status, true);
                     stage = EmailFailureStage.DocumentProcessing;
-                    var processed = await processing.ProcessAsync(workspaceId, item.Id, cardId, userId, null, ct);
+                    var processed = await processing.AnalyzeOnlyAsync(workspaceId, item.Id, cardId, userId, null, ct);
                     // A received document is not proof that analysis/consolidation succeeded.
                     if (ProcessingFailure(processed) is { } processingFailure)
                     {

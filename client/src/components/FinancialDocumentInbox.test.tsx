@@ -9,6 +9,81 @@ const document = (overrides: Record<string, unknown> = {}) => ({ id: 'doc-1', so
 function common(items: unknown[]) { return vi.fn((input: string | URL | Request, init?: RequestInit) => { const url = String(input); if (url === '/auth/csrf') return json({ token: 'csrf' }); if (url.endsWith('/financial-documents/inbox')) return json(items); if (url.includes('/credit-cards?')) return json([card]); if (url.endsWith('/categories')) return json([{ id: 'cat-1', name: 'Compras', type: 'Expense', isActive: true, createdAt: '' }]); throw new Error(`${init?.method ?? 'GET'} ${url}`) }) }
 
 describe('FinancialDocumentInbox', () => {
+  it('não usa contexto de cartão fora da lista autorizada', async () => {
+    vi.stubGlobal('fetch', common([document({ contextCreditCardId: 'foreign-card', failureCode: null })]))
+    render(<FinancialDocumentInbox workspaceId="personal" initialDocumentId="doc-1" />)
+    expect((await screen.findByLabelText('Cartão para revisão') as HTMLSelectElement).value).toBe('')
+  })
+
+  it.each([
+    ['CpfSessionInvalid', /Sessão de perfil inválida ou expirada/],
+    ['CpfUnavailable', /Perfil temporariamente indisponível/],
+    ['CpfNotRegistered', /CPF não cadastrado/],
+  ])('apresenta diagnóstico salvo %s sem nova análise e permite senha somente quando necessária', async (code, hint) => {
+    const base = common([document({ contextCreditCardId: 'card-1', failureCode: 'StatementAnalysisNeedsReview' })])
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => String(input).endsWith('/statement-analysis')
+      ? json({ status: 'Rejected', workflow: 'KnownInstallments', analysis: { cardId: 'card-1', status: 'Rejected', failureCode: 'PasswordRequired', passwordResolutionCode: code, categories: [], extraction: null } })
+      : base(input, init))
+    vi.stubGlobal('fetch', fetch)
+    render(<FinancialDocumentInbox workspaceId="personal" initialDocumentId="doc-1" />)
+    expect(await screen.findByLabelText('Senha temporária do PDF')).toBeTruthy()
+    expect(screen.getAllByText(hint).length).toBeGreaterThan(0)
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+    expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0)
+  })
+
+  it('recupera contexto da análise salva ao reabrir a Inbox sem persistir uma associação', async () => {
+    vi.stubGlobal('fetch', common([document({ contextCreditCardId: 'card-1', creditCardId: null, failureCode: null })]))
+    render(<FinancialDocumentInbox workspaceId="personal" />)
+    fireEvent.click(await screen.findByText('fatura.pdf'))
+    const selection = screen.getByLabelText('Cartão para revisão') as HTMLSelectElement
+    expect(selection.value).toBe('card-1'); expect(selection.disabled).toBe(false)
+    expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0)
+  })
+
+  it('pré-seleciona o cartão da busca e conserva a escolha ao navegar sem tratá-la como associação', async () => {
+    const items = [document({ failureCode: null }), document({ id: 'doc-2', originalFileName: 'other.pdf', failureCode: null })]
+    vi.stubGlobal('fetch', common(items))
+    render(<FinancialDocumentInbox workspaceId="personal" initialDocumentId="doc-1" initialCreditCardId="card-1" />)
+    const selection = await screen.findByLabelText('Cartão para revisão') as HTMLSelectElement
+    expect(selection.value).toBe('card-1'); expect(selection.disabled).toBe(false)
+    expect(screen.queryByLabelText('Senha temporária do PDF')).toBeNull()
+    fireEvent.click(screen.getByText('other.pdf'))
+    expect((screen.getByLabelText('Cartão para revisão') as HTMLSelectElement).value).toBe('')
+    fireEvent.change(screen.getByLabelText('Cartão para revisão'), { target: { value: 'card-1' } })
+    fireEvent.click(screen.getByText('fatura.pdf')); fireEvent.click(screen.getByText('other.pdf'))
+    expect((screen.getByLabelText('Cartão para revisão') as HTMLSelectElement).value).toBe('card-1')
+    expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0)
+  })
+
+  it('associação persistida incompatível prevalece sobre o contexto da busca', async () => {
+    const base = common([document({ creditCardId: 'card-1', failureCode: null })])
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => String(input).includes('/credit-cards?') ? json([card, { ...card, id: 'black', name: 'Black' }]) : base(input, init)))
+    render(<FinancialDocumentInbox workspaceId="personal" initialDocumentId="doc-1" initialCreditCardId="black" />)
+    const selection = await screen.findByLabelText('Cartão para revisão') as HTMLSelectElement
+    expect(selection.value).toBe('card-1'); expect(selection.disabled).toBe(true)
+    expect(screen.getByText(/contexto da busca não substitui essa associação/)).toBeTruthy()
+  })
+
+  it('reanálise sem senha permite CPF automático e 504 não provoca novo POST', async () => {
+    const initial = document({ failureCode: null })
+    const base = common([initial]); let reads = 0
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/reanalyze')) { expect((init!.body as FormData).get('password')).toBeNull(); expect((init!.body as FormData).get('creditCardId')).toBe('card-1'); return json({}, 504) }
+      if (url.endsWith('/inbox/doc-1')) { reads++; return json(document({ status: 'Analyzing', updatedAt: 'started', failureCode: null })) }
+      return base(input, init)
+    })
+    vi.stubGlobal('fetch', fetch)
+    render(<FinancialDocumentInbox workspaceId="personal" initialDocumentId="doc-1" initialCreditCardId="card-1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Reanalisar' }))
+    await screen.findByText(/Consultando o estado, sem repetir a chamada/)
+    expect(reads).toBeGreaterThan(0)
+    expect(fetch.mock.calls.filter(([input, init]) => String(input).endsWith('/reanalyze') && init?.method === 'POST')).toHaveLength(1)
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    expect(screen.queryByLabelText('Senha temporária do PDF')).toBeNull()
+  })
+
   it('abre diretamente o documento encontrado mesmo fora da lista recente', async () => {
     vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => {
       const url = String(input)
@@ -46,7 +121,7 @@ describe('FinancialDocumentInbox', () => {
     render(<FinancialDocumentInbox workspaceId="family-1" />); fireEvent.click(await screen.findByText('fatura.pdf'))
     fireEvent.change(screen.getByLabelText('Cartão para revisão'), { target: { value: 'card-1' } }); const password = screen.getByLabelText('Senha temporária do PDF') as HTMLInputElement; fireEvent.change(password, { target: { value: 'temporary-secret' } })
     fireEvent.click(screen.getByRole('button', { name: 'Reanalisar' })); await waitFor(() => expect(forms).toHaveLength(1))
-    expect(forms[0].get('password')).toBe('temporary-secret'); await waitFor(() => expect((screen.getByLabelText('Senha temporária, se protegida') as HTMLInputElement).value).toBe('')); expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0)
+    expect(forms[0].get('password')).toBe('temporary-secret'); await waitFor(() => expect(screen.queryByLabelText('Senha temporária do PDF')).toBeNull()); expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0)
   })
 
   it('revisa ReadyToConfirm, exige categoria, confirma e bloqueia confirmação em Conflict', async () => {

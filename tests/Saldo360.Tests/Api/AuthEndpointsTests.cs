@@ -124,4 +124,26 @@ public sealed class AuthEndpointsTests : ApiTestBase
         Assert.Equal("/", response.Headers.Location!.ToString());
     }
 
+    [Fact]
+    public async Task ExplicitReauthenticationChallengesEvenWithValidCookieAndUsesPkce()
+    {
+        var session = await SignInAsync();
+        Assert.Equal("SessionInvalid", (await GetMeAsync(session)).CpfStatus);
+        var request = new HttpRequestMessage(HttpMethod.Get, "/auth/login?reauthenticate=true&returnUrl=https%3A%2F%2Fevil.invalid");
+        request.Headers.Add("Cookie", session);
+        var start = await StartLoginAsync(request);
+        Assert.Equal("login", start.Parameters["prompt"]);
+        Assert.Equal("S256", start.Parameters["code_challenge_method"]);
+        Assert.Equal("openid profile email", start.Parameters["scope"]);
+        Factory.OidcProvider.IdTokenClaims["sub"] = "user-123";
+        Factory.OidcProvider.UserInfo["sub"] = "user-123";
+        Factory.OidcProvider.ProfileTokenScenario = "valid";
+        Factory.ProfileGateway.Status = HttpStatusCode.OK;
+        Factory.ProfileGateway.Body = "{\"issuer\":\"https://auth.test.invalid\",\"subject\":\"user-123\",\"cpfRegistered\":true,\"cpf\":\"52998224725\"}";
+        var callback = await CallbackAsync(start, "code=synthetic-code");
+        Assert.Equal("/", callback.Headers.Location!.ToString());
+        Assert.Equal("Available", (await GetMeAsync(FindCookie(callback, SessionCookieName))).CpfStatus);
+        Assert.DoesNotContain(Factory.Logs.Entries, value => value.Contains("52998224725") || value.Contains(Factory.OidcProvider.LastAccessToken!));
+    }
+
 }

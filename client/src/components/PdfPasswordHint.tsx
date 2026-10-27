@@ -6,5 +6,5 @@ const hints: Record<string, string> = {
   CpfUnavailable: 'Perfil temporariamente indisponível. Informe a senha do PDF manualmente.',
 }
 export function PdfPasswordHint({ code }: { code?: string | null }) {
-  return code && hints[code] ? <p role="status">{hints[code]}</p> : null
+  return code && hints[code] ? <p role="status">{hints[code]}{code === 'CpfSessionInvalid' && <> <a href="/auth/login?reauthenticate=true&returnUrl=%2F">Autenticar novamente para o desbloqueio automático</a></>}</p> : null
 }

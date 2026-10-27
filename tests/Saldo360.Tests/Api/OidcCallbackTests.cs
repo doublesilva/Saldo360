@@ -9,6 +9,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Saldo360.Api.Authentication;
 using Saldo360.Application.Users;
 using Saldo360.Infrastructure.Authentication;
+using Microsoft.AspNetCore.Http;
+using Saldo360.Application.CreditCards;
+using Saldo360.Domain.CreditCards;
+using Saldo360.Domain.Workspaces;
+using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Tests.Api;
 
@@ -22,6 +27,65 @@ namespace Saldo360.Tests.Api;
 public sealed class OidcCallbackTests : ApiTestBase
 {
     private const string SyntheticCpf = "52998224725";
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(5)]
+    public async Task AuthenticatedProfileUnlocksAcrossIndependentDocumentRequestsWithoutPersistingCandidates(int prefixLength)
+    {
+        Factory.OidcProvider.ProfileTokenScenario = "valid";
+        Factory.OidcProvider.IdTokenClaims["sub"] = Subject; Factory.OidcProvider.UserInfo["sub"] = Subject;
+        Factory.ProfileGateway.Status = HttpStatusCode.OK;
+        Factory.ProfileGateway.Body = JsonSerializer.Serialize(new { issuer = FakeOidcProvider.Issuer, subject = Subject, cpfRegistered = true, cpf = SyntheticCpf });
+        var session = FindCookie(await CompleteLoginAsync(), SessionCookieName);
+        // Separate request scopes exercise the actual ticket, CurrentUserCpf, workspace owner,
+        // card/document repositories and authenticated password provider, not a fake CPF service.
+        for (var operation = 0; operation < 2; operation++)
+        {
+            await using var scope = Factory.Services.CreateAsyncScope();
+            var http = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+            http.Request.Scheme = "https"; http.Request.Host = new("localhost"); http.Request.Headers.Cookie = session;
+            var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+            accessor.HttpContext = http;
+            try
+            {
+                http.User = (await http.AuthenticateAsync(AuthenticationSetup.CookieScheme)).Principal!;
+                var user = (await scope.ServiceProvider.GetRequiredService<CurrentUser>().GetUserIdAsync(default))!.Value;
+                var db = scope.ServiceProvider.GetRequiredService<Saldo360DbContext>();
+                var now = DateTimeOffset.UtcNow;
+                var workspace = await db.FinancialWorkspaces.SingleOrDefaultAsync() ?? FinancialWorkspace.CreatePersonal(user, now);
+                if (operation == 0) db.FinancialWorkspaces.Add(workspace);
+                var card = FinancialCreditCard.Create(workspace.Id, new("Synthetic", "Bank", "1234", null, 100m, 5, 10, null), user, now);
+                var document = FinancialDocumentInboxItem.Create(Guid.NewGuid(), workspace.Id, FinancialDocumentSource.Email, null, "synthetic.pdf", new string('a', 64), "application/pdf", "synthetic", now, now);
+                db.FinancialCreditCards.Add(card); db.FinancialDocumentInboxItems.Add(document); await db.SaveChangesAsync();
+                var provider = scope.ServiceProvider.GetRequiredService<ICreditCardPdfPasswordProvider>();
+                Assert.IsType<AuthenticatedDocumentPasswordProvider>(provider);
+                var extractor = new PrefixProtectedExtractor(SyntheticCpf[..prefixLength]);
+                var read = await new PdfPasswordReader(extractor, provider).ReadAsync(new MemoryStream([1]), new(workspace.Id, user, card.Id, document.Id), null, default);
+                Assert.True(read.Unlocked); Assert.Equal(prefixLength == 3 ? 2 : 3, extractor.Attempts.Count);
+                Assert.Equal(SyntheticCpf[..3], Assert.Single(extractor.Attempts[1]));
+                if (prefixLength == 5) Assert.Equal(SyntheticCpf[..5], Assert.Single(extractor.Attempts[2]));
+                Assert.DoesNotContain(SyntheticCpf[..prefixLength], JsonSerializer.Serialize(read));
+            }
+            finally { accessor.HttpContext = null; }
+        }
+        Assert.Equal(2, Factory.ProfileGateway.Calls);
+        Assert.DoesNotContain(Factory.Logs.Entries, value => value.Contains(SyntheticCpf) || value.Contains($"\"{SyntheticCpf[..prefixLength]}\"") || value.Contains(Factory.OidcProvider.LastAccessToken!));
+        var me = await SendAsync(HttpMethod.Get, "/api/me", session);
+        Assert.DoesNotContain(SyntheticCpf, await me.Content.ReadAsStringAsync());
+    }
+
+    private sealed class PrefixProtectedExtractor(string required) : ICreditCardPdfTextExtractor
+    {
+        public List<IReadOnlyList<string>> Attempts { get; } = [];
+        public Task<CreditCardPdfExtractedDocument> ExtractAsync(Stream pdf, int pages, IReadOnlyList<string> passwords, CancellationToken ct)
+        {
+            Attempts.Add(passwords.ToArray());
+            if (!passwords.Contains(required)) throw new CreditCardPdfReadException(passwords.Count == 0 ? CreditCardPdfReadFailure.PasswordRequired : CreditCardPdfReadFailure.PasswordRejected);
+            return Task.FromResult(new CreditCardPdfExtractedDocument([new(1, "SYNTHETIC DOCUMENT")]));
+        }
+        public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string file, string? competence, string? format) => throw new InvalidOperationException("No parser in unlock test.");
+    }
     [Theory]
     [InlineData("valid", "Available")]
     [InlineData("absent", "NotRegistered")]

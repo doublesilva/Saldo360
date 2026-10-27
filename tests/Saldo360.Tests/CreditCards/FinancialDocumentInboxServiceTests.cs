@@ -84,6 +84,31 @@ public sealed class FinancialDocumentInboxServiceTests
         Assert.Equal("StorageObjectMissing", result.FailureCode);
     }
 
+    [Fact]
+    public async Task SearchContextCannotReplaceAnIncompatiblePersistedCardDuringReanalysis()
+    {
+        var fixture = Fixture(Preview("Nubank", "Reconciled", "1234"));
+        var received = await Receive(fixture.Service, [7, 7], null);
+        Assert.Equal(CardId, received.Item!.CreditCardId);
+        var before = fixture.Extractor.ParseCalls;
+        Assert.Null(await fixture.Service.ReprocessAsync(WorkspaceId, received.Item.Id, UserId, Guid.NewGuid(), null, default));
+        Assert.Equal(before, fixture.Extractor.ParseCalls);
+        Assert.Equal(CardId, Assert.Single(fixture.Repository.Items).CreditCardId);
+    }
+
+    [Fact]
+    public async Task StoredAnalysisContextIsExposedAsAHintWithoutManufacturingAssociation()
+    {
+        var fixture = Fixture(Preview("Nubank", "Reconciled", "1234"));
+        var pending = await fixture.Service.ReceiveEmailPendingAsync(WorkspaceId, UserId, new MemoryStream([1]), 1, "synthetic.pdf", "gmail:synthetic:1", DateTimeOffset.UtcNow, false, default);
+        var item = Assert.Single(fixture.Repository.Items);
+        item.SetStatementAnalysis(System.Text.Json.JsonSerializer.Serialize(new InboxStatementAnalysis("2.0", CardId, "hash", "Reliable", null, [], new Dictionary<string, Guid>())), true, DateTimeOffset.UtcNow);
+        var read = await fixture.Service.GetAsync(WorkspaceId, pending.Item!.Id, UserId, default);
+        Assert.Equal(CardId, read!.ContextCreditCardId); Assert.Null(read.CreditCardId); Assert.Null(item.CreditCardId);
+        Assert.Null(await fixture.Service.GetAsync(WorkspaceId, item.Id, Guid.NewGuid(), default));
+        Assert.Equal(0, fixture.Extractor.ParseCalls);
+    }
+
     [Theory]
     [InlineData("ElectricityBill")]
     [InlineData("WaterBill")]

@@ -17,8 +17,9 @@ public sealed class InboxStatementAnalysisService(
         if (!await authorization.CanSearchAsync(workspaceId, userId, ct)) return new("NotFound");
         var item = await documents.GetAsync(workspaceId, documentId, userId, ct);
         if (item is null) return new("NotFound");
+        if (item.Status == FinancialDocumentInboxStatus.Analyzing) return new("Analyzing") { UpdatedAt = item.UpdatedAt };
         var analysis = Read(item.StatementAnalysisJson);
-        return new(analysis?.Status ?? "NotAnalyzed", analysis) { Workflow = options.DocumentaryImport.Enabled ? StatementKnownInstallmentImport.Workflow : analysis?.Workflow };
+        return new(analysis?.Status ?? "NotAnalyzed", analysis) { UpdatedAt = item.UpdatedAt, Workflow = options.DocumentaryImport.Enabled ? StatementKnownInstallmentImport.Workflow : analysis?.Workflow };
     }
 
     public async Task<InboxStatementAnalysisResult> AnalyzeAsync(Guid workspaceId, Guid documentId, Guid cardId, Guid userId, string? password, CancellationToken ct, bool automatic = false)
@@ -89,7 +90,7 @@ public sealed class InboxStatementAnalysisService(
             await documents.SaveAsync(ct); return new(status, analysis);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        { item.RequireReview("AnalysisCancelled", clock.GetUtcNow()); await documents.SaveAsync(CancellationToken.None); throw; }
+        { await FailAsync(item, cardId, hash, manual, "AnalysisCancelled", CancellationToken.None); throw; }
         catch (Exception) { return await FailAsync(item, cardId, hash, manual, "StatementAnalysisFailed", ct); }
     }
 

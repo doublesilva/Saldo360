@@ -270,7 +270,8 @@ public sealed class CardLatestEmailServiceTests
         public ILogger<CardLatestEmailService>? Logger;
         private void Fail(string operation) { if (ErrorAt == operation) throw Error!; }
         public CardLatestEmailService Service => new(new(this), this, this, this, this, this, this, logger: Logger);
-        public Task<InboxStatementProcessingResult> ProcessAsync(Guid w, Guid d, Guid c, Guid u, string? password, CancellationToken ct)
+        public Task<InboxStatementProcessingResult> ProcessAsync(Guid w, Guid d, Guid c, Guid u, string? password, CancellationToken ct) => throw new InvalidOperationException("Search must never auto-consolidate.");
+        public Task<InboxStatementProcessingResult> AnalyzeOnlyAsync(Guid w, Guid d, Guid c, Guid u, string? password, CancellationToken ct)
         { Processed++; Fail("process"); Assert.Equal(Workspace, w); Assert.Equal(CardId, c); Assert.Equal(User, u); return Task.FromResult(ReturnedProcessing ?? new InboxStatementProcessingResult(new("NeedsReview"), new("NeedsReview", FailureCode: "AnalysisRequired"))); }
         public Task<CardLatestEmailResult> Run() => Service.SearchAsync(Workspace, CardId, User, default);
         public Task<FinancialWorkspaceRole?> GetOwnerRoleAsync(Guid w, Guid u, CancellationToken ct) => Task.FromResult<FinancialWorkspaceRole?>(Owner && w == Workspace && u == User ? FinancialWorkspaceRole.Owner : null);

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Saldo360.Infrastructure.Authentication;
 using Saldo360.Application.Users;
 
@@ -21,16 +22,19 @@ public static class AuthEndpoints
     }
 
     /// <summary>Inicia o login no provedor e, ao final, volta para <paramref name="returnUrl"/> (apenas URLs locais).</summary>
-    private static IResult Login(HttpContext context, string? returnUrl)
+    private static IResult Login(HttpContext context, string? returnUrl, bool? reauthenticate)
     {
         var target = IsLocalUrl(returnUrl) ? returnUrl! : "/";
 
-        if (context.User.Identity?.IsAuthenticated == true)
+        if (context.User.Identity?.IsAuthenticated == true && reauthenticate != true)
         {
             return Results.LocalRedirect(target);
         }
 
-        return Results.Challenge(new AuthenticationProperties { RedirectUri = target }, [AuthenticationSetup.OidcScheme]);
+        // A valid application cookie does not renew an expired/missing profile access token.
+        // Reuse OIDC + PKCE; never replace it with an ID token or a privileged CPF lookup.
+        return Results.Challenge(new OpenIdConnectChallengeProperties
+        { RedirectUri = target, Prompt = reauthenticate == true ? "login" : null }, [AuthenticationSetup.OidcScheme]);
     }
 
     /// <summary>Entrega o token CSRF que o frontend envia no header <c>X-CSRF-TOKEN</c> das operações que alteram estado.</summary>

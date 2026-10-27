@@ -17,7 +17,11 @@ export interface FinancialCreditCard {
 }
 export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null; gmailQuery?: string | null }
 export interface CardLatestEmailResult { status: string; cardId: string; documentId: string | null; receivedAt: string | null; fileName: string | null; inboxStatus: string | null; alreadyExisted: boolean; failureCode: string | null; processing?: StatementProcessingResult | null }
-export function searchLatestCardEmail(workspaceId: string, cardId: string) { return mutate<CardLatestEmailResult>(`${base(workspaceId, cardId)}/imports/email/latest`, 'POST', {}, 200) }
+export async function searchLatestCardEmail(workspaceId: string, cardId: string): Promise<SaveResult<CardLatestEmailResult> & { status?: number }> {
+  const response = await fetch(`${base(workspaceId, cardId)}/imports/email/latest`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', [CSRF_HEADER]: await getCsrfToken() }, body: '{}' })
+  if (response.ok) return { ok: true, value: await response.json() as CardLatestEmailResult }
+  return { ok: false, errors: await readError(response), status: response.status }
+}
 export interface Installment { id: string; number: number; amount: string; status: InstallmentStatus }
 export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[]; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }
 export interface PurchaseInput { description: string; purchaseDate: string; totalAmount: string; installmentCount: number; categoryId: string; amountMode?: 'Total' | 'Installment'; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }

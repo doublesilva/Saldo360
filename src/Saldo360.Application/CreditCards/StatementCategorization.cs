@@ -31,6 +31,7 @@ public sealed record InboxStatementAnalysis(string SchemaVersion, Guid CardId, s
 public sealed record InboxStatementAnalysisResult(string Status, InboxStatementAnalysis? Analysis = null, IDictionary<string, string[]>? Errors = null)
 {
     public string? Workflow { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
 }
 
 public static class StatementCategorization

@@ -70,7 +70,7 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
     }
     [Trait("Category", "CORE")]
     [Fact]
-    public async Task GmailAlreadyReceivedContinuesThroughAgentAndAtomicConsolidationExactlyOnce()
+    public async Task GmailAnalyzesOnceAndRequiresExplicitConfirmationBeforeAtomicConsolidation()
     {
         var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
         using var db = f.Db;
@@ -81,12 +81,17 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
         var parser = new CreditCardPdfPreviewService(cards, f.Extractor, new Passwords(), new(cards));
         var receiver = new FinancialDocumentInboxService(new FinancialDocumentInboxRepository(db), f.Storage, f.Extractor, parser, new(cards),
             new(), new NoClassifier(), new FinancialDocumentAnalysisRouter(), TimeProvider.System);
-        var processing = new InboxStatementProcessingService(f.Service, new(gate, new CreditCardPdfConfirmationRepository(db, f.Storage, f.Options), locks, TimeProvider.System));
+        var consolidation = new InboxStatementConsolidationService(gate, new CreditCardPdfConfirmationRepository(db, f.Storage, f.Options), locks, TimeProvider.System);
+        var processing = new InboxStatementProcessingService(f.Service, consolidation);
         var search = new CardLatestEmailService(gate, cards, new Mail(), parser, receiver, locks, processing);
         var first = await search.SearchAsync(f.Workspace, f.Card.Id, f.User, default);
-        Assert.Equal("AlreadyReceived", first.Status); Assert.Equal("Imported", first.Processing!.Consolidation.Status);
+        Assert.Equal("AlreadyReceived", first.Status); Assert.Equal("AwaitingConfirmation", first.Processing!.Consolidation.Status);
+        Assert.Empty(await db.FinancialCreditCardPurchases.ToListAsync()); Assert.Empty(await db.FinancialCreditCardInvoices.ToListAsync());
+        var again = await search.SearchAsync(f.Workspace, f.Card.Id, f.User, default);
+        Assert.Equal("AwaitingConfirmation", again.Processing!.Consolidation.Status); Assert.Equal(1, f.Provider.Calls);
+        Assert.Equal("Imported", (await consolidation.ConsolidateAsync(f.Workspace, f.Card.Id, f.Item.Id, f.User, default)).Status);
         var second = await search.SearchAsync(f.Workspace, f.Card.Id, f.User, default);
-        Assert.Equal("AlreadyImported", second.Processing!.Consolidation.Status); Assert.Equal(1, f.Provider.Calls);
+        Assert.Equal("AlreadyReceived", second.Status); Assert.Equal("Imported", second.InboxStatus); Assert.Null(second.Processing); Assert.Equal(1, f.Provider.Calls);
         Assert.Single(await db.FinancialDocumentInboxItems.ToListAsync()); Assert.Single(await db.FinancialCreditCardPurchases.ToListAsync());
         Assert.Single(await db.FinancialCreditCardInstallments.ToListAsync()); Assert.Single(await db.FinancialCreditCardInvoiceConsolidations.ToListAsync());
         Assert.Empty(await db.FinancialCreditCardInvoicePayments.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
@@ -96,6 +101,54 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
     private sealed class NoClassifier : IFinancialDocumentClassifier
     {
         public Task<FinancialDocumentClassificationResult> ClassifyAsync(FinancialDocumentClassificationRequest request, CancellationToken ct) => throw new InvalidOperationException("No classifier in statement processing.");
+    }
+
+    [Trait("Category", "REGRESSION")]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LongAnalysisHasQueryableStateDoesNotExposeStaleSuccessAndNeverRepeatsProvider(bool cancel)
+    {
+        var f = await Arrange(FinancialDocumentSource.Email, CreditCardStatementAgentMode.AgentPrimary);
+        using var db = f.Db;
+        Assert.Equal("Reliable", (await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true)).Status);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Options.Model = "synthetic-next-model"; // Previous result exists but is no longer current.
+        f.Provider.BeforeComplete = async ct => { started.SetResult(); await release.Task.WaitAsync(ct); };
+        using var cancellation = new CancellationTokenSource();
+        var pending = f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, cancellation.Token, automatic: true);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        try
+        {
+            var endpoint = $"/api/financial-workspaces/{f.Workspace}/financial-documents/inbox/{f.Item.Id}/statement-analysis";
+            var reading = await SendJsonAsync(HttpMethod.Get, endpoint, f.Session, null, null);
+            var body = await ReadAsync<JsonElement>(reading);
+            Assert.Equal("Analyzing", body.GetProperty("status").GetString());
+            Assert.Equal(JsonValueKind.Null, body.GetProperty("analysis").ValueKind);
+            Assert.Equal("Busy", (await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true)).Status);
+            Assert.Equal(2, f.Provider.Calls); // One previous + exactly one active attempt.
+            if (cancel)
+            {
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+                var final = await f.Service.GetAsync(f.Workspace, f.Item.Id, f.User, default);
+                Assert.Equal("AnalysisCancelled", final.Analysis!.FailureCode);
+                Assert.NotEqual("Reliable", final.Status);
+            }
+            else
+            {
+                release.SetResult(); Assert.Equal("Reliable", (await pending).Status);
+                var final = await f.Service.GetAsync(f.Workspace, f.Item.Id, f.User, default);
+                Assert.Equal("Reliable", final.Status); Assert.NotNull(final.UpdatedAt);
+                var reads = f.Storage.Reads;
+                Assert.Equal("AlreadyAnalyzed", (await f.Service.AnalyzeAsync(f.Workspace, f.Item.Id, f.Card.Id, f.User, null, default, automatic: true)).Status);
+                Assert.Equal(reads, f.Storage.Reads); // Persisted result needs neither PDF/password nor provider.
+            }
+            Assert.Equal(2, f.Provider.Calls);
+            Assert.Empty(await db.FinancialCreditCardPurchases.ToListAsync()); Assert.Empty(await db.FinancialTransactions.ToListAsync());
+        }
+        finally { release.TrySetResult(); }
     }
     private sealed class Mail : IFinancialEmailSource
     {
@@ -323,14 +376,16 @@ public sealed class InboxStatementAnalysisTests(PostgresFixture postgres) : Post
     private sealed class Provider : ICreditCardStatementAgentProvider
     {
         public int Calls; public string? Failure; public string Category = "Saúde"; public bool FullCalendar; public string Digits = "1234";
-        public Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken ct)
+        public Func<CancellationToken, Task>? BeforeComplete;
+        public async Task<string> CompleteAsync(CreditCardStatementAgentProviderRequest request, CancellationToken ct)
         {
             Calls++; if (Failure == "provider") throw new CreditCardStatementAgentUnavailableException("synthetic unavailable");
-            if (Failure == "json") return Task.FromResult("not-json");
+            if (BeforeComplete is not null) await BeforeComplete(ct);
+            if (Failure == "json") return "not-json";
             Assert.DoesNotContain("gmail:", request.DocumentText); Assert.DoesNotContain("OwnerUserId", request.DocumentText);
             var item = new CreditCardStatementAgentItem("SHOP", Failure == "divergent" ? "9.00" : "10.00", "Debit", "Purchase", null, null, "CurrentInvoice", true, 1, "SHOP 10.00", "High", "2026-10-01", "SHOP", Category, "High");
-            return Task.FromResult(JsonSerializer.Serialize(new CreditCardStatementAgentDocument("2.0", new(Failure == "no-issuer" ? null : "Bank", Failure == "no-digits" ? null : Digits, "2026-10", FullCalendar ? "2026-10-05" : null, FullCalendar ? "2026-10-10" : null, "10.00")
-            { IdentityPage = 1, IdentityEvidence = Failure == "invented-identity" ? "invented Bank 1234" : $"Bank {Digits} Synthetic Holder", CardProduct = "Synthetic", HolderName = "Holder" }, [item]), CreditCardStatementAgentSchema.Json));
+            return JsonSerializer.Serialize(new CreditCardStatementAgentDocument("2.0", new(Failure == "no-issuer" ? null : "Bank", Failure == "no-digits" ? null : Digits, "2026-10", FullCalendar ? "2026-10-05" : null, FullCalendar ? "2026-10-10" : null, "10.00")
+            { IdentityPage = 1, IdentityEvidence = Failure == "invented-identity" ? "invented Bank 1234" : $"Bank {Digits} Synthetic Holder", CardProduct = "Synthetic", HolderName = "Holder" }, [item]), CreditCardStatementAgentSchema.Json);
         }
     }
     private sealed class Extractor : ICreditCardPdfTextExtractor

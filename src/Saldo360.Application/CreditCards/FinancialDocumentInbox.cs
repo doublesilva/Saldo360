@@ -29,7 +29,11 @@ public sealed record FinancialDocumentInboxDto(Guid Id, string Source, string? E
     string ContentHash, string ContentType, string ReceivedAt, string Status, string? Parser, string? Competence,
     Guid? CreditCardId, string? FailureCode, string UpdatedAt, string? DocumentType = null, string? ClassificationConfidence = null,
     string? ClassificationSource = null, string? ClassificationFailureCode = null, string? ClassifiedAt = null,
-    ServiceBillConfirmationDto? ServiceBillConfirmation = null);
+    ServiceBillConfirmationDto? ServiceBillConfirmation = null)
+{
+    // Selected analysis context, not a persisted card association or documentary identity proof.
+    public Guid? ContextCreditCardId { get; init; }
+}
 public sealed record ServiceBillConfirmationDto(Guid OccurrenceId, string Competence, string ProjectedAmount,
     string ConfirmedAmount, string Difference, string ConfirmedAt);
 public sealed record FinancialDocumentInboxReceiveResult(string Result, FinancialDocumentInboxDto? Item, IDictionary<string, string[]>? Errors = null);
@@ -181,6 +185,7 @@ public sealed class FinancialDocumentInboxService(
     {
         var item = await repository.GetAsync(workspaceId, id, userId, cancellationToken);
         if (item is null) return null;
+        if (selectedCardId is { } selected && item.CreditCardId is { } associated && selected != associated) return null;
         await ProcessCoreAsync(item, userId, selectedCardId ?? item.CreditCardId, password, cancellationToken);
         return Map(item);
     }
@@ -288,7 +293,14 @@ public sealed class FinancialDocumentInboxService(
         item.ServiceBillOccurrenceId is { } occurrenceId && item.ServiceBillCompetence is { } competence
             && item.ServiceBillProjectedAmount is { } projected && item.ServiceBillConfirmedAmount is { } confirmed
             && item.ServiceBillConfirmedAt is { } confirmedAt
-            ? new(occurrenceId, competence, Money.Format(projected), Money.Format(confirmed), Money.Format(confirmed - projected), confirmedAt.ToString("O")) : null);
+            ? new(occurrenceId, competence, Money.Format(projected), Money.Format(confirmed), Money.Format(confirmed - projected), confirmedAt.ToString("O")) : null)
+        { ContextCreditCardId = ReadContextCard(item.StatementAnalysisJson) };
+
+    private static Guid? ReadContextCard(string? json)
+    {
+        try { return InboxStatementAnalysisService.Read(json)?.CardId is { } id && id != Guid.Empty ? id : null; }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
 }
 
 public sealed class FinancialDocumentInboxReviewService(
