@@ -32,7 +32,7 @@ public sealed class AuthEndpointsTests : ApiTestBase
                 Subject: "user-123",
                 DisplayName: "Maria Silva",
                 Username: "maria",
-                Email: "maria@example.com"),
+                Email: "maria@example.com", CpfDiagnosticCode: "StoredAccessTokenMissing"),
             me);
     }
 

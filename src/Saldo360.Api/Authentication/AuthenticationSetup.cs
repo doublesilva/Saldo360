@@ -142,6 +142,15 @@ public static class AuthenticationSetup
 
                 // iss e sub vêm do ID token já validado pelo middleware (assinatura, emissor, audiência, nonce),
                 // nunca da requisição, do navegador ou da configuração (Authority).
+                options.Events.OnTokenResponseReceived = context =>
+                {
+                    context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AuthenticationSetup))
+                        .LogInformation(new EventId(17080, "ProfileTokenResponse"),
+                            "Profile callback stage {Stage}; access token present {AccessTokenPresent}; bearer type {BearerType}",
+                            "TokenResponseReceived", !string.IsNullOrWhiteSpace(context.TokenEndpointResponse?.AccessToken),
+                            string.Equals(context.TokenEndpointResponse?.TokenType, "Bearer", StringComparison.OrdinalIgnoreCase));
+                    return Task.CompletedTask;
+                };
                 options.Events.OnTokenValidated = async context =>
                 {
                     var issuer = context.SecurityToken?.Issuer;
@@ -153,9 +162,14 @@ public static class AuthenticationSetup
                     }
 
                     context.HttpContext.Items[ValidatedIdentityKey] = new ExternalIdentity(issuer, subject);
-                    context.HttpContext.Items[ProfileAccessKey] = await ProfileAccessTokenValidation.ValidateAsync(
+                    var access = await ProfileAccessTokenValidation.ValidateAsync(
                         context.TokenEndpointResponse?.AccessToken, context.TokenEndpointResponse?.TokenType,
                         new ExternalIdentity(issuer, subject), context.Options, context.HttpContext.RequestAborted);
+                    context.HttpContext.Items[ProfileAccessKey] = access;
+                    context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AuthenticationSetup))
+                        .LogInformation(new EventId(17080, "ProfileAccessValidation"),
+                            "Profile callback stage {Stage}; code {Code}; status {Status}",
+                            "AccessTokenValidation", access.DiagnosticCode?.ToString(), access.Status.ToString());
                 };
                 options.Events.OnTicketReceived = context =>
                 {
@@ -172,6 +186,11 @@ public static class AuthenticationSetup
                     context.Properties.StoreTokens(profileAccess?.Token is { } accessToken
                         ? [new AuthenticationToken { Name = "access_token", Value = accessToken }] : []);
                     context.Properties.Items[ProfileAccessTokenValidation.SessionStatus] = (profileAccess?.Status ?? UserCpfStatus.SessionInvalid).ToString();
+                    context.Properties.Items[ProfileAccessTokenValidation.SessionDiagnostic] = (profileAccess?.DiagnosticCode ?? UserCpfDiagnosticCode.StoredAccessTokenMissing).ToString();
+                    context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AuthenticationSetup))
+                        .LogInformation(new EventId(17082, "ProfileTicketReceived"),
+                            "Profile callback stage {Stage}; access token retained {AccessTokenRetained}; code {Code}",
+                            "TicketReceived", profileAccess?.Token is not null, profileAccess?.DiagnosticCode?.ToString());
                     return Task.CompletedTask;
                 };
                 options.Events.OnRemoteFailure = context =>

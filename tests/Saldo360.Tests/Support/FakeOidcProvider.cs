@@ -86,7 +86,7 @@ public sealed class FakeOidcProvider : HttpMessageHandler
             },
             "/token" => Json(new Dictionary<string, object>
             {
-                ["access_token"] = LastAccessToken = ProfileTokenScenario is null ? "access-token-de-teste" : CreateProfileToken(),
+                ["access_token"] = LastAccessToken = ProfileTokenScenario is null or "opaque" ? "access-token-de-teste" : CreateProfileToken(),
                 ["token_type"] = "Bearer",
                 ["expires_in"] = 300,
                 ["id_token"] = CreateIdToken(),
@@ -117,24 +117,27 @@ public sealed class FakeOidcProvider : HttpMessageHandler
         });
     }
 
-    private string CreateProfileToken()
+    internal string CreateProfileToken()
     {
         var now = DateTime.UtcNow;
-        var key = ProfileTokenScenario == "signature" ? new RsaSecurityKey(RSA.Create(2048)) { KeyId = "wrong-key" } : _signingKey;
+        var key = ProfileTokenScenario is "signature" or "signature-invalid" ? new RsaSecurityKey(RSA.Create(2048)) { KeyId = ProfileTokenScenario == "signature" ? "wrong-key" : _signingKey.KeyId } : _signingKey;
         var claims = new Dictionary<string, object>
         {
             ["sub"] = ProfileTokenScenario == "subject" ? "other" : IdTokenClaims["sub"],
             ["client_id"] = ProfileTokenScenario == "client" ? "other-client" : ClientId
         };
         if (ProfileTokenScenario == "cpf-claim") claims["cpf"] = "52998224725";
+        if (ProfileTokenScenario == "azp") claims.Remove("client_id");
+        if (ProfileTokenScenario is "azp" or "both-client" or "conflicting-azp") claims["azp"] = ProfileTokenScenario == "conflicting-azp" ? "foreign-client" : ClientId;
+        if (ProfileTokenScenario == "multiple-audiences") claims["aud"] = new[] { ClientId, "accessgateway-profile" };
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
             Issuer = ProfileTokenScenario == "issuer" ? "https://other.invalid" : Issuer,
-            Audience = ProfileTokenScenario == "audience" ? ClientId : "accessgateway-profile",
+            Audience = ProfileTokenScenario == "multiple-audiences" ? null : ProfileTokenScenario == "audience" ? ClientId : "accessgateway-profile",
             TokenType = ProfileTokenScenario == "id-token" ? "JWT" : "at+jwt", Claims = claims,
-            IssuedAt = now.AddMinutes(-10), NotBefore = now.AddMinutes(-10),
+            IssuedAt = now.AddMinutes(-10), NotBefore = ProfileTokenScenario == "future" ? now.AddMinutes(2) : now.AddMinutes(-10),
             Expires = ProfileTokenScenario == "expired" ? now.AddMinutes(-1) : now.AddMinutes(5),
-            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256)
+            SigningCredentials = new SigningCredentials(key, ProfileTokenScenario == "algorithm" ? SecurityAlgorithms.RsaSha512 : SecurityAlgorithms.RsaSha256)
         });
     }
 

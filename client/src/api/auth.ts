@@ -15,6 +15,8 @@ export interface CurrentUser {
   email: string | null
   /** Disponibilidade apenas; CPF completo nunca faz parte deste contrato. */
   cpfStatus?: 'Available' | 'NotRegistered' | 'SessionInvalid' | 'AccessDenied' | 'Unavailable'
+  /** Código técnico allowlisted, sem token, claims ou dígitos do CPF. */
+  cpfDiagnosticCode?: string | null
 }
 
 /** Usuário da sessão atual, ou null quando não há sessão (401). */

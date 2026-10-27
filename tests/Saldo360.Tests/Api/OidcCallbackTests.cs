@@ -29,6 +29,68 @@ public sealed class OidcCallbackTests : ApiTestBase
     private const string SyntheticCpf = "52998224725";
 
     [Theory]
+    [InlineData(false, "TokenExpired")]
+    [InlineData(true, "StoredAccessTokenMissing")]
+    public async Task ValidApplicationSessionDoesNotHideAnExpiredOrLostProfileToken(bool remove, string diagnostic)
+    {
+        Factory.OidcProvider.ProfileTokenScenario = "valid";
+        Factory.OidcProvider.IdTokenClaims["sub"] = Subject; Factory.OidcProvider.UserInfo["sub"] = Subject;
+        var session = FindCookie(await CompleteLoginAsync(), SessionCookieName);
+        Factory.OidcProvider.ProfileTokenScenario = "expired";
+        var expired = Factory.OidcProvider.CreateProfileToken();
+        await WithDbAsync(async db =>
+        {
+            var row = await db.UserSessions.SingleAsync();
+            var protector = Factory.Services.GetRequiredService<IDataProtectionProvider>().CreateProtector(DatabaseTicketStore.ProtectorPurpose);
+            var ticket = TicketSerializer.Default.Deserialize(protector.Unprotect(row.ProtectedTicket))!;
+            ticket.Properties.StoreTokens(remove ? [] : [new AuthenticationToken { Name = "access_token", Value = expired }]);
+            row.ProtectedTicket = protector.Protect(TicketSerializer.Default.Serialize(ticket));
+            await db.SaveChangesAsync();
+        });
+        var me = await GetMeAsync(session); // HTTP 200: financial session is still valid.
+        Assert.Equal("SessionInvalid", me.CpfStatus); Assert.Equal(diagnostic, me.CpfDiagnosticCode);
+        Assert.Equal(0, Factory.ProfileGateway.Calls);
+        Assert.DoesNotContain(expired, JsonSerializer.Serialize(me));
+        Assert.DoesNotContain(Factory.Logs.Entries, value => value.Contains(expired));
+    }
+
+    [Theory]
+    [InlineData("azp")]
+    [InlineData("both-client")]
+    [InlineData("multiple-audiences")]
+    public async Task EligibleAutheliaClaimShapesKeepProfileTokenOnlyInProtectedSession(string shape)
+    {
+        Factory.OidcProvider.ProfileTokenScenario = shape;
+        Factory.OidcProvider.IdTokenClaims["sub"] = Subject; Factory.OidcProvider.UserInfo["sub"] = Subject;
+        Factory.ProfileGateway.Status = HttpStatusCode.OK;
+        Factory.ProfileGateway.Body = JsonSerializer.Serialize(new { issuer = FakeOidcProvider.Issuer, subject = Subject, cpfRegistered = true, cpf = SyntheticCpf });
+        var callback = await CompleteLoginAsync();
+        var session = FindCookie(callback, SessionCookieName);
+        var me = await GetMeAsync(session);
+        Assert.Equal("Available", me.CpfStatus); Assert.Equal("ProfileAvailable", me.CpfDiagnosticCode);
+        Assert.Equal(Factory.OidcProvider.LastAccessToken, Factory.ProfileGateway.LastBearer);
+        var stages = Factory.Logs.StructuredEntries.Where(e => e.EventId.Id is 17080 or 17082).ToArray();
+        Assert.Equal(new[] { "TokenResponseReceived", "AccessTokenValidation", "TicketReceived" }, stages.Select(e => e.Properties["Stage"]));
+        Assert.Equal(true, stages[0].Properties["AccessTokenPresent"]);
+        Assert.Equal(true, stages[0].Properties["BearerType"]);
+        Assert.Equal("AccessTokenValidated", stages[1].Properties["Code"]);
+        Assert.Equal(true, stages[2].Properties["AccessTokenRetained"]);
+        Assert.All(stages, entry => Assert.Null(entry.Exception));
+        Assert.Contains(Factory.Logs.StructuredEntries, entry => entry.EventId.Id == 17081 && Equals(entry.Properties["Code"], "ProfileAvailable"));
+        await WithDbAsync(async db =>
+        {
+            var protector = Factory.Services.GetRequiredService<IDataProtectionProvider>().CreateProtector(DatabaseTicketStore.ProtectorPurpose);
+            var ticket = TicketSerializer.Default.Deserialize(protector.Unprotect((await db.UserSessions.SingleAsync()).ProtectedTicket))!;
+            Assert.Equal(Factory.OidcProvider.LastAccessToken, Assert.Single(ticket.Properties.GetTokens()).Value);
+            Assert.Equal("AccessTokenValidated", ticket.Properties.Items[ProfileAccessTokenValidation.SessionDiagnostic]);
+            Assert.DoesNotContain(SyntheticCpf, JsonSerializer.Serialize(ticket.Properties.Items));
+        });
+        Assert.DoesNotContain(Factory.Logs.Entries, entry => entry.Contains(SyntheticCpf) || entry.Contains(Factory.OidcProvider.LastAccessToken!));
+        Assert.DoesNotContain(SyntheticCpf, JsonSerializer.Serialize(me));
+        Assert.DoesNotContain(Factory.OidcProvider.LastAccessToken!, session);
+    }
+
+    [Theory]
     [InlineData(3)]
     [InlineData(5)]
     public async Task AuthenticatedProfileUnlocksAcrossIndependentDocumentRequestsWithoutPersistingCandidates(int prefixLength)
@@ -87,18 +149,18 @@ public sealed class OidcCallbackTests : ApiTestBase
         public CreditCardPdfPreview Parse(CreditCardPdfExtractedDocument document, string file, string? competence, string? format) => throw new InvalidOperationException("No parser in unlock test.");
     }
     [Theory]
-    [InlineData("valid", "Available")]
-    [InlineData("absent", "NotRegistered")]
-    [InlineData("denied", "AccessDenied")]
-    [InlineData("unauthorized", "SessionInvalid")]
-    [InlineData("missing-grant", "AccessDenied")]
-    [InlineData("wrong-subject", "SessionInvalid")]
-    [InlineData("wrong-issuer", "SessionInvalid")]
-    [InlineData("malformed", "Unavailable")]
-    [InlineData("bad-cpf", "Unavailable")]
-    [InlineData("network", "Unavailable")]
-    [InlineData("unavailable", "Unavailable")]
-    public async Task ProfileUsesOnlySessionAccessTokenAndNeverExposesOrPersistsCpf(string scenario, string expected)
+    [InlineData("valid", "Available", "ProfileAvailable")]
+    [InlineData("absent", "NotRegistered", "GatewayCpfNotRegistered")]
+    [InlineData("denied", "AccessDenied", "GatewayForbidden")]
+    [InlineData("unauthorized", "SessionInvalid", "GatewayUnauthorized")]
+    [InlineData("missing-grant", "AccessDenied", "GatewayCpfGrantMissing")]
+    [InlineData("wrong-subject", "SessionInvalid", "GatewayIdentityMismatch")]
+    [InlineData("wrong-issuer", "SessionInvalid", "GatewayIdentityMismatch")]
+    [InlineData("malformed", "Unavailable", "GatewayInvalidResponse")]
+    [InlineData("bad-cpf", "Unavailable", "GatewayCpfInvalid")]
+    [InlineData("network", "Unavailable", "GatewayUnavailable")]
+    [InlineData("unavailable", "Unavailable", "GatewayUnavailable")]
+    public async Task ProfileUsesOnlySessionAccessTokenAndNeverExposesOrPersistsCpf(string scenario, string expected, string diagnostic)
     {
         Factory.OidcProvider.ProfileTokenScenario = "valid";
         Factory.OidcProvider.IdTokenClaims["sub"] = Subject; Factory.OidcProvider.UserInfo["sub"] = Subject;
@@ -119,6 +181,7 @@ public sealed class OidcCallbackTests : ApiTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Equal(expected, JsonDocument.Parse(body).RootElement.GetProperty("cpfStatus").GetString());
+        Assert.Equal(diagnostic, JsonDocument.Parse(body).RootElement.GetProperty("cpfDiagnosticCode").GetString());
         Assert.DoesNotContain(SyntheticCpf, body); Assert.DoesNotContain(Factory.OidcProvider.LastAccessToken!, body);
         Assert.Equal(Factory.OidcProvider.LastAccessToken, Factory.ProfileGateway.LastBearer);
         Assert.Equal(1, Factory.ProfileGateway.Calls);
@@ -137,27 +200,34 @@ public sealed class OidcCallbackTests : ApiTestBase
     }
 
     [Theory]
-    [InlineData("audience", "AccessDenied")]
-    [InlineData("client", "AccessDenied")]
-    [InlineData("id-token", "AccessDenied")]
-    [InlineData("cpf-claim", "AccessDenied")]
-    [InlineData("signature", "SessionInvalid")]
-    [InlineData("expired", "SessionInvalid")]
-    [InlineData("subject", "SessionInvalid")]
-    [InlineData("issuer", "SessionInvalid")]
-    public async Task IneligibleAccessTokenNeverLeavesSaldoAndDoesNotBreakLogin(string scenario, string expected)
+    [InlineData("audience", "AccessDenied", "AudienceMismatch")]
+    [InlineData("client", "AccessDenied", "ClientMismatch")]
+    [InlineData("id-token", "AccessDenied", "JwtTypeInvalid")]
+    [InlineData("cpf-claim", "AccessDenied", "SensitiveClaimsPresent")]
+    [InlineData("signature", "SessionInvalid", "SigningKeyUnavailable")]
+    [InlineData("expired", "SessionInvalid", "TokenExpired")]
+    [InlineData("subject", "SessionInvalid", "SubjectMismatch")]
+    [InlineData("issuer", "SessionInvalid", "IssuerMismatch")]
+    [InlineData("opaque", "AccessDenied", "AccessTokenMalformed")]
+    [InlineData("signature-invalid", "SessionInvalid", "SignatureInvalid")]
+    [InlineData("future", "SessionInvalid", "TokenNotYetValid")]
+    [InlineData("algorithm", "SessionInvalid", "AlgorithmInvalid")]
+    [InlineData("conflicting-azp", "AccessDenied", "ClientMismatch")]
+    public async Task IneligibleAccessTokenNeverLeavesSaldoAndDoesNotBreakLogin(string scenario, string expected, string diagnostic)
     {
         Factory.OidcProvider.ProfileTokenScenario = scenario;
         Factory.OidcProvider.IdTokenClaims["sub"] = Subject; Factory.OidcProvider.UserInfo["sub"] = Subject;
         var callback = await CompleteLoginAsync(); Assert.Equal(HttpStatusCode.Redirect, callback.StatusCode);
         var session = FindCookie(callback, SessionCookieName);
         var me = await GetMeAsync(session);
-        Assert.Equal(expected, me.CpfStatus); Assert.Equal(Subject, me.Subject); Assert.Equal(0, Factory.ProfileGateway.Calls);
+        Assert.Equal(expected, me.CpfStatus); Assert.Equal(diagnostic, me.CpfDiagnosticCode); Assert.Equal(Subject, me.Subject); Assert.Equal(0, Factory.ProfileGateway.Calls);
+        Assert.DoesNotContain(Factory.Logs.Entries, text => text.Contains(SyntheticCpf) || text.Contains(Factory.OidcProvider.LastAccessToken!));
         await WithDbAsync(async db =>
         {
             var protector = Factory.Services.GetRequiredService<IDataProtectionProvider>().CreateProtector(DatabaseTicketStore.ProtectorPurpose);
             var ticket = TicketSerializer.Default.Deserialize(protector.Unprotect((await db.UserSessions.SingleAsync()).ProtectedTicket))!;
             Assert.Empty(ticket.Properties.GetTokens());
+            Assert.Equal(diagnostic, ticket.Properties.Items[ProfileAccessTokenValidation.SessionDiagnostic]);
         });
     }
 

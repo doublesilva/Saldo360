@@ -77,7 +77,7 @@ public static class AuthEndpoints
             DisplayName: user.FindFirstValue("name") ?? username ?? identity.Subject,
             Username: username,
             Email: user.FindFirstValue("email"),
-            CpfStatus: profile.Status.ToString()));
+            CpfStatus: profile.Status.ToString(), CpfDiagnosticCode: profile.DiagnosticCode?.ToString()));
     }
 
     // Mesma regra do UrlHelper do MVC: caminho absoluto local, sem "//" ou "/\" (que levariam a outro host).
@@ -103,7 +103,8 @@ public sealed record CurrentUserResponse(
     string DisplayName,
     string? Username,
     string? Email,
-    string CpfStatus = "SessionInvalid");
+    string CpfStatus = "SessionInvalid",
+    string? CpfDiagnosticCode = null);
 
 public sealed record CsrfTokenResponse(string Token);
 

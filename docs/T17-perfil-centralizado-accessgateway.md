@@ -1,5 +1,9 @@
 # T17 — Perfil centralizado AccessGateway
 
+Diagnóstico posterior: [T16.8.1 — access token e CPF](T16.8.1-diagnostico-access-token-cpf.md)
+acrescenta códigos seguros por etapa e confere a configuração ativa. Este relatório preserva o
+estado histórico e não comprova a resolução do incidente operacional posterior.
+
 24/10/2026 — **T17 concluída localmente**, com critérios essenciais e testes dirigidos aprovados.
 Sem push, deploy ou alteração de produção. Validação operacional real permanece separada.
 
