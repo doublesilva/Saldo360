@@ -213,6 +213,126 @@ public sealed class StatementPurchaseDocumentValidationTests
         Assert.DoesNotContain("Other Bank", json); Assert.DoesNotContain("9999", json); Assert.DoesNotContain("SHOP", json); Assert.DoesNotContain("10.00", json);
     }
 
+    [Fact]
+    public async Task FiftyOneOccurrencesAcrossColumnsKeepFutureEvidenceAndExcludeProvenNonPurchases()
+    {
+        var items = Enumerable.Range(0, 41).Select(n => new CreditCardStatementAgentItem(
+            $"SYNTHETIC{n:00}" + (n < 14 ? "03/12" : ""), "10.00", "Debit", n < 14 ? "Installment" : "Purchase",
+            n < 14 ? 3 : null, n < 14 ? 12 : null, "CurrentInvoice", true, n < 31 ? 2 : 3,
+            $"04/07 SYNTHETIC{n:00}" + (n < 14 ? "03/12" : "") + " 10.00", "High", null))
+            .Concat(Enumerable.Range(0, 10).Select(n => new CreditCardStatementAgentItem($"SYNTHETIC{n:00}04/12", "10.00", "Debit", "Installment",
+                4, 12, "FutureInstallments", false, 3, $"04/07 SYNTHETIC{n:00}04/12 10.00", "High", null))).ToArray();
+        var page2 = Page(2, "Lançamentos: compras e saques\n04/07 CREDIT -1.00\n04/07 ENCARGOS PIX 1.00\n" + string.Join('\n', items[..31].Select(i => i.Evidence)));
+        var lines = new List<(string Text, double X, double Y)> { ("Lançamentos: compras e saques", 10, 0) };
+        lines.AddRange(items[31..41].Select((i, n) => (i.Evidence, 10d, 20d + n * 15)));
+        lines.Add(("Lançamentos: produtos e serviços", 10, 190));
+        lines.AddRange(Enumerable.Range(0, 4).Select(n => ($"06/03 PRODUCT{n}03/12 90.00", 10d, 210d + n * 15)));
+        lines.Add(("Compras parceladas - próximas faturas", 10, 280));
+        lines.AddRange(items[41..48].Select((i, n) => (i.Evidence, 10d, 300d + n * 15)));
+        lines.AddRange(Enumerable.Range(0, 4).Select(n => ($"06/03 PRODUCT{n}04/12 90.00", 10d, 410d + n * 15)));
+        lines.Add(("DATA ESTABELECIMENTO VALOR EM R$", 400, 0));
+        lines.AddRange(items[48..].Select((i, n) => (i.Evidence, 400d, 20d + n * 15)));
+        lines.Add(("Limites de crédito", 400, 100));
+        lines.Add(("Limite disponível 900.00", 400, 120));
+        var page3 = GeometryPage(3, lines);
+        var source = new CreditCardPdfExtractedDocument([Page(1, "Resumo da fatura\nVencimento 15/10/2026\nTotal 410.00"), page2, page3]);
+        var result = await Service(new Provider(Facts(items, "410.00"))).ExtractAsync(Request(source), default);
+        Assert.Null(result.AgentError);
+        Assert.Equal(AgentExtractionAssessment.Reliable, result.Assessment);
+        Assert.True(result.OutputCoverage!.RecognitionComplete); Assert.False(result.PurchaseDocumentValidation!.HasContradiction);
+        Assert.Equal(new[] { 0, 31, 20 }, result.PurchaseDocumentValidation.Pages.Select(p => p.EligibleRows));
+        Assert.Equal(new[] { 0, 31, 20 }, result.PurchaseDocumentValidation.Pages.Select(p => p.MatchedRows));
+        Assert.Equal(items, result.Primary!.Items); Assert.All(result.Primary.Items, i => Assert.Null(i.TransactionDate));
+        Assert.Equal("410.00", result.Primary.Reconciliation.ComponentsTotal); // future rows never enter current total
+        Assert.Equal(4, result.PurchaseDocumentValidation.ScopeExclusions.Count(e => e.Code == "NonPurchaseProductContinuation"));
+        Assert.Contains(result.PurchaseDocumentValidation.ScopeExclusions, e => e.Code == "CreditRow");
+        Assert.Equal(51, result.PurchaseDocumentValidation.Diagnostics.Count(d => d.Code == "PurchaseDateYearUnproven"));
+        Assert.Empty(result.PurchaseDocumentValidation.CoverageIssues);
+        var missing = await Service(new Provider(Facts(items[..50], "410.00"))).ExtractAsync(Request(source), default);
+        Assert.False(missing.OutputCoverage!.RecognitionComplete);
+        var wrong = items.Select((item, n) => n == 48 ? item with { Section = "CurrentInvoice", IncludedInCurrentTotal = true } : item).ToArray();
+        var contradictory = await Service(new Provider(Facts(wrong, "410.00"))).ExtractAsync(Request(source), default);
+        Assert.True(contradictory.PurchaseDocumentValidation!.HasContradiction);
+    }
+
+    [Fact]
+    public async Task ContinuationWithoutRepeatedTableColumnsRemainsUnproven()
+    {
+        var item = Item(0, (4, 12), true) with { Page = 1 };
+        var page = GeometryPage(1, [("Compras parceladas - próximas faturas", 10, 100),
+            (item.Evidence, 400, 10), ("Limites de crédito", 400, 100)]);
+        var result = await Service(new Provider(Facts([item], "0.00"))).ExtractAsync(Request(new([page])), default);
+        Assert.False(result.OutputCoverage!.RecognitionComplete);
+        Assert.Contains(result.PurchaseDocumentValidation!.CoverageIssues, e => e.Code == "PurchaseRowSectionUnknown");
+    }
+
+    [Fact]
+    public async Task ExcludedParallelColumnDoesNotAuthorizeIgnoringAnUnlabelledNextPage()
+    {
+        var item = Item(0, (1, 2)) with { Page = 2 };
+        var page = GeometryPage(1, [("Lançamentos: compras e saques", 10, 10), ("Encargos", 400, 10), ("IOF 1.00", 400, 30)]);
+        var result = await Service(new Provider(Facts([item], "10.00"))).ExtractAsync(Request(new([page, Page(2, item.Evidence + "\nTotal 10.00")])), default);
+        Assert.False(result.OutputCoverage!.RecognitionComplete);
+        Assert.Contains(result.PurchaseDocumentValidation!.CoverageIssues, e => e.Code == "PurchaseRowSectionUnknown" && e.Page == 2);
+    }
+
+    [Fact]
+    public async Task FutureTotalizerDoesNotAuthorizeAnUnlabelledTableInAnotherColumn()
+    {
+        var item = Item(0, (4, 12), true) with { Page = 1 };
+        var page = GeometryPage(1, [("Compras parceladas - próximas faturas", 10, 100), ("Total para próximas faturas 10.00", 10, 120),
+            ("DATA ESTABELECIMENTO VALOR EM R$", 400, 0), (item.Evidence, 400, 20), ("Limites de crédito", 400, 100)]);
+        var result = await Service(new Provider(Facts([item], "0.00"))).ExtractAsync(Request(new([page])), default);
+        Assert.False(result.OutputCoverage!.RecognitionComplete, JsonSerializer.Serialize(result.PurchaseDocumentValidation));
+        Assert.Contains(result.PurchaseDocumentValidation!.CoverageIssues, e => e.Code == "PurchaseRowSectionUnknown");
+    }
+
+    [Fact]
+    public async Task SameDocumentaryLabelInPurchaseAndProductSectionsCannotBeSilentlyExcluded()
+    {
+        var current = Item(0, (1, 2)) with { Page = 1 };
+        var future = Item(0, (2, 2), true) with { Page = 1 };
+        var page = Page(1, "Lançamentos: compras e saques\n" + current.Evidence
+            + "\nLançamentos: produtos e serviços\n" + current.Evidence + "\nPrincipal 10.00 + Juros 2.00"
+            + "\nCompras parceladas - próximas faturas\n" + future.Evidence);
+        var result = await Service(new Provider(Facts([current, future], "10.00"))).ExtractAsync(Request(new([page])), default);
+        Assert.False(result.OutputCoverage!.RecognitionComplete);
+        Assert.Contains(result.PurchaseDocumentValidation!.CoverageIssues, e => e.Code == "PurchaseScopeAmbiguous");
+    }
+
+    [Fact]
+    public async Task ForeignCurrencyConversionAndProcessingDatesNeverBecomePurchaseDatesOrRows()
+    {
+        var item = Item(0, (1, 2)) with { Page = 1, TransactionDate = null, Evidence = "04/07 SHOPA01/02 10.00" };
+        var page = Page(1, "Processamento 05/07/2026\nPróximo fechamento 08/11/2026\nLançamentos internacionais\n"
+            + item.Evidence + "\n2.00 USD 2.00\nDólar de Conversão R$ 5.00\nRepasse de IOF em R$ 1.00\nTotal lançamentos inter. em R$ 11.00");
+        var result = await Service(new Provider(Facts([item], "10.00"))).ExtractAsync(Request(new([page])), default);
+        Assert.True(result.OutputCoverage!.RecognitionComplete); Assert.Null(result.Primary!.Items[0].TransactionDate);
+        Assert.Single(result.Primary.Items); Assert.Contains(result.PurchaseDocumentValidation!.Diagnostics, d => d.Code == "PurchaseDateYearUnproven");
+        var known = StatementKnownInstallmentImport.Evaluate(result, "Synthetic", null, 13);
+        Assert.False(known.Eligible); // no financial calendar proof is manufactured by coverage
+    }
+
+    [Fact]
+    public async Task ProductScopeMatchingPreservesPunctuationInsteadOfCollapsingDifferentLabels()
+    {
+        var current = Item(0, (1, 2)) with { Page = 1, OriginalDescription = "MERCHANT AB01/02", Evidence = "04/07/2024 MERCHANT AB01/02 10.00" };
+        var future = current with { OriginalDescription = "MERCHANT AB02/02", Evidence = "04/07/2024 MERCHANT AB02/02 10.00",
+            InstallmentNumber = 2, Section = "FutureInstallments", IncludedInCurrentTotal = false };
+        var source = new CreditCardPdfExtractedDocument([Page(1, "Lançamentos: compras e saques\n" + current.Evidence
+            + "\nLançamentos: produtos e serviços\n04/07/2024 MERCHANT A-B01/02 10.00"
+            + "\nCompras parceladas - próximas faturas\n" + future.Evidence + "\nTotal 10.00")]);
+        var result = await Service(new Provider(Facts([current, future], "10.00"))).ExtractAsync(Request(source), default);
+        Assert.True(result.OutputCoverage!.RecognitionComplete); Assert.Equal(2, result.PurchaseDocumentValidation!.Pages[0].MatchedRows);
+    }
+
+    private static CreditCardPdfExtractedPage GeometryPage(int number, IEnumerable<(string Text, double X, double Y)> lines)
+    {
+        var array = lines.ToArray();
+        return Page(number, string.Join('\n', array.Select(l => l.Text))) with
+        { Words = array.Select(l => new CreditCardPdfExtractedWord(l.Text, l.X, l.Y, l.X + 250, l.Y + 8)).ToArray() };
+    }
+
     private static CreditCardStatementAgentItem[] ReferenceItems()
     {
         (int Number, int Count)[] current = [(6, 6), (4, 6), (4, 5), (3, 3), (3, 12), (2, 2)];
