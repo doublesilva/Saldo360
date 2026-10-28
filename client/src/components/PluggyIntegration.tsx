@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  applyOpeningBalanceSuggestion, getLinkDetail, listLinks, listReview, reprocessImported, resolveReview,
-  type AccountLink, type AccountLinkDetail, type ReviewPage, type Resolution,
+  applyOpeningBalanceSuggestion, getCategorizationOverview, getLinkDetail, listLinks, listReview, reprocessImported, resolveReview, runCategorization,
+  type AccountLink, type AccountLinkDetail, type CategorizationOverview, type CategorizationResult, type ReviewPage, type Resolution,
 } from '../api/pluggyIntegration'
 import { formatBrlDecimal, formatDate, isNegativeDecimal } from '../money'
-import { billStatusLabels, dateTime, linkStatusLabels, money, NOT_INFORMED, resolutionLabels, reviewReason, unavailableReasonLabels } from '../pluggyFormat'
+import { aiStopLabels, billStatusLabels, dateTime, linkStatusLabels, money, NOT_INFORMED, resolutionLabels, reviewReason, unavailableReasonLabels } from '../pluggyFormat'
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Falha inesperada.')
 
@@ -93,7 +93,72 @@ export function PluggyIntegrationSection({ workspaceId, refreshKey, onChanged }:
       <h4>Cartões integrados</h4>
       <ul className="account-list">{cards.map(card => <li key={card.id} className="account"><PluggyAccountPanel workspaceId={workspaceId} linkId={card.id} refreshKey={refreshKey} onChanged={onChanged} /></li>)}</ul>
     </>}
+    <PluggyCategorizationPanel workspaceId={workspaceId} refreshKey={refreshKey} onChanged={onChanged} />
     <PluggyReviewPanel workspaceId={workspaceId} refreshKey={refreshKey} onChanged={onChanged} />
+  </section>
+}
+
+const AI_CONFIRMATION = 'Enviar à OpenAI, para sugerir categorias, a descrição saneada dos lançamentos que continuarem sem categoria? '
+  + 'Antes do envio são removidos CPF/CNPJ, números de conta e cartão, chaves Pix, e-mails, telefones e identificadores; '
+  + 'transferências e descrições que parecem nomes de pessoas nunca são enviadas. Valores, datas e contas não são enviados. '
+  + 'A IA só escolhe entre as suas categorias existentes e nada é gravado sem validação.'
+
+/**
+ * Categorização automática dos lançamentos importados: a etapa local (regras do domínio e categoria da Pluggy) não envia nada; a IA é o último
+ * recurso, só roda com a sua confirmação explícita e pode estar indisponível sem afetar o resto. A categoria que você escolhe nunca é substituída.
+ */
+export function PluggyCategorizationPanel({ workspaceId, refreshKey, onChanged }: { workspaceId: string; refreshKey: string; onChanged?: () => void }) {
+  const [overview, setOverview] = useState<CategorizationOverview | null>(null)
+  const [result, setResult] = useState<CategorizationResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [version, setVersion] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    getCategorizationOverview(workspaceId, controller.signal).then(setOverview).catch(() => undefined)
+    return () => controller.abort()
+  }, [workspaceId, refreshKey, version])
+
+  const run = useCallback(async (useAi: boolean) => {
+    if (useAi && !window.confirm(AI_CONFIRMATION)) return
+    setBusy(true); setError(null)
+    try {
+      setResult(await runCategorization(workspaceId, { useAi, confirmExternal: useAi }))
+      setVersion(value => value + 1); onChanged?.()
+    } catch (cause) { setError(errorText(cause)) }
+    finally { setBusy(false) }
+  }, [workspaceId, onChanged])
+
+  if (!overview) return null
+  const { counts, ai } = overview
+  return <section aria-labelledby="pluggy-categorization-title">
+    <h4 id="pluggy-categorization-title">Categorização dos lançamentos importados</h4>
+    <p className="meta">
+      Ordem: sua escolha → regras do domínio (pagamento de fatura e transferências não são consumo) → categoria informada pelo banco → IA, somente para o que sobrar.
+    </p>
+    <ul className="meta" aria-label="Lançamentos por origem da categoria">
+      <li>Pela Pluggy: {counts.pluggy}</li>
+      <li>Por regras (não são consumo): {counts.rule}</li>
+      <li>Pela IA: {counts.ai}</li>
+      <li>Escolhidas por você: {counts.manual}</li>
+      <li>Sem categoria segura (precisam de revisão): {counts.needsReview}</li>
+      <li>Ainda não avaliados: {counts.notEvaluated}</li>
+    </ul>
+    {error && <p role="alert" className="notice notice--error">{error}</p>}
+    <div className="form__actions">
+      <button type="button" disabled={busy} onClick={() => void run(false)}>Categorizar automaticamente</button>
+      <button type="button" disabled={busy || !ai.available} onClick={() => void run(true)}>Categorizar também com IA…</button>
+    </div>
+    {!ai.available && <p className="meta">A classificação por IA não está disponível neste ambiente. A categorização local continua funcionando.</p>}
+    {result && <div role="status" className="notice">
+      <p>
+        Categorizados agora: {result.pluggy} pela Pluggy, {result.rule} por regras, {result.ai} pela IA. Sem categoria segura: {result.unresolved}.
+        {result.categoriesCreated > 0 ? ` Categorias criadas: ${result.categoriesCreated}.` : ''}
+        {result.skippedChanged > 0 ? ` ${result.skippedChanged} alterado(s) por você durante a execução foram preservados.` : ''}
+      </p>
+      {result.aiCalls > 0 && <p className="meta">IA ({result.model}): {result.aiItemsSent} lançamento(s) enviados, {result.inputTokens} tokens de entrada e {result.outputTokens} de saída, custo estimado US$ {result.estimatedCostUsd.toFixed(4)}.</p>}
+      {(result.aiStoppedBecause || result.aiFailure) && <p className="meta">{aiStopLabels[result.aiStoppedBecause ?? 'ProviderFailure'] ?? 'A execução da IA foi interrompida.'}</p>}
+    </div>}
   </section>
 }
 

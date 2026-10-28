@@ -110,5 +110,8 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
             t.UpdatedAt,
             t.CancelledAt,
             t.PlannedTransactionId,
-            t.Origin);
+            t.Origin,
+            // Origem da categoria (só lançamentos importados têm rastro): Pluggy, Rule, AI ou User.
+            db.PluggyPostings.Where(p => p.FinancialTransactionId == t.Id).Select(p => (Saldo360.Domain.Pluggy.PluggyCategorySource?)p.CategorySource).FirstOrDefault(),
+            db.PluggyPostings.Where(p => p.FinancialTransactionId == t.Id).Select(p => p.CategoryNeedsReview).FirstOrDefault());
 }

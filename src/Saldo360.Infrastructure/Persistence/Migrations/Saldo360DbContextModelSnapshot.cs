@@ -3210,9 +3210,27 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("applied_type");
 
+                    b.Property<DateTimeOffset?>("CategoryClassifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("category_classified_at");
+
                     b.Property<Guid?>("CategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("category_id");
+
+                    b.Property<string>("CategoryMethodVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("category_method_version");
+
+                    b.Property<bool>("CategoryNeedsReview")
+                        .HasColumnType("boolean")
+                        .HasColumnName("category_needs_review");
+
+                    b.Property<string>("CategoryReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("category_reason");
 
                     b.Property<string>("CategorySource")
                         .IsRequired()
@@ -3338,7 +3356,7 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_pluggy_postings_applied_targets", "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL) OR (kind = 'CardPurchase' AND credit_card_purchase_id IS NOT NULL) OR (kind = 'CardBillPayment' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_payment_id IS NOT NULL))) OR (state <> 'Applied' AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL)");
 
-                            t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User')");
+                            t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User','Pluggy','Rule','AI')");
 
                             t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment')");
 

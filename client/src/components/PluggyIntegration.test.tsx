@@ -1,14 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AccountLink, AccountLinkDetail, AvailableAccount, ReviewPage } from '../api/pluggyIntegration'
+import type { AccountLink, AccountLinkDetail, AvailableAccount, CategorizationOverview, CategorizationResult, ReviewPage } from '../api/pluggyIntegration'
 import type { PluggyConnection } from '../api/pluggyPoc'
 import type { FinancialAccount } from '../api/accounts'
 import { PluggyAccountLinkForm } from './PluggyAccountLinkForm'
-import { PluggyAccountPanel, PluggyReviewPanel } from './PluggyIntegration'
+import { PluggyAccountPanel, PluggyCategorizationPanel, PluggyReviewPanel } from './PluggyIntegration'
 
 const api = vi.hoisted(() => ({
   listIntegrationConnections: vi.fn(), listAvailableAccounts: vi.fn(), linkAccount: vi.fn(), getLinkDetail: vi.fn(), applyOpeningBalanceSuggestion: vi.fn(),
-  reprocessImported: vi.fn(), listReview: vi.fn(), resolveReview: vi.fn(), listLinks: vi.fn(),
+  reprocessImported: vi.fn(), listReview: vi.fn(), resolveReview: vi.fn(), listLinks: vi.fn(), getCategorizationOverview: vi.fn(), runCategorization: vi.fn(),
 }))
 vi.mock('../api/pluggyIntegration', () => api)
 
@@ -272,5 +272,95 @@ describe('PluggyReviewPanel', () => {
     api.listReview.mockResolvedValue({ ...page(), items: [], total: 0 })
     render(<PluggyReviewPanel workspaceId="w1" refreshKey="0" />)
     expect(await screen.findByText('Nada para revisar.')).toBeTruthy()
+  })
+})
+
+const overview = (over: Partial<CategorizationOverview> = {}): CategorizationOverview => ({
+  counts: { total: 100, manual: 4, pluggy: 70, rule: 6, ai: 5, needsReview: 9, notEvaluated: 6 },
+  ai: { available: true, model: 'gpt-4o-mini', reason: null }, ...over,
+})
+const categorizationResult = (over: Partial<CategorizationResult> = {}): CategorizationResult => ({
+  considered: 20, manual: 4, pluggy: 12, rule: 3, ai: 2, unresolved: 3, categoriesCreated: 2, skippedChanged: 0, aiItemsSent: 5, aiCalls: 1, inputTokens: 1200,
+  outputTokens: 80, estimatedCostUsd: 0.000228, aiStoppedBecause: null, aiFailure: null, model: 'gpt-4o-mini', counts: overview().counts, ...over,
+})
+
+describe('PluggyCategorizationPanel', () => {
+  it('mostra os contadores por origem da categoria e a ordem de classificação', async () => {
+    api.getCategorizationOverview.mockResolvedValue(overview())
+    render(<PluggyCategorizationPanel workspaceId="w1" refreshKey="k" />)
+
+    const list = await screen.findByLabelText('Lançamentos por origem da categoria')
+    expect(within(list).getByText('Pela Pluggy: 70')).toBeTruthy()
+    expect(within(list).getByText('Por regras (não são consumo): 6')).toBeTruthy()
+    expect(within(list).getByText('Pela IA: 5')).toBeTruthy()
+    expect(within(list).getByText('Escolhidas por você: 4')).toBeTruthy()
+    expect(within(list).getByText('Sem categoria segura (precisam de revisão): 9')).toBeTruthy()
+  })
+
+  it('a categorização local roda sem confirmação e sem enviar nada à IA', async () => {
+    api.getCategorizationOverview.mockResolvedValue(overview())
+    api.runCategorization.mockResolvedValue(categorizationResult({ aiCalls: 0, aiItemsSent: 0, ai: 0 }))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const changed = vi.fn()
+    render(<PluggyCategorizationPanel workspaceId="w1" refreshKey="k" onChanged={changed} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Categorizar automaticamente' }))
+
+    await waitFor(() => expect(api.runCategorization).toHaveBeenCalledWith('w1', { useAi: false, confirmExternal: false }))
+    expect(confirm).not.toHaveBeenCalled()
+    expect(await screen.findByText(/Categorizados agora: 12 pela Pluggy, 3 por regras, 0 pela IA/)).toBeTruthy()
+    expect(screen.getByText(/Categorias criadas: 2/)).toBeTruthy()
+    expect(changed).toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
+  it('a IA exige confirmação explícita: recusar não chama a API; confirmar envia confirmExternal e mostra tokens e custo estimado', async () => {
+    api.getCategorizationOverview.mockResolvedValue(overview())
+    api.runCategorization.mockResolvedValue(categorizationResult())
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    render(<PluggyCategorizationPanel workspaceId="w1" refreshKey="k" />)
+    const button = await screen.findByRole('button', { name: /Categorizar também com IA/ })
+
+    fireEvent.click(button)
+    expect(api.runCategorization).not.toHaveBeenCalled()
+    expect(confirm.mock.calls[0][0]).toMatch(/OpenAI/)
+    expect(confirm.mock.calls[0][0]).toMatch(/CPF\/CNPJ/)
+
+    fireEvent.click(button)
+    await waitFor(() => expect(api.runCategorization).toHaveBeenCalledWith('w1', { useAi: true, confirmExternal: true }))
+    expect(await screen.findByText(/5 lançamento\(s\) enviados, 1200 tokens de entrada e 80 de saída, custo estimado US\$ 0\.0002/)).toBeTruthy()
+    confirm.mockRestore()
+  })
+
+  it('sem IA disponível o botão fica desabilitado e a categorização local continua', async () => {
+    api.getCategorizationOverview.mockResolvedValue(overview({ ai: { available: false, model: null, reason: 'AiNotConfigured' } }))
+    render(<PluggyCategorizationPanel workspaceId="w1" refreshKey="k" />)
+
+    const ai = await screen.findByRole('button', { name: /Categorizar também com IA/ }) as HTMLButtonElement
+    expect(ai.disabled).toBe(true)
+    expect(screen.getByText(/classificação por IA não está disponível neste ambiente/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Categorizar automaticamente' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('falha do provedor de IA mantém o resultado local e explica sem expor detalhes', async () => {
+    api.getCategorizationOverview.mockResolvedValue(overview())
+    api.runCategorization.mockResolvedValue(categorizationResult({ aiStoppedBecause: 'ProviderFailure', aiFailure: 'ProviderAuthenticationFailed', ai: 0, aiItemsSent: 0, aiCalls: 1 }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<PluggyCategorizationPanel workspaceId="w1" refreshKey="k" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Categorizar também com IA/ }))
+
+    expect(await screen.findByText(/A IA não respondeu; o que foi classificado localmente foi mantido/)).toBeTruthy()
+    expect(screen.queryByText(/ProviderAuthenticationFailed/)).toBeNull()
+  })
+
+  it('erro da API é mostrado como alerta', async () => {
+    api.getCategorizationOverview.mockResolvedValue(overview())
+    api.runCategorization.mockRejectedValue(new Error('Falha ao categorizar os lançamentos.'))
+    render(<PluggyCategorizationPanel workspaceId="w1" refreshKey="k" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Categorizar automaticamente' }))
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Falha ao categorizar/)
   })
 })

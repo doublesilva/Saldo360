@@ -65,6 +65,10 @@ public sealed record CreditCardStatementAgentProviderRequest(string SystemPrompt
     public string SchemaName { get; init; } = "credit_card_statement";
     public JsonElement? OutputSchema { get; init; }
     public bool PurchasesOnly { get; init; }
+    /// <summary>Modelo específico desta chamada (por exemplo, um modelo mais barato para classificar movimentações). Sem valor, usa o modelo configurado.</summary>
+    [JsonIgnore] public string? Model { get; init; }
+    /// <summary>Recebe (tokens de entrada, tokens de saída) informados pelo provider; nunca recebe conteúdo.</summary>
+    [JsonIgnore] public Action<int, int>? OnUsage { get; init; }
 }
 
 public interface ICreditCardStatementAgentProvider

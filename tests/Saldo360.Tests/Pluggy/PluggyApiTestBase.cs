@@ -19,6 +19,9 @@ public abstract class PluggyApiTestBase(PostgresFixture postgres) : PostgresApiT
 
     internal readonly FakePluggyClient Pluggy = Seeded();
 
+    /// <summary>Fallback de IA simulado: o host de testes nunca usa o provider real (nenhuma chamada externa).</summary>
+    internal readonly FakeFinancialClassificationModel Ai = new();
+
     private static FakePluggyClient Seeded()
     {
         var client = new FakePluggyClient();
@@ -38,7 +41,13 @@ public abstract class PluggyApiTestBase(PostgresFixture postgres) : PostgresApiT
         builder.UseSetting("Pluggy:SyncPageDelayMilliseconds", "0");
         builder.UseSetting("Pluggy:SyncRateLimitDelaySeconds", "0");
         builder.UseSetting("Pluggy:SyncRateLimitRetries", "2");
-        builder.ConfigureTestServices(services => { services.AddSingleton<IPluggyClient>(Pluggy); configure?.Invoke(services); });
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<IPluggyClient>(Pluggy);
+            services.AddSingleton<Saldo360.Application.Classification.IFinancialClassificationModel>(Ai);
+            services.AddSingleton(new Saldo360.Application.Classification.FinancialClassificationOptions { AiEnabled = true, RetryDelayMilliseconds = 0 });
+            configure?.Invoke(services);
+        });
     }).CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new("https://localhost"), HandleCookies = false, AllowAutoRedirect = false });
 
     protected async Task<HttpResponseMessage> Send(HttpClient client, HttpMethod method, string url, string session, object? body = null)

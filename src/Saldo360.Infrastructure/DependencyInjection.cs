@@ -188,5 +188,10 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyImportRepository, Saldo360.Infrastructure.Pluggy.PluggyImportRepository>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyFinancialRepository, Saldo360.Infrastructure.Pluggy.PluggyFinancialRepository>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyPostingEngine, Saldo360.Infrastructure.Pluggy.PluggyPostingEngine>();
+        services.AddScoped<Saldo360.Application.Pluggy.IPluggyCategorizationRepository, Saldo360.Infrastructure.Pluggy.PluggyCategorizationRepository>();
+        // Classificação financeira: o fallback de IA reaproveita o provider OpenAI já registrado (mesma credencial e cliente HTTP); só é "disponível" com AiEnabled.
+        var classification = configuration.GetSection(Saldo360.Application.Classification.FinancialClassificationOptions.SectionName).Get<Saldo360.Application.Classification.FinancialClassificationOptions>() ?? new();
+        services.AddSingleton(classification);
+        services.AddSingleton<Saldo360.Application.Classification.IFinancialClassificationModel, Saldo360.Application.Classification.OpenAiFinancialClassificationModel>();
     }
 }

@@ -6,6 +6,7 @@ import { Accounts } from './Accounts'
 const api = vi.hoisted(() => ({
   isPluggyIntegrationAvailable: vi.fn(), listIntegrationConnections: vi.fn(), listAvailableAccounts: vi.fn(), linkAccount: vi.fn(), getLinkDetail: vi.fn(),
   applyOpeningBalanceSuggestion: vi.fn(), reprocessImported: vi.fn(), listReview: vi.fn(), resolveReview: vi.fn(), listLinks: vi.fn(),
+  getCategorizationOverview: vi.fn(), runCategorization: vi.fn(),
 }))
 vi.mock('../api/pluggyIntegration', () => api)
 

@@ -29,6 +29,8 @@ public static class PluggyFinancialEndpoints
         group.MapPost("/reprocess", Reprocess).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/review", ListReview);
         group.MapPost("/review/{postingId:guid}/resolve", Resolve).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapGet("/categorization", CategorizationOverview);
+        group.MapPost("/categorization/run", RunCategorization).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
@@ -82,6 +84,29 @@ public static class PluggyFinancialEndpoints
         return PluggyPocEndpoints.Map(await service.ListAsync(workspaceId, userId, linkId, page ?? 1, pageSize ?? 25, ct), Results.Ok);
     }
 
+    private static async Task<IResult> CategorizationOverview(Guid workspaceId, CurrentUser user, PluggyAccountLinkService access, IPluggyCategorizationService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : !await access.CanAccessAsync(workspaceId, userId, ct) ? Results.NotFound()
+        : Results.Ok(await service.GetOverviewAsync(workspaceId, ct));
+
+    /// <summary>
+    /// Categoriza sob demanda os lançamentos gerados pela Pluggy. A etapa local (regras e categoria da Pluggy) não exige confirmação; usar a IA
+    /// (envio de descrições saneadas à OpenAI) exige <c>confirmExternal: true</c> a cada chamada.
+    /// </summary>
+    private static async Task<IResult> RunCategorization(Guid workspaceId, CategorizationRequest? request, CurrentUser user, PluggyAccountLinkService access,
+        IPluggyCategorizationService service, TimeProvider clock, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        if (!await access.CanAccessAsync(workspaceId, userId, ct)) return Results.NotFound();
+        var run = await service.RunAsync(workspaceId, userId, new(request?.UseAi ?? false, request?.ConfirmExternal ?? false, request?.Force ?? false), clock.GetUtcNow(), ct);
+        return run.Outcome switch
+        {
+            PluggyCategorizationOutcome.ConfirmationRequired => Results.ValidationProblem(new Dictionary<string, string[]>
+                { ["confirmExternal"] = ["Confirme explicitamente o envio de descrições saneadas à OpenAI para usar a IA."] }),
+            _ => Results.Ok(run.Result),
+        };
+    }
+
     private static async Task<IResult> Resolve(Guid workspaceId, Guid postingId, ResolveRequest? request, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
         : PluggyPocEndpoints.Map(await service.ResolveAsync(workspaceId, userId, postingId, request?.Resolution, ct), Results.Ok);
@@ -97,3 +122,6 @@ public sealed record OpeningBalanceRequest(bool? Confirm, bool? ReplaceExisting)
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ResolveRequest(string? Resolution);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record CategorizationRequest(bool? UseAi, bool? ConfirmExternal, bool? Force);

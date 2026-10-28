@@ -25,6 +25,8 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.Pluggy.PluggyTransactionSyncService>();
         services.AddScoped<Saldo360.Application.Pluggy.PluggyAccountLinkService>();
         services.AddScoped<Saldo360.Application.Pluggy.PluggyReviewService>();
+        services.AddScoped<Saldo360.Application.Classification.IFinancialClassificationService, Saldo360.Application.Classification.FinancialClassificationService>();
+        services.AddScoped<Saldo360.Application.Pluggy.IPluggyCategorizationService, Saldo360.Application.Pluggy.PluggyCategorizationService>();
         services.AddScoped<FamilyInvitationService>();
         services.AddScoped<FinancialAccountService>();
         services.AddScoped<FinancialCategoryService>();

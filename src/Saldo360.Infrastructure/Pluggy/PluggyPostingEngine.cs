@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Saldo360.Application.Classification;
 using Saldo360.Application.Pluggy;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.CreditCards;
@@ -100,8 +101,8 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 if (existing is null)
                 {
                     var posting = PluggyPosting.Create(workspaceId, t.Id, link.Id, now);
-                    var mapped = movement.Direction is { } direction ? PluggyCategoryMapper.Map(t.Category, direction, categories) : null;
-                    if (mapped is not null) posting.SetCategory(mapped, PluggyCategorySource.Mapped, now);
+                    // Categoria na criação: só etapas locais (regra do domínio e categoria da Pluggy já existente). Nunca IA nem criação de categoria na sincronização.
+                    if (movement.Direction is { } direction) ClassifyNewPosting(posting, t, link, movement, direction);
                     db.PluggyPostings.Add(posting);
                     postings[t.Id] = posting;
                 }
@@ -124,6 +125,20 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             await ApplyBillPaymentsAsync(pairing, linkOf, ct);
             await db.SaveChangesAsync(ct);
             return new(created, updated, waiting, review, covered, transfersPaired, billsPaired, outOfRange, unchanged);
+        }
+
+        private void ClassifyNewPosting(PluggyPosting posting, PluggyImportedTransaction t, PluggyAccountLink link, PluggyMovement movement, CategoryType direction)
+        {
+            var input = new FinancialClassificationInput(posting.Id.ToString("N"), movement.Description, movement.Amount, movement.Date,
+                direction == CategoryType.Income ? FinancialMovementKind.Income : FinancialMovementKind.Expense, t.Category, t.OperationType, "Pluggy",
+                IsCardPurchase: link.Kind == PluggyLinkedAccountKind.Card);
+            if (FinancialClassificationRules.Evaluate(input) is { } rule)
+            {
+                posting.RecordClassification(null, PluggyCategorySource.Rule, FinancialClassificationVersions.Rules, rule.Reason, rule.NeedsReview, now);
+                return;
+            }
+            if (FinancialExternalCategoryCatalog.ResolveExisting(t.Category, direction, categories) is { } mapped)
+                posting.RecordClassification(mapped, PluggyCategorySource.Pluggy, FinancialClassificationVersions.Catalog, "Categoria informada pelo banco", false, now);
         }
 
         // ---- Carga ------------------------------------------------------------------------------------------------------

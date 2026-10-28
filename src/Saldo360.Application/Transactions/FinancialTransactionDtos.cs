@@ -22,7 +22,9 @@ public sealed record FinancialTransactionDto(
     DateTimeOffset? UpdatedAt,
     DateTimeOffset? CancelledAt,
     Guid? PlannedTransactionId,
-    FinancialTransactionOrigin Origin);
+    FinancialTransactionOrigin Origin,
+    Saldo360.Domain.Pluggy.PluggyCategorySource? CategorySource = null,
+    bool CategoryNeedsReview = false);
 
 public sealed record TransactionReferenceDto(Guid Id, string Name, bool IsActive);
 

@@ -32,7 +32,11 @@ public enum PluggyPostingState
     Ignored,
 }
 
-public enum PluggyCategorySource { None, Mapped, User }
+/// <summary>
+/// Origem da categoria do lançamento importado. <c>Mapped</c> é o valor legado da T09.3 (categoria da Pluggy casada por nome na criação) e
+/// equivale a <c>Pluggy</c>; <c>Rule</c> é regra determinística local; <c>AI</c> é o fallback de IA; <c>User</c> é escolha manual.
+/// </summary>
+public enum PluggyCategorySource { None, Mapped, User, Pluggy, Rule, AI }
 
 /// <summary>Decisão do usuário para um item em revisão.</summary>
 public enum PluggyResolution { AsIncome, AsExpense, AsCardPurchase, Ignore }
@@ -65,6 +69,14 @@ public sealed class PluggyPosting : Entity
     /// <summary>Categoria escolhida pelo usuário ou mapeada na criação. Nunca é sobrescrita por sincronizações.</summary>
     public Guid? CategoryId { get; private set; }
     public PluggyCategorySource CategorySource { get; private set; }
+    /// <summary>Quando a classificação automática foi avaliada pela última vez (inclusive quando não houve categoria segura).</summary>
+    public DateTimeOffset? CategoryClassifiedAt { get; private set; }
+    /// <summary>Versão do método (regra, catálogo ou modelo + prompt) que produziu a avaliação. Nunca guarda prompt nem resposta bruta.</summary>
+    public string? CategoryMethodVersion { get; private set; }
+    /// <summary>Justificativa curta e saneada (sem dados bancários).</summary>
+    public string? CategoryReason { get; private set; }
+    /// <summary>A avaliação automática não chegou a uma categoria segura: o usuário precisa decidir.</summary>
+    public bool CategoryNeedsReview { get; private set; }
     /// <summary>Dados com que o registro foi gerado: só uma mudança nestes valores atualiza o núcleo.</summary>
     public decimal? AppliedAmount { get; private set; }
     public DateOnly? AppliedDate { get; private set; }
@@ -142,6 +154,26 @@ public sealed class PluggyPosting : Entity
     public void SetCategory(Guid? categoryId, PluggyCategorySource source, DateTimeOffset now)
     {
         CategoryId = categoryId; CategorySource = categoryId is null ? PluggyCategorySource.None : source; UpdatedAt = now;
+        if (source == PluggyCategorySource.User) { CategoryNeedsReview = false; CategoryReason = null; CategoryMethodVersion = null; CategoryClassifiedAt = now; }
+    }
+
+    public const int CategoryMethodMaxLength = 64;
+    public const int CategoryReasonMaxLength = 200;
+
+    /// <summary>
+    /// Registra o resultado da classificação automática (regra, catálogo Pluggy ou IA) com a auditoria mínima. Sem categoria, guarda só que
+    /// a avaliação ocorreu (e se precisa de revisão), para não reenviar à IA o que já foi tentado. Escolha do usuário nunca é sobrescrita.
+    /// </summary>
+    public void RecordClassification(Guid? categoryId, PluggyCategorySource source, string method, string? reason, bool needsReview, DateTimeOffset now)
+    {
+        if (CategorySource == PluggyCategorySource.User) return;
+        if (source is PluggyCategorySource.None or PluggyCategorySource.User) throw new ArgumentOutOfRangeException(nameof(source));
+        CategoryId = categoryId;
+        CategorySource = categoryId is null ? PluggyCategorySource.None : source;
+        CategoryClassifiedAt = now; UpdatedAt = now;
+        CategoryNeedsReview = needsReview;
+        CategoryMethodVersion = method.Length > CategoryMethodMaxLength ? method[..CategoryMethodMaxLength] : method;
+        CategoryReason = reason is null ? null : reason.Length > CategoryReasonMaxLength ? reason[..CategoryReasonMaxLength] : reason;
     }
 
     private void Move(PluggyPostingState state, PluggyPostingKind kind, string? reason, DateTimeOffset now)

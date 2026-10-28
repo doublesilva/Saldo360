@@ -15,6 +15,7 @@ import {
 } from '../api/transactions'
 import { todayInSaoPaulo } from '../dates'
 import { decimalToInput, formatBrlDecimal, formatDate, isZeroDecimal, parseAmount } from '../money'
+import { categorySourceLabels } from '../pluggyFormat'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -250,6 +251,10 @@ export function Transactions({
                   </span>
                   {transaction.plannedTransactionId && <span className="badge badge--realization">Realiza previsão</span>}
                   {transaction.origin === 'PluggyImport' && <span className="badge badge--realization">Importado da Pluggy</span>}
+                  {transaction.origin === 'PluggyImport' && transaction.category && transaction.categorySource && categorySourceLabels[transaction.categorySource] && (
+                    <span className="badge">Categoria: {categorySourceLabels[transaction.categorySource]}</span>
+                  )}
+                  {transaction.origin === 'PluggyImport' && !transaction.category && transaction.categoryNeedsReview && <span className="badge badge--cancelled">Sem categoria segura: revisar</span>}
                   {transaction.isCancelled && <span className="badge badge--cancelled">Cancelado</span>}
                 </div>
                 {!transaction.isCancelled && (

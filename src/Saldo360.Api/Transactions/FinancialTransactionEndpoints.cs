@@ -172,7 +172,9 @@ public sealed record TransactionResponse(
     DateTimeOffset? UpdatedAt,
     DateTimeOffset? CancelledAt,
     Guid? PlannedTransactionId,
-    FinancialTransactionOrigin Origin)
+    FinancialTransactionOrigin Origin,
+    Saldo360.Domain.Pluggy.PluggyCategorySource? CategorySource = null,
+    bool CategoryNeedsReview = false)
 {
     public static TransactionResponse From(FinancialTransactionDto dto) => new(
         dto.Id,
@@ -188,7 +190,9 @@ public sealed record TransactionResponse(
         dto.UpdatedAt,
         dto.CancelledAt,
         dto.PlannedTransactionId,
-        dto.Origin);
+        dto.Origin,
+        dto.CategorySource,
+        dto.CategoryNeedsReview);
 }
 
 public sealed record TransactionPageResponse(IReadOnlyList<TransactionResponse> Items, int Page, int PageSize, int TotalCount)

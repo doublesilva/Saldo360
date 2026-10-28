@@ -62,6 +62,20 @@ export const reviewReasonLabels: Record<string, string> = {
 }
 export const reviewReason = (code: string | null) => (code === null ? NOT_INFORMED : reviewReasonLabels[code] ?? code)
 
+/** Origem da categoria de um lançamento importado (T09.3.1). "Mapped" é o valor legado da categoria casada pela Pluggy. */
+export const categorySourceLabels: Record<string, string> = {
+  Pluggy: 'Pluggy', Mapped: 'Pluggy', Rule: 'Regra', AI: 'IA', User: 'Você',
+}
+
+/** Motivos de interrupção da IA devolvidos pela API, em linguagem do usuário. */
+export const aiStopLabels: Record<string, string> = {
+  AiUnavailable: 'A IA não está disponível neste ambiente (credencial ou configuração ausente); só a classificação local foi feita.',
+  MaxItemsPerRun: 'O limite de lançamentos por execução foi atingido; rode novamente para continuar.',
+  MaxTokensPerRun: 'O limite de tokens por execução foi atingido; rode novamente para continuar.',
+  MaxCostPerRun: 'O limite de custo estimado por execução foi atingido; rode novamente para continuar.',
+  ProviderFailure: 'A IA não respondeu; o que foi classificado localmente foi mantido. Tente novamente mais tarde.',
+}
+
 export const resolutionLabels: Record<string, string> = {
   AsIncome: 'Contabilizar como receita', AsExpense: 'Contabilizar como despesa', AsCardPurchase: 'Contabilizar como compra de cartão', Ignore: 'Não contabilizar',
 }

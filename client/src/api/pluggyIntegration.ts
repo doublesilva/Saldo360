@@ -103,3 +103,22 @@ export const listReview = (workspaceId: string, page = 1, signal?: AbortSignal) 
 
 export const resolveReview = (workspaceId: string, postingId: string, resolution: Resolution) =>
   post<ReviewItem>(`${base(workspaceId)}/review/${encodeURIComponent(postingId)}/resolve`, { resolution }, 'Falha ao registrar a decisão.')
+
+/**
+ * Categorização dos lançamentos importados (T09.3.1). A etapa local (regras do domínio e categoria da Pluggy) é gratuita e não envia nada;
+ * a etapa de IA exige confirmação explícita e só recebe descrições saneadas. Todos os números vêm da API.
+ */
+export interface CategorizationCounts { total: number; manual: number; pluggy: number; rule: number; ai: number; needsReview: number; notEvaluated: number }
+export interface CategorizationOverview { counts: CategorizationCounts; ai: { available: boolean; model: string | null; reason: string | null } }
+export interface CategorizationResult {
+  considered: number; manual: number; pluggy: number; rule: number; ai: number; unresolved: number; categoriesCreated: number; skippedChanged: number
+  aiItemsSent: number; aiCalls: number; inputTokens: number; outputTokens: number; estimatedCostUsd: number; aiStoppedBecause: string | null
+  aiFailure: string | null; model: string | null; counts: CategorizationCounts
+}
+export interface CategorizationRequest { useAi: boolean; confirmExternal: boolean; force?: boolean }
+
+export const getCategorizationOverview = (workspaceId: string, signal?: AbortSignal) =>
+  get<CategorizationOverview>(`${base(workspaceId)}/categorization`, 'Falha ao carregar a categorização.', signal)
+
+export const runCategorization = (workspaceId: string, request: CategorizationRequest) =>
+  post<CategorizationResult>(`${base(workspaceId)}/categorization/run`, request, 'Falha ao categorizar os lançamentos.')

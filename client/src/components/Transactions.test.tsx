@@ -480,6 +480,23 @@ describe('Transactions — importados da Pluggy', () => {
     expect(within(item).getByRole('button', { name: 'Cancelar lançamento' })).toBeTruthy()
   })
 
+  it('mostra a origem da categoria (Pluggy, regra, IA ou você) e sinaliza o que precisa de revisão', async () => {
+    const withCategory = (id: string, description: string, source: NonNullable<FinancialTransaction['categorySource']>): FinancialTransaction => ({
+      ...importado, id, description, category: { id: salario.id, name: salario.name, isActive: true }, categorySource: source,
+    })
+    mockApi({ page: { items: [
+      withCategory('i1', 'LOJA PLUGGY', 'Pluggy'), withCategory('i2', 'LOJA IA', 'AI'), withCategory('i3', 'LOJA MANUAL', 'User'), withCategory('i4', 'LOJA LEGADA', 'Mapped'),
+      { ...importado, id: 'i5', description: 'SEM CATEGORIA SEGURA', categorySource: 'None', categoryNeedsReview: true },
+    ], totalCount: 5 } })
+    render(<Transactions workspaceId="f1" />)
+
+    expect(within((await screen.findByText('LOJA PLUGGY')).closest('li')!).getByText('Categoria: Pluggy')).toBeTruthy()
+    expect(within(screen.getByText('LOJA IA').closest('li')!).getByText('Categoria: IA')).toBeTruthy()
+    expect(within(screen.getByText('LOJA MANUAL').closest('li')!).getByText('Categoria: Você')).toBeTruthy()
+    expect(within(screen.getByText('LOJA LEGADA').closest('li')!).getByText('Categoria: Pluggy')).toBeTruthy()
+    expect(within(screen.getByText('SEM CATEGORIA SEGURA').closest('li')!).getByText('Sem categoria segura: revisar')).toBeTruthy()
+  })
+
   it('corrige só a categoria (PUT /category com CSRF), oferecendo apenas categorias ativas do mesmo tipo', async () => {
     const calls = mockApi({ page: { items: [importado], totalCount: 1 } })
     render(<Transactions workspaceId="f1" />)

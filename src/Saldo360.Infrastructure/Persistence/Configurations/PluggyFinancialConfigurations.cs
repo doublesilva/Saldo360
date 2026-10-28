@@ -63,7 +63,7 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
             t.HasCheckConstraint("ck_pluggy_postings_state", "state IN ('WaitingPosted','Applied','NeedsReview','Covered','Ignored')");
             t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment')");
             t.HasCheckConstraint("ck_pluggy_postings_resolution", "resolution IS NULL OR resolution IN ('AsIncome','AsExpense','AsCardPurchase','Ignore')");
-            t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User')");
+            t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User','Pluggy','Rule','AI')");
             // Aplicado sempre aponta para o registro que gerou; qualquer outro estado não aponta para movimento próprio.
             t.HasCheckConstraint("ck_pluggy_postings_applied_targets",
                 "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL) "
@@ -78,6 +78,8 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
         b.Property(x => x.CategorySource).HasConversion<string>().HasMaxLength(8);
         b.Property(x => x.AppliedType).HasConversion<string>().HasMaxLength(20);
         b.Property(x => x.Reason).HasMaxLength(PluggyPosting.ReasonMaxLength);
+        b.Property(x => x.CategoryMethodVersion).HasMaxLength(PluggyPosting.CategoryMethodMaxLength);
+        b.Property(x => x.CategoryReason).HasMaxLength(PluggyPosting.CategoryReasonMaxLength);
         b.Property(x => x.AppliedAmount).HasColumnType("numeric");
         b.Property(x => x.AppliedDate).HasColumnType("date");
 

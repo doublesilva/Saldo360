@@ -185,56 +185,14 @@ public static class PluggyFinancialMapper
 public sealed record MappableCategory(Guid Id, string Name, CategoryType Type, bool IsActive);
 
 /// <summary>
-/// Mapeia a categoria textual da Pluggy para uma categoria do orçamento quando houver correspondência segura: nome igual (sem acento
-/// e sem diferenciar caixa) ou um apelido conhecido que aponte para uma categoria que o orçamento realmente tem. Sem correspondência,
-/// devolve null (nada é inventado).
+/// Mapeia a categoria textual da Pluggy para uma categoria do orçamento quando houver correspondência segura. Delega ao catálogo único
+/// (<see cref="Saldo360.Application.Classification.FinancialExternalCategoryCatalog"/>): nome equivalente (sem acento, caixa, pontuação ou espaços) ou
+/// apelido conhecido que aponte para uma categoria que o orçamento realmente tem. Não cria categorias; sem correspondência devolve null.
 /// </summary>
 public static class PluggyCategoryMapper
 {
-    private static readonly Dictionary<string, string[]> Aliases = new(StringComparer.Ordinal)
-    {
-        ["groceries"] = ["alimentacao", "mercado", "supermercado"],
-        ["supermarkets"] = ["alimentacao", "mercado", "supermercado"],
-        ["eating out"] = ["alimentacao", "restaurantes"],
-        ["food and drinks"] = ["alimentacao"],
-        ["restaurants"] = ["alimentacao", "restaurantes"],
-        ["health"] = ["saude"],
-        ["pharmacy"] = ["saude", "farmacia"],
-        ["housing"] = ["moradia"],
-        ["rent"] = ["moradia", "aluguel"],
-        ["taxes"] = ["tributos", "impostos"],
-        ["services"] = ["servicos"],
-        ["salary"] = ["salario"],
-        ["income"] = ["salario"],
-        ["subscriptions"] = ["assinaturas"],
-        ["streaming"] = ["assinaturas"],
-        ["transport"] = ["transporte"],
-        ["transportation"] = ["transporte"],
-        ["education"] = ["educacao"],
-        ["leisure"] = ["lazer"],
-        ["entertainment"] = ["lazer"],
-        ["alimentacao"] = ["alimentacao"],
-        ["saude"] = ["saude"],
-        ["moradia"] = ["moradia"],
-        ["transporte"] = ["transporte"],
-        ["educacao"] = ["educacao"],
-        ["lazer"] = ["lazer"],
-        ["assinaturas"] = ["assinaturas"],
-    };
-
-    public static Guid? Map(string? pluggyCategory, CategoryType type, IReadOnlyCollection<MappableCategory> categories)
-    {
-        var key = PluggyFinancialMapper.Normalize(pluggyCategory);
-        if (key.Length == 0) return null;
-        var candidates = new List<string> { key };
-        if (Aliases.TryGetValue(key, out var aliases)) candidates.AddRange(aliases);
-        foreach (var name in candidates)
-        {
-            var match = categories.FirstOrDefault(c => c.IsActive && c.Type == type && PluggyFinancialMapper.Normalize(c.Name) == name);
-            if (match is not null) return match.Id;
-        }
-        return null;
-    }
+    public static Guid? Map(string? pluggyCategory, CategoryType type, IReadOnlyCollection<MappableCategory> categories) =>
+        Saldo360.Application.Classification.FinancialExternalCategoryCatalog.ResolveExisting(pluggyCategory, type, categories);
 }
 
 public sealed record PairItem(Guid Id, Guid LinkId, decimal Amount, DateOnly Date, bool Hint);

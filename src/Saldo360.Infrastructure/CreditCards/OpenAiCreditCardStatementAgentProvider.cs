@@ -97,7 +97,7 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
         }
         var payload = new Dictionary<string, object>
         {
-            ["model"] = options.Model,
+            ["model"] = request.Model ?? options.Model,
             ["store"] = false,
             ["max_output_tokens"] = tuning?.MaxOutputTokens ?? 12000,
             ["input"] = new object[]
@@ -137,7 +137,10 @@ internal sealed class OpenAiCreditCardStatementAgentProvider(
                 .FirstOrDefault(item => item.TryGetProperty("type", out var type) && type.GetString() == "output_text");
             if (outputText.ValueKind == JsonValueKind.Undefined || !outputText.TryGetProperty("text", out var text) || string.IsNullOrWhiteSpace(text.GetString()))
                 throw new CreditCardStatementAgentUnavailableException("Provider não retornou saída estruturada.", failureCode: "ProviderNoStructuredOutput");
-            logger.LogInformation("Credit card statement agent completed provider={Provider} model={Model} durationMs={Duration}", "OpenAI", options.Model, started.ElapsedMilliseconds);
+            if (request.OnUsage is not null && json.RootElement.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+                request.OnUsage(usage.TryGetProperty("input_tokens", out var input) && input.TryGetInt32(out var inputTokens) ? inputTokens : 0,
+                    usage.TryGetProperty("output_tokens", out var output) && output.TryGetInt32(out var outputTokens) ? outputTokens : 0);
+            logger.LogInformation("Credit card statement agent completed provider={Provider} model={Model} durationMs={Duration}", "OpenAI", request.Model ?? options.Model, started.ElapsedMilliseconds);
             return text.GetString()!;
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)

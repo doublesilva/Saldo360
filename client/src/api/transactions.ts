@@ -33,6 +33,10 @@ export interface FinancialTransaction {
   plannedTransactionId: string | null
   /** 'PluggyImport' = importado do banco (T09.3): só a categoria pode ser corrigida. */
   origin?: 'Manual' | 'PlannedRealization' | 'CreditCardInvoicePayment' | 'DebtInstallmentPayment' | 'PluggyImport'
+  /** Quem definiu a categoria de um lançamento importado: banco (Pluggy/Mapped), regra, IA ou o próprio usuário. */
+  categorySource?: 'None' | 'Mapped' | 'User' | 'Pluggy' | 'Rule' | 'AI' | null
+  /** A classificação automática não chegou a uma categoria segura: o usuário precisa decidir. */
+  categoryNeedsReview?: boolean
 }
 
 export interface TransactionPage {
