@@ -16,6 +16,7 @@ public static class FinancialTransactionEndpoints
         transactions.MapGet("/", List);
         transactions.MapGet("/{transactionId:guid}", Get);
         transactions.MapPut("/{transactionId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        transactions.MapPut("/{transactionId:guid}/category", Recategorize).AddEndpointFilter<ValidateCsrfTokenFilter>();
         transactions.MapPost("/{transactionId:guid}/cancel", Cancel).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
@@ -93,6 +94,21 @@ public static class FinancialTransactionEndpoints
         return ToResponse(result, t => Results.Ok(TransactionResponse.From(t)));
     }
 
+    /// <summary>Corrige só a categoria de um lançamento importado da Pluggy (T09.3); os dados de origem ficam intactos. Categoria nula a remove.</summary>
+    private static async Task<IResult> Recategorize(
+        Guid workspaceId, Guid transactionId, CategoryRequest? request, CurrentUser currentUser, FinancialTransactionService transactions,
+        CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        return ToResponse(
+            await transactions.RecategorizeImportedAsync(workspaceId, transactionId, userId, request?.CategoryId, cancellationToken),
+            t => Results.Ok(TransactionResponse.From(t)));
+    }
+
     /// <summary>Cancela sem excluir. Idempotente: cancelar de novo devolve 200 com o mesmo estado.</summary>
     private static async Task<IResult> Cancel(
         Guid workspaceId, Guid transactionId, CurrentUser currentUser, FinancialTransactionService transactions,
@@ -133,6 +149,10 @@ public sealed record TransactionRequest(
     string? Description,
     decimal? Amount,
     DateOnly? TransactionDate);
+
+/// <summary>Nova categoria de um lançamento importado; nula remove a categoria. Qualquer outro campo é recusado.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record CategoryRequest(Guid? CategoryId);
 
 /// <summary>
 /// Lançamento como resposta da API: os mesmos campos do DTO, com <c>amount</c> como texto decimal exato com duas

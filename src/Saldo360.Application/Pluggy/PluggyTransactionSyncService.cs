@@ -4,11 +4,13 @@ using Saldo360.Domain.Pluggy;
 namespace Saldo360.Application.Pluggy;
 
 /// <summary>
-/// Sincronização manual de transações da Pluggy para tabelas próprias (T09.2). Não cria lançamentos, previsões nem altera saldos:
-/// o único efeito é gravar/atualizar <see cref="PluggyImportedTransaction"/>, o histórico de mudanças e o registro da coleta.
+/// Sincronização manual de transações da Pluggy para tabelas próprias (T09.2). A coleta em si só grava/atualiza
+/// <see cref="PluggyImportedTransaction"/>, o histórico de mudanças e o registro da coleta. Desde a T09.3, ao terminar, as contas já
+/// integradas ao cadastro (<see cref="PluggyAccountLink"/>) têm seus valores observados atualizados e as transações efetivadas
+/// alimentam o realizado pelo <see cref="IPluggyPostingEngine"/>; contas não integradas continuam sem nenhum efeito financeiro.
 /// </summary>
 public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository workspaces, IPluggyItemLinkRepository links, IPluggyImportRepository imports,
-    IPluggyClient client, PluggyOptions options, TimeProvider time)
+    IPluggyClient client, PluggyOptions options, TimeProvider time, IPluggyFinancialRepository financial, IPluggyPostingEngine engine)
 {
     public const int MaxPageSize = 200;
 
@@ -24,7 +26,11 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
 
         PluggyException? fatal = null;
         var failed = false;
-        try { await RunAsync(link, run, ct); }
+        try
+        {
+            await RunAsync(link, run, ct);
+            await ApplyFinancialAsync(link, run, userId, ct);
+        }
         catch (PluggyException error)
         {
             fatal = error;
@@ -73,6 +79,20 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
         return PluggyResult<PluggyStabilityView>.Ok(await imports.GetStabilityAsync(workspaceId, connectionId, time.GetUtcNow(), ct));
     }
 
+    /// <summary>
+    /// Depois da coleta, as transações efetivadas das contas integradas viram movimentos do núcleo financeiro. Uma falha aqui não invalida a
+    /// coleta (os dados importados já estão salvos e o reprocessamento é idempotente): fica registrada na própria coleta.
+    /// </summary>
+    private async Task ApplyFinancialAsync(PluggyItemLink link, PluggySyncRun run, Guid userId, CancellationToken ct)
+    {
+        if (run.AccountsSynced == 0) return;
+        try { await engine.ApplyAsync(link.WorkspaceId, userId, time.GetUtcNow(), ct); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            run.AddError("FinancialApplyFailed");
+        }
+    }
+
     // ---- Coleta --------------------------------------------------------------------------------------------------
 
     private async Task RunAsync(PluggyItemLink link, PluggySyncRun run, CancellationToken ct)
@@ -82,16 +102,41 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
         {
             // Consentimento vencido: não consulta nada, para não confundir falta de autorização com ausência de dados.
             run.AddError("ConsentExpired");
+            await financial.SetConnectionStatusAsync(link.WorkspaceId, link.Id, PluggyAccountLinkStatus.ConsentExpired, ct);
             return;
         }
         var accounts = await client.ListAccountsAsync(link.PluggyItemId, ct);
         run.SetAccounts(accounts.Count);
+        // Valores informados pelo banco ficam separados do saldo calculado; só atualizam as contas integradas.
+        await financial.RefreshObservedAsync(link.WorkspaceId, link.Id, accounts.ToDictionary(a => a.Id, PluggyAccountLinkService.Observed, StringComparer.Ordinal),
+            PluggyAccountLinkStatus.Active, ct);
+        var integratedCards = (await financial.ListLinksAsync(link.WorkspaceId, link.Id, ct)).Where(l => l.Kind == PluggyLinkedAccountKind.Card).ToDictionary(l => l.PluggyAccountId, StringComparer.Ordinal);
         var rateLimited = false;
         foreach (var account in accounts)
         {
             if (rateLimited) { run.AddError("RateLimited:skipped"); continue; }
             rateLimited = await SyncAccountAsync(link, run, account, ct);
+            if (!rateLimited && integratedCards.TryGetValue(account.Id, out var cardLink)) await SyncBillsAsync(cardLink, run, account, ct);
         }
+    }
+
+    /// <summary>Faturas do cartão integrado: evidência para localizar compras na fatura certa e fechar a fatura oficial. Falha aqui não invalida a coleta de transações.</summary>
+    private async Task SyncBillsAsync(PluggyAccountLink cardLink, PluggySyncRun run, PluggyAccount account, CancellationToken ct)
+    {
+        var facts = new List<PluggyBillFact>();
+        try
+        {
+            for (var page = 1; page <= Math.Max(1, options.BillMaxPages); page++)
+            {
+                var result = await client.ListBillsAsync(account.Id, page, 50, ct);
+                facts.AddRange(result.Items.Select(b => new PluggyBillFact(b.Id, b.ClosingDate is { } c ? PluggyFinancialMapper.BusinessDate(c) : null,
+                    b.DueDate is { } d ? PluggyFinancialMapper.BusinessDate(d) : null, b.TotalAmount, b.TotalAmountCurrencyCode)));
+                if (result.TotalPages is not { } pages || page >= pages) break;
+                if (options.SyncPageDelayMilliseconds > 0) await Task.Delay(options.SyncPageDelayMilliseconds, ct);
+            }
+        }
+        catch (PluggyException error) { run.AddError($"{error.Kind}:bills"); }
+        await financial.UpsertBillsAsync(cardLink.WorkspaceId, cardLink.Id, facts, time.GetUtcNow(), ct);
     }
 
     /// <returns>Verdadeiro se a Pluggy continuou limitando as requisições após as tentativas.</returns>
@@ -129,6 +174,7 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
 
         if (snapshots.Count == 0 && !complete) return rateLimited;
         var applied = await imports.ApplyAccountAsync(link.WorkspaceId, link.Id, account.Id, snapshots, complete, run.Id, time.GetUtcNow(), ct);
+        if (complete) await financial.MarkSyncedAsync(link.WorkspaceId, link.Id, account.Id, time.GetUtcNow(), ct);
         run.AddAccount(applied.Seen, applied.New, applied.Updated, applied.Unchanged, applied.Missing);
         if (applied.DuplicatePayloadIds > 0) run.AddError($"DuplicateIdsInPayload:{applied.DuplicatePayloadIds}");
         return rateLimited;

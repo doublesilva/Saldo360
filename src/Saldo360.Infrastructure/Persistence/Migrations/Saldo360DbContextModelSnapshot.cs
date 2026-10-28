@@ -2743,6 +2743,213 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyAccountLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal?>("AvailableCreditLimit")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("available_credit_limit");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("connection_id");
+
+                    b.Property<Guid?>("CreditCardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_id");
+
+                    b.Property<decimal?>("CreditLimit")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("credit_limit");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("display_name");
+
+                    b.Property<Guid?>("FinancialAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("financial_account_id");
+
+                    b.Property<DateOnly?>("ImportFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("import_from");
+
+                    b.Property<string>("InstitutionName")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("institution_name");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset?>("LastSyncedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_synced_at");
+
+                    b.Property<DateTimeOffset>("LinkedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("linked_at");
+
+                    b.Property<Guid>("LinkedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("linked_by_user_id");
+
+                    b.Property<DateTimeOffset?>("ObservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("observed_at");
+
+                    b.Property<decimal?>("ObservedBalance")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("observed_balance");
+
+                    b.Property<decimal?>("OverdraftContractedLimit")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("overdraft_contracted_limit");
+
+                    b.Property<decimal?>("OverdraftUsedLimit")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("overdraft_used_limit");
+
+                    b.Property<string>("PluggyAccountId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("pluggy_account_id");
+
+                    b.Property<string>("PluggySubtype")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("pluggy_subtype");
+
+                    b.Property<string>("PluggyType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("pluggy_type");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_account_links");
+
+                    b.HasIndex("CreditCardId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_account_links_credit_card")
+                        .HasFilter("credit_card_id IS NOT NULL");
+
+                    b.HasIndex("FinancialAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_account_links_financial_account")
+                        .HasFilter("financial_account_id IS NOT NULL");
+
+                    b.HasIndex("LinkedByUserId")
+                        .HasDatabaseName("ix_pluggy_account_links_linked_by_user_id");
+
+                    b.HasIndex("ConnectionId", "PluggyAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_account_links_external");
+
+                    b.HasIndex("WorkspaceId", "ConnectionId")
+                        .HasDatabaseName("ix_pluggy_account_links_workspace_id_connection_id");
+
+                    b.HasIndex("WorkspaceId", "CreditCardId")
+                        .HasDatabaseName("ix_pluggy_account_links_workspace_id_credit_card_id");
+
+                    b.HasIndex("WorkspaceId", "FinancialAccountId")
+                        .HasDatabaseName("ix_pluggy_account_links_workspace_id_financial_account_id");
+
+                    b.ToTable("pluggy_account_links", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pluggy_account_links_kind", "kind IN ('Bank','Card')");
+
+                            t.HasCheckConstraint("ck_pluggy_account_links_status", "status IN ('Active','ConsentExpired','Attention')");
+
+                            t.HasCheckConstraint("ck_pluggy_account_links_target", "(kind = 'Bank' AND financial_account_id IS NOT NULL AND credit_card_id IS NULL) OR (kind = 'Card' AND credit_card_id IS NOT NULL AND financial_account_id IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyCardBill", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccountLinkId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_link_id");
+
+                    b.Property<DateOnly?>("ClosingDate")
+                        .HasColumnType("date")
+                        .HasColumnName("closing_date");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("currency");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("due_date");
+
+                    b.Property<DateTimeOffset>("FirstObservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_observed_at");
+
+                    b.Property<DateTimeOffset>("LastObservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_observed_at");
+
+                    b.Property<string>("PluggyBillId")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("pluggy_bill_id");
+
+                    b.Property<decimal?>("TotalAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("total_amount");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_card_bills");
+
+                    b.HasIndex("WorkspaceId")
+                        .HasDatabaseName("ix_pluggy_card_bills_workspace_id");
+
+                    b.HasIndex("AccountLinkId", "ClosingDate")
+                        .HasDatabaseName("ix_pluggy_card_bills_account_link_id_closing_date");
+
+                    b.HasIndex("AccountLinkId", "PluggyBillId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_card_bills_external");
+
+                    b.ToTable("pluggy_card_bills", (string)null);
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyImportedTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2977,6 +3184,167 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("pluggy_item_links", null, t =>
                         {
                             t.HasCheckConstraint("ck_pluggy_item_links_item_id", "pluggy_item_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyPosting", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccountLinkId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_link_id");
+
+                    b.Property<decimal?>("AppliedAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("applied_amount");
+
+                    b.Property<DateOnly?>("AppliedDate")
+                        .HasColumnType("date")
+                        .HasColumnName("applied_date");
+
+                    b.Property<string>("AppliedType")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("applied_type");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.Property<string>("CategorySource")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("category_source");
+
+                    b.Property<Guid?>("CounterpartPostingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("counterpart_posting_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreditCardInvoicePaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_invoice_payment_id");
+
+                    b.Property<Guid?>("CreditCardPurchaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_purchase_id");
+
+                    b.Property<Guid?>("FinancialTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("financial_transaction_id");
+
+                    b.Property<Guid?>("FinancialTransferId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("financial_transfer_id");
+
+                    b.Property<Guid>("ImportedTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("imported_transaction_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("resolution");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by_user_id");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("state");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_postings");
+
+                    b.HasIndex("CategoryId")
+                        .HasDatabaseName("ix_pluggy_postings_category_id");
+
+                    b.HasIndex("CounterpartPostingId")
+                        .HasDatabaseName("ix_pluggy_postings_counterpart_posting_id");
+
+                    b.HasIndex("CreditCardInvoicePaymentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_postings_invoice_payment")
+                        .HasFilter("credit_card_invoice_payment_id IS NOT NULL");
+
+                    b.HasIndex("CreditCardPurchaseId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_postings_purchase")
+                        .HasFilter("credit_card_purchase_id IS NOT NULL");
+
+                    b.HasIndex("FinancialTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_postings_transaction")
+                        .HasFilter("financial_transaction_id IS NOT NULL");
+
+                    b.HasIndex("FinancialTransferId")
+                        .HasDatabaseName("ix_pluggy_postings_financial_transfer_id");
+
+                    b.HasIndex("ImportedTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_postings_imported");
+
+                    b.HasIndex("ResolvedByUserId")
+                        .HasDatabaseName("ix_pluggy_postings_resolved_by_user_id");
+
+                    b.HasIndex("AccountLinkId", "State")
+                        .HasDatabaseName("ix_pluggy_postings_account_link_id_state");
+
+                    b.HasIndex("WorkspaceId", "CreditCardPurchaseId")
+                        .HasDatabaseName("ix_pluggy_postings_workspace_id_credit_card_purchase_id");
+
+                    b.HasIndex("WorkspaceId", "FinancialTransactionId")
+                        .HasDatabaseName("ix_pluggy_postings_workspace_id_financial_transaction_id");
+
+                    b.HasIndex("WorkspaceId", "State")
+                        .HasDatabaseName("ix_pluggy_postings_workspace_id_state");
+
+                    b.ToTable("pluggy_postings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pluggy_postings_applied_snapshot", "(state = 'Applied') = (applied_amount IS NOT NULL AND applied_date IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_pluggy_postings_applied_targets", "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL) OR (kind = 'CardPurchase' AND credit_card_purchase_id IS NOT NULL) OR (kind = 'CardBillPayment' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_payment_id IS NOT NULL))) OR (state <> 'Applied' AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User')");
+
+                            t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment')");
+
+                            t.HasCheckConstraint("ck_pluggy_postings_resolution", "resolution IS NULL OR resolution IN ('AsIncome','AsExpense','AsCardPurchase','Ignore')");
+
+                            t.HasCheckConstraint("ck_pluggy_postings_state", "state IN ('WaitingPosted','Applied','NeedsReview','Covered','Ignored')");
                         });
                 });
 
@@ -4716,6 +5084,61 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_financial_planning_scenarios_financial_accounts_workspace_i");
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyAccountLink", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyItemLink", null)
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_account_links_pluggy_item_links_connection_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("LinkedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_account_links_application_users_linked_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_account_links_financial_workspaces_workspace_id");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCard", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "CreditCardId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_account_links_cards_same_workspace");
+
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "FinancialAccountId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_account_links_accounts_same_workspace");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyCardBill", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyAccountLink", null)
+                        .WithMany()
+                        .HasForeignKey("AccountLinkId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_card_bills_pluggy_account_links_account_link_id");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_card_bills_financial_workspaces_workspace_id");
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyImportedTransaction", b =>
                 {
                     b.HasOne("Saldo360.Domain.Pluggy.PluggyItemLink", null)
@@ -4768,6 +5191,74 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pluggy_item_links_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyPosting", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyAccountLink", null)
+                        .WithMany()
+                        .HasForeignKey("AccountLinkId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_postings_pluggy_account_links_account_link_id");
+
+                    b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_postings_financial_categories_category_id");
+
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyPosting", null)
+                        .WithMany()
+                        .HasForeignKey("CounterpartPostingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_postings_pluggy_postings_counterpart_posting_id");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardInvoicePayment", null)
+                        .WithMany()
+                        .HasForeignKey("CreditCardInvoicePaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_postings_financial_credit_card_invoice_payments_cred");
+
+                    b.HasOne("Saldo360.Domain.Transfers.FinancialTransfer", null)
+                        .WithMany()
+                        .HasForeignKey("FinancialTransferId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_postings_financial_transfers_financial_transfer_id");
+
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyImportedTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("ImportedTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_postings_pluggy_imported_transactions_imported_trans");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ResolvedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_postings_application_users_resolved_by_user_id");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_postings_financial_workspaces_workspace_id");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardPurchase", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "CreditCardPurchaseId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_postings_purchases_same_workspace");
+
+                    b.HasOne("Saldo360.Domain.Transactions.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "FinancialTransactionId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_postings_transactions_same_workspace");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggySyncRun", b =>

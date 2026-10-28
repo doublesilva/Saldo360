@@ -86,6 +86,19 @@ public sealed class FinancialTransaction : Entity
             Description = description, Amount = amount, TransactionDate = date, Currency = DefaultCurrency,
         };
 
+    /// <summary>
+    /// Receita ou despesa vinda de uma transação bancária da Pluggy já efetivada (T09.3). Os dados de origem (valor, data, descrição)
+    /// só mudam pela sincronização; o usuário corrige apenas a categoria. A categoria pode ficar vazia (a revisão a trata depois).
+    /// </summary>
+    public static FinancialTransaction CreateFromPluggy(Guid workspaceId, Guid accountId, Guid? categoryId, CategoryType type, string description, decimal amount, DateOnly date, Guid createdByUserId, DateTimeOffset now) =>
+        new FinancialTransaction
+        {
+            WorkspaceId = workspaceId, CreatedAt = now, CreatedByUserId = createdByUserId,
+            Origin = FinancialTransactionOrigin.PluggyImport,
+            CategoryId = categoryId, AccountId = accountId, Type = type, Description = description,
+            Amount = amount, TransactionDate = date, Currency = DefaultCurrency,
+        };
+
     /// <summary>Lançamento efetivo que realiza a previsão <paramref name="plannedTransactionId"/>.</summary>
     public static FinancialTransaction CreateRealization(
         Guid workspaceId, TransactionDetails details, Guid plannedTransactionId, Guid createdByUserId, DateTimeOffset now) =>
@@ -119,7 +132,37 @@ public sealed class FinancialTransaction : Entity
             throw new InvalidOperationException("Lançamento vinculado a uma previsão não pode ser editado.");
         }
 
+        if (IsImported)
+        {
+            throw new InvalidOperationException("Lançamento importado da Pluggy só permite alterar a categoria.");
+        }
+
         Apply(details);
+        UpdatedAt = now;
+        UpdatedByUserId = userId;
+    }
+
+    /// <summary>Gerado pela integração bancária (T09.3): dados de origem são imutáveis para o usuário.</summary>
+    public bool IsImported => Origin == FinancialTransactionOrigin.PluggyImport;
+
+    /// <summary>Corrige a categoria de um lançamento importado, sem tocar nos dados de origem. A categoria precisa ser do mesmo tipo (garantido também por FK).</summary>
+    public void Recategorize(Guid? categoryId, Guid userId, DateTimeOffset now)
+    {
+        if (!IsImported) throw new InvalidOperationException("Somente lançamentos importados têm a categoria alterada isoladamente.");
+        if (IsCancelled) throw new InvalidOperationException("Lançamento cancelado não pode ser editado.");
+        CategoryId = categoryId;
+        UpdatedAt = now;
+        UpdatedByUserId = userId;
+    }
+
+    /// <summary>Aplica a mudança de origem vinda da Pluggy (valor, data, descrição). Não toca a categoria escolhida.</summary>
+    public void ApplyImportedSource(string description, decimal amount, DateOnly date, Guid userId, DateTimeOffset now)
+    {
+        if (!IsImported) throw new InvalidOperationException("Somente lançamentos importados seguem a origem.");
+        if (IsCancelled) throw new InvalidOperationException("Lançamento cancelado não pode ser editado.");
+        Description = description;
+        Amount = amount;
+        TransactionDate = date;
         UpdatedAt = now;
         UpdatedByUserId = userId;
     }
@@ -155,6 +198,9 @@ public enum FinancialTransactionOrigin
     PlannedRealization,
     CreditCardInvoicePayment,
     DebtInstallmentPayment,
+
+    /// <summary>Receita ou despesa gerada a partir de transação bancária importada da Pluggy (T09.3).</summary>
+    PluggyImport,
 }
 
 /// <summary>

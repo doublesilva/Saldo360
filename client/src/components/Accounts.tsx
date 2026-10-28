@@ -16,6 +16,9 @@ import {
   type FinancialAccount,
   type FinancialScope,
 } from '../api/accounts'
+import { isPluggyIntegrationAvailable } from '../api/pluggyIntegration'
+import { PluggyAccountLinkForm } from './PluggyAccountLinkForm'
+import { PluggyAccountPanel, PluggyIntegrationSection } from './PluggyIntegration'
 type ResponsibleUserOption = { userId: string; displayName: string; isCurrentUser: boolean }
 import { endOfMonth, todayInSaoPaulo } from '../dates'
 import { decimalToInput, formatBrlDecimal, formatDate, isNegativeDecimal, parseAmount } from '../money'
@@ -52,6 +55,15 @@ export function Accounts({
   const [editing, setEditing] = useState<FinancialAccount | 'new' | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  // T09.3: origem Pluggy só aparece quando a integração está habilitada para este usuário/orçamento.
+  const [integrationAvailable, setIntegrationAvailable] = useState(false)
+  const [newOrigin, setNewOrigin] = useState<'Manual' | 'Pluggy'>('Manual')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    isPluggyIntegrationAvailable(workspaceId, controller.signal).then(available => { if (!controller.signal.aborted) setIntegrationAvailable(available) }).catch(() => undefined)
+    return () => controller.abort()
+  }, [workspaceId])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -89,6 +101,22 @@ export function Accounts({
     }
   }
 
+  if (editing === 'new' && integrationAvailable) {
+    const manualAccounts = list.kind === 'loaded' ? list.accounts.filter((account) => (account.origin ?? 'Manual') === 'Manual' && account.isActive) : []
+    return (
+      <div className="accounts">
+        <fieldset>
+          <legend>Origem da conta</legend>
+          <label className="checkbox"><input type="radio" name="account-origin" checked={newOrigin === 'Manual'} onChange={() => setNewOrigin('Manual')} /> Manual — eu informo os dados</label>
+          <label className="checkbox"><input type="radio" name="account-origin" checked={newOrigin === 'Pluggy'} onChange={() => setNewOrigin('Pluggy')} /> Pluggy — integrar uma conta ou cartão do banco</label>
+        </fieldset>
+        {newOrigin === 'Pluggy'
+          ? <PluggyAccountLinkForm workspaceId={workspaceId} manualAccounts={manualAccounts} onLinked={handleSaved} onCancel={() => setEditing(null)} />
+          : <AccountForm workspaceId={workspaceId} members={members} account={null} onSaved={handleSaved} onCancel={() => setEditing(null)} />}
+      </div>
+    )
+  }
+
   if (editing !== null) {
     return (
       <AccountForm
@@ -105,7 +133,7 @@ export function Accounts({
     <div className="accounts">
       <div className="accounts__header">
         <h3>Contas</h3>
-        <button type="button" className="button--primary" onClick={() => setEditing('new')}>
+        <button type="button" className="button--primary" onClick={() => { setNewOrigin('Manual'); setEditing('new') }}>
           Nova conta
         </button>
       </div>
@@ -147,6 +175,7 @@ export function Accounts({
               <div className="account__title">
                 <span className="account__name">{account.name}</span>
                 <span className={`badge badge--${account.financialScope.toLowerCase()}`}>{account.financialScope}</span>
+                <span className="badge">{account.origin === 'Pluggy' ? 'Origem: Pluggy' : 'Origem: Manual'}</span>
               </div>
               <dl className="account__details">
                 <div>
@@ -167,6 +196,9 @@ export function Accounts({
                 </div>
               </dl>
               <OpeningBalanceSummary account={account} />
+              {account.integration && (
+                <PluggyAccountPanel workspaceId={workspaceId} linkId={account.integration.linkId} refreshKey={`${reloadKey}:${balanceVersion}`} onChanged={reload} />
+              )}
               <RealizedBalance workspaceId={workspaceId} accountId={account.id} refreshKey={`${reloadKey}:${balanceVersion}`} />
               <ProjectedBalance
                 workspaceId={workspaceId}
@@ -190,6 +222,7 @@ export function Accounts({
           ))}
         </ul>
       )}
+      {integrationAvailable && <PluggyIntegrationSection workspaceId={workspaceId} refreshKey={`${reloadKey}:${balanceVersion}`} onChanged={reload} />}
     </div>
   )
 }

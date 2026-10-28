@@ -172,6 +172,8 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         from account in accounts.AsNoTracking()
         join user in db.Users on account.ResponsibleUserId equals (Guid?)user.Id into users
         from user in users.DefaultIfEmpty()
+        join link in db.PluggyAccountLinks on account.Id equals link.FinancialAccountId into links
+        from link in links.DefaultIfEmpty()
         select new AccountRow(
             account.Id,
             account.Name,
@@ -184,7 +186,9 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             account.OpeningBalanceDate,
             account.IsActive,
             account.Currency,
-            account.CreatedAt);
+            account.CreatedAt,
+            link == null ? null : new AccountIntegrationDto(link.Id, link.ConnectionId, link.DisplayName, link.InstitutionName, link.Status.ToString(), link.LastSyncedAt,
+                link.ImportFrom, link.ObservedBalance, link.ObservedAt));
 
     private static FinancialAccountDto ToDto(AccountRow row) => new(
         row.Id,
@@ -197,7 +201,9 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         row.OpeningBalanceDate,
         row.IsActive,
         row.Currency,
-        row.CreatedAt);
+        row.CreatedAt,
+        row.Integration is null ? AccountOrigins.Manual : AccountOrigins.Pluggy,
+        row.Integration);
 
     private sealed record AccountRow(
         Guid Id,
@@ -211,5 +217,6 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         DateOnly? OpeningBalanceDate,
         bool IsActive,
         string Currency,
-        DateTimeOffset CreatedAt);
+        DateTimeOffset CreatedAt,
+        AccountIntegrationDto? Integration);
 }

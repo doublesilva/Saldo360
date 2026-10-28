@@ -23,6 +23,8 @@ public static class DependencyInjection
         services.AddScoped<FamilyService>();
         services.AddScoped<Saldo360.Application.Pluggy.PluggyPocService>();
         services.AddScoped<Saldo360.Application.Pluggy.PluggyTransactionSyncService>();
+        services.AddScoped<Saldo360.Application.Pluggy.PluggyAccountLinkService>();
+        services.AddScoped<Saldo360.Application.Pluggy.PluggyReviewService>();
         services.AddScoped<FamilyInvitationService>();
         services.AddScoped<FinancialAccountService>();
         services.AddScoped<FinancialCategoryService>();

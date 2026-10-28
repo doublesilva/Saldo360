@@ -52,7 +52,7 @@ export function PluggyImported({ workspaceId, connection, accounts }: { workspac
 
   return <section className="card" aria-labelledby="pluggy-imported-title">
     <h4 id="pluggy-imported-title">6. Transações importadas</h4>
-    <p className="meta">Cópia local das transações de {text(connection.institution)}{connection.label ? ` (${connection.label})` : ''}. É informativa: não cria lançamentos, não atualiza saldos nem gera previsões.</p>
+    <p className="meta">Cópia local das transações de {text(connection.institution)}{connection.label ? ` (${connection.label})` : ''}. Contas ainda não integradas ao cadastro ficam só como informação: não criam lançamentos, não atualizam saldos nem geram previsões. Contas integradas (Contas → Nova conta → Pluggy) alimentam o realizado com as transações efetivadas.</p>
     <p><button type="button" onClick={() => void sync()} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar agora'}</button></p>
     {lastRun && <p className="meta" role="status">Última sincronização: {syncStatusLabels[lastRun.status] ?? lastRun.status} em {dateTime(lastRun.startedAt)} — {lastRun.created} novas, {lastRun.updated} atualizadas, {lastRun.unchanged} inalteradas, {lastRun.missing} ausentes, {lastRun.errors} erros ({lastRun.accountsSynced}/{lastRun.accountsTotal} contas){lastRun.errorSummary ? ` · ${lastRun.errorSummary}` : ''}</p>}
     {error && <p role="alert" className="notice notice--error">{error}</p>}

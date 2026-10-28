@@ -20,4 +20,10 @@ public interface IFinancialTransactionRepository : IReferenceLookup
     /// o cancelamento precisa bloquear a previsão antes de carregá-la). null se não existir nesta família.
     /// </summary>
     Task<TransactionLink?> GetLinkAsync(Guid workspaceId, Guid transactionId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Registra no rastro da integração que a categoria do lançamento importado foi escolhida pelo usuário (T09.3), para que as
+    /// sincronizações seguintes nunca a sobrescrevam. Altera apenas entidades rastreadas; quem chama salva.
+    /// </summary>
+    Task RecordUserCategoryAsync(Guid workspaceId, Guid transactionId, Guid? categoryId, DateTimeOffset now, CancellationToken cancellationToken);
 }

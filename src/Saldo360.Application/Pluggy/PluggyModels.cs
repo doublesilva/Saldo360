@@ -23,6 +23,8 @@ public sealed class PluggyOptions
     public int SyncRateLimitRetries { get; set; } = 2;
     /// <summary>Uma coleta "Running" mais antiga que isto é tratada como abandonada e não bloqueia novas coletas.</summary>
     public int SyncStaleMinutes { get; set; } = 30;
+    /// <summary>T09.3: páginas (50 faturas) lidas por cartão integrado a cada sincronização.</summary>
+    public int BillMaxPages { get; set; } = 3;
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ClientSecret);
 }
 

@@ -106,7 +106,7 @@ public static class PluggyPocEndpoints
         return Map(await service.ListAsync(workspaceId, userId, new(connectionId, accountId, start, end, parsedStatus, parsedClass, page ?? 1, pageSize ?? 50), ct), Results.Ok);
     }
 
-    private static IResult Map<T>(PluggyResult<T> result, Func<T, IResult> ok) => result.Access switch
+    internal static IResult Map<T>(PluggyResult<T> result, Func<T, IResult> ok) => result.Access switch
     {
         PluggyAccess.Allowed => ok(result.Value!),
         PluggyAccess.NotFound => Results.NotFound(),

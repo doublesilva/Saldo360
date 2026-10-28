@@ -7,6 +7,7 @@ import {
   createTransaction,
   emptyFilters,
   listTransactions,
+  recategorizeTransaction,
   updateTransaction,
   type FinancialTransaction,
   type TransactionFilters,
@@ -48,6 +49,7 @@ export function Transactions({
   const [editing, setEditing] = useState<FinancialTransaction | 'new' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [recategorizingId, setRecategorizingId] = useState<string | null>(null)
 
   // Contas e categorias mudam em outras seções: recarrega ao abrir o formulário e após salvar.
   useEffect(() => {
@@ -78,6 +80,22 @@ export function Transactions({
   const changeFilter = <K extends keyof TransactionFilters>(field: K, value: TransactionFilters[K]) => {
     setFilters((current) => ({ ...current, [field]: value }))
     setPageNumber(1)
+  }
+
+  /** Corrige só a categoria interna de um lançamento importado; valor, data e descrição vêm do banco e não mudam. */
+  const handleRecategorize = async (transaction: FinancialTransaction, categoryId: string) => {
+    setRecategorizingId(transaction.id)
+    setActionError(null)
+    try {
+      const result = await recategorizeTransaction(workspaceId, transaction.id, categoryId || null)
+      if (!result.ok) setActionError(Object.values(result.errors).flat()[0] ?? 'Não foi possível alterar a categoria.')
+      reload()
+      onChanged?.()
+    } catch (error: unknown) {
+      setActionError(errorMessage(error))
+    } finally {
+      setRecategorizingId(null)
+    }
   }
 
   const handleCancel = async (transaction: FinancialTransaction) => {
@@ -223,20 +241,41 @@ export function Transactions({
                   <span>{formatDate(transaction.transactionDate)}</span>
                   <span>{typeLabels[transaction.type]}</span>
                   <span>
-                    {transaction.category.name}
-                    {transaction.category.isActive ? '' : ' (inativa)'}
+                    {transaction.category ? transaction.category.name : 'Sem categoria'}
+                    {transaction.category && !transaction.category.isActive ? ' (inativa)' : ''}
                   </span>
                   <span>
                     {transaction.account.name}
                     {transaction.account.isActive ? '' : ' (inativa)'}
                   </span>
                   {transaction.plannedTransactionId && <span className="badge badge--realization">Realiza previsão</span>}
+                  {transaction.origin === 'PluggyImport' && <span className="badge badge--realization">Importado da Pluggy</span>}
                   {transaction.isCancelled && <span className="badge badge--cancelled">Cancelado</span>}
                 </div>
                 {!transaction.isCancelled && (
                   <div className="form__actions">
-                    {/* Vinculado a previsão não se edita: cancela-se (a previsão reabre) e realiza-se de novo. */}
-                    {!transaction.plannedTransactionId && (
+                    {transaction.origin === 'PluggyImport' && (
+                      <label>
+                        Categoria
+                        <select
+                          aria-label={`Categoria de ${transaction.description}`}
+                          value={transaction.category?.id ?? ''}
+                          disabled={recategorizingId === transaction.id}
+                          onChange={(event) => void handleRecategorize(transaction, event.target.value)}
+                        >
+                          <option value="">Sem categoria</option>
+                          {categories
+                            .filter((category) => category.type === transaction.type && (category.isActive || category.id === transaction.category?.id))
+                            .map((category) => (
+                              <option key={category.id} value={category.id}>
+                                {category.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    )}
+                    {/* Vinculado a previsão ou importado do banco não se edita: previsão se cancela e realiza de novo; importado só troca a categoria. */}
+                    {!transaction.plannedTransactionId && transaction.origin !== 'PluggyImport' && (
                       <button type="button" onClick={() => setEditing(transaction)}>
                         Editar
                       </button>
@@ -310,7 +349,7 @@ export function TransactionForm({
       ? {
           type: transaction.type,
           accountId: transaction.account.id,
-          categoryId: transaction.category.id,
+          categoryId: transaction.category?.id ?? '',
           description: transaction.description,
           amount: decimalToInput(transaction.amount),
           transactionDate: transaction.transactionDate,
@@ -329,7 +368,7 @@ export function TransactionForm({
   )
   const categoryOptions = references.categories.filter(
     (category) =>
-      category.type === form.type && (category.isActive || category.id === transaction?.category.id),
+      category.type === form.type && (category.isActive || category.id === transaction?.category?.id),
   )
   const hasActiveAccount = references.accounts.some((account) => account.isActive)
   const hasActiveCategory = references.categories.some((category) => category.isActive && category.type === form.type)

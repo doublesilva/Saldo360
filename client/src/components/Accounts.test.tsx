@@ -79,6 +79,7 @@ function mockApi(
       const url = String(input)
       calls.push({ url, init })
       if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
+      if (url.endsWith('/pluggy-integration/status')) return new Response(null, { status: 404 }) // integração desabilitada
       const balance = /\/accounts\/([^/]+)\/balance$/.exec(url)
       if (balance) return Response.json(balances[balance[1]] ?? unavailable(balance[1]))
       const projection = /\/accounts\/([^/]+)\/projection\?through=([\d-]+)$/.exec(url)
@@ -114,7 +115,7 @@ describe('Accounts', () => {
     const cash = screen.getByText('Dinheiro', { selector: '.account__name' }).closest('li')!
     expect(within(cash).getByText('Conjunta')).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/R\$/)
-    expect(calls[0].url).toBe('/api/financial-workspaces/f1/accounts')
+    expect(calls.map((c) => c.url)).toContain('/api/financial-workspaces/f1/accounts')
   })
 
   it('mostra contas inativas somente quando solicitado', async () => {

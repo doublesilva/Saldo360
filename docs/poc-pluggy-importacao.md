@@ -1,6 +1,6 @@
 # T09.2 — Importação controlada de transações Pluggy
 
-Evolui o Laboratório Pluggy ([poc-pluggy.md](poc-pluggy.md)) para **sincronizar transações e guardá-las à parte do núcleo financeiro**. A importação é informativa: **não cria lançamentos, previsões, transferências nem pagamentos, não atualiza saldos e não faz conciliação.** Nenhuma tabela financeira operacional é lida ou escrita pela importação (há teste que compara contagens e saldo antes e depois).
+Evolui o Laboratório Pluggy ([poc-pluggy.md](poc-pluggy.md)) para **sincronizar transações e guardá-las à parte do núcleo financeiro**. A importação é informativa: **não cria lançamentos, previsões, transferências nem pagamentos, não atualiza saldos e não faz conciliação.** Nenhuma tabela financeira operacional é lida ou escrita pela importação (há teste que compara contagens e saldo antes e depois). **Desde a T09.3** ([poc-pluggy-integracao-contas.md](poc-pluggy-integracao-contas.md)), contas explicitamente integradas ao cadastro passam a alimentar o realizado a partir das transações já importadas; contas não integradas continuam exatamente como descrito aqui.
 
 ## Configuração
 

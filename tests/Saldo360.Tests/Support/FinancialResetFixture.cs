@@ -80,11 +80,14 @@ internal static class FinancialResetFixture
         var pluggySnapshot = new PluggyTransactionSnapshot("tx-reset", "acc-reset", "BANK", "Conta ••••0000", now, -10m, "BRL", "Synthetic", "SYNTHETIC", "DEBIT",
             PluggyTransactionStatus.Pending, "PIX", null, null, null, null, null, null);
         var pluggyTransaction = PluggyImportedTransaction.Create(w, pluggyLink.Id, pluggySnapshot, pluggyRun.Id, now);
+        var pluggyAccountLink = PluggyAccountLink.Create(w, pluggyLink.Id, "acc-reset", PluggyLinkedAccountKind.Bank, account.Id, null, "Synthetic", null, "BANK", "CHECKING_ACCOUNT", null, u, now);
+        var pluggyPosting = PluggyPosting.Create(w, pluggyTransaction.Id, pluggyAccountLink.Id, now);
+        var pluggyBill = PluggyCardBill.Create(w, pluggyAccountLink.Id, "bill-reset", date, date.AddDays(7), 10m, "BRL", now);
         var pluggyChange = PluggyTransactionChange.Create(pluggyTransaction, pluggyTransaction.Observe(pluggySnapshot with { Status = PluggyTransactionStatus.Posted }, pluggyRun.Id, now), pluggyRun.Id, now);
         db.AddRange(account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, transfer,
             recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
-            scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyChange);
+            scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyBill);
         await db.SaveChangesAsync();
         await OfficialInvoiceFixture.CloseAsync(db, invoice.Id);
         db.AddRange(cardTx, payment); await db.SaveChangesAsync();

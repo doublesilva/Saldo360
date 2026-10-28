@@ -39,6 +39,22 @@ export interface FinancialAccount {
   isActive: boolean
   currency: string
   createdAt: string
+  /** 'Pluggy' quando a conta está integrada a uma conta bancária externa (T09.3); a origem é derivada do vínculo. */
+  origin?: 'Manual' | 'Pluggy'
+  integration?: AccountIntegration | null
+}
+
+/** Integração da conta. observedBalance é o saldo informado pelo banco (texto decimal), separado do saldo calculado. */
+export interface AccountIntegration {
+  linkId: string
+  connectionId: string
+  displayName: string
+  institutionName: string | null
+  status: 'Active' | 'ConsentExpired' | 'Attention'
+  lastSyncedAt: string | null
+  importFrom: string | null
+  observedBalance: string | null
+  observedAt: string | null
 }
 
 /** Campos cadastrais enviados à API. Família e criador vêm do servidor. */

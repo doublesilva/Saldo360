@@ -119,6 +119,7 @@ Conferência por nova conexão, em transação `READ ONLY`, após a recriação 
 | ServiceAccounts / identificadores pessoais | 0 / 0 |
 | Vínculos de Itens do Laboratório Pluggy (T09.1) | 0 |
 | Coletas, transações importadas e histórico de alterações Pluggy (T09.2) | 0 / 0 / 0 |
+| Vínculos de contas, rastros de lançamento e faturas Pluggy (T09.3) | 0 / 0 / 0 |
 | Auditorias de reset / intenções de cleanup | 0 / 0 |
 | Conteúdo no storage financeiro | vazio |
 

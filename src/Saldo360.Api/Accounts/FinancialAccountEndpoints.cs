@@ -234,7 +234,9 @@ public sealed record AccountResponse(
     DateOnly? OpeningBalanceDate,
     bool IsActive,
     string Currency,
-    DateTimeOffset CreatedAt)
+    DateTimeOffset CreatedAt,
+    string Origin = AccountOrigins.Manual,
+    AccountIntegrationResponse? Integration = null)
 {
     public static AccountResponse From(FinancialAccountDto dto) => new(
         dto.Id,
@@ -247,7 +249,27 @@ public sealed record AccountResponse(
         dto.OpeningBalanceDate,
         dto.IsActive,
         dto.Currency,
-        dto.CreatedAt);
+        dto.CreatedAt,
+        dto.Origin,
+        dto.Integration is { } integration ? AccountIntegrationResponse.From(integration) : null);
+}
+
+/// <summary>Integração da conta. <c>observedBalance</c> é o saldo informado pelo banco (texto decimal com duas casas), separado do saldo calculado.</summary>
+public sealed record AccountIntegrationResponse(
+    Guid LinkId,
+    Guid ConnectionId,
+    string DisplayName,
+    string? InstitutionName,
+    string Status,
+    DateTimeOffset? LastSyncedAt,
+    DateOnly? ImportFrom,
+    string? ObservedBalance,
+    DateTimeOffset? ObservedAt)
+{
+    public static AccountIntegrationResponse From(AccountIntegrationDto dto) => new(
+        dto.LinkId, dto.ConnectionId, dto.DisplayName, dto.InstitutionName, dto.Status, dto.LastSyncedAt, dto.ImportFrom,
+        dto.ObservedBalance is { } balance ? decimal.Round(balance, 2, MidpointRounding.AwayFromZero).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : null,
+        dto.ObservedAt);
 }
 
 /// <summary>

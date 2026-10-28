@@ -62,6 +62,10 @@ const pagamento: FinancialTransaction = {
 }
 
 const cancelado: FinancialTransaction = { ...pagamento, id: 't3', description: 'Lançamento errado', isCancelled: true }
+const importado: FinancialTransaction = {
+  ...feira, id: 't4', description: 'MERCADO CENTRAL', amount: '10.25', transactionDate: '2026-10-09', origin: 'PluggyImport',
+  account: { id: itau.id, name: itau.name, isActive: true }, category: null,
+}
 
 type Call = { url: string; init?: RequestInit }
 
@@ -461,5 +465,44 @@ describe('Transactions — lançamento que realiza previsão', () => {
     rerender(<Transactions workspaceId="f1" refreshKey={1} />)
 
     await waitFor(() => expect(listCalls(calls).length).toBe(before + 1))
+  })
+})
+
+describe('Transactions — importados da Pluggy', () => {
+  it('identifica o lançamento importado, mostra "Sem categoria" e não oferece edição completa', async () => {
+    mockApi({ page: { items: [importado], totalCount: 1 } })
+    render(<Transactions workspaceId="f1" />)
+
+    const item = (await screen.findByText('MERCADO CENTRAL')).closest('li')!
+    expect(within(item).getByText('Importado da Pluggy')).toBeTruthy()
+    expect(within(item).getAllByText('Sem categoria').some((node) => node.tagName === 'SPAN')).toBe(true)
+    expect(within(item).queryByRole('button', { name: 'Editar' })).toBeNull()
+    expect(within(item).getByRole('button', { name: 'Cancelar lançamento' })).toBeTruthy()
+  })
+
+  it('corrige só a categoria (PUT /category com CSRF), oferecendo apenas categorias ativas do mesmo tipo', async () => {
+    const calls = mockApi({ page: { items: [importado], totalCount: 1 } })
+    render(<Transactions workspaceId="f1" />)
+    const select = (await screen.findByLabelText('Categoria de MERCADO CENTRAL')) as HTMLSelectElement
+
+    expect(Array.from(select.options).map((option) => option.text)).toEqual(['Sem categoria', 'Mercado']) // Lazer inativa, Salário é receita
+    fireEvent.change(select, { target: { value: mercado.id } })
+
+    await waitFor(() => expect(writes(calls)).toHaveLength(1))
+    const [write] = writes(calls)
+    expect(write.url).toBe('/api/financial-workspaces/f1/transactions/t4/category')
+    expect(write.init?.method).toBe('PUT')
+    expect(JSON.parse(String(write.init?.body))).toEqual({ categoryId: mercado.id })
+    expect((write.init?.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
+  })
+
+  it('mostra o erro da API sem perder a lista', async () => {
+    mockApi({ page: { items: [importado], totalCount: 1 }, saveStatus: 400, saveBody: { errors: { categoryId: ['A categoria deve ser do mesmo tipo do lançamento.'] } } })
+    render(<Transactions workspaceId="f1" />)
+
+    fireEvent.change(await screen.findByLabelText('Categoria de MERCADO CENTRAL'), { target: { value: mercado.id } })
+
+    expect((await screen.findByRole('alert')).textContent).toContain('mesmo tipo')
+    expect(screen.getByText('MERCADO CENTRAL')).toBeTruthy()
   })
 })

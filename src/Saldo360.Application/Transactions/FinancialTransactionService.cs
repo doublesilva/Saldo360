@@ -115,6 +115,11 @@ public sealed class FinancialTransactionService(
             return TransactionResult.Linked;
         }
 
+        if (transaction.IsImported)
+        {
+            return TransactionResult.Imported;
+        }
+
         var (details, errors) = await ValidateAsync(workspaceId, input, transaction, cancellationToken);
         if (details is null)
         {
@@ -124,6 +129,58 @@ public sealed class FinancialTransactionService(
         transaction.Update(details, userId, timeProvider.GetUtcNow());
         await transactions.SaveChangesAsync(cancellationToken);
         return TransactionResult.Ok((await transactions.GetAsync(workspaceId, transaction.Id, cancellationToken))!);
+    }
+
+    /// <summary>
+    /// Corrige só a categoria de um lançamento importado da Pluggy (T09.3). Os dados de origem não mudam, e a escolha sobrevive às
+    /// sincronizações. Categoria nula remove a categoria. A categoria precisa ser ativa e do mesmo tipo do lançamento.
+    /// </summary>
+    public async Task<TransactionResult> RecategorizeImportedAsync(
+        Guid workspaceId, Guid transactionId, Guid userId, Guid? categoryId, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            || await transactions.FindAsync(workspaceId, transactionId, cancellationToken) is not { } transaction)
+        {
+            return TransactionResult.NotFound;
+        }
+
+        if (!transaction.IsImported)
+        {
+            return TransactionResult.NotImported;
+        }
+
+        if (transaction.IsCancelled)
+        {
+            return TransactionResult.Cancelled;
+        }
+
+        if (categoryId is { } id)
+        {
+            var errors = new Dictionary<string, string[]>();
+            if (await transactions.GetCategoryStateAsync(workspaceId, id, cancellationToken) is not { } state)
+            {
+                errors["categoryId"] = ["Categoria inválida."];
+            }
+            else if (state.Type != transaction.Type)
+            {
+                errors["categoryId"] = ["A categoria deve ser do mesmo tipo do lançamento."];
+            }
+            else if (!state.IsActive && id != transaction.CategoryId)
+            {
+                errors["categoryId"] = ["A categoria está inativa."];
+            }
+
+            if (errors.Count > 0)
+            {
+                return TransactionResult.Invalid(errors);
+            }
+        }
+
+        var now = timeProvider.GetUtcNow();
+        transaction.Recategorize(categoryId, userId, now);
+        await transactions.RecordUserCategoryAsync(workspaceId, transactionId, categoryId, now, cancellationToken);
+        await transactions.SaveChangesAsync(cancellationToken);
+        return TransactionResult.Ok((await transactions.GetAsync(workspaceId, transactionId, cancellationToken))!);
     }
 
     /// <summary>Cancela preservando o registro. Idempotente: cancelar de novo devolve o mesmo estado.</summary>

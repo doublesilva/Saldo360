@@ -22,7 +22,8 @@ export interface FinancialTransaction {
   transactionDate: string
   description: string
   account: TransactionReference
-  category: TransactionReference
+  /** null = sem categoria (ex.: pagamento de fatura ou movimento importado ainda sem categoria). */
+  category: TransactionReference | null
   isCancelled: boolean
   currency: string
   createdAt: string
@@ -30,6 +31,8 @@ export interface FinancialTransaction {
   cancelledAt: string | null
   /** Previsão que este lançamento realiza (não editável; cancelar reabre a previsão). null = avulso. */
   plannedTransactionId: string | null
+  /** 'PluggyImport' = importado do banco (T09.3): só a categoria pode ser corrigida. */
+  origin?: 'Manual' | 'PlannedRealization' | 'CreditCardInvoicePayment' | 'DebtInstallmentPayment' | 'PluggyImport'
 }
 
 export interface TransactionPage {
@@ -139,4 +142,9 @@ export async function getTransaction(workspaceId: string, id: string, signal?: A
   const response = await fetch(transactionsUrl(workspaceId, id), { signal, headers: jsonHeaders })
   if (!response.ok) throw new Error(`Falha ao carregar o lançamento (HTTP ${response.status}).`)
   return (await response.json()) as FinancialTransaction
+}
+
+/** Corrige só a categoria de um lançamento importado (os dados de origem não mudam). categoryId null remove a categoria. */
+export function recategorizeTransaction(workspaceId: string, id: string, categoryId: string | null): Promise<SaveTransactionResult> {
+  return write('PUT', `${transactionsUrl(workspaceId, id)}/category`, { categoryId }, 200)
 }

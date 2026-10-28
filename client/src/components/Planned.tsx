@@ -332,7 +332,7 @@ function RealizationSummary({ workspaceId, planned }: { workspaceId: string; pla
       {details?.kind === 'loaded' && (
         <p className="meta">
           Lançamento efetivo: {details.data.description} · {formatBrlDecimal(details.data.amount)} ·{' '}
-          {formatDate(details.data.transactionDate)} · {details.data.account.name} · {details.data.category.name}. Para
+          {formatDate(details.data.transactionDate)} · {details.data.account.name} · {details.data.category?.name ?? 'Sem categoria'}. Para
           corrigir, cancele-o em Lançamentos: a previsão volta a ficar pendente.
         </p>
       )}

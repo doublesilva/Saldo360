@@ -106,5 +106,6 @@ app.MapFinancialGoalEndpoints();
 app.MapFinancialGoalAllocationEndpoints();
 app.MapFinancialDashboardEndpoints();
 app.MapPluggyPocEndpoints();
+app.MapPluggyFinancialEndpoints();
 
 app.Run();

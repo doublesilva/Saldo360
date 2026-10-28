@@ -17,7 +17,28 @@ public sealed record FinancialAccountDto(
     DateOnly? OpeningBalanceDate,
     bool IsActive,
     string Currency,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string Origin = AccountOrigins.Manual,
+    AccountIntegrationDto? Integration = null);
+
+/// <summary>Origem do cadastro: digitado pelo usuário ou integrado a uma conta externa (T09.3). A origem é derivada do vínculo.</summary>
+public static class AccountOrigins
+{
+    public const string Manual = "Manual";
+    public const string Pluggy = "Pluggy";
+}
+
+/// <summary>Integração bancária da conta: instituição/nome exibido, situação, última sincronização e o saldo informado pelo banco (nunca o calculado).</summary>
+public sealed record AccountIntegrationDto(
+    Guid LinkId,
+    Guid ConnectionId,
+    string DisplayName,
+    string? InstitutionName,
+    string Status,
+    DateTimeOffset? LastSyncedAt,
+    DateOnly? ImportFrom,
+    decimal? ObservedBalance,
+    DateTimeOffset? ObservedAt);
 
 /// <summary>Responsável: somente UserId e nome de exibição, sem vínculo familiar obrigatório.</summary>
 public sealed record AccountResponsibleDto(Guid UserId, string DisplayName);

@@ -40,6 +40,20 @@ public sealed class FinancialCreditCardPurchase : Entity
         return purchase;
     }
 
+    /// <summary>
+    /// Compra vinda de transação de cartão importada da Pluggy (T09.3): uma parcela, sem histórico de parcelas pagas. Cada
+    /// transação da Pluggy (inclusive cada parcela de uma compra parcelada) vira uma compra de parcela única, na fatura em que a Pluggy a lançou.
+    /// </summary>
+    public static FinancialCreditCardPurchase CreateImported(Guid workspaceId, Guid cardId, Guid categoryId, string description, DateOnly date, decimal amount, Guid userId, DateTimeOffset now) =>
+        Create(workspaceId, cardId, categoryId, description.Trim(), date, amount, 1, userId, now);
+
+    /// <summary>Corrige apenas a categoria interna (dados de origem intactos).</summary>
+    public void Recategorize(Guid categoryId, Guid userId, DateTimeOffset now)
+    {
+        if (Status != CreditCardPurchaseStatus.Active) throw new InvalidOperationException("Compra cancelada não pode ser editada.");
+        CategoryId = categoryId; UpdatedAt = now; UpdatedByUserId = userId;
+    }
+
     public void Cancel(Guid userId, DateTimeOffset now)
     {
         if (Status == CreditCardPurchaseStatus.Cancelled) return;

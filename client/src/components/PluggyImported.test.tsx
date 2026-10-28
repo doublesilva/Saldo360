@@ -46,7 +46,7 @@ describe('PluggyImported', () => {
     expect(within(counters).getByText('Novas na última sincronização: 1')).toBeTruthy()
     expect(within(counters).getByText('Atualizadas na última sincronização: 2')).toBeTruthy()
     expect(within(counters).getByText('Pendentes: 3')).toBeTruthy()
-    expect(screen.getByText(/não cria lançamentos, não atualiza saldos nem gera previsões/)).toBeTruthy()
+    expect(screen.getByText(/não criam lançamentos, não atualizam saldos nem geram previsões/)).toBeTruthy()
   })
 
   it('exibe parcela e rótulos em português para cada classificação', async () => {

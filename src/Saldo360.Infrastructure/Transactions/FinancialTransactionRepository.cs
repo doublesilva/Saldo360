@@ -70,6 +70,12 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
             .Select(t => new TransactionLink(t.PlannedTransactionId))
             .SingleOrDefaultAsync(cancellationToken);
 
+    public async Task RecordUserCategoryAsync(Guid workspaceId, Guid transactionId, Guid? categoryId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var posting = await db.PluggyPostings.SingleOrDefaultAsync(p => p.WorkspaceId == workspaceId && p.FinancialTransactionId == transactionId, cancellationToken);
+        posting?.SetCategory(categoryId, Saldo360.Domain.Pluggy.PluggyCategorySource.User, now);
+    }
+
     public Task<AccountState?> GetAccountStateAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken) =>
         db.FinancialAccounts
             .Where(a => a.WorkspaceId == workspaceId && a.Id == accountId)

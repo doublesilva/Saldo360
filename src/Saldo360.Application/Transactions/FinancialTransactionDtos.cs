@@ -91,7 +91,15 @@ public sealed record TransactionResult(
 
     public static TransactionResult Cancelled { get; } = new(TransactionAccess.Conflict, null, null, CancelledMessage);
 
+    public const string ImportedMessage =
+        "Lançamento importado da Pluggy não pode ser editado: os dados vêm do banco. Só a categoria pode ser corrigida; para desfazer, cancele-o.";
+
     public static TransactionResult Linked { get; } = new(TransactionAccess.Conflict, null, null, LinkedMessage);
+
+    public static TransactionResult Imported { get; } = new(TransactionAccess.Conflict, null, null, ImportedMessage);
+
+    public static TransactionResult NotImported { get; } = new(TransactionAccess.Conflict, null, null,
+        "Somente lançamentos importados têm a categoria corrigida isoladamente. Use a edição completa.");
 
     public static TransactionResult Ok(FinancialTransactionDto transaction) => new(TransactionAccess.Allowed, transaction, null);
 
