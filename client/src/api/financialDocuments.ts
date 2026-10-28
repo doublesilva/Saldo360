@@ -29,13 +29,15 @@ export type FinancialDocument = {
 export type InboxMutation<T> = { ok: true; value: T } | { ok: false; errors: Record<string, string[]>; status: number; reason?: 'Conflict' }
 export type StatementCategory = { key: string; itemIndex: number; categoryId: string | null; categoryName: string; isProposal: boolean; confidence: string; source: string }
 export type StatementFinancialComponent = { description: string; kind: string; scope: string; nature: string; unit: string; amount: string; page: number; evidence: string; contextPage: number; contextEvidence: string; installmentNumber: number | null; installmentCount: number | null; confidence: string }
-export type StatementFinancialReconciliation = { status: string; officialTotal: string | null; componentsTotal: string; difference: string | null }
+export type StatementFinancialReconciliation = { status: string; arithmeticStatus?: string; officialTotal: string | null; componentsTotal: string; difference: string | null }
 export type StatementFinancialClassification = {
   readOnly: boolean; coverageProven: boolean; coverageStatus: string
   document: { schemaVersion: string; purchases: { items: { originalDescription: string; amount: string; nature: string; section: string; page: number; evidence: string; transactionDate: string | null }[] }; components: StatementFinancialComponent[] }
   currentInvoice: StatementFinancialReconciliation; nextInvoice: StatementFinancialReconciliation
   diagnostics: { code: string; page?: number | null; itemIndex?: number | null }[]
   duplicates: { itemIndex: number; otherItemIndex: number | null; code: string }[]
+  associations?: { summaryComponentIndex: number; detailComponentIndexes: number[]; code: string }[]
+  importEligible?: boolean; importBlockReason?: string
 }
 export type StatementAnalysis = { schemaVersion: string; cardId: string; status: string; failureCode: string | null; passwordResolutionCode?: string | null; consolidationBlockReason?: string | null; categories: StatementCategory[]; extraction: { mode: string; primarySource: string; assessment: string; validationStatus?: string | null; documentWarnings?: string[] | null; attempts: number; agentError: string | null; comparison?: StatementAnalysisComparison | null; financialClassification?: StatementFinancialClassification | null; primary: { header: { officialTotal: string | null }; items: { originalDescription: string; normalizedDescription: string | null; transactionDate: string | null; amount: string; type: string; nature: string; section: string; includedInCurrentTotal: boolean }[]; reconciliation: { status: string; officialTotal: string | null; componentsTotal: string | null; difference: string | null } } | null } | null }
 export type KnownInstallmentEligibility = { eligible: boolean; stage: string; associationBasis: string; blockers: string[]; rows: { itemIndex: number; competence: string; dueDate: string; transactionDate: string | null }[] }

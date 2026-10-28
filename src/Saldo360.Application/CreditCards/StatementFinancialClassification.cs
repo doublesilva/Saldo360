@@ -13,7 +13,12 @@ public sealed record StatementFinancialComponent(string Description, string Kind
     int? InstallmentNumber, int? InstallmentCount, string Confidence);
 public sealed record StatementFinancialDocument(string SchemaVersion, CreditCardStatementAgentDocument Purchases,
     IReadOnlyList<StatementFinancialComponent> Components);
-public sealed record StatementFinancialReconciliation(string Status, string? OfficialTotal, string ComponentsTotal, string? Difference);
+public sealed record StatementFinancialReconciliation(string Status, string? OfficialTotal, string ComponentsTotal, string? Difference)
+{
+    // A separate mathematical observation; never promotes documentary/identity validity.
+    public string ArithmeticStatus => OfficialTotal is null ? "ReferenceAbsent" : Difference == "0.00" ? "Reconciled" : "Divergent";
+}
+public sealed record StatementFinancialAssociation(int SummaryComponentIndex, IReadOnlyList<int> DetailComponentIndexes, string Code);
 public sealed record StatementFinancialDuplicate(int ItemIndex, int? OtherItemIndex, string Code);
 public sealed record StatementFinancialPageCoverage(int Page, int SourceAmounts, int UnclassifiedAmounts);
 public sealed record StatementExistingObligation(string Description, string Amount, int Number, int Count);
@@ -26,12 +31,15 @@ public sealed record StatementFinancialClassification(StatementFinancialDocument
     public bool CoverageProven => false;
     public string CoverageStatus => "FinancialCoverageRequiresReview";
     public IReadOnlyList<StatementFinancialPageCoverage> Pages { get; init; } = [];
+    public IReadOnlyList<StatementFinancialAssociation> Associations { get; init; } = [];
+    public bool ImportEligible => false;
+    public string ImportBlockReason => StatementFinancialClassifier.ReadOnlyReason;
 }
 
 public static partial class StatementFinancialClassifier
 {
     public const string Workflow = "FinancialClassification";
-    public const string Version = "2026-10-27.financial.1";
+    public const string Version = "2026-10-27.financial.2";
     public const string ReadOnlyReason = "FinancialClassificationReadOnly";
     private static readonly string[] Kinds = ["FinancialOperation", "Fee", "Interest", "Tax", "Credit", "Refund", "Payment",
         "PreviousBalance", "FinancedBalance", "PrincipalDetail", "InterestDetail", "Rate", "Limit", "Offer", "Simulation",
@@ -126,17 +134,21 @@ public static partial class StatementFinancialClassifier
     {
         var issues = new List<StatementEvidenceDiagnostic>();
         var purchaseItems = document.Purchases.Items;
-        var mapped = document.Components.Where(c => c.Unit == "BRL").Select(c => new CreditCardStatementAgentItem(c.Description, c.Amount, c.Nature, "Unknown",
-            c.InstallmentNumber, c.InstallmentCount, "Other", false, c.Page, c.Evidence, c.Confidence)).ToArray();
         var check = new CreditCardStatementAgentPreview("document", source.Pages.Count, document.Purchases.Header,
             purchaseItems, new("NeedsReview", null, "0.00", null, false));
         issues.AddRange(CreditCardStatementExtractionOrchestrator.GroundingDiagnostics(check, source));
         // Distinct principal/interest values can legitimately share a source line. Purchase occurrence
         // validation is unchanged; financial facts are checked individually before posting accounting.
-        foreach (var item in mapped)
+        foreach (var (c, index) in document.Components.Select((c, index) => (c, index)).Where(v => v.c.Unit == "BRL"))
+        {
+            var item = new CreditCardStatementAgentItem(c.Description, c.Amount, c.Nature, "Unknown",
+                c.InstallmentNumber, c.InstallmentCount, "Other", false, c.Page, c.Evidence, c.Confidence);
             issues.AddRange(CreditCardStatementExtractionOrchestrator.GroundingDiagnostics(check with
             { Header = check.Header with { OfficialTotal = null }, Items = [item] }, source)
-                .Select(d => d with { Path = "$.components[]", ItemIndex = null }));
+                .Select(d => d with { Path = d.Path.Replace("$.items[]", "$.components[]", StringComparison.Ordinal), ItemIndex = index }));
+        }
+        foreach (var region in source.Pages.SelectMany(p => p.VisualRegions.Select(r => StatementVisualRegionText.Classify(r, p.NativeWords))).Where(r => !r.Complete))
+            issues.Add(new("FinancialVisualEvidenceUnproven", "$.pages[].visualRegions[]", region.Page));
         var postings = purchaseItems.Select(i => (i.Page, i.Evidence, i.Amount)).Concat(document.Components
             .Where(c => c.Scope is "CurrentInvoice" or "NextInvoice").Select(c => (c.Page, c.Evidence, c.Amount)));
         foreach (var repeated in postings.GroupBy(p => p).Where(g => g.Count() > 1))
@@ -162,6 +174,8 @@ public static partial class StatementFinancialClassifier
                 || c.Kind is "Credit" or "Refund" or "Payment" && c.Nature != "Credit"
                 || c.Kind is "Rate" or "Limit" or "PrincipalDetail" or "InterestDetail" && c.Scope != "Information";
             if (invalid) issues.Add(new("FinancialRoleEvidenceInvalid", "$.components[]", c.Page, index));
+            if (c.Scope is "CurrentInvoice" or "NextInvoice" && InformationalPosting(c))
+                issues.Add(new("FinancialInformationalValueAsPosting", "$.components[]", c.Page, index));
             if (c.Unit != "BRL")
             {
                 var page = source.Pages.FirstOrDefault(p => p.Number == c.Page);
@@ -173,6 +187,8 @@ public static partial class StatementFinancialClassifier
             if (c.Kind == "Unknown" || c.Confidence != "High") issues.Add(new("FinancialClassificationUncertain", "$.components[]", c.Page, index));
         }
         var duplicates = FindDuplicates(document, []);
+        var associations = AssociateSummaries(document, source, issues);
+        var summaryIndexes = associations.Select(a => a.SummaryComponentIndex).ToHashSet();
         // Reference labels must themselves be documentary, not just a matching number anywhere.
         foreach (var c in document.Components.Where(c => c.Kind is "CurrentTotal" or "NextInvoiceTotal"))
         {
@@ -182,11 +198,11 @@ public static partial class StatementFinancialClassifier
                 issues.Add(new("FinancialReferenceLabelInvalid", "$.components[]", c.Page));
         }
         var current = purchaseItems.Where(i => i.IncludedInCurrentTotal).Sum(i => Parse(i.Amount));
-        current += document.Components.Where(c => c.Scope == "CurrentInvoice" && PostingKinds.Contains(c.Kind) && c.Unit == "BRL"
-            && !OfferShape().IsMatch(c.ContextEvidence + " " + c.Evidence)).Sum(Signed);
+        current += document.Components.Where((c, index) => !summaryIndexes.Contains(index) && c.Scope == "CurrentInvoice" && PostingKinds.Contains(c.Kind) && c.Unit == "BRL"
+            && !InformationalPosting(c) && !OfferShape().IsMatch(c.ContextEvidence + " " + c.Evidence)).Sum(Signed);
         var future = purchaseItems.Where(i => i.Section == "FutureInstallments").Sum(i => Parse(i.Amount));
         future += document.Components.Where(c => c.Scope == "NextInvoice" && c.Kind == "FinancialOperation" && c.Unit == "BRL"
-            && !OfferShape().IsMatch(c.ContextEvidence + " " + c.Evidence)).Sum(Signed);
+            && !InformationalPosting(c) && !OfferShape().IsMatch(c.ContextEvidence + " " + c.Evidence)).Sum(Signed);
         var reference = document.Purchases.Header.OfficialTotal;
         if (document.Components.Any(c => c.Kind == "CurrentTotal" && c.Amount != reference))
             issues.Add(new("FinancialCurrentTotalConflict", "$.components[]"));
@@ -204,7 +220,8 @@ public static partial class StatementFinancialClassifier
             if (missing > 0) issues.Add(new("FinancialAmountsUnclassified", "$.pages[]", page.Number));
             return new StatementFinancialPageCoverage(page.Number, tokens.Length, missing);
         }).ToArray();
-        return new(document, Reconcile(reference, current, issues.Count > 0), Reconcile(next.Length == 1 ? next[0] : null, future, issues.Count > 0), issues, duplicates) { Pages = coverage };
+        return new(document, Reconcile(reference, current, issues.Count > 0), Reconcile(next.Length == 1 ? next[0] : null, future, issues.Count > 0), issues, duplicates)
+        { Pages = coverage, Associations = associations };
     }
 
     public static IReadOnlyList<StatementFinancialDuplicate> FindDuplicates(StatementFinancialDocument document, IReadOnlyList<StatementExistingObligation> obligations)

@@ -45,3 +45,19 @@ it('Inbox exibe a análise persistida sem nova extração, edição ou confirma�
   expect(screen.queryByLabelText(/Corrigir categoria/)).toBeNull()
   expect(consolidateStatement).not.toHaveBeenCalled()
 })
+
+it('distingue igualdade aritmética, integridade e associação sem esconder as ocorrências originais', () => {
+  const value = report()
+  value.currentInvoice = { status: 'Unproven', arithmeticStatus: 'Reconciled', officialTotal: '785.33', componentsTotal: '785.33', difference: '0.00' }
+  value.associations = [{ summaryComponentIndex: 0, detailComponentIndexes: [1], code: 'InternationalIofSummaryOfDetails' }]
+  render(<StatementFinancialClassificationPanel value={value} />)
+  const current = within(screen.getByRole('region', { name: 'Conciliação da fatura atual' }))
+  expect(current.getByText(/Aritmética: Reconciled/)).toBeTruthy()
+  expect(current.getByText(/Validação documental dos componentes: Unproven/)).toBeTruthy()
+  expect(screen.getByRole('region', { name: 'Resumo e detalhamento associados' }).textContent).toContain('O resumo não é somado novamente')
+  expect(screen.getByText(/Identidade e autorização financeira dependem/)).toBeTruthy()
+  expect(screen.getByText(/Elegibilidade para importação: bloqueada/)).toBeTruthy()
+  expect(screen.getByText('CRÉDITO -29,90')).toBeTruthy()
+  expect(screen.getByText('PROPOSTA 500,00')).toBeTruthy()
+  expect(screen.queryByRole('button')).toBeNull()
+})
