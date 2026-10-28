@@ -2743,6 +2743,195 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyImportedTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccountLabel")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("account_label");
+
+                    b.Property<string>("AccountType")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("account_type");
+
+                    b.Property<decimal?>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("BillId")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("bill_id");
+
+                    b.Property<string>("CardLast4")
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)")
+                        .HasColumnName("card_last4");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Classification")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("classification");
+
+                    b.Property<string>("ClassificationReason")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("classification_reason");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("currency");
+
+                    b.Property<DateTimeOffset?>("Date")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("DescriptionRaw")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description_raw");
+
+                    b.Property<DateTimeOffset>("FirstImportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_imported_at");
+
+                    b.Property<DateTimeOffset?>("FirstMissingAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_missing_at");
+
+                    b.Property<Guid>("FirstSeenRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("first_seen_run_id");
+
+                    b.Property<int?>("InstallmentNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("installment_number");
+
+                    b.Property<DateTimeOffset?>("LastChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_changed_at");
+
+                    b.Property<Guid?>("LastChangedRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("last_changed_run_id");
+
+                    b.Property<DateTimeOffset>("LastObservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_observed_at");
+
+                    b.Property<Guid>("LastSeenRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("last_seen_run_id");
+
+                    b.Property<int>("MissingSyncCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("missing_sync_count");
+
+                    b.Property<string>("OperationType")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("operation_type");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("payment_method");
+
+                    b.Property<string>("PluggyAccountId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("pluggy_account_id");
+
+                    b.Property<string>("PluggyTransactionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("pluggy_transaction_id");
+
+                    b.Property<string>("PossibleDuplicateKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("possible_duplicate_key");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<int?>("TotalInstallments")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_installments");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("type");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_imported_transactions");
+
+                    b.HasIndex("FirstSeenRunId")
+                        .HasDatabaseName("ix_pluggy_imported_transactions_first_seen_run_id");
+
+                    b.HasIndex("LastChangedRunId")
+                        .HasDatabaseName("ix_pluggy_imported_transactions_last_changed_run_id");
+
+                    b.HasIndex("LastSeenRunId")
+                        .HasDatabaseName("ix_pluggy_imported_transactions_last_seen_run_id");
+
+                    b.HasIndex("WorkspaceId", "PossibleDuplicateKey")
+                        .HasDatabaseName("ix_pluggy_imported_transactions_workspace_id_possible_duplicat")
+                        .HasFilter("possible_duplicate_key IS NOT NULL");
+
+                    b.HasIndex("ConnectionId", "PluggyAccountId", "LastSeenRunId")
+                        .HasDatabaseName("ix_pluggy_imported_transactions_connection_id_pluggy_account_i");
+
+                    b.HasIndex("ConnectionId", "PluggyAccountId", "PluggyTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_imported_transactions_external");
+
+                    b.HasIndex("WorkspaceId", "ConnectionId", "Date")
+                        .HasDatabaseName("ix_pluggy_imported_transactions_workspace_id_connection_id_date");
+
+                    b.ToTable("pluggy_imported_transactions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pluggy_imported_transactions_class", "classification IN ('InsufficientInformation','PotentialIncome','PotentialExpense','PotentialTransfer','CardPurchase','CardInstallment')");
+
+                            t.HasCheckConstraint("ck_pluggy_imported_transactions_missing", "missing_sync_count >= 0 AND (missing_sync_count = 0) = (first_missing_at IS NULL)");
+
+                            t.HasCheckConstraint("ck_pluggy_imported_transactions_status", "status IN ('Pending','Posted','Unknown')");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyItemLink", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2789,6 +2978,167 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_pluggy_item_links_item_id", "pluggy_item_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'");
                         });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggySyncRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AccountsSynced")
+                        .HasColumnType("integer")
+                        .HasColumnName("accounts_synced");
+
+                    b.Property<int>("AccountsTotal")
+                        .HasColumnType("integer")
+                        .HasColumnName("accounts_total");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("connection_id");
+
+                    b.Property<int>("Created")
+                        .HasColumnType("integer")
+                        .HasColumnName("created");
+
+                    b.Property<string>("ErrorSummary")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("error_summary");
+
+                    b.Property<int>("Errors")
+                        .HasColumnType("integer")
+                        .HasColumnName("errors");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<int>("Missing")
+                        .HasColumnType("integer")
+                        .HasColumnName("missing");
+
+                    b.Property<int>("Seen")
+                        .HasColumnType("integer")
+                        .HasColumnName("seen");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("status");
+
+                    b.Property<int>("Unchanged")
+                        .HasColumnType("integer")
+                        .HasColumnName("unchanged");
+
+                    b.Property<int>("Updated")
+                        .HasColumnType("integer")
+                        .HasColumnName("updated");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_sync_runs");
+
+                    b.HasIndex("ConnectionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_sync_runs_running")
+                        .HasFilter("status = 'Running'");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_pluggy_sync_runs_user_id");
+
+                    b.HasIndex("WorkspaceId")
+                        .HasDatabaseName("ix_pluggy_sync_runs_workspace_id");
+
+                    b.HasIndex("ConnectionId", "StartedAt")
+                        .HasDatabaseName("ix_pluggy_sync_runs_connection_id_started_at");
+
+                    b.ToTable("pluggy_sync_runs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pluggy_sync_runs_counts", "seen >= 0 AND created >= 0 AND updated >= 0 AND unchanged >= 0 AND missing >= 0 AND errors >= 0");
+
+                            t.HasCheckConstraint("ck_pluggy_sync_runs_finished", "(status = 'Running') = (finished_at IS NULL)");
+
+                            t.HasCheckConstraint("ck_pluggy_sync_runs_status", "status IN ('Running','Completed','CompletedWithErrors','Failed')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyTransactionChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ChangedFields")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("changed_fields");
+
+                    b.Property<decimal?>("NewAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("new_amount");
+
+                    b.Property<string>("NewStatus")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("new_status");
+
+                    b.Property<DateTimeOffset>("ObservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("observed_at");
+
+                    b.Property<decimal?>("PreviousAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("previous_amount");
+
+                    b.Property<string>("PreviousStatus")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("previous_status");
+
+                    b.Property<Guid>("SyncRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sync_run_id");
+
+                    b.Property<Guid>("TransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("transaction_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_transaction_changes");
+
+                    b.HasIndex("SyncRunId")
+                        .HasDatabaseName("ix_pluggy_transaction_changes_sync_run_id");
+
+                    b.HasIndex("WorkspaceId")
+                        .HasDatabaseName("ix_pluggy_transaction_changes_workspace_id");
+
+                    b.HasIndex("TransactionId", "ObservedAt")
+                        .HasDatabaseName("ix_pluggy_transaction_changes_transaction_id_observed_at");
+
+                    b.ToTable("pluggy_transaction_changes", (string)null);
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>
@@ -4366,6 +4716,43 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_financial_planning_scenarios_financial_accounts_workspace_i");
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyImportedTransaction", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyItemLink", null)
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_imported_transactions_pluggy_item_links_connection_id");
+
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggySyncRun", null)
+                        .WithMany()
+                        .HasForeignKey("FirstSeenRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_imported_transactions_pluggy_sync_runs_first_seen_ru");
+
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggySyncRun", null)
+                        .WithMany()
+                        .HasForeignKey("LastChangedRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_imported_transactions_pluggy_sync_runs_last_changed_");
+
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggySyncRun", null)
+                        .WithMany()
+                        .HasForeignKey("LastSeenRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_imported_transactions_pluggy_sync_runs_last_seen_run");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_imported_transactions_financial_workspaces_workspace");
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyItemLink", b =>
                 {
                     b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
@@ -4381,6 +4768,54 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pluggy_item_links_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggySyncRun", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyItemLink", null)
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_sync_runs_pluggy_item_links_connection_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_sync_runs_application_users_user_id");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_sync_runs_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyTransactionChange", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggySyncRun", null)
+                        .WithMany()
+                        .HasForeignKey("SyncRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_transaction_changes_pluggy_sync_runs_sync_run_id");
+
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyImportedTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_transaction_changes_pluggy_imported_transactions_tra");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_transaction_changes_financial_workspaces_workspace_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>

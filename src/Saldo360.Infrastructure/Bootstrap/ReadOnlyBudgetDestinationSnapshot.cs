@@ -44,6 +44,8 @@ public sealed record ReadOnlyBudgetDestinationSnapshot(int SchemaVersion, Guid W
         if (AppliedMigrations.Contains("20261024004947_AddOfficialInvoiceConsolidation", StringComparer.Ordinal)) expected.Add("financial_credit_card_invoice_consolidations");
         // Item links of the Pluggy laboratory (T09.1 POC) are workspace-scoped and must be empty like every other table.
         if (AppliedMigrations.Contains("20261028121402_AddPluggyItemLinks", StringComparer.Ordinal)) expected.Add("pluggy_item_links");
+        if (AppliedMigrations.Contains("20261028135409_AddPluggyTransactionImport", StringComparer.Ordinal))
+            foreach (var table in new[] { "pluggy_sync_runs", "pluggy_imported_transactions", "pluggy_transaction_changes" }) expected.Add(table);
         if (Baseline.Split(' ').Any(t => !Counts.ContainsKey(t)) || Counts.Keys.Any(t => !expected.Contains(t)) || Counts.Values.Any(n => n < 0)) Invalid("IncompleteDestinationInventoryRequiresDirectPreflight");
         if (schemaReady && expected.Any(t => !Counts.ContainsKey(t))) Invalid("MissingT09.1TablesRequiresDirectPreflight");
         foreach (var p in Counts.Where(p => p.Value != 0 && p.Key != "financial_workspace_reset_audit"))

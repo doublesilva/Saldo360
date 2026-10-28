@@ -12,16 +12,29 @@ public sealed class PluggyOptions
     /// <summary>A API Key da Pluggy dura 2 horas; renova-se com esta folga.</summary>
     public int ApiKeyLifetimeMinutes { get; set; } = 110;
     public int MaxTransactionPages { get; set; } = 20;
+    /// <summary>T09.2: importação de transações para tabelas próprias. Desligada por padrão, independente de <see cref="Enabled"/>.</summary>
+    public bool ImportEnabled { get; set; }
+    /// <summary>Limite de páginas (500 por página) por conta numa sincronização; ao atingir, a coleta é marcada como incompleta.</summary>
+    public int SyncMaxPagesPerAccount { get; set; } = 50;
+    public int SyncPageDelayMilliseconds { get; set; } = 250;
+    /// <summary>Espera padrão ao receber 429 sem <c>Retry-After</c>; o limite superior é <see cref="SyncMaxRateLimitWaitSeconds"/>.</summary>
+    public int SyncRateLimitDelaySeconds { get; set; } = 10;
+    public int SyncMaxRateLimitWaitSeconds { get; set; } = 60;
+    public int SyncRateLimitRetries { get; set; } = 2;
+    /// <summary>Uma coleta "Running" mais antiga que isto é tratada como abandonada e não bloqueia novas coletas.</summary>
+    public int SyncStaleMinutes { get; set; } = 30;
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ClientSecret);
 }
 
 public enum PluggyFailureKind { NotConfigured, Authentication, Forbidden, NotFound, RateLimited, Timeout, Unavailable, InvalidResponse, Rejected }
 
 /// <summary>Falha de integração com mensagem controlada: nunca carrega corpo de resposta, URL, token ou segredo.</summary>
-public sealed class PluggyException(PluggyFailureKind kind, int? statusCode = null) : Exception(Describe(kind))
+public sealed class PluggyException(PluggyFailureKind kind, int? statusCode = null, TimeSpan? retryAfter = null) : Exception(Describe(kind))
 {
     public PluggyFailureKind Kind { get; } = kind;
     public int? StatusCode { get; } = statusCode;
+    /// <summary>Espera pedida pela Pluggy em <c>Retry-After</c> (apenas 429).</summary>
+    public TimeSpan? RetryAfter { get; } = retryAfter;
     public static string Describe(PluggyFailureKind kind) => kind switch
     {
         PluggyFailureKind.NotConfigured => "A integração Pluggy não está configurada neste ambiente.",

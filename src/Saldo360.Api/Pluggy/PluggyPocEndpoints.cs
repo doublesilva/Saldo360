@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
 using Saldo360.Application.Pluggy;
+using Saldo360.Domain.Pluggy;
 
 namespace Saldo360.Api.Pluggy;
 
@@ -25,12 +26,18 @@ public static class PluggyPocEndpoints
         group.MapGet("/connections/{id:guid}/diagnostics", Diagnostics);
         group.MapGet("/accounts/{accountId}/transactions", ListTransactions);
         group.MapGet("/accounts/{accountId}/bills", ListBills);
+
+        // T09.2: importação controlada. Habilitada por Pluggy:ImportEnabled, além de Pluggy:Enabled.
+        group.MapPost("/connections/{id:guid}/sync", Sync).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapGet("/connections/{id:guid}/sync-runs", ListRuns);
+        group.MapGet("/connections/{id:guid}/stability", Stability);
+        group.MapGet("/imported-transactions", ListImported);
         return app;
     }
 
-    private static async Task<IResult> Status(Guid workspaceId, CurrentUser user, PluggyPocService service, CancellationToken ct) =>
+    private static async Task<IResult> Status(Guid workspaceId, CurrentUser user, PluggyPocService service, PluggyTransactionSyncService sync, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
-        : await service.CanAccessAsync(workspaceId, userId, ct) ? Results.Ok(new { enabled = true }) : Results.NotFound();
+        : await service.CanAccessAsync(workspaceId, userId, ct) ? Results.Ok(new { enabled = true, importEnabled = await sync.CanImportAsync(workspaceId, userId, ct) }) : Results.NotFound();
 
     private static async Task<IResult> ListConnections(Guid workspaceId, CurrentUser user, PluggyPocService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
@@ -66,6 +73,37 @@ public static class PluggyPocEndpoints
         if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
         if (page is < 1 || pageSize is < 1 or > 500) return Results.ValidationProblem(new Dictionary<string, string[]> { ["page"] = ["Paginação inválida."] });
         return Map(await service.ListBillsAsync(workspaceId, userId, accountId, page ?? 1, pageSize ?? 50, ct), Results.Ok);
+    }
+
+    private static async Task<IResult> Sync(Guid workspaceId, Guid id, CurrentUser user, PluggyTransactionSyncService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Map(await service.SyncAsync(workspaceId, userId, id, ct), Results.Ok);
+
+    private static async Task<IResult> ListRuns(Guid workspaceId, Guid id, CurrentUser user, PluggyTransactionSyncService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Map(await service.ListRunsAsync(workspaceId, userId, id, ct), Results.Ok);
+
+    private static async Task<IResult> Stability(Guid workspaceId, Guid id, CurrentUser user, PluggyTransactionSyncService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Map(await service.StabilityAsync(workspaceId, userId, id, ct), Results.Ok);
+
+    private static async Task<IResult> ListImported(Guid workspaceId, Guid? connectionId, string? accountId, string? from, string? to, string? status, string? classification,
+        int? page, int? pageSize, CurrentUser user, PluggyTransactionSyncService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var errors = new Dictionary<string, string[]>();
+        var start = IsoDateQuery.Parse(from, "from", errors);
+        var end = IsoDateQuery.Parse(to, "to", errors);
+        PluggyTransactionStatus? parsedStatus = null;
+        if (!string.IsNullOrEmpty(status))
+        {
+            if (Enum.TryParse<PluggyTransactionStatus>(status, false, out var s) && Enum.IsDefined(s)) parsedStatus = s; else errors["status"] = ["Status inválido."];
+        }
+        PluggyTransactionClass? parsedClass = null;
+        if (!string.IsNullOrEmpty(classification))
+        {
+            if (Enum.TryParse<PluggyTransactionClass>(classification, false, out var c) && Enum.IsDefined(c)) parsedClass = c; else errors["classification"] = ["Classificação inválida."];
+        }
+        if (page is < 1 || pageSize is < 1 or > PluggyTransactionSyncService.MaxPageSize) errors["page"] = ["Paginação inválida."];
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+        return Map(await service.ListAsync(workspaceId, userId, new(connectionId, accountId, start, end, parsedStatus, parsedClass, page ?? 1, pageSize ?? 50), ct), Results.Ok);
     }
 
     private static IResult Map<T>(PluggyResult<T> result, Func<T, IResult> ok) => result.Access switch

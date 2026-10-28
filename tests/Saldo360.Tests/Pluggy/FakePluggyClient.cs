@@ -17,6 +17,10 @@ internal sealed class FakePluggyClient : IPluggyClient
     public List<PluggyInvestment> Investments { get; } = [];
     public int TransactionPageSize { get; set; } = 2;
     public List<string> Calls { get; } = [];
+    /// <summary>Falhas consumidas uma a uma (por conta) antes de uma consulta de transações dar certo.</summary>
+    public Dictionary<string, Queue<PluggyException>> TransientFailures { get; } = [];
+    /// <summary>Permite bloquear a consulta de transações (para provar sincronizações simultâneas).</summary>
+    public Func<string, Task>? BeforeTransactions { get; set; }
 
     public static PluggyItem Item(string id, string? name = "Itaú", string status = "UPDATED", DateTimeOffset? consentExpiresAt = null, params string[] products) =>
         new(id, 601, name, "PERSONAL_BANK", true, status, "SUCCESS", DateTimeOffset.Parse("2026-01-01T00:00:00Z"), DateTimeOffset.Parse("2026-10-20T10:00:00Z"),
@@ -53,15 +57,18 @@ internal sealed class FakePluggyClient : IPluggyClient
         return account is null ? throw new PluggyException(PluggyFailureKind.NotFound, 404) : Task.FromResult(account);
     }
 
-    public Task<PluggyCursorPage<PluggyTransaction>> ListTransactionsAsync(string accountId, DateOnly? from, DateOnly? to, string? after, CancellationToken ct)
+    public async Task<PluggyCursorPage<PluggyTransaction>> ListTransactionsAsync(string accountId, DateOnly? from, DateOnly? to, string? after, CancellationToken ct)
     {
-        Calls.Add($"transactions:{accountId}:{after}");
+        lock (Calls) Calls.Add($"transactions:{accountId}:{after}");
+        if (BeforeTransactions is { } gate) await gate(accountId);
+        if (TransientFailures.TryGetValue(accountId, out var queue) && queue.TryDequeue(out var transient)) throw transient;
         if (Failures.TryGetValue($"transactions:{accountId}", out var failure)) throw failure;
+        if (after is not null && Failures.TryGetValue($"transactions-after:{accountId}", out var later)) throw later;
         var all = (TransactionsByAccount.GetValueOrDefault(accountId) ?? [])
             .Where(t => (from is null || DateOnly.FromDateTime(t.Date!.Value.UtcDateTime) >= from) && (to is null || DateOnly.FromDateTime(t.Date!.Value.UtcDateTime) <= to)).ToList();
         var skip = after is null ? 0 : int.Parse(after);
         var page = all.Skip(skip).Take(TransactionPageSize).ToArray();
-        return Task.FromResult(new PluggyCursorPage<PluggyTransaction>(page, skip + TransactionPageSize < all.Count ? (skip + TransactionPageSize).ToString() : null));
+        return new PluggyCursorPage<PluggyTransaction>(page, skip + TransactionPageSize < all.Count ? (skip + TransactionPageSize).ToString() : null);
     }
 
     public Task<PluggyPage<PluggyBill>> ListBillsAsync(string accountId, int page, int pageSize, CancellationToken ct)

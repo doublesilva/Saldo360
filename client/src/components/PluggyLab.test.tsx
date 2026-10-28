@@ -4,7 +4,7 @@ import { PluggyLab } from './PluggyLab'
 import { money } from '../pluggyFormat'
 
 const api = vi.hoisted(() => ({
-  listConnections: vi.fn(), addConnection: vi.fn(), listPluggyAccounts: vi.fn(), listPluggyTransactions: vi.fn(), listPluggyBills: vi.fn(), getDiagnostics: vi.fn(),
+  listConnections: vi.fn(), addConnection: vi.fn(), listPluggyAccounts: vi.fn(), listPluggyTransactions: vi.fn(), listPluggyBills: vi.fn(), getDiagnostics: vi.fn(), getLabStatus: vi.fn(),
 }))
 vi.mock('../api/pluggyPoc', () => api)
 
@@ -29,6 +29,7 @@ describe('PluggyLab', () => {
     vi.clearAllMocks()
     api.listConnections.mockResolvedValue([connection])
     api.listPluggyAccounts.mockResolvedValue([bank, card])
+    api.getLabStatus.mockResolvedValue({ enabled: true, importEnabled: false })
   })
 
   it('formata valores sem converter para number e mostra "Não informado" para ausentes', () => {

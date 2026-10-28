@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
-  addConnection, getDiagnostics, listConnections, listPluggyAccounts, listPluggyBills, listPluggyTransactions,
+  addConnection, getDiagnostics, getLabStatus, listConnections, listPluggyAccounts, listPluggyBills, listPluggyTransactions,
   type PluggyAccount, type PluggyBill, type PluggyConnection, type PluggyDiagnostics, type PluggyTransaction, type ResourceCoverage,
 } from '../api/pluggyPoc'
+import { PluggyImported } from './PluggyImported'
 import { connectionStates, day, money, NOT_INFORMED, resourceStates, text } from '../pluggyFormat'
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Falha inesperada.')
@@ -24,6 +25,13 @@ export function PluggyLab({ workspaceId }: { workspaceId: string }) {
   const [accountError, setAccountError] = useState<string | null>(null)
 
   const [version, setVersion] = useState(0)
+  const [importEnabled, setImportEnabled] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getLabStatus(workspaceId, controller.signal).then(status => { if (!controller.signal.aborted) setImportEnabled(status?.importEnabled === true) }).catch(() => undefined)
+    return () => controller.abort()
+  }, [workspaceId])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -55,6 +63,7 @@ export function PluggyLab({ workspaceId }: { workspaceId: string }) {
       {accounts && <TransactionsSection workspaceId={workspaceId} accounts={accounts} />}
       {accounts && <CardsSection workspaceId={workspaceId} accounts={accounts} />}
       <DiagnosticsSection key={selected} workspaceId={workspaceId} connectionId={selected} />
+      {importEnabled && accounts && connections?.find(c => c.id === selected) && <PluggyImported key={selected} workspaceId={workspaceId} connection={connections.find(c => c.id === selected)!} accounts={accounts} />}
     </>}
   </div>
 }

@@ -93,7 +93,9 @@ internal sealed class PluggyClient(IHttpClientFactory clients, PluggyApiKeyProvi
                 using var response = await clients.CreateClient(PluggyApiKeyProvider.ClientName).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 // Chave expirada ou revogada: renova uma única vez e repete a consulta.
                 if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0) { await keys.InvalidateAsync(key, ct); continue; }
-                if (!response.IsSuccessStatusCode) throw new PluggyException(PluggyClientErrors.FromStatus(response.StatusCode), (int)response.StatusCode);
+                if (!response.IsSuccessStatusCode)
+                    throw new PluggyException(PluggyClientErrors.FromStatus(response.StatusCode), (int)response.StatusCode,
+                        response.StatusCode == HttpStatusCode.TooManyRequests && response.Headers.RetryAfter?.Delta is { } wait ? wait : null);
                 return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
             }
             catch (PluggyException) { throw; }

@@ -185,5 +185,6 @@ public static class DependencyInjection
         services.AddSingleton<Saldo360.Infrastructure.Pluggy.PluggyApiKeyProvider>();
         services.AddSingleton<Saldo360.Application.Pluggy.IPluggyClient, Saldo360.Infrastructure.Pluggy.PluggyClient>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyItemLinkRepository, Saldo360.Infrastructure.Pluggy.PluggyItemLinkRepository>();
+        services.AddScoped<Saldo360.Application.Pluggy.IPluggyImportRepository, Saldo360.Infrastructure.Pluggy.PluggyImportRepository>();
     }
 }
