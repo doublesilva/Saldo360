@@ -16,6 +16,7 @@ using Saldo360.Api.Recurrences;
 using Saldo360.Api.Debts;
 using Saldo360.Api.Goals;
 using Saldo360.Api.Dashboard;
+using Saldo360.Api.Pluggy;
 using Saldo360.Api.Errors;
 using Saldo360.Api.Observability;
 using Saldo360.Application;
@@ -104,5 +105,6 @@ app.MapFinancialDebtInstallmentReconciliationEndpoints();
 app.MapFinancialGoalEndpoints();
 app.MapFinancialGoalAllocationEndpoints();
 app.MapFinancialDashboardEndpoints();
+app.MapPluggyPocEndpoints();
 
 app.Run();

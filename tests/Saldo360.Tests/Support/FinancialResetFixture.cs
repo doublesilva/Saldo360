@@ -7,6 +7,7 @@ using Saldo360.Domain.CreditCards;
 using Saldo360.Domain.Debts;
 using Saldo360.Domain.Goals;
 using Saldo360.Domain.Planning;
+using Saldo360.Domain.Pluggy;
 using Saldo360.Domain.Recurrences;
 using Saldo360.Domain.ServiceAccounts;
 using Saldo360.Domain.Transactions;
@@ -74,10 +75,11 @@ internal static class FinancialResetFixture
         var checkpoint = FinancialEmailCollectorCheckpoint.Create(w, "Synthetic");
         var service = ServiceAccount.Create(u, ServiceType.Electricity, "Synthetic", "Service", now);
         var identifier = ServiceAccountIdentifier.Create(service, ServiceIdentifierType.UtilityCustomerNumber, [1,2,3], new string('d',64), "***0000", now);
+        var pluggyLink = PluggyItemLink.Create(w, u, Guid.NewGuid().ToString("D"), "Synthetic", now);
         db.AddRange(account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, transfer,
             recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
-            scenario, parameter, document, binding, checkpoint, service, identifier);
+            scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink);
         await db.SaveChangesAsync();
         await OfficialInvoiceFixture.CloseAsync(db, invoice.Id);
         db.AddRange(cardTx, payment); await db.SaveChangesAsync();

@@ -13,7 +13,7 @@ public sealed class CiTestProfileContractTests
     private static readonly HashSet<string> Areas =
     [
         "Accounts", "Admin", "Budgets", "Cards", "Categories", "Dashboard", "Debts",
-        "Documents", "Families", "Goals", "Infrastructure", "Planning", "Platform",
+        "Documents", "Families", "Goals", "Infrastructure", "Planning", "Platform", "Pluggy",
         "Recurrences", "Scenarios", "Security", "Services", "Transactions", "Transfers", "Workspaces"
     ];
 

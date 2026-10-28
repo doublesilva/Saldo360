@@ -21,6 +21,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddScoped<FamilyService>();
+        services.AddScoped<Saldo360.Application.Pluggy.PluggyPocService>();
         services.AddScoped<FamilyInvitationService>();
         services.AddScoped<FinancialAccountService>();
         services.AddScoped<FinancialCategoryService>();

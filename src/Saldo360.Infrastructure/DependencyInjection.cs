@@ -166,6 +166,24 @@ public static class DependencyInjection
         services.AddSingleton<ICreditCardPdfPasswordProvider>(serviceProvider =>
             new LocalCreditCardPdfPasswordProvider(configuration, serviceProvider.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>()));
 
+        AddPluggyPoc(services, configuration);
+
         return services;
+    }
+
+    /// <summary>POC Pluggy (somente leitura). Credenciais só por user-secrets/variáveis de ambiente (<c>Pluggy__ClientSecret</c>).</summary>
+    private static void AddPluggyPoc(IServiceCollection services, IConfiguration configuration)
+    {
+        var pluggy = configuration.GetSection(Saldo360.Application.Pluggy.PluggyOptions.SectionName).Get<Saldo360.Application.Pluggy.PluggyOptions>() ?? new();
+        services.AddSingleton(pluggy);
+        // Caminhos e respostas da Pluggy carregam identificadores bancários: sem logs padrão de URL.
+        services.AddHttpClient(Saldo360.Infrastructure.Pluggy.PluggyApiKeyProvider.ClientName, client =>
+        {
+            client.BaseAddress = new Uri(pluggy.BaseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(pluggy.TimeoutSeconds, 5, 120));
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }).RemoveAllLoggers();
+        services.AddSingleton<Saldo360.Infrastructure.Pluggy.PluggyApiKeyProvider>();
+        services.AddSingleton<Saldo360.Application.Pluggy.IPluggyClient, Saldo360.Infrastructure.Pluggy.PluggyClient>();
+        services.AddScoped<Saldo360.Application.Pluggy.IPluggyItemLinkRepository, Saldo360.Infrastructure.Pluggy.PluggyItemLinkRepository>();
     }
 }

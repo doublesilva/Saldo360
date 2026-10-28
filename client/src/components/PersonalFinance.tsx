@@ -18,6 +18,8 @@ import { FinancialPlanning } from './FinancialPlanning'
 import { FinancialDebts } from './FinancialDebts'
 import { FinancialGoals } from './FinancialGoals'
 import { WorkspaceSettings } from './WorkspaceSettings'
+import { PluggyLab } from './PluggyLab'
+import { isPluggyLabAvailable } from '../api/pluggyPoc'
 import { retryResetCleanup, type ResetResult } from '../api/financialReset'
 
 export function PersonalFinance({ userArea }: { userArea?: ReactNode }) {
@@ -50,7 +52,15 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
   const agenda = (value: string) => { setMonth(`${value}-01`); setSection('calendar') }
   const budgets = (value: string) => { setCompetence(value); setSection('budgets') }
   const workspaceId = workspace.id
-  return <AppShell section={section} onNavigate={setSection} workspaceName={workspace.name} userArea={userArea} subtitle={section === 'overview' ? 'Seu mês em perspectiva, com os dados do seu orçamento.' : 'Seu orçamento pessoal, sem compartilhar dados com a família.'} controls={section === 'overview' ? <DashboardFilters {...filters} /> : undefined}>
+  // Laboratório experimental: só aparece quando a API o habilita para este usuário (Pluggy:Enabled).
+  const [pluggyLab, setPluggyLab] = useState(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    isPluggyLabAvailable(workspaceId, controller.signal).then(available => { if (!controller.signal.aborted) setPluggyLab(available) }).catch(() => undefined)
+    return () => controller.abort()
+  }, [workspaceId])
+  return <AppShell section={section} onNavigate={setSection} labItems={pluggyLab ? [['pluggy-lab', 'Laboratório Pluggy']] : undefined} workspaceName={workspace.name} userArea={userArea} subtitle={section === 'overview' ? 'Seu mês em perspectiva, com os dados do seu orçamento.' : 'Seu orçamento pessoal, sem compartilhar dados com a família.'} controls={section === 'overview' ? <DashboardFilters {...filters} /> : undefined}>
+    {section === 'pluggy-lab' && pluggyLab && <PluggyLab workspaceId={workspaceId} />}
     {section === 'settings' && <WorkspaceSettings workspaceId={workspaceId} onReset={onReset} />}
     {section === 'overview' && <FinancialDashboard workspaceId={workspaceId} refreshKey={version} onNavigate={setSection} filters={filters} embedded />}
     {section === 'calendar' && <FinancialCalendarPage key={month} workspaceId={workspaceId} initialMonth={month} onChanged={changed} onNavigateToBudgets={budgets} />}

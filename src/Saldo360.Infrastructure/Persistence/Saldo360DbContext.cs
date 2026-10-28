@@ -75,6 +75,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialDebtPayment> FinancialDebtPayments => Set<FinancialDebtPayment>();
     public DbSet<FinancialDebtInstallmentReconciliation> FinancialDebtInstallmentReconciliations => Set<FinancialDebtInstallmentReconciliation>();
     public DbSet<FinancialGoal> FinancialGoals => Set<FinancialGoal>();
+    public DbSet<Saldo360.Domain.Pluggy.PluggyItemLink> PluggyItemLinks => Set<Saldo360.Domain.Pluggy.PluggyItemLink>();
     public DbSet<FinancialGoalAllocation> FinancialGoalAllocations => Set<FinancialGoalAllocation>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
