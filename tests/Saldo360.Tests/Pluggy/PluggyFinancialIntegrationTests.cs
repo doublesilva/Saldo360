@@ -663,6 +663,55 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
     }
 
     [Fact]
+    public async Task PixBetweenIntegratedAccountsBecomesATransferAndAlreadyAppliedMovementsAreReplaced()
+    {
+        var c = await ArrangeAsync("t93-pix-transfer", seed: false);
+        var itemB = await LinkAsync(c.Client, c.Session, c.Workspace, ItemB, "Nubank");
+        // PIX com terceiros (sem ponta oposta numa conta integrada) segue como receita/despesa.
+        Pluggy.TransactionsByAccount[BankA] = [Tx("own-out", BankA, 6, -500m, operation: "PIX", description: "PIX ENVIADO", category: "Transfer - PIX"), Tx("third", BankA, 5, -80m, operation: "PIX", description: "PIX ENVIADO", category: "Transfer - PIX")];
+        Pluggy.TransactionsByAccount[BankB] = [];
+        var a = (await LinkBankAsync(c)).GetProperty("link").GetProperty("financialAccountId").GetGuid();
+        await SyncAsync(c);
+        await using var db = Db();
+        Assert.Equal([80m, 500m], (await CoreAsync(c.Workspace)).Select(t => t.Amount).Order()); // as duas pontas ainda são despesas isoladas
+
+        Pluggy.TransactionsByAccount[BankB] = [Tx("own-in", BankB, 6, 500m, operation: "PIX", description: "PIX RECEBIDO", category: "Transfer - PIX")];
+        var response = await PostAsync(c, $"{Integration(c.Workspace)}/links", new { connectionId = itemB, pluggyAccountId = BankB, mode = "CreateNew", name = "Nubank", financialScope = "PF" });
+        var b = (await JsonOf(response)).GetProperty("link").GetProperty("financialAccountId").GetGuid();
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(c, $"{Root(c.Workspace)}/connections/{itemB}/sync")).StatusCode);
+
+        var transfer = await db.FinancialTransfers.AsNoTracking().SingleAsync();
+        Assert.Equal((a, b, 500m, false), (transfer.SourceAccountId, transfer.DestinationAccountId, transfer.Amount, transfer.IsCancelled));
+        Assert.Equal([80m], (await CoreAsync(c.Workspace)).Select(t => t.Amount)); // a despesa de 500 foi substituída pela transferência
+        var calendar = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-calendar?from={D(40)}&through={D(0)}");
+        Assert.Equal(("0.00", "80.00"), (calendar.GetProperty("summary").GetProperty("realizedIncome").GetString(), calendar.GetProperty("summary").GetProperty("realizedExpense").GetString()));
+        Assert.Empty(Reasons(await ReviewAsync(c)));
+
+        await SyncAsync(c);
+        Assert.Equal(1, await db.FinancialTransfers.CountAsync(t => !t.IsCancelled));
+        Assert.Equal([80m], (await CoreAsync(c.Workspace)).Select(t => t.Amount));
+    }
+
+    [Fact]
+    public async Task AmbiguousPixCounterpartsGoToReviewInsteadOfGuessing()
+    {
+        var c = await ArrangeAsync("t93-pix-ambiguous", seed: false);
+        var itemB = await LinkAsync(c.Client, c.Session, c.Workspace, ItemB, "Nubank");
+        Pluggy.TransactionsByAccount[BankA] = [Tx("out", BankA, 6, -300m, operation: "PIX", description: "PIX ENVIADO", category: "Transfer - PIX")];
+        Pluggy.TransactionsByAccount[BankB] = [Tx("in1", BankB, 6, 300m, operation: "PIX", description: "PIX RECEBIDO", category: "Transfer - PIX"), Tx("in2", BankB, 6, 300m, operation: "PIX", description: "PIX RECEBIDO", category: "Transfer - PIX")];
+        await LinkBankAsync(c);
+        await PostAsync(c, $"{Integration(c.Workspace)}/links", new { connectionId = itemB, pluggyAccountId = BankB, mode = "CreateNew", name = "Nubank", financialScope = "PF" });
+
+        await SyncAsync(c);
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(c, $"{Root(c.Workspace)}/connections/{itemB}/sync")).StatusCode);
+
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialTransfers.CountAsync());
+        Assert.Equal([300m], (await CoreAsync(c.Workspace)).Select(t => t.Amount)); // a ponta já lançada antes de a outra conta existir permanece como estava
+        Assert.Equal(["AmbiguousTransferCounterpart", "AmbiguousTransferCounterpart"], Reasons(await ReviewAsync(c))); // as duas candidatas não são adivinhadas
+    }
+
+    [Fact]
     public async Task ASourceChangeOnACardPurchaseUpdatesTheSamePurchaseInsteadOfDuplicatingIt()
     {
         var c = await ArrangeAsync("t93-card-update", seed: false);

@@ -168,7 +168,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 if (!decisions.TryGetValue(posting.ImportedTransactionId, out var movement)) continue;
                 var counterpart = byId.GetValueOrDefault(posting.CounterpartPostingId!.Value);
                 var userBroke = counterpart is null || counterpart.State is PluggyPostingState.Ignored;
-                var changed = posting.State == PluggyPostingState.Applied && movement.Disposition is PluggyDisposition.TransferCandidate or PluggyDisposition.BankMovement or PluggyDisposition.BankDebitBillHint
+                var changed = posting.State == PluggyPostingState.Applied && movement.Disposition is PluggyDisposition.TransferCandidate or PluggyDisposition.TransferProbe or PluggyDisposition.BankMovement or PluggyDisposition.BankDebitBillHint
                     && (posting.AppliedAmount != movement.Amount || posting.AppliedDate != movement.Date);
                 if (!userBroke && !changed) continue;
                 // Um dos lados mudou: cancela o que o par gerou e devolve as duas pontas para nova correspondência.
@@ -209,15 +209,28 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             PairItem Item(Guid importedId, bool hint) => new(importedId, linkOf[importedId].Id, decisions[importedId].Amount, decisions[importedId].Date, hint);
             bool Free(Guid importedId) => !Settled(postings[importedId]) && postings[importedId].State != PluggyPostingState.Ignored;
 
-            var transferDebits = decisions.Where(d => d.Value.Disposition == PluggyDisposition.TransferCandidate && d.Value.IsDebit && Free(d.Key)).Select(d => Item(d.Key, false)).ToList();
-            var transferCredits = decisions.Where(d => d.Value.Disposition == PluggyDisposition.TransferCandidate && !d.Value.IsDebit && Free(d.Key)).Select(d => Item(d.Key, false)).ToList();
-            var transferResult = PluggyPairing.Match(transferDebits, transferCredits, TransferToleranceDays, differentLinks: true);
+            // Transferências só se casam com a mesma operação do banco nas duas pontas (PIX com PIX, TED com TED...); nunca por descrição.
+            var transferPairs = new List<(Guid Source, Guid Target)>();
+            var transferAmbiguous = new HashSet<Guid>();
+            var transferSides = decisions.Where(d => d.Value.Disposition is PluggyDisposition.TransferCandidate or PluggyDisposition.TransferProbe && Free(d.Key))
+                .GroupBy(d => imported[d.Key].OperationType?.ToUpperInvariant() ?? string.Empty);
+            foreach (var operation in transferSides)
+            {
+                var debits = operation.Where(d => d.Value.IsDebit).Select(d => Item(d.Key, false)).ToList();
+                var credits = operation.Where(d => !d.Value.IsDebit).Select(d => Item(d.Key, false)).ToList();
+                var result = PluggyPairing.Match(debits, credits, TransferToleranceDays, differentLinks: true);
+                transferPairs.AddRange(result.Pairs);
+                transferAmbiguous.UnionWith(result.Ambiguous);
+            }
+            var transferResult = new PairingResult(transferPairs, transferAmbiguous);
 
             var cardPayments = decisions.Where(d => d.Value.Disposition == PluggyDisposition.CardBillPayment && Free(d.Key)).Select(d => Item(d.Key, false)).ToList();
             // Candidatos bancários: débitos sem decisão manual. Um débito já lançado como despesa pode ser reclassificado como pagamento de fatura.
-            var bankDebits = decisions.Where(d => d.Value.IsDebit && linkOf[d.Key].Kind == PluggyLinkedAccountKind.Bank && postings[d.Key].Resolution is null
+            // PIX/TED que já formou transferência com outra conta integrada não pode ser, ao mesmo tempo, pagamento de fatura.
+            var transferPaired = transferResult.Pairs.SelectMany(p => new[] { p.Source, p.Target }).ToHashSet();
+            var bankDebits = decisions.Where(d => d.Value.IsDebit && linkOf[d.Key].Kind == PluggyLinkedAccountKind.Bank && postings[d.Key].Resolution is null && !transferPaired.Contains(d.Key)
                     && (d.Value.Disposition == PluggyDisposition.BankDebitBillHint
-                        || (d.Value.Disposition == PluggyDisposition.BankMovement && d.Value.Reason != "UserDecision" && AppliedAsBankMovementOrNew(postings[d.Key])))
+                        || (d.Value.Disposition is PluggyDisposition.BankMovement or PluggyDisposition.TransferProbe && d.Value.Reason != "UserDecision" && AppliedAsBankMovementOrNew(postings[d.Key])))
                     && !Settled(postings[d.Key]) && postings[d.Key].State != PluggyPostingState.Ignored)
                 .Select(d => Item(d.Key, d.Value.Disposition == PluggyDisposition.BankDebitBillHint)).ToList();
             var billResult = PluggyPairing.Match(cardPayments, bankDebits, BillPaymentToleranceDays, differentLinks: true);
@@ -247,6 +260,12 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                     ToReview(posting, pairs.BillAmbiguous.Contains(t.Id) ? "AmbiguousCardBillPayment" : "UnconfirmedCardBillPayment"); break;
                 case PluggyDisposition.TransferCandidate:
                     ToReview(posting, pairs.TransferAmbiguous.Contains(t.Id) ? "AmbiguousTransferCounterpart" : "TransferWithoutCounterpart"); break;
+                case PluggyDisposition.TransferProbe:
+                    // Sem ponta oposta numa conta integrada é receita/despesa comum (PIX/TED com terceiros); só a dúvida real vai para revisão.
+                    if (pairs.TransferAmbiguous.Contains(t.Id)) ToReview(posting, "AmbiguousTransferCounterpart");
+                    else if (pairs.BillAmbiguous.Contains(t.Id)) ToReview(posting, "AmbiguousCardBillPayment");
+                    else ApplyBankMovement(t, link, movement, posting);
+                    break;
                 case PluggyDisposition.CardBillPayment:
                     ToReview(posting, pairs.BillAmbiguous.Contains(t.Id) ? "AmbiguousBankDebit" : "BillPaymentWithoutBankDebit"); break;
                 case PluggyDisposition.BankMovement:

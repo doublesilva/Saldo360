@@ -29,6 +29,11 @@ public enum PluggyDisposition
     BankDebitBillHint,
     /// <summary>Transferência entre contas da mesma instituição: só vira transferência se a outra ponta for uma conta integrada.</summary>
     TransferCandidate,
+    /// <summary>
+    /// PIX, TED ou DOC de conta bancária: na maioria das vezes é receita/despesa com terceiros, mas vira transferência quando existe a ponta
+    /// oposta numa conta integrada (valor exato, mesma operação, sentidos opostos, correspondência única). Sem par, segue como movimento.
+    /// </summary>
+    TransferProbe,
     /// <summary>Compra ou parcela de cartão.</summary>
     CardPurchase,
     /// <summary>Crédito no cartão que paga a fatura: evidência do pagamento, nunca receita.</summary>
@@ -150,6 +155,7 @@ public static class PluggyFinancialMapper
             case PluggyTransactionClass.PotentialIncome or PluggyTransactionClass.PotentialExpense:
                 // Estorno/devolução volta o valor de um gasto anterior: não é receita nova.
                 if (isCredit && operation is "ESTORNO" or "DEVOLUCAO") return result(PluggyDisposition.Review, "PossibleRefund", null);
+                if (operation is "PIX" or "TED" or "DOC") return result(PluggyDisposition.TransferProbe, f.ClassReason, null);
                 return result(PluggyDisposition.BankMovement, f.ClassReason, null);
             case PluggyTransactionClass.PotentialTransfer:
                 return f.ClassReason switch

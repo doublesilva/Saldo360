@@ -68,6 +68,7 @@ Usa campos **estruturados** (tipo `DEBIT`/`CREDIT`, operação, metadados de car
 | Crédito no cartão com operação `PAGAMENTO_FATURA` | Evidência do pagamento (`Covered`); nunca receita. |
 | Débito bancário igual (valor) e próximo (±3 dias) a um pagamento de fatura de cartão integrado, **correspondência única** | Pagamento de fatura (ver abaixo). A dica "descrição cita fatura" só desempata. |
 | Transferência na mesma instituição, débito × crédito de mesmo valor em contas integradas diferentes (±1 dia), **correspondência única** | `FinancialTransfer`; não infla receitas/despesas. |
+| `PIX`/`TED`/`DOC` bancário (disposição `TransferProbe`), débito × crédito de **mesma operação**, mesmo valor, contas integradas diferentes (±1 dia), **correspondência única** | `FinancialTransfer` (substitui o lançamento simples já criado). Sem ponta oposta numa conta integrada continua receita/despesa (a maioria dos PIX é com terceiros); ambíguo → revisão `AmbiguousTransferCounterpart`. Nunca usa a descrição. *(Regra acrescentada na validação com dados reais, §11.)* |
 | Transferência/pagamento sem contrapartida, ambíguos, saque, resgate, estorno, crédito/empréstimo, crédito no cartão, operação de cartão desconhecida | **Revisão**: fora de receitas, despesas e saldos até decisão. |
 | Categoria da Pluggy | Mapeada por nome (sem acento/caixa) ou apelido conhecido **só se o orçamento tiver a categoria**; senão sem categoria. |
 
@@ -98,7 +99,7 @@ Autenticação/autorização existentes (dono do orçamento) e CSRF; Item e cont
 
 ## 10. Limitações
 
-- **Validação com dados reais pendente.** Nenhuma regra desta etapa foi exercitada contra os três Itens reais; a estabilidade da T09.2 (≥ 2 sincronizações) ainda precisa ser medida e é pré-requisito para confiar no pareamento.
+- **Validação com dados reais** feita no laboratório em 28/10/2026 (ver §11): estabilidade da T09.2 comprovada; os achados e limitações da validação estão em §11.
 - **Fatura oficial só com total exato.** Encargos, juros, estornos de cartão, histórico parcial e itens pendentes mantêm a fatura aberta e o pagamento em revisão; não há lançamento automático de encargos nem de estorno de cartão (ficam em revisão).
 - Quando a compra não traz fatura do banco, usa-se o calendário do cartão (dias informados), que pode diferir do fechamento real; compras já lançadas dessa forma não são movidas depois.
 - Cada transação de cartão é uma compra de uma parcela: não há ligação entre parcelas nem projeção de parcelas futuras além das que a Pluggy devolve.
@@ -108,3 +109,69 @@ Autenticação/autorização existentes (dono do orçamento) e CSRF; Item e cont
 - Pagamento de fatura de cartão cujo débito sai de conta não integrada fica em revisão (o Saldo360 não cria saída em conta que não acompanha).
 - Mudança de origem num lançamento depois de pareado em transferência/pagamento desfaz o par e o reavalia; se não houver nova correspondência, vai para revisão.
 - Sem agendamento: a sincronização continua manual.
+
+## 11. Validação com dados reais (laboratório, 28/10/2026)
+
+Executada só no banco local `saldo360_pluggy_lab`, com os três Itens MeuPluggy (Itaú PF, Itaú PJ e Nubank PJ). Este relatório registra **apenas contagens e situações**: nenhum valor individual, descrição, identificador de Item/conta, número de conta/cartão ou credencial.
+
+### 11.1 Migrations aplicadas
+
+`AddPluggyFinancialIntegration` e `AddPluggyCardBills`, nesta ordem, com a connection string do laboratório (conferida antes). Backup do banco e contagem de linhas de todas as tabelas antes e depois: só mudaram o histórico de migrations (+2) e as três tabelas novas (`pluggy_account_links`, `pluggy_postings`, `pluggy_card_bills`). Nenhuma tabela operacional existente foi alterada ou esvaziada; não houve reset do orçamento. O banco principal (`saldo360`) não foi tocado.
+
+### 11.2 Sincronização real (estabilidade da T09.2)
+
+| Conexão | Contas | Transações | 1ª coleta (novas) | 2ª e demais coletas |
+|---|---|---|---|---|
+| Itaú PF | 4 (1 conta + 3 cartões) | 1787 | 1787 | 0 novas, 0 atualizadas, 1787 inalteradas |
+| Itaú PJ | 2 (1 conta + 1 cartão) | 154 | 154 | 0 novas, 0 atualizadas, 154 inalteradas |
+| Nubank PJ | 2 (1 conta + 1 cartão) | 63 | 63 | 0 novas, 0 atualizadas, 63 inalteradas |
+
+Foram 4 coletas por conexão (2 antes do vínculo das contas, 1 depois do vínculo bancário, 1 depois do vínculo dos cartões), todas `Completed`, 0 erros, 0 coletas incompletas, 0 ausentes. Total: **2004 transações** (855 bancárias, 1149 de cartão); 0 IDs externos duplicados; 0 mudanças de status ou de valor registradas; todos os IDs preservados entre coletas. Há 3 grupos (6 transações) com a mesma chave de possível duplicidade (a chave não é identidade; não há duplicidade real). 79 transações têm data futura (cartão parcelado e agendamentos) e 5 não são BRL; ambos os casos não entram no realizado.
+
+### 11.3 Associação das contas (pela interface)
+
+Origem Pluggy → Item → conta/cartão devolvido → criar com os metadados. Vinculadas **3 contas bancárias** (Itaú PF corrente, Itaú PJ corrente, Nubank PJ) e **5 cartões** (3 do Itaú PF, 1 do Itaú PJ, 1 do Nubank PJ). A Pluggy não informa o dia de fechamento dos cartões; os dias foram informados pelo usuário. Importação sem data de início (todo o histórico devolvido). Duplicidade: a interface desabilita a conta já vinculada e o servidor responde **409** ao reenvio da mesma conta externa (404 para conexão inexistente e 400 para conta que não pertence ao Item); nenhuma linha criada nessas tentativas.
+
+### 11.4 Resultado financeiro
+
+| Indicador | Resultado |
+|---|---|
+| Rastros (um por transação importada) | 2004: 1684 aplicados, 209 em revisão, 111 aguardando (pendentes/futuros) |
+| Lançamentos financeiros ativos criados | 769 (643 despesas, 126 receitas) |
+| Transferências entre contas integradas | 23 (46 pontas) |
+| Compras de cartão (uma parcela cada) | 869 |
+| Lançamentos substituídos por transferência (cancelados pelo motor) | 46 |
+| Movimentações enviadas para revisão | 209 |
+| Pendentes/futuras que viraram lançamento | 0 |
+| Lançamentos/compras duplicados (mesmo rastro em mais de um registro) | 0 |
+
+Revisão por motivo: crédito no cartão 71 (estornos/créditos), pagamento de fatura sem fatura oficial 46, operação de cartão não classificada 32, operação de crédito bancária 19, operação de crédito no cartão 13, transferência sem contrapartida integrada 12, moeda estrangeira 5, resgate de investimento 4, pagamento de fatura sem débito bancário 4, estorno de cartão 1, possível pagamento de fatura não confirmado 1, saque 1.
+
+**Conciliação com a Pluggy.** Para cada conta bancária, total de movimentos efetivados da Pluggy = aplicado + em revisão, com **diferença de 0 centavo** nas três contas (antes e depois da regra de transferência). Nas compras de cartão, soma importada = soma aplicada, 0 centavo de diferença. As diferenças em relação ao agregado bruto da Pluggy se explicam integralmente por: pendentes/futuros (não contabilizados), itens em revisão e transferências entre contas integradas (que saem de receitas e despesas).
+
+**Dashboard e Agenda.** Receitas e despesas realizadas da competência 2026-10 conferem em centavos com a soma dos lançamentos no banco; pendentes aparecem zerados; a Agenda lista os mesmos itens realizados; saldo realizado e fechamento projetado aparecem como **indisponíveis** (sem saldo inicial) com cobertura parcial, e o bloco de cartões mostra os 5 cartões e as faturas sem fechamento oficial.
+
+**Categorias.** O orçamento do laboratório não tinha categorias; foram criadas duas (Alimentação e Serviços) para o teste. A categoria escolhida pelo usuário num lançamento importado (origem `User`) **sobreviveu à coleta seguinte** e ao reprocessamento. O mapeamento por nome só vale para lançamentos criados depois de a categoria existir (ver 11.5). Todos os 769 lançamentos continuam sem categoria, exceto o do teste.
+
+**Saldos.** Observado (banco) disponível nas 3 contas; **calculado indisponível** nas 3 (sem saldo inicial; nenhum saldo foi ajustado ou aplicado). Sugestão de saldo inicial: indisponível em Itaú PF e Itaú PJ (movimentos em revisão, `ReviewPending`) e disponível no Nubank PJ, **não aplicada** (depende de confirmação). Por isso a divergência saldo observado × calculado **não pôde ser medida**: ela só existe depois que o usuário informar um saldo inicial independente (por exemplo, de um extrato) e resolver a revisão; a sugestão do sistema é, por construção, igual ao observado.
+
+### 11.5 Problemas encontrados
+
+1. **PIX/TED/DOC entre contas do próprio usuário contados como receita e despesa** (achado do usuário na tela de lançamentos). A regra de transferência só reconhecia `TRANSFERENCIA_MESMA_INSTITUICAO`; transferências PF↔PJ chegam como `PIX`/`TED`. Isso inflava receitas e despesas do mês. **Corrigido** (disposição `TransferProbe`, §5): 23 pares reais foram pareados no reprocessamento (receitas e despesas de 2026-10 caíram o mesmo valor, o resultado líquido do mês não mudou, reprocessar de novo não altera nada). 12 créditos `TRANSFERENCIA_MESMA_INSTITUICAO` continuam em revisão porque a outra ponta está numa conta não integrada. Testes adicionados (11.7).
+2. **Nenhuma fatura de cartão pôde ser fechada oficialmente** com dados reais, e portanto **nenhum pagamento de fatura foi registrado**. Das 51 faturas do banco já fechadas com total, 50 têm algum item pendente ou em revisão (créditos, estornos, operações não classificadas) e uma não tem transações importadas; o critério "total do banco = soma exata das compras importadas, sem itens em aberto" é conservador demais para a realidade desses cartões. As faturas não foram fechadas artificialmente e a trava `OFFICIAL_INVOICE_REQUIRED_FOR_PAYMENT` foi mantida.
+3. **Pagamentos de fatura continuam como despesa bancária simples.** 39 débitos bancários (categoria estruturada "pagamento de cartão" da Pluggy) seguem como despesa porque a fatura correspondente não é oficial. No fluxo de caixa isso está correto (o dinheiro saiu), mas o consumo desses cartões também aparece nas compras do cartão; consumos categorizados poderiam ser somados duas vezes em visões de consumo por categoria. Nada foi reclassificado automaticamente.
+4. **Categorias criadas depois da importação não são aplicadas retroativamente** aos lançamentos já criados (o mapeamento roda quando o rastro nasce). Itens sem categoria precisam de ação do usuário.
+5. **Dia de fechamento dos cartões não vem da Pluggy** (fechamento ausente nos três Itens): o cadastro depende do usuário. Dois cartões (fechamento e vencimento no mesmo dia 15) foram aceitos pelo cadastro; vale confirmar com a fatura real.
+6. Detalhes operacionais: a primeira carga do seletor de conexões é lenta (consulta a Pluggy por Item); a sugestão de saldo inicial só existe depois de uma sincronização posterior ao vínculo.
+
+### 11.6 Pendências para o usuário (não executadas)
+
+- Resolver os 209 movimentos em revisão (principalmente créditos/estornos de cartão e operações de crédito) e decidir o tratamento de pagamentos de fatura.
+- Informar saldo inicial a partir de fonte independente; só então a divergência observado × calculado passa a ser mensurável.
+- Decidir a categorização automática dos lançamentos importados: o agente existente é de extração de faturas em PDF e não está configurado neste ambiente.
+
+### 11.7 Testes direcionados
+
+- `--filter "Area=Pluggy"` após a correção das transferências: **195 aprovados, 0 falhas** (inclui 3 testes novos: `PixTedAndDocAreTransferProbesAndNeverDependOnTheDescription`, `PixBetweenIntegratedAccountsBecomesATransferAndAlreadyAppliedMovementsAreReplaced`, `AmbiguousPixCounterpartsGoToReviewInsteadOfGuessing`).
+- Suíte completa do backend: 1678 aprovados, 3 falhas (as mesmas 3 de `RealOcrToolTests`, que dependem de Poppler/Tesseract nativos ausentes nesta máquina e não têm relação com a Pluggy).
+- Os testes de mapeador passaram a usar operação `BOLETO` como padrão (antes `PIX`), porque `PIX` agora é um caso próprio.

@@ -13,7 +13,7 @@ public sealed class PluggyFinancialMapperTests
     private static readonly DateOnly Today = new(2026, 10, 28);
 
     private static ImportedFacts Facts(PluggyLinkedAccountKind kind = PluggyLinkedAccountKind.Bank, string? type = "DEBIT", decimal? amount = -10.25m, string status = "Posted",
-        string? operation = "PIX", string day = "2026-10-05", PluggyTransactionClass? cls = null, string reason = "BankDebit:PIX", string? currency = "BRL",
+        string? operation = "BOLETO", string day = "2026-10-05", PluggyTransactionClass? cls = null, string reason = "BankDebit:BOLETO", string? currency = "BRL",
         int? number = null, int? total = null, string? description = "Mercado", DateOnly? importFrom = null, string? category = null)
     {
         var snapshot = new PluggyTransactionSnapshot("t", "a", kind == PluggyLinkedAccountKind.Bank ? "BANK" : "CREDIT", "Conta", DateTimeOffset.Parse(day + "T12:00:00Z"), amount, currency,
@@ -42,7 +42,7 @@ public sealed class PluggyFinancialMapperTests
     public void PostedBankDebitAndCreditBecomeExpenseAndIncomeWithExactCents()
     {
         var expense = PluggyFinancialMapper.Decide(Facts(), Today);
-        var income = PluggyFinancialMapper.Decide(Facts(type: "CREDIT", amount: 1234.56m, operation: "PIX"), Today);
+        var income = PluggyFinancialMapper.Decide(Facts(type: "CREDIT", amount: 1234.56m, operation: "BOLETO"), Today);
 
         Assert.Equal((PluggyDisposition.BankMovement, CategoryType.Expense, 10.25m), (expense.Disposition, expense.Direction!.Value, expense.Amount));
         Assert.Equal((PluggyDisposition.BankMovement, CategoryType.Income, 1234.56m), (income.Disposition, income.Direction!.Value, income.Amount));
@@ -103,6 +103,17 @@ public sealed class PluggyFinancialMapperTests
         Assert.Equal(PluggyDisposition.TransferCandidate, transfer.Disposition);
         Assert.Equal(PluggyDisposition.BankDebitBillHint, hint.Disposition);
         Assert.Equal(("Review", "NoCounterpart:CashWithdrawal"), (withdrawal.Disposition.ToString(), withdrawal.Reason));
+    }
+
+    [Fact]
+    public void PixTedAndDocAreTransferProbesAndNeverDependOnTheDescription()
+    {
+        foreach (var operation in new[] { "PIX", "TED", "DOC" })
+        {
+            Assert.Equal(PluggyDisposition.TransferProbe, PluggyFinancialMapper.Decide(Facts(type: "DEBIT", operation: operation, description: "COMPRA QUALQUER"), Today).Disposition);
+            Assert.Equal(PluggyDisposition.TransferProbe, PluggyFinancialMapper.Decide(Facts(type: "CREDIT", operation: operation, description: "PARA OUTRA CONTA MINHA"), Today).Disposition);
+        }
+        Assert.Equal(PluggyDisposition.BankMovement, PluggyFinancialMapper.Decide(Facts(type: "DEBIT", operation: "BOLETO", description: "TRANSFERENCIA PARA MIM"), Today).Disposition);
     }
 
     [Fact]
