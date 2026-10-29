@@ -21,6 +21,7 @@ import {
 } from '../api/accounts'
 import { isPluggyIntegrationAvailable } from '../api/pluggyIntegration'
 import { PluggyAccountLinkForm } from './PluggyAccountLinkForm'
+import { AccountBalanceReconciliation } from './AccountBalanceReconciliation'
 import { PluggyAccountPanel, PluggyIntegrationSection } from './PluggyIntegration'
 type ResponsibleUserOption = { userId: string; displayName: string; isCurrentUser: boolean }
 import { endOfMonth, todayInSaoPaulo } from '../dates'
@@ -194,6 +195,7 @@ export function Accounts({
         </p>
       )}
 
+      {integrationAvailable && <AccountBalanceReconciliation workspaceId={workspaceId} refreshKey={`${reloadKey}:${balanceVersion}`} />}
       {list.kind === 'loaded' && list.accounts.length > 0 && (
         <ul className="account-list">
           {list.accounts.map((account) => (
@@ -271,6 +273,8 @@ export function Accounts({
  */
 function OpeningBalanceSummary({ account }: { account: FinancialAccount }) {
   if (account.openingBalance === null || account.openingBalanceDate === null) {
+    // Conta integrada: o saldo parte da referência bancária; não se pede saldo inicial manual.
+    if (account.origin === 'Pluggy') return <p className="account__opening meta">Sem saldo inicial manual: o saldo parte da referência bancária (veja a conciliação acima).</p>
     return <p className="account__opening meta">Saldo inicial não informado</p>
   }
   return (

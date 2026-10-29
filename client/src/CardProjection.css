@@ -27,3 +27,10 @@
   .card-overview__facts { grid-template-columns: 1fr 1fr; }
   .card-planning__table th, .card-planning__table td { padding: .35rem .4rem; font-size: .85rem; }
 }
+
+/* T09.5: estado da conciliação de saldo por conta */
+.balance-reconciliation { margin: 1rem 0 1.5rem; }
+.balance-reconciliation__period { margin-top: .8rem; }
+.badge--status-nodivergence { color: var(--success, #1a7f37); }
+.badge--status-movementsinreview, .badge--status-incompletehistory { color: var(--warning, #9a6700); }
+.badge--status-divergencefound, .badge--status-insufficientbankreference { color: var(--danger, #b42318); }

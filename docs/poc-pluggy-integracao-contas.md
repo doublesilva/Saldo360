@@ -421,3 +421,13 @@ Detalhes completos em [T09.4-projecao-cartoes.md](T09.4-projecao-cartoes.md). Re
 - **Ciclo**: histórico consistente do banco é evidência forte; no lab apenas 1 dos 5 cartões a tem. Os demais usam a última fatura (fraca) e a projeção sai marcada; o cadastro não é alterado.
 - **Sem migration** e sem gravação: três consultas de leitura (`invoice-overview`, `obligation-projection`, `{cardId}/projected-installments`) e três telas no módulo de cartões.
 - **Limitação**: previsões/recorrências equivalentes a compras do cartão não são deduplicadas automaticamente (heurística arriscada); a conciliação previsão↔fatura existente continua valendo.
+
+## 16. T09.5 — Saldos bancários e conciliação de divergências
+
+Detalhes completos em [T09.5-saldos-bancarios-conciliacao.md](T09.5-saldos-bancarios-conciliacao.md). Resumo para a integração:
+
+- **Comparação somente leitura** entre o saldo informado pelo banco (âncora) e o calculado pelo núcleo, por conta integrada, com cinco classificações e **nenhum ajuste**. Sem migration e sem segundo motor de cálculo.
+- **Reconstrução independente do lado do banco** com as movimentações POSTED importadas (pendentes e futuras fora, pagamento de fatura na data da saída, transferências em cada ponta): cobre meses que o saldo calculado ainda não cobre, e a diferença entre os dois lados é a soma exata das movimentações em revisão.
+- **Laboratório**: Itaú PF e Itaú PJ com referência provisória e movimentações em revisão (21 e 4), Nubank PJ confiável e sem divergência; diferença zero nas três; nenhuma âncora promovida. A abertura de outubro/2026 é reconstruída pelo banco nas contas Itaú e passa a ser calculada quando 1 item de cada conta (datado de 01/10 em diante) for decidido.
+- **Dashboard e Agenda**: partem do mesmo saldo calculado; Dashboard separa PF e PJ, marca referência provisória/revisões e não apresenta total parcial como completo.
+- **Limitação**: Agenda e Dashboard seguem usando o saldo calculado; meses sem histórico calculável continuam indisponíveis até os itens em revisão serem decididos.

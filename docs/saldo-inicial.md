@@ -221,3 +221,11 @@ O componente de cartão é aplicado após o saldo realizado e as previsões exis
 
 Quando uma previsão está explicitamente conciliada a uma fatura, ela é removida apenas do componente de previsões pendentes; a obrigação da fatura continua sendo descontada. Consulte [conciliação de faturas](conciliacao-faturas.md).
 Obrigações de parcelas de dívidas seguem a conta preferencial da dívida quando válida. Sem conta atribuída, a projeção é marcada como incompleta e nenhum saldo de conta é reduzido arbitrariamente.
+
+# Referência bancária e conciliação de saldo (integração Pluggy, T09.5)
+
+Contas integradas não exigem saldo inicial manual quando há **referência bancária** suficiente: o saldo observado pelo banco e as movimentações importadas derivam a abertura do intervalo calculável (o saldo inicial manual, quando existe, sempre prevalece). O saldo calculado é o do núcleo; a comparação com o banco é **somente leitura**: a diferença é informada e classificada (sem divergência, divergência identificada, histórico incompleto, movimentações em revisão, referência bancária insuficiente) e **nunca** vira ajuste, lançamento ou saldo inicial.
+
+- O limite do cheque especial é crédito do banco: aparece à parte e nunca é somado ao saldo. Saldo positivo com cheque especial em uso torna a natureza do saldo incerta e a referência inutilizável.
+- Antes do primeiro dia calculável o saldo é **indisponível**, não zero. A reconstrução do lado do banco (saldo observado − movimentações POSTED desde o dia) mostra o que o histórico importado permite; a diferença para o calculado é a soma das movimentações ainda em revisão.
+- Detalhes, APIs e o diagnóstico das contas do laboratório: [T09.5-saldos-bancarios-conciliacao.md](T09.5-saldos-bancarios-conciliacao.md).

@@ -22,6 +22,7 @@ public sealed class FinancialDashboardService(
     IFinancialCreditCardPurchaseRepository purchases,
     IFinancialDebtRepository debts,
     IFinancialGoalAllocationRepository allocations,
+    Saldo360.Application.Accounts.Reconciliation.AccountBalanceReconciliationService reconciliation,
     TimeProvider timeProvider)
 {
     public async Task<FinancialDashboardResult> GetAsync(Guid workspaceId, Guid userId, DateOnly competence, int months, CancellationToken ct)
@@ -46,6 +47,8 @@ public sealed class FinancialDashboardService(
         if (calendarResult.NotFound) return FinancialDashboardResult.NotFoundResult;
 
         var accountDtos = await accounts.ListAsync(workspaceId, true, ct);
+        // Referência bancária e classificação de cada conta integrada (a mesma leitura da tela de contas): o Dashboard só mostra, nunca ajusta.
+        var reconciled = (await reconciliation.BuildOverviewAsync(workspaceId, ct)).Accounts.ToDictionary(item => item.AccountId);
         var accountBalances = new List<FinancialDashboardAccountBalance>();
         // Conta sem saldo inicial manual pode usar o derivado da referência bancária (âncora), quando confiável; o manual sempre prevalece.
         var anchored = await accounts.GetAnchoredOpeningsAsync(workspaceId, ct);
@@ -55,12 +58,18 @@ public sealed class FinancialDashboardService(
             var opening = account.OpeningBalance; var openingDate = account.OpeningBalanceDate;
             if ((opening is null || openingDate is null) && anchored.TryGetValue(account.Id, out var derived)) { opening = derived.Amount; openingDate = derived.Date; }
             var complete = opening is not null && openingDate is not null;
+            var source = account.OpeningBalance is not null ? "Manual" : complete ? "BalanceAnchor" : null;
+            reconciled.TryGetValue(account.Id, out var status);
             if (complete)
             {
                 var totals = await accounts.SumMovementsAsync(workspaceId, account.Id, openingDate!.Value, asOf, ct);
                 balance = opening!.Value + totals.Income - totals.Expense + totals.TransferIn - totals.TransferOut;
             }
-            accountBalances.Add(new(account.Id, account.Name, balance, complete, account.IsPrimary));
+            accountBalances.Add(new(account.Id, account.Name, balance, complete, account.IsPrimary)
+            {
+                Scope = account.FinancialScope.ToString(), ReferenceSource = source, ReferenceReliability = status?.Bank?.Reliability,
+                ReconciliationStatus = status?.Status, ReviewCount = status?.Review.Count ?? 0,
+            });
         }
         var knownBalances = accountBalances.Where(x => x.RealizedBalance is not null).Select(x => x.RealizedBalance!.Value).ToList();
         var realized = knownBalances.Count == accountBalances.Count && accountBalances.Count > 0 ? knownBalances.Sum() : (decimal?)null;
@@ -147,7 +156,12 @@ public sealed class FinancialDashboardService(
             next is null ? null : new(next.Source, next.Id, next.Date, next.Amount, next.Description, next.Account?.Id),
             nextIncome is null ? new("Unknown", null, null, null, null) : new("Known", nextIncome.Date, nextIncome.Amount, null, null));
         var dashboard = new FinancialDashboard(competence, months,
-            new(realized, accountBalances, accountBalances.Count, negative, goalSummary.AllocatedToGoals, realized is null ? null : realized - goalSummary.AllocatedToGoals),
+            new(realized, accountBalances, accountBalances.Count, negative, goalSummary.AllocatedToGoals, realized is null ? null : realized - goalSummary.AllocatedToGoals)
+            {
+                ByScope = accountBalances.GroupBy(x => x.Scope ?? "PF").OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => new FinancialDashboardScopeBalance(
+                    g.Key, g.All(x => x.RealizedBalance is not null) ? g.Sum(x => x.RealizedBalance!.Value) : null, g.Count(), g.All(x => x.RealizedBalance is not null))).ToList(),
+                HasReferenceCaveats = accountBalances.Any(x => x.ReferenceReliability == "Provisional" || x.ReconciliationStatus is "MovementsInReview" or "DivergenceFound" or "IncompleteHistory"),
+            },
             new(first.RealizedIncome, first.RealizedExpense, pendingIncome, pendingExpense),
             new(horizonPendingIncome, horizonPendingExpense, creditOutstanding ?? 0m, installmentDue, 0),
             new(targetCount, planned, committed, realizedBudget, exceeded, attention),

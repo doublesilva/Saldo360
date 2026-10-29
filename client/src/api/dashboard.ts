@@ -3,8 +3,14 @@ import type { FinancialCalendarSource } from './financialCalendar'
 export type DashboardTrend = 'Improving' | 'Stable' | 'Deteriorating' | 'Unknown'
 export type DashboardAlertSeverity = 'Info' | 'Warning' | 'Critical'
 
-export interface DashboardAccountBalance { accountId: string; name: string; realizedBalance: string | null; complete: boolean; isPrimary?: boolean }
-export interface DashboardPosition { realizedBalance: string | null; accounts: DashboardAccountBalance[]; consideredAccounts: number; negativeBalance: string; allocatedToGoals: string; unallocatedRealizedBalance: string | null }
+export interface DashboardAccountBalance {
+  accountId: string; name: string; realizedBalance: string | null; complete: boolean; isPrimary?: boolean
+  /** T09.5: tipo da conta e estado da referência bancária frente ao saldo calculado. */
+  scope?: 'PF' | 'PJ'; referenceSource?: 'Manual' | 'BalanceAnchor' | null; referenceReliability?: 'Reliable' | 'Provisional' | 'Unreliable' | null
+  reconciliationStatus?: string | null; reviewCount?: number
+}
+export interface DashboardScopeBalance { scope: string; realizedBalance: string | null; accounts: number; complete: boolean }
+export interface DashboardPosition { byScope?: DashboardScopeBalance[]; hasReferenceCaveats?: boolean; realizedBalance: string | null; accounts: DashboardAccountBalance[]; consideredAccounts: number; negativeBalance: string; allocatedToGoals: string; unallocatedRealizedBalance: string | null }
 export interface DashboardCashFlow { realizedIncome: string; realizedExpense: string; pendingIncome: string; pendingExpense: string }
 export interface DashboardObligations { pendingIncome: string; pendingExpense: string; creditCardOutstanding: string; debtOutstanding: string; pendingItems: number }
 export interface DashboardBudgets { targetCount: number; planned: string; committed: string; realized: string; exceededCount: number; attentionCount: number }

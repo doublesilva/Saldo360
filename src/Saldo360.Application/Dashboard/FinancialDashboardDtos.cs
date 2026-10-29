@@ -18,8 +18,25 @@ public sealed record FinancialDashboard(
     IReadOnlyList<FinancialDashboardAlert> Alerts,
     DateOnly AsOf);
 
-public sealed record FinancialDashboardPosition(decimal? RealizedBalance, IReadOnlyList<FinancialDashboardAccountBalance> Accounts, int ConsideredAccounts, decimal NegativeBalance, decimal AllocatedToGoals, decimal? UnallocatedRealizedBalance);
-public sealed record FinancialDashboardAccountBalance(Guid AccountId, string Name, decimal? RealizedBalance, bool Complete, bool IsPrimary = false);
+public sealed record FinancialDashboardPosition(decimal? RealizedBalance, IReadOnlyList<FinancialDashboardAccountBalance> Accounts, int ConsideredAccounts, decimal NegativeBalance, decimal AllocatedToGoals, decimal? UnallocatedRealizedBalance)
+{
+    /// <summary>Subtotais PF e PJ separados; cada um é nulo quando alguma conta do escopo não tem saldo calculável (nunca um parcial apresentado como completo).</summary>
+    public IReadOnlyList<FinancialDashboardScopeBalance> ByScope { get; init; } = [];
+    /// <summary>Alguma conta usa referência provisória, tem movimentações em revisão, divergência ou histórico incompleto: o total é válido, mas com ressalvas.</summary>
+    public bool HasReferenceCaveats { get; init; }
+}
+
+public sealed record FinancialDashboardScopeBalance(string Scope, decimal? RealizedBalance, int Accounts, bool Complete);
+public sealed record FinancialDashboardAccountBalance(Guid AccountId, string Name, decimal? RealizedBalance, bool Complete, bool IsPrimary = false)
+{
+    public string? Scope { get; init; }
+    /// <summary>Manual (saldo inicial cadastrado) ou BalanceAnchor (derivado do saldo observado pelo banco).</summary>
+    public string? ReferenceSource { get; init; }
+    /// <summary>Confiabilidade da referência bancária (Reliable/Provisional/Unreliable) e a classificação da conta frente ao banco.</summary>
+    public string? ReferenceReliability { get; init; }
+    public string? ReconciliationStatus { get; init; }
+    public int ReviewCount { get; init; }
+}
 public sealed record FinancialDashboardCashFlow(decimal RealizedIncome, decimal RealizedExpense, decimal PendingIncome, decimal PendingExpense);
 public sealed record FinancialDashboardObligations(decimal PendingIncome, decimal PendingExpense, decimal CreditCardOutstanding, decimal DebtOutstanding, int PendingItems);
 public sealed record FinancialDashboardBudgets(int TargetCount, decimal Planned, decimal Committed, decimal Realized, int ExceededCount, int AttentionCount);
