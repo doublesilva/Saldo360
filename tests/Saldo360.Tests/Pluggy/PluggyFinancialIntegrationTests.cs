@@ -21,7 +21,7 @@ namespace Saldo360.Tests.Pluggy;
 [Trait("Category", "CORE")]
 [Trait("Area", "Pluggy")]
 [Trait("Dependency", "PostgreSQL")]
-public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : PluggyApiTestBase(postgres)
+public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture postgres) : PluggyApiTestBase(postgres)
 {
     private static readonly DateOnly Today = BusinessCalendar.Today(DateTimeOffset.UtcNow);
     private static string D(int daysAgo) => Today.AddDays(-daysAgo).ToString("yyyy-MM-dd");

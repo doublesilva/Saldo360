@@ -11,6 +11,9 @@ import {
 import { CreditCardPurchaseForm } from './CreditCardPurchaseForm'
 import { CardKnownCommitments } from './CardKnownCommitments'
 import { FinancialInvoiceReconciliations } from './FinancialInvoiceReconciliations'
+import { CardInstallments } from './CardInstallments'
+import { CardOverview } from './CardOverview'
+import { CardPlanning } from './CardPlanning'
 import { FinancialCreditCardImports } from './FinancialCreditCardImports'
 import { normalizeRequestError, toUserMessage } from '../api/apiErrors'
 import { FieldError, OperationalError } from './OperationalFeedback'
@@ -21,7 +24,7 @@ const shiftMonth = (month: string, offset: number) => { const [year, value] = mo
 
 export function FinancialCreditCardsPage({ workspaceId, refreshKey = 0, onChanged }: { workspaceId: string; refreshKey?: number; onChanged?: () => void }) {
   const [configureCard, setConfigureCard] = useState<FinancialCreditCard | null>(null)
-  const [view, setView] = useState<'cards' | 'reconciliations' | 'imports'>('cards')
+  const [view, setView] = useState<'cards' | 'overview' | 'planning' | 'reconciliations' | 'imports'>('cards')
   const [cards, setCards] = useState<FinancialCreditCard[]>([]); const [selected, setSelected] = useState<FinancialCreditCard | null>(null)
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]); const [categories, setCategories] = useState<FinancialCategory[]>([])
   const [month, setMonth] = useState(() => startOfMonth(todayInSaoPaulo()).slice(0, 7)); const [error, setError] = useState<string | null>(null); const [showForm, setShowForm] = useState(false)
@@ -37,10 +40,12 @@ export function FinancialCreditCardsPage({ workspaceId, refreshKey = 0, onChange
   return <div className="credit-cards" aria-live="polite">
     <nav className="credit-cards__tabs" aria-label="Seção de cartões">
       <button type="button" className={view === 'cards' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'cards' ? 'page' : undefined} onClick={() => setView('cards')}>Cartões</button>
+      <button type="button" className={view === 'overview' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'overview' ? 'page' : undefined} onClick={() => setView('overview')}>Visão geral</button>
+      <button type="button" className={view === 'planning' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'planning' ? 'page' : undefined} onClick={() => setView('planning')}>Planejamento</button>
       <button type="button" className={view === 'reconciliations' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'reconciliations' ? 'page' : undefined} onClick={() => setView('reconciliations')}>Conciliações</button>
       <button type="button" className={view === 'imports' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'imports' ? 'page' : undefined} onClick={() => setView('imports')}>Importações</button>
     </nav>
-    {view === 'reconciliations' ? <FinancialInvoiceReconciliations workspaceId={workspaceId} refreshKey={refreshKey} onChanged={onChanged} /> : view === 'imports' ? <FinancialCreditCardImports key={`${workspaceId}|${selected?.id ?? ''}`} workspaceId={workspaceId} cards={cards} selectedCardId={selected?.id ?? null} onChanged={onChanged} onConfigureCard={id => { setConfigureCard(cards.find(c => c.id === id) ?? null); setView('cards') }} /> : <>
+    {view === 'overview' ? <CardOverview workspaceId={workspaceId} refreshKey={refreshKey} onOpenCard={id => { const card = cards.find(c => c.id === id); if (card) setSelected(card); setView('cards') }} /> : view === 'planning' ? <CardPlanning workspaceId={workspaceId} refreshKey={refreshKey} /> : view === 'reconciliations' ? <FinancialInvoiceReconciliations workspaceId={workspaceId} refreshKey={refreshKey} onChanged={onChanged} /> : view === 'imports' ? <FinancialCreditCardImports key={`${workspaceId}|${selected?.id ?? ''}`} workspaceId={workspaceId} cards={cards} selectedCardId={selected?.id ?? null} onChanged={onChanged} onConfigureCard={id => { setConfigureCard(cards.find(c => c.id === id) ?? null); setView('cards') }} /> : <>
     <div className="credit-cards__heading"><div><h3>Cartões</h3><p className="meta">Compras, faturas, pagamentos e limite em um só lugar.</p></div><button type="button" className="button--primary" onClick={() => setShowForm(true)}>Novo cartão</button></div>
     {error && <p className="status status--down" role="alert">{error}</p>}
     {configureCard && <CardForm workspaceId={workspaceId} accounts={accounts} card={configureCard} onDone={() => { setConfigureCard(null); refresh() }} onCancel={() => setConfigureCard(null)} />}
@@ -73,6 +78,7 @@ function CardDetails({ workspaceId, cards, card, month, accounts, categories, on
     {invoice && <InvoiceDetails invoice={invoice} payments={payments} onEditPurchase={id => { const p = purchases.find(p => p.id === id); if (p) { setEditingPurchase(p); setPurchaseCompetence(undefined); setShowPurchase(true) } }} accounts={accounts} canPay={!card.isArchived} onClose={() => setInvoice(null)} onPay={() => setShowPayment(true)} onAdd={() => { setEditingPurchase(undefined); setPurchaseCompetence(invoice.competence); setShowPurchase(true) }} onCancelPayment={cancelInvoicePayment} />}{showPayment && invoice && <PaymentForm workspaceId={workspaceId} cardId={card.id} invoice={invoice} accounts={accounts} onDone={() => { setShowPayment(false); reload() }} onCancel={() => setShowPayment(false)} />}
     <details><summary>Compras originais — consulta e edição (não são cobranças mensais)</summary><section><div className="section-heading"><h5>Compras</h5>{!card.isArchived && <button type="button" onClick={() => { setEditingPurchase(undefined); setPurchaseCompetence(undefined); setShowPurchase(true) }}>Nova compra</button>}</div>{purchases.length === 0 ? <p className="meta">Nenhuma compra cadastrada.</p> : purchases.map((purchase) => <PurchaseRow key={purchase.id} purchase={purchase} onEdit={() => { setEditingPurchase(purchase); setPurchaseCompetence(undefined); setShowPurchase(true) }} onCancel={() => cancelCardPurchase(purchase.id)} />)}</section></details>{showPurchase && <CreditCardPurchaseForm key={editingPurchase?.id ?? `new-${purchaseCompetence ?? ''}`} workspaceId={workspaceId} cards={cards} cardId={card.id} purchase={editingPurchase} competence={purchaseCompetence} categories={categories} onDone={id => { setShowPurchase(false); onCardSelected(id); reload() }} onCancel={() => setShowPurchase(false)} />}
     <CardKnownCommitments workspaceId={workspaceId} cardId={card.id} month={month} />
+    <CardInstallments workspaceId={workspaceId} cardId={card.id} />
     <details><summary>Consulta adicional de faturas vinculadas</summary><section><h5>Faturas vinculadas nos próximos seis meses</h5>{projection.map((item) => <div className="projection-row" key={item.id}><span>{item.competence} · vencimento {item.dueDate}</span><strong>{formatBrlDecimal(item.totalAmount)}</strong></div>)}</section></details>
   </section>
 }

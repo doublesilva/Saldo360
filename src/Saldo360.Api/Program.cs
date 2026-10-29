@@ -90,6 +90,7 @@ app.MapFinancialBudgetEndpoints();
 app.MapFinancialCreditCardEndpoints();
 app.MapFinancialCreditCardPurchaseEndpoints();
 app.MapFinancialCreditCardInvoiceEndpoints();
+app.MapCardProjectionEndpoints();
 app.MapFinancialPlannedInvoiceReconciliationEndpoints();
 app.MapCreditCardCsvPreviewEndpoints();
 app.MapCreditCardPdfPreviewEndpoints();

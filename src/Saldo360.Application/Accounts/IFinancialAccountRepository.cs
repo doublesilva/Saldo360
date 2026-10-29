@@ -51,7 +51,11 @@ public interface IFinancialAccountRepository
     Task<PlannedTotals> SumPendingPlannedAsync(
         Guid workspaceId, Guid accountId, DateOnly baseDate, DateOnly through, CancellationToken cancellationToken);
 
-    Task<CreditCardProjectionTotals> SumCreditCardObligationsAsync(Guid workspaceId, Guid accountId, DateOnly through, CancellationToken cancellationToken);
+    /// <summary>
+    /// Saldo a pagar dos cartões cuja conta pagadora é a conta, até <paramref name="through"/>, pela mesma fonte da Agenda (total bancário nas faturas
+    /// fechadas; projeção nas abertas e futuras; pagamentos descontados uma vez).
+    /// </summary>
+    Task<CreditCardProjectionTotals> SumCreditCardObligationsAsync(Guid workspaceId, Guid accountId, DateOnly through, DateOnly today, CancellationToken cancellationToken);
 
     /// <summary>
     /// Executa <paramref name="read"/> numa transação somente leitura REPEATABLE READ: todas as consultas enxergam o

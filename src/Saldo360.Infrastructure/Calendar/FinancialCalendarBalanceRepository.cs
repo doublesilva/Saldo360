@@ -165,70 +165,17 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         var debtPending = debtRows.GroupBy(row => row.DueDate).Select(group => new FinancialCalendarDailyTotals(group.Key, 0m, group.Sum(row => row.remaining), 0m, 0m)).ToList();
         var hasUnallocatedDebt = debtRows.Any(row => row.ResponsibleAccountId == null || !selectedAccountIds.Contains(row.ResponsibleAccountId.Value));
 
-        var cardObligations = await (from installment in db.FinancialCreditCardInstallments.AsNoTracking()
-                                     join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
-                                     join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
-                                     join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.WorkspaceId, CardId = invoice.CreditCardId } equals new { card.WorkspaceId, CardId = card.Id }
-                                     where installment.WorkspaceId == workspaceId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
-                                        && purchase.WorkspaceId == workspaceId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
-                                        && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
-                                        && card.DefaultPaymentAccountId != null && selectedAccountIds.Contains(card.DefaultPaymentAccountId.Value)
-                                     group installment.Amount by new { invoice.Id, invoice.DueDate } into grouped
-                                     select new { grouped.Key.Id, grouped.Key.DueDate, Total = grouped.Sum() }).ToListAsync(cancellationToken);
-        var historicalCardObligations = await (from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
-                                               join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
-                                               join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.WorkspaceId, CardId = invoice.CreditCardId } equals new { card.WorkspaceId, CardId = card.Id }
-                                               where item.WorkspaceId == workspaceId && item.IsHistorical && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
-                                                  && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
-                                                  && card.DefaultPaymentAccountId != null && selectedAccountIds.Contains(card.DefaultPaymentAccountId.Value)
-                                               group item.Amount by new { invoice.Id, invoice.DueDate } into grouped
-                                               select new { grouped.Key.Id, grouped.Key.DueDate, Total = grouped.Sum() }).ToListAsync(cancellationToken);
-        var adjustmentCardObligations = await (from item in db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
-                                               join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
-                                               join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.WorkspaceId, CardId = invoice.CreditCardId } equals new { card.WorkspaceId, CardId = card.Id }
-                                               where item.WorkspaceId == workspaceId && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentStatus.Active
-                                                  && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
-                                                  && card.DefaultPaymentAccountId != null && selectedAccountIds.Contains(card.DefaultPaymentAccountId.Value)
-                                               group item by new { invoice.Id, invoice.DueDate } into grouped
-                                               select new { grouped.Key.Id, grouped.Key.DueDate, Total = grouped.Sum(item => item.Nature == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentNature.Debit ? item.Amount : -item.Amount) }).ToListAsync(cancellationToken);
-        cardObligations = cardObligations.Concat(historicalCardObligations).Concat(adjustmentCardObligations)
-            .GroupBy(item => new { item.Id, item.DueDate })
-            .Select(group => new { group.Key.Id, group.Key.DueDate, Total = group.Sum(item => item.Total) })
-            .ToList();
-        var cardPaid = await db.FinancialCreditCardInvoicePayments.AsNoTracking().Where(payment => payment.WorkspaceId == workspaceId && payment.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoicePaymentStatus.Active)
-            .GroupBy(payment => payment.InvoiceId).Select(group => new { Id = group.Key, Amount = group.Sum(payment => payment.Amount) }).ToListAsync(cancellationToken);
-        var paidByInvoice = cardPaid.ToDictionary(item => item.Id, item => item.Amount);
-        var cardPending = cardObligations.Select(item => new FinancialCalendarDailyTotals(item.DueDate, 0m, Math.Max(0m, item.Total - paidByInvoice.GetValueOrDefault(item.Id)), 0m, 0m)).Where(item => item.Expense > 0m).ToList();
-        var allCardObligations = await (from installment in db.FinancialCreditCardInstallments.AsNoTracking()
-                                        join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
-                                        join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
-                                        join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.WorkspaceId, CardId = invoice.CreditCardId } equals new { card.WorkspaceId, CardId = card.Id }
-                                        where installment.WorkspaceId == workspaceId && installment.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
-                                           && purchase.WorkspaceId == workspaceId && purchase.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active
-                                           && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
-                                        select card.DefaultPaymentAccountId).AnyAsync(account => account == null || !selectedAccountIds.Contains(account.Value), cancellationToken);
-        var allHistoricalCardObligations = await (from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
-                                                  join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
-                                                  join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.WorkspaceId, CardId = invoice.CreditCardId } equals new { card.WorkspaceId, CardId = card.Id }
-                                                  where item.WorkspaceId == workspaceId && item.IsHistorical && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
-                                                     && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
-                                                  select card.DefaultPaymentAccountId).AnyAsync(account => account == null || !selectedAccountIds.Contains(account.Value), cancellationToken);
-        var allAdjustmentCardObligations = await (from item in db.FinancialCreditCardInvoiceAdjustments.AsNoTracking()
-                                                  join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on item.InvoiceId equals invoice.Id
-                                                  join card in db.FinancialCreditCards.AsNoTracking() on new { invoice.WorkspaceId, CardId = invoice.CreditCardId } equals new { card.WorkspaceId, CardId = card.Id }
-                                                  where item.WorkspaceId == workspaceId && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustmentStatus.Active
-                                                     && invoice.WorkspaceId == workspaceId && invoice.DueDate <= through
-                                                  select card.DefaultPaymentAccountId).AnyAsync(account => account == null || !selectedAccountIds.Contains(account.Value), cancellationToken);
-        allCardObligations = allCardObligations || allHistoricalCardObligations || allAdjustmentCardObligations;
-        var knownCardObligations = await (from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
-                                         join card in db.FinancialCreditCards.AsNoTracking() on new { item.WorkspaceId, item.CreditCardId } equals new { card.WorkspaceId, CreditCardId = card.Id }
-                                         where item.WorkspaceId == workspaceId && item.InvoiceId == null && item.IsHistorical
-                                             && item.Status == Saldo360.Domain.CreditCards.FinancialCreditCardImportedInstallmentStatus.Active
-                                             && (item.DueDate == null || item.DueDate <= through)
-                                         select new { item.Amount, item.DueDate, card.DefaultPaymentAccountId }).ToListAsync(cancellationToken);
-        cardPending.AddRange(knownCardObligations.Where(x => x.DueDate != null && x.DefaultPaymentAccountId != null && selectedAccountIds.Contains(x.DefaultPaymentAccountId.Value))
-            .Select(x => new FinancialCalendarDailyTotals(x.DueDate!.Value, 0m, x.Amount, 0m, 0m)));
-        allCardObligations |= knownCardObligations.Any(x => x.DueDate == null || x.DefaultPaymentAccountId == null || !selectedAccountIds.Contains(x.DefaultPaymentAccountId.Value));
+        // Obrigações dos cartões (T09.4): a mesma fonte do módulo de cartões. Fatura fechada pelo banco vale o total bancário; aberta e futura usam a
+        // projeção (compras pendentes, parcelas devolvidas e estimadas); pagamentos reduzem uma única vez. Cada obrigação vai para a conta pagadora.
+        var cardPending = new List<FinancialCalendarDailyTotals>();
+        var allCardObligations = false;
+        foreach (var item in await Saldo360.Infrastructure.CreditCards.CardProjectionRepository.ReadItemsAsync(db, workspaceId, today, cancellationToken))
+        {
+            if (item.DueDate is { } itemDue && itemDue > through) continue;
+            var allocated = item.PayerAccountId is { } payer && selectedAccountIds.Contains(payer);
+            if (!allocated || (item.Kind == Saldo360.Application.CreditCards.Projection.ObligationKind.KnownImported && item.DueDate is null)) allCardObligations = true;
+            if (allocated && item.DueDate is { } due && item.Remaining > 0m) cardPending.Add(new FinancialCalendarDailyTotals(due, 0m, item.Remaining, 0m, 0m));
+        }
 
         IReadOnlyList<FinancialCalendarDailyTotals> periodRealized = [];
         IReadOnlyList<FinancialCalendarDailyTotals> cardPayments = [];

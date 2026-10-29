@@ -291,7 +291,7 @@ public sealed class FinancialAccountService(
             }
 
             var planned = await accounts.SumPendingPlannedAsync(workspaceId, accountId, baseDate, through, cancellationToken);
-            var creditCard = await accounts.SumCreditCardObligationsAsync(workspaceId, accountId, through, cancellationToken);
+            var creditCard = await accounts.SumCreditCardObligationsAsync(workspaceId, accountId, through, baseDate, cancellationToken);
             var projected = FinancialBalanceCalculator.Project(realized, planned);
             projected -= creditCard.Outstanding;
             return new AccountProjectionDto(

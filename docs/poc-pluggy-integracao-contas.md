@@ -410,3 +410,14 @@ Dois defeitos reais, com testes que falham sem a correção: (1) estorno/cashbac
 - Backend novo: `PrimaryAccountAndCardPayerTests` (12) cobre primeira principal, substituição, concorrência, não bancária/inativa, restrições do banco, isolamento entre workspaces, desativação com/sem substituta, remoção explícita, ausência de efeito financeiro, Dashboard, pagadora por tipo/conta/estado e PF pagando cartão PJ; mais 3 testes de integração Pluggy (PF paga cartão PJ, estorno alterado na origem, pagamento já registrado).
 - Frontend novo: contas (6), agenda (3), cartões (1) e Dashboard (1).
 - Resultados: suíte completa do backend (1.780 testes): 1.777 aprovados e 3 falhas, todas em `RealOcrToolTests` (dependem de Poppler/Tesseract reais, ausentes neste ambiente, sem relação com esta tarefa). Frontend: 441 testes aprovados, `tsc` e build sem erros; o lint só traz avisos antigos de outros componentes.
+
+## 15. T09.4 — Cartões, faturas e projeção de parcelamentos
+
+Detalhes completos em [T09.4-projecao-cartoes.md](T09.4-projecao-cartoes.md). Resumo para a integração:
+
+- **Descoberta nos dados reais**: a Pluggy devolve as parcelas futuras como transações `Pending`, sem fatura, datadas nos meses seguintes. Antes da T09.4 elas ficavam fora de qualquer soma; agora são **parcelas informadas pelo banco** nas faturas aberta e futuras. Estimativa só entra quando falta parcela e há evidência (no lab: 0 estimadas, porque a Pluggy devolveu todas).
+- **Regra única de obrigação**: fatura fechada pelo banco = total bancário (sem somar compras, parcelas, encargos, estornos ou pendentes do ciclo); aberta e futura = projeção provisória; pagamentos uma vez; excedente sinalizado; vencimento sozinho nunca prova fechamento.
+- **Mesma fonte para Agenda, saldo projetado da conta e Dashboard**, atribuída à conta pagadora configurada na T09.3.3 (PF pagando cartão PJ sem transferência).
+- **Ciclo**: histórico consistente do banco é evidência forte; no lab apenas 1 dos 5 cartões a tem. Os demais usam a última fatura (fraca) e a projeção sai marcada; o cadastro não é alterado.
+- **Sem migration** e sem gravação: três consultas de leitura (`invoice-overview`, `obligation-projection`, `{cardId}/projected-installments`) e três telas no módulo de cartões.
+- **Limitação**: previsões/recorrências equivalentes a compras do cartão não são deduplicadas automaticamente (heurística arriscada); a conciliação previsão↔fatura existente continua valendo.

@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialBudgetService>();
         services.AddScoped<FinancialBudgetExecutionService>();
         services.AddScoped<FinancialCreditCardService>();
+        services.AddScoped<Saldo360.Application.CreditCards.Projection.CardProjectionService>();
         services.AddScoped<CardEmailSearchAuthorization>();
         services.AddScoped<CardLatestEmailService>();
         services.AddScoped<ICardEmailDocumentReceiver>(provider => provider.GetRequiredService<FinancialDocumentInboxService>());
