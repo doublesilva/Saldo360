@@ -18,7 +18,7 @@ describe('Personal finance shell', () => {
     first.unmount()
     render(<PersonalFinance />)
     await screen.findByRole('heading', { name: 'Existente' })
-    await waitFor(() => expect(calls.filter(url => url.includes('personal-a/financial-dashboard'))).toHaveLength(2))
+    await waitFor(() => expect(calls.filter(url => url.includes('personal-a/financial-dashboard?'))).toHaveLength(2))
     expect(calls.filter(url => url === '/api/me/financial-workspace')).toHaveLength(2)
     expect(calls.some(url => url === '/api/families')).toBe(false)
     expect(screen.getByText('Orçamento pessoal')).toBeTruthy()

@@ -1,4 +1,5 @@
 import type { FinancialDashboardResponse } from '../api/dashboard'
+import { planActual } from './planActualFixtures'
 
 export const dashboard: FinancialDashboardResponse = {
   competence: '2026-10', months: 6,
@@ -18,6 +19,7 @@ export const dashboard: FinancialDashboardResponse = {
 
 export function dashboardResponse(input: RequestInfo | URL, value = dashboard): Response {
   const url = String(input)
+  if (url.includes('/financial-dashboard/plan-actual')) return Response.json(planActual)
   if (url.includes('/financial-dashboard')) return Response.json(value)
   if (url.includes('/credit-cards?')) return Response.json([])
   if (url.includes('/financial-calendar/balances')) return Response.json({ from: `${value.competence}-01`, through: `${value.competence}-31`, accountId: null, openingBalance: null, unavailableReason: 'OpeningBalanceNotConfigured', days: [], risk: { minimumProjectedBalance: null, firstNegativeProjectedDate: null, endingProjectedBalance: null } })

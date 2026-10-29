@@ -496,6 +496,54 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialCardSpendingTarget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal?>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_from");
+
+                    b.Property<Guid>("PayerAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payer_account_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_card_spending_targets");
+
+                    b.HasIndex("PayerAccountId")
+                        .HasDatabaseName("ix_financial_card_spending_targets_payer_account_id");
+
+                    b.HasIndex("WorkspaceId", "PayerAccountId", "EffectiveFrom")
+                        .IsUnique()
+                        .HasDatabaseName("ux_card_spending_targets_account_from");
+
+                    b.ToTable("financial_card_spending_targets", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_card_spending_target_amount", "amount IS NULL OR (amount >= 0 AND scale(amount) <= 2)");
+
+                            t.HasCheckConstraint("ck_card_spending_target_competence", "EXTRACT(DAY FROM effective_from) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialMonthlyAggregateTarget", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4734,6 +4782,23 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_budget_targets_categories_same_family_expense");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialCardSpendingTarget", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("PayerAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_card_spending_targets_financial_accounts_payer_ac");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_card_spending_targets_financial_workspaces_worksp");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialMonthlyAggregateTarget", b =>

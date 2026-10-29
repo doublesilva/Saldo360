@@ -124,6 +124,10 @@ public sealed class CardProjectionService(IFinancialWorkspaceRepository workspac
     public async Task<IReadOnlyList<CardProjection>> ComputeAsync(Guid workspaceId, DateOnly today, Guid? cardId, CancellationToken ct) =>
         (await repository.LoadAsync(workspaceId, today, cardId, ct)).Select(facts => CardProjectionEngine.Compute(facts, today)).ToList();
 
+    /// <summary>A mesma projeção, junto com as faturas informadas pelo banco (encargos e totais) de cada cartão. Usada pelo Dashboard (T10.1); nenhum cálculo novo.</summary>
+    public async Task<IReadOnlyList<(CardProjection Projection, IReadOnlyList<Saldo360.Application.Pluggy.PluggyBillFact> Bills)>> ComputeWithBillsAsync(Guid workspaceId, DateOnly today, CancellationToken ct) =>
+        (await repository.LoadAsync(workspaceId, today, null, ct)).Select(facts => (CardProjectionEngine.Compute(facts, today), facts.Bills)).ToList();
+
     private static MonthlyProjectionDto Month(DateOnly month, IReadOnlyList<CardProjection> projections)
     {
         var key = month.ToString("yyyy-MM", CultureInfo.InvariantCulture);

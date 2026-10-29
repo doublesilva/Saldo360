@@ -27,7 +27,7 @@ describe('FinancialDashboard', () => {
         { accountId: 'a2', name: 'Itaú PJ', realizedBalance: '250.50', complete: true, isPrimary: false },
       ] },
     }
-    vi.stubGlobal('fetch', vi.fn(async input => String(input).includes('/financial-dashboard') ? Response.json(withAccounts) : dashboardResponse(input)))
+    vi.stubGlobal('fetch', vi.fn(async input => String(input).includes('/financial-dashboard?') ? Response.json(withAccounts) : dashboardResponse(input)))
     render(<FinancialDashboard workspaceId="personal" />)
 
     const list = (await screen.findByText('Itaú PF')).closest('ul')!
@@ -61,7 +61,7 @@ describe('FinancialDashboard', () => {
   })
 
   it('keeps unavailable balances and partial coverage explicit in the top indicators', async () => {
-    vi.mocked(fetch).mockResolvedValue(Response.json({ ...dashboard, position: { ...dashboard.position, realizedBalance: null }, indicators: { ...dashboard.indicators, projectedBalance: null }, coverage: { ...dashboard.coverage, complete: false } }))
+    vi.mocked(fetch).mockImplementation(async input => dashboardResponse(input, { ...dashboard, position: { ...dashboard.position, realizedBalance: null }, indicators: { ...dashboard.indicators, projectedBalance: null }, coverage: { ...dashboard.coverage, complete: false } }))
     const { container } = render(<FinancialDashboard workspaceId="personal" />)
     await screen.findByRole('heading', { name: 'Resumo do mês' })
     const metrics = container.querySelectorAll('.dashboard-summary > article')
@@ -136,12 +136,12 @@ describe('FinancialDashboard', () => {
 
   it('permite repetir uma leitura com falha e só exibe o sucesso confirmado', async () => {
     let tries = 0
-    vi.mocked(fetch).mockImplementation(async input => String(input).includes('/financial-dashboard') && tries++ === 0 ? new Response('{}', { status: 503 }) : dashboardResponse(input))
+    vi.mocked(fetch).mockImplementation(async input => String(input).includes('/financial-dashboard?') && tries++ === 0 ? new Response('{}', { status: 503 }) : dashboardResponse(input))
     render(<FinancialDashboard workspaceId="family-1" />)
     expect(await screen.findByRole('alert')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
     expect(await screen.findByText('Evolução projetada')).toBeTruthy()
-    expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/financial-dashboard'))).toHaveLength(2)
+    expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/financial-dashboard?'))).toHaveLength(2)
   })
 
   it('não mostra resposta obsoleta depois da troca rápida de família', async () => {
@@ -153,7 +153,7 @@ describe('FinancialDashboard', () => {
     const view = render(<FinancialDashboard workspaceId="family-old" />)
     await screen.findByText('Carregando painel financeiro…')
     view.rerender(<FinancialDashboard workspaceId="family-new" />)
-    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect((await screen.findAllByRole('alert')).length).toBeGreaterThan(0)
     resolveOld(Response.json(dashboard))
     await Promise.resolve()
     expect(screen.queryByText('Evolução projetada')).toBeNull()

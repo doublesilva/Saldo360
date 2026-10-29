@@ -23,6 +23,23 @@ internal sealed class FinancialMonthlyAggregateTargetConfiguration : IEntityType
     }
 }
 
+internal sealed class FinancialCardSpendingTargetConfiguration : IEntityTypeConfiguration<FinancialCardSpendingTarget>
+{
+    public void Configure(EntityTypeBuilder<FinancialCardSpendingTarget> b)
+    {
+        b.ToTable("financial_card_spending_targets", t => {
+            t.HasCheckConstraint("ck_card_spending_target_amount", "amount IS NULL OR (amount >= 0 AND scale(amount) <= 2)");
+            t.HasCheckConstraint("ck_card_spending_target_competence", "EXTRACT(DAY FROM effective_from) = 1");
+        });
+        b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
+        b.Property(x => x.Amount).HasColumnType("numeric"); b.Property(x => x.EffectiveFrom).HasColumnType("date");
+        // Uma linha por conta e competência de vigência: revisar a meta no mesmo mês é recusado (a meta original nunca é reescrita).
+        b.HasIndex(x => new { x.WorkspaceId, x.PayerAccountId, x.EffectiveFrom }).IsUnique().HasDatabaseName("ux_card_spending_targets_account_from");
+        b.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Saldo360.Domain.Accounts.FinancialAccount>().WithMany().HasForeignKey(x => x.PayerAccountId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 internal sealed class FinancialBootstrapProvenanceConfiguration : IEntityTypeConfiguration<FinancialBootstrapProvenance>
 {
     public void Configure(EntityTypeBuilder<FinancialBootstrapProvenance> b)

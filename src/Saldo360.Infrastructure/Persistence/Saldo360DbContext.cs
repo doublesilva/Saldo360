@@ -50,6 +50,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
 
     public DbSet<FinancialBudgetTarget> FinancialBudgetTargets => Set<FinancialBudgetTarget>();
     public DbSet<Saldo360.Domain.Budgets.FinancialMonthlyAggregateTarget> FinancialMonthlyAggregateTargets => Set<Saldo360.Domain.Budgets.FinancialMonthlyAggregateTarget>();
+    public DbSet<Saldo360.Domain.Budgets.FinancialCardSpendingTarget> FinancialCardSpendingTargets => Set<Saldo360.Domain.Budgets.FinancialCardSpendingTarget>();
     public DbSet<Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance> FinancialBootstrapProvenance => Set<Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance>();
 
     public DbSet<FinancialCreditCard> FinancialCreditCards => Set<FinancialCreditCard>();

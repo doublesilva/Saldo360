@@ -86,11 +86,12 @@ internal static class FinancialResetFixture
         var pluggyBillPayment = PluggyCardBillPayment.Create(w, pluggyBill.Id, 0, 10m, date, "DEBIT_ACCOUNT", null);
         var balanceAnchor = FinancialAccountBalanceAnchor.Create(w, account.Id, 100m, now, DateOnly.FromDateTime(now.UtcDateTime), BalanceAnchorKind.CurrentBalance, "Pluggy", pluggyAccountLink.Id, now);
         var pluggySyncState = PluggySyncState.Create(w, pluggyLink.Id, now);
+        var cardTarget = Saldo360.Domain.Budgets.FinancialCardSpendingTarget.Create(w, account.Id, new DateOnly(date.Year, date.Month, 1), 5000m, u, now);
         var pluggyChange = PluggyTransactionChange.Create(pluggyTransaction, pluggyTransaction.Observe(pluggySnapshot with { Status = PluggyTransactionStatus.Posted }, pluggyRun.Id, now), pluggyRun.Id, now);
         db.AddRange(account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, transfer,
             recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
-            scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState);
+            scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState, cardTarget);
         await db.SaveChangesAsync();
         await OfficialInvoiceFixture.CloseAsync(db, invoice.Id);
         db.AddRange(cardTx, payment); await db.SaveChangesAsync();

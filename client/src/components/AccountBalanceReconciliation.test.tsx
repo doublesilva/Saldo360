@@ -110,7 +110,7 @@ describe('FinancialDashboard — referência bancária das contas (T09.5)', () =
         { accountId: 'a2', name: 'Reserva PJ', realizedBalance: null, complete: false, scope: 'PJ', referenceSource: null, referenceReliability: null, reconciliationStatus: null, reviewCount: 0 },
       ], byScope: [{ scope: 'PF', realizedBalance: '1500.75', accounts: 1, complete: true }, { scope: 'PJ', realizedBalance: null, accounts: 1, complete: false }], hasReferenceCaveats: true },
     }
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).includes('/financial-dashboard') ? Response.json(data) : dashboardResponse(input)))
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).includes('/financial-dashboard?') ? Response.json(data) : dashboardResponse(input)))
     render(<FinancialDashboard workspaceId="personal" />)
 
     const row = (await screen.findByText('Itaú PF')).closest('li')!

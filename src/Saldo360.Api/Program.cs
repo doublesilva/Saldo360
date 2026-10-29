@@ -107,6 +107,7 @@ app.MapFinancialDebtInstallmentReconciliationEndpoints();
 app.MapFinancialGoalEndpoints();
 app.MapFinancialGoalAllocationEndpoints();
 app.MapFinancialDashboardEndpoints();
+app.MapPlanActualEndpoints();
 app.MapPluggyPocEndpoints();
 app.MapPluggyFinancialEndpoints();
 

@@ -4,6 +4,7 @@ import { formatBrlDecimal, formatDate } from '../money'
 import { formatMonthYear, todayInSaoPaulo } from '../dates'
 import { OperationalError, OperationalLoading } from './OperationalFeedback'
 import { DashboardFilters, type DashboardFilterProps } from './DashboardFilters'
+import { PlanActualDashboard } from './PlanActualDashboard'
 import { MonthlyFlowSummary } from './MonthlyFlowSummary'
 import { DashboardCommitments, DashboardCardDetails, DashboardDailyEvolution } from './DashboardDataPanels'
 import '../Dashboard.css'
@@ -26,6 +27,7 @@ export function FinancialDashboard({ workspaceId, onNavigate, refreshKey = 0, fi
   useEffect(() => { const controller = new AbortController(); getFinancialDashboard(workspaceId, competence, months, controller.signal).then((value) => { if (!controller.signal.aborted) setState({ kind: 'loaded', requestKey, value }) }).catch((error: unknown) => { if (!controller.signal.aborted) setState({ kind: 'error', requestKey, error }) }); return () => controller.abort() }, [workspaceId, competence, months, refreshKey, reloadKey, requestKey])
   return <section className="family-section dashboard-page" aria-labelledby={embedded ? undefined : 'dashboard-title'}>
     {!embedded && <div className="section-heading"><div><h3 id="dashboard-title">Visão Geral</h3><p className="meta">Resumo financeiro consolidado do orçamento pessoal.</p></div><DashboardFilters {...(filters ?? { competence, months, onCompetenceChange: setCompetence, onMonthsChange: setMonths })} /></div>}
+    <PlanActualDashboard workspaceId={workspaceId} competence={competence} refreshKey={refreshKey} onNavigate={onNavigate} />
     {visibleState.kind === 'loading' && <OperationalLoading>Carregando painel financeiro…</OperationalLoading>}
     {visibleState.kind === 'error' && <OperationalError error={visibleState.error} onRetry={() => setReloadKey(value => value + 1)} />}
     {visibleState.kind === 'loaded' && <DashboardContent key={requestKey} workspaceId={workspaceId} data={visibleState.value} onNavigate={onNavigate} />}
