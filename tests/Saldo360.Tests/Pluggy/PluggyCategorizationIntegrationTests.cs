@@ -16,7 +16,7 @@ namespace Saldo360.Tests.Pluggy;
 /// T09.3.1: categorização híbrida (manual → regras → categoria Pluggy → IA) dos lançamentos importados. API real sobre PostgreSQL; a Pluggy e o
 /// fallback de IA são simulados: nenhuma chamada externa. Valores, datas e saldos dos lançamentos nunca podem mudar.
 /// </summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 [Trait("Area", "Pluggy")]
 [Trait("Dependency", "PostgreSQL")]

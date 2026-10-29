@@ -7,7 +7,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Pluggy;
 
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 [Trait("Area", "Pluggy")]
 [Trait("Dependency", "PostgreSQL")]

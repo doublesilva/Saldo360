@@ -15,7 +15,7 @@ namespace Saldo360.Tests.Pluggy;
 /// T09.6: sincronização automática das conexões Pluggy. API real sobre PostgreSQL, cliente Pluggy simulado; o agendador é acionado direto pelo
 /// <see cref="PluggyAutoSyncRunner"/> (o serviço em segundo plano fica ocioso nos testes) e o vencimento é controlado no estado da conexão.
 /// </summary>
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
 [Trait("Area", "Pluggy")]
 [Trait("Dependency", "PostgreSQL")]

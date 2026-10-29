@@ -18,7 +18,7 @@ using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Api;
 
-[Collection(PostgresCollection.Name)]
+[Collection(PostgresSecondaryCollection.Name)]
 [Trait("Area", "Cards")]
 [Trait("Area", "Documents")]
 [Trait("Dependency", "PostgreSQL")]
