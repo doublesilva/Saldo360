@@ -70,11 +70,11 @@ function AccountCard({ workspaceId, account }: { workspaceId: string; account: A
       <div><dt>Histórico calculável</dt><dd>{account.calculated.calculableFrom ? `desde ${formatDate(account.calculated.calculableFrom)}` : 'Indisponível'}</dd></div>
       <div><dt>Movimentações em revisão</dt><dd>{account.review.count}{account.review.count > 0 ? ` (líquido ${formatBrlDecimal(account.review.netAmount)})` : ''}</dd></div>
     </dl>
-    {bank?.overdraft && <p className="meta">Cheque especial: limite {bank.overdraft.contractedLimit ? formatBrlDecimal(bank.overdraft.contractedLimit) : '—'}, em uso {bank.overdraft.usedLimit ? formatBrlDecimal(bank.overdraft.usedLimit) : '—'}. {bank.overdraft.note}</p>}
+    {bank?.overdraft && (bank.overdraft.contractedLimit !== '0.00' || bank.overdraft.usedLimit !== '0.00') && <p className="meta">Cheque especial: limite {bank.overdraft.contractedLimit ? formatBrlDecimal(bank.overdraft.contractedLimit) : '—'}, em uso {bank.overdraft.usedLimit ? formatBrlDecimal(bank.overdraft.usedLimit) : '—'}. {bank.overdraft.note}</p>}
     {account.calculated.openingSource === 'BalanceAnchor' && <p className="meta">O saldo parte da referência bancária: não é preciso informar saldo inicial manual.</p>}
     {account.review.pending > 0 && <p className="meta">{account.review.pending} movimentação(ões) pendente(s) ou futura(s) não entram no saldo realizado.</p>}
     {account.unexplained && account.status === 'DivergenceFound' && <p className="meta" role="status">Sem explicação: {formatBrlDecimal(account.unexplained)}.</p>}
-    {account.consistency.checked > 0 && <p className="meta">{account.consistency.matching} de {account.consistency.checked} observação(ões) anterior(es) conferem com o histórico importado.</p>}
+    {account.consistency.checked > 0 && <p className="meta">{account.consistency.matching} de {account.consistency.checked} observação(ões) anterior(es) conferem com o histórico importado{account.consistency.matching < account.consistency.checked ? ' (movimentos podem ter sido lançados depois da observação; é informativo, não é divergência)' : ''}.</p>}
     <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? 'Ocultar divergências por período' : 'Divergências por período'}</button>
     {open && <Period workspaceId={workspaceId} account={account} />}
   </article>

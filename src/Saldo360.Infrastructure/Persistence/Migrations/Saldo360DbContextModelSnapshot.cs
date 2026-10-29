@@ -3634,6 +3634,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(24)")
                         .HasColumnName("status");
 
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasDefaultValue("Manual")
+                        .HasColumnName("trigger");
+
                     b.Property<int>("Unchanged")
                         .HasColumnType("integer")
                         .HasColumnName("unchanged");
@@ -3674,6 +3682,102 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_pluggy_sync_runs_finished", "(status = 'Running') = (finished_at IS NULL)");
 
                             t.HasCheckConstraint("ck_pluggy_sync_runs_status", "status IN ('Running','Completed','CompletedWithErrors','Failed')");
+
+                            t.HasCheckConstraint("ck_pluggy_sync_runs_trigger", "\"trigger\" IN ('Manual','Scheduled')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggySyncState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ClaimedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("claimed_until");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("connection_id");
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("integer")
+                        .HasColumnName("consecutive_failures");
+
+                    b.Property<DateTimeOffset?>("ConsentExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consent_expires_at");
+
+                    b.Property<DateTimeOffset?>("LastAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_attempt_at");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("last_error");
+
+                    b.Property<string>("LastOutcome")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("last_outcome");
+
+                    b.Property<Guid?>("LastRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("last_run_id");
+
+                    b.Property<DateTimeOffset?>("LastSuccessAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_success_at");
+
+                    b.Property<string>("LastTrigger")
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("last_trigger");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("SourceStatus")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("source_status");
+
+                    b.Property<DateTimeOffset?>("SourceUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("source_updated_at");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_sync_states");
+
+                    b.HasIndex("ConnectionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_sync_states_connection");
+
+                    b.HasIndex("NextAttemptAt")
+                        .HasDatabaseName("ix_pluggy_sync_states_next_attempt_at");
+
+                    b.HasIndex("WorkspaceId")
+                        .HasDatabaseName("ix_pluggy_sync_states_workspace_id");
+
+                    b.ToTable("pluggy_sync_states", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pluggy_sync_states_failures", "consecutive_failures >= 0");
+
+                            t.HasCheckConstraint("ck_pluggy_sync_states_outcome", "last_outcome IN ('Never','Completed','CompletedWithErrors','Failed','ConsentExpired','SourceNotUpdated')");
+
+                            t.HasCheckConstraint("ck_pluggy_sync_states_trigger", "last_trigger IS NULL OR last_trigger IN ('Manual','Scheduled')");
                         });
                 });
 
@@ -5556,6 +5660,23 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pluggy_sync_runs_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggySyncState", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyItemLink", null)
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_sync_states_pluggy_item_links_connection_id");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_sync_states_financial_workspaces_workspace_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyTransactionChange", b =>

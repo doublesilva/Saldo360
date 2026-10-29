@@ -13,7 +13,7 @@ public sealed record PluggyImportCounters(int Total, int New, int Updated, int P
 public sealed record PluggyImportedPage(IReadOnlyList<PluggyImportedTransactionView> Items, int Total, int Page, int PageSize, PluggyImportCounters Counters);
 
 public sealed record PluggySyncRunView(Guid Id, Guid ConnectionId, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt, string Status, int AccountsTotal,
-    int AccountsSynced, int Seen, int Created, int Updated, int Unchanged, int Missing, int Errors, string? ErrorSummary);
+    int AccountsSynced, int Seen, int Created, int Updated, int Unchanged, int Missing, int Errors, string? ErrorSummary, string Trigger = "Manual");
 
 public sealed record PluggyImportFilter(Guid? ConnectionId, string? AccountId, DateOnly? From, DateOnly? To, PluggyTransactionStatus? Status,
     PluggyTransactionClass? Classification, int Page, int PageSize);
@@ -39,7 +39,7 @@ public sealed class PluggyAccountApply
 public interface IPluggyImportRepository
 {
     /// <summary>Inicia uma coleta, ou devolve nulo se a conexão já tem uma em andamento (coletas abandonadas são encerradas antes).</summary>
-    Task<PluggySyncRun?> TryStartRunAsync(Guid workspaceId, Guid connectionId, Guid userId, DateTimeOffset now, TimeSpan staleAfter, CancellationToken ct);
+    Task<PluggySyncRun?> TryStartRunAsync(Guid workspaceId, Guid connectionId, Guid userId, DateTimeOffset now, TimeSpan staleAfter, PluggySyncTrigger trigger, CancellationToken ct);
     Task SaveRunAsync(PluggySyncRun run, CancellationToken ct);
     /// <summary>
     /// Aplica a coleta de uma conta de forma idempotente (inserir/atualizar por conexão+conta+ID externo). Se <paramref name="complete"/>,

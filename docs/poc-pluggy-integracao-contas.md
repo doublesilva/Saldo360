@@ -431,3 +431,16 @@ Detalhes completos em [T09.5-saldos-bancarios-conciliacao.md](T09.5-saldos-banca
 - **Laboratório**: Itaú PF e Itaú PJ com referência provisória e movimentações em revisão (21 e 4), Nubank PJ confiável e sem divergência; diferença zero nas três; nenhuma âncora promovida. A abertura de outubro/2026 é reconstruída pelo banco nas contas Itaú e passa a ser calculada quando 1 item de cada conta (datado de 01/10 em diante) for decidido.
 - **Dashboard e Agenda**: partem do mesmo saldo calculado; Dashboard separa PF e PJ, marca referência provisória/revisões e não apresenta total parcial como completo.
 - **Limitação**: Agenda e Dashboard seguem usando o saldo calculado; meses sem histórico calculável continuam indisponíveis até os itens em revisão serem decididos.
+
+## 17. T09.6 — Sincronização automática e monitoramento
+
+Detalhes completos em [T09.6-sincronizacao-automatica-pluggy.md](T09.6-sincronizacao-automatica-pluggy.md). Resumo para a integração:
+
+- **Mesmo caminho da sincronização manual**, acionado por um `BackgroundService` (padrão do coletor de e-mail; sem Hangfire/Quartz). Desligado por padrão (`Pluggy:AutoSync`), intervalo de 24 h, janela e limite configuráveis.
+- **Ritmo do Meu Pluggy**: ao vencer o intervalo, só o Item é consultado; sem `lastUpdatedAt` novo não se coleta nem grava nada ("atualização da instituição ainda não disponível"), com reverificação em 2 h.
+- **Concorrência**: manual e automática nunca processam a mesma conexão ao mesmo tempo (índice único de execução em andamento + reserva atômica); execução abandonada é recuperada.
+- **Falhas isoladas** com espera crescente (30 min, 60 min...) e, esgotadas as tentativas, só no intervalo regular; consentimento expirado reverificado sem ruído e retomado sozinho após a renovação.
+- **Monitoramento**: tabela `pluggy_sync_states` + origem (manual/agendada) em cada execução, rota `sync-status` e bloco "Sincronização" na tela de Contas com "Sincronizar agora".
+- **Segurança**: sem OpenAI no caminho automático; sem pagamento ou transferência; só códigos curtos de erro, nunca token, identificador do Item ou dado bancário.
+- **Laboratório**: 3 conexões reais sincronizadas sozinhas (concluídas, 0 novos, 0 atualizados, 0 erros) e, na passada seguinte, "origem sem novidade" sem execução nova; contagens financeiras idênticas.
+- **Limitação**: roda dentro da API (com a API parada, nada sincroniza).

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { PluggySyncPanel } from './PluggySyncPanel'
 import {
   applyCardScheduleSuggestion, applyOpeningBalanceSuggestion, getCategorizationOverview, getLinkDetail, listLinks, listReview, reprocessImported, resolveReview, runCategorization,
   type AccountLink, type AccountLinkDetail, type CategorizationOverview, type CategorizationResult, type ReviewPage, type Resolution,
@@ -110,6 +111,7 @@ export function PluggyIntegrationSection({ workspaceId, refreshKey, onChanged }:
   const cards = links.filter(link => link.kind === 'Card')
   return <section className="card" aria-labelledby="pluggy-integration-title">
     <h3 id="pluggy-integration-title">Integração bancária (Pluggy)</h3>
+    <PluggySyncPanel workspaceId={workspaceId} refreshKey={refreshKey} onChanged={onChanged} />
     {cards.length > 0 && <>
       <h4>Cartões integrados</h4>
       <ul className="account-list">{cards.map(card => <li key={card.id} className="account"><PluggyAccountPanel workspaceId={workspaceId} linkId={card.id} refreshKey={refreshKey} onChanged={onChanged} /></li>)}</ul>

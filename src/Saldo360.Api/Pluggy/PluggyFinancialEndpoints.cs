@@ -22,6 +22,7 @@ public static class PluggyFinancialEndpoints
         group.MapGet("/status", Status);
         group.MapGet("/connections", ListConnections);
         group.MapGet("/connections/{connectionId:guid}/accounts", ListAvailable);
+        group.MapGet("/sync-status", SyncStatus);
         group.MapGet("/links", ListLinks);
         group.MapPost("/links", Link).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/links/{linkId:guid}", GetLink);
@@ -46,6 +47,11 @@ public static class PluggyFinancialEndpoints
     private static async Task<IResult> ListAvailable(Guid workspaceId, Guid connectionId, CurrentUser user, PluggyAccountLinkService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
         : PluggyPocEndpoints.Map(await service.ListAvailableAsync(workspaceId, userId, connectionId, ct), Results.Ok);
+
+    /// <summary>Monitoramento da sincronização por conexão (última tentativa e sucesso, próxima execução, contagens, erro resumido, consentimento). Só lê o banco: não consulta a Pluggy.</summary>
+    private static async Task<IResult> SyncStatus(Guid workspaceId, CurrentUser user, PluggySyncMonitorService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : PluggyPocEndpoints.Map(await service.GetAsync(workspaceId, userId, ct), Results.Ok);
 
     private static async Task<IResult> ListLinks(Guid workspaceId, CurrentUser user, PluggyAccountLinkService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()

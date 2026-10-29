@@ -232,7 +232,7 @@ public sealed class PluggyTransactionChange : Entity
     };
 }
 
-/// <summary>Uma execução manual de sincronização. No máximo uma <see cref="PluggySyncStatus.Running"/> por conexão.</summary>
+/// <summary>Uma execução de sincronização (manual ou agendada). No máximo uma <see cref="PluggySyncStatus.Running"/> por conexão.</summary>
 public sealed class PluggySyncRun : Entity
 {
     public const int ErrorSummaryMaxLength = 300;
@@ -252,9 +252,11 @@ public sealed class PluggySyncRun : Entity
     public int Missing { get; private set; }
     public int Errors { get; private set; }
     public string? ErrorSummary { get; private set; }
+    /// <summary>Manual (usuário) ou Scheduled (agendador). Execuções anteriores à T09.6 são manuais.</summary>
+    public PluggySyncTrigger Trigger { get; private init; }
 
-    public static PluggySyncRun Start(Guid workspaceId, Guid connectionId, Guid userId, DateTimeOffset now) =>
-        new() { WorkspaceId = workspaceId, ConnectionId = connectionId, UserId = userId, StartedAt = now, Status = PluggySyncStatus.Running };
+    public static PluggySyncRun Start(Guid workspaceId, Guid connectionId, Guid userId, DateTimeOffset now, PluggySyncTrigger trigger = PluggySyncTrigger.Manual) =>
+        new() { WorkspaceId = workspaceId, ConnectionId = connectionId, UserId = userId, StartedAt = now, Status = PluggySyncStatus.Running, Trigger = trigger };
 
     public void SetAccounts(int total) => AccountsTotal = total;
 

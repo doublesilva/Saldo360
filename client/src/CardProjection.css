@@ -34,3 +34,9 @@
 .badge--status-nodivergence { color: var(--success, #1a7f37); }
 .badge--status-movementsinreview, .badge--status-incompletehistory { color: var(--warning, #9a6700); }
 .badge--status-divergencefound, .badge--status-insufficientbankreference { color: var(--danger, #b42318); }
+
+/* T09.6: estado da sincronização das conexões */
+.pluggy-sync { margin: .5rem 0 1rem; }
+.badge--sync-completed { color: var(--success, #1a7f37); }
+.badge--sync-running, .badge--sync-sourcenotupdated, .badge--sync-completedwitherrors, .badge--sync-neversynced { color: var(--warning, #9a6700); }
+.badge--sync-failed, .badge--sync-consentexpired { color: var(--danger, #b42318); }

@@ -188,6 +188,10 @@ public static class DependencyInjection
         services.AddSingleton<Saldo360.Application.Pluggy.IPluggyClient, Saldo360.Infrastructure.Pluggy.PluggyClient>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyItemLinkRepository, Saldo360.Infrastructure.Pluggy.PluggyItemLinkRepository>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyImportRepository, Saldo360.Infrastructure.Pluggy.PluggyImportRepository>();
+        // T09.6: sincronização automática (desligada por padrão). Mesmo padrão de execução periódica do coletor de e-mail; sem infraestrutura nova de jobs.
+        services.AddSingleton(configuration.GetSection(Saldo360.Application.Pluggy.PluggyAutoSyncOptions.SectionName).Get<Saldo360.Application.Pluggy.PluggyAutoSyncOptions>() ?? new());
+        services.AddScoped<Saldo360.Application.Pluggy.IPluggySyncStateRepository, Saldo360.Infrastructure.Pluggy.PluggySyncStateRepository>();
+        services.AddHostedService<Saldo360.Infrastructure.Pluggy.PluggyAutoSyncHostedService>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyFinancialRepository, Saldo360.Infrastructure.Pluggy.PluggyFinancialRepository>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyPostingEngine, Saldo360.Infrastructure.Pluggy.PluggyPostingEngine>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyCategorizationRepository, Saldo360.Infrastructure.Pluggy.PluggyCategorizationRepository>();

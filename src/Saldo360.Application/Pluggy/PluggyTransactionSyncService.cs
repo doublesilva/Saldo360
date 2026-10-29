@@ -10,7 +10,8 @@ namespace Saldo360.Application.Pluggy;
 /// alimentam o realizado pelo <see cref="IPluggyPostingEngine"/>; contas não integradas continuam sem nenhum efeito financeiro.
 /// </summary>
 public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository workspaces, IPluggyItemLinkRepository links, IPluggyImportRepository imports,
-    IPluggyClient client, PluggyOptions options, TimeProvider time, IPluggyFinancialRepository financial, IPluggyPostingEngine engine)
+    IPluggyClient client, PluggyOptions options, TimeProvider time, IPluggyFinancialRepository financial, IPluggyPostingEngine engine,
+    IPluggySyncStateRepository states, PluggyAutoSyncOptions auto)
 {
     public const int MaxPageSize = 200;
 
@@ -21,14 +22,24 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
     {
         if (!await CanImportAsync(workspaceId, userId, ct) || await links.FindAsync(workspaceId, connectionId, ct) is not { } link)
             return PluggyResult<PluggySyncRunView>.NotFound();
-        var run = await imports.TryStartRunAsync(workspaceId, connectionId, userId, time.GetUtcNow(), TimeSpan.FromMinutes(Math.Max(1, options.SyncStaleMinutes)), ct);
+        return await RunConnectionAsync(link, userId, PluggySyncTrigger.Manual, null, ct);
+    }
+
+    /// <summary>
+    /// Sincroniza uma conexão: o mesmo caminho para o botão "Sincronizar agora" e para o agendador. Só uma execução por conexão de cada vez (índice único no banco),
+    /// então manual e automática não processam a mesma conexão ao mesmo tempo. <paramref name="knownItem"/> evita consultar o Item duas vezes quando o agendador já o consultou.
+    /// </summary>
+    public async Task<PluggyResult<PluggySyncRunView>> RunConnectionAsync(PluggyItemLink link, Guid userId, PluggySyncTrigger trigger, PluggyItem? knownItem, CancellationToken ct)
+    {
+        var run = await imports.TryStartRunAsync(link.WorkspaceId, link.Id, userId, time.GetUtcNow(), TimeSpan.FromMinutes(Math.Max(1, options.SyncStaleMinutes)), trigger, ct);
         if (run is null) return new(PluggyAccess.Conflict, Message: "Já existe uma sincronização em andamento para esta conexão.");
 
         PluggyException? fatal = null;
+        PluggyItem? observed = knownItem;
         var failed = false;
         try
         {
-            await RunAsync(link, run, ct);
+            await RunAsync(link, run, knownItem, item => observed = item, ct);
             await ApplyFinancialAsync(link, run, userId, ct);
         }
         catch (PluggyException error)
@@ -49,10 +60,42 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
             run.Finish(time.GetUtcNow(), failed || (run.AccountsSynced == 0 && run.Errors > 0));
             // A coleta termina registrada mesmo se a requisição foi cancelada.
             await imports.SaveRunAsync(run, CancellationToken.None);
+            await RecordStateAsync(link, run, observed, trigger);
         }
         return fatal is not null && failed
             ? new(PluggyAccess.IntegrationFailure, ToView(run), fatal.Kind, fatal.Message)
             : PluggyResult<PluggySyncRunView>.Ok(ToView(run));
+    }
+
+    /// <summary>
+    /// Monitoramento e agendamento: guarda o resultado da tentativa e calcula a próxima. Uma falha ao gravar o estado nunca invalida a sincronização (os dados já estão salvos).
+    /// </summary>
+    private async Task RecordStateAsync(PluggyItemLink link, PluggySyncRun run, PluggyItem? item, PluggySyncTrigger trigger)
+    {
+        try
+        {
+            var at = time.GetUtcNow();
+            var expired = run.ErrorSummary?.Contains("ConsentExpired", StringComparison.Ordinal) == true;
+            var outcome = expired ? PluggySyncOutcome.ConsentExpired : run.Status switch
+            {
+                PluggySyncStatus.Completed => PluggySyncOutcome.Completed,
+                PluggySyncStatus.CompletedWithErrors => PluggySyncOutcome.CompletedWithErrors,
+                _ => PluggySyncOutcome.Failed,
+            };
+            var failure = outcome is PluggySyncOutcome.Failed or PluggySyncOutcome.CompletedWithErrors;
+            await states.SaveAsync(link.WorkspaceId, link.Id, state =>
+            {
+                if (item is not null) state.ObserveItem(item.Status, item.ConsentExpiresAt, at);
+                var next = outcome switch
+                {
+                    PluggySyncOutcome.Completed => PluggyAutoSyncPolicy.AfterSuccess(at, auto),
+                    PluggySyncOutcome.ConsentExpired => PluggyAutoSyncPolicy.AfterConsentExpired(at, auto),
+                    _ => PluggyAutoSyncPolicy.AfterFailure(at, state.ConsecutiveFailures + 1, auto),
+                };
+                state.RecordAttempt(at, outcome, trigger, run.Id, run.ErrorSummary, failure, next, item?.LastUpdatedAt);
+            }, at, CancellationToken.None);
+        }
+        catch (Exception error) when (error is not OperationCanceledException) { /* o histórico da execução já foi salvo */ }
     }
 
     public async Task<PluggyResult<PluggyImportedPage>> ListAsync(Guid workspaceId, Guid userId, PluggyImportFilter filter, CancellationToken ct)
@@ -95,9 +138,10 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
 
     // ---- Coleta --------------------------------------------------------------------------------------------------
 
-    private async Task RunAsync(PluggyItemLink link, PluggySyncRun run, CancellationToken ct)
+    private async Task RunAsync(PluggyItemLink link, PluggySyncRun run, PluggyItem? knownItem, Action<PluggyItem> onItem, CancellationToken ct)
     {
-        var item = await client.GetItemAsync(link.PluggyItemId, ct);
+        var item = knownItem ?? await client.GetItemAsync(link.PluggyItemId, ct);
+        onItem(item);
         if (PluggyPocService.StateOf(item, time.GetUtcNow()) == PluggyConnectionState.ConsentExpired)
         {
             // Consentimento vencido: não consulta nada, para não confundir falta de autorização com ausência de dados.
@@ -223,5 +267,5 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
     };
 
     public static PluggySyncRunView ToView(PluggySyncRun r) => new(r.Id, r.ConnectionId, r.StartedAt, r.FinishedAt, r.Status.ToString(), r.AccountsTotal,
-        r.AccountsSynced, r.Seen, r.Created, r.Updated, r.Unchanged, r.Missing, r.Errors, r.ErrorSummary);
+        r.AccountsSynced, r.Seen, r.Created, r.Updated, r.Unchanged, r.Missing, r.Errors, r.ErrorSummary, r.Trigger.ToString());
 }

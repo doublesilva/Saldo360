@@ -10,14 +10,14 @@ internal sealed class PluggyImportRepository(Saldo360DbContext db) : IPluggyImpo
 {
     private const int LookupChunk = 1000;
 
-    public async Task<PluggySyncRun?> TryStartRunAsync(Guid workspaceId, Guid connectionId, Guid userId, DateTimeOffset now, TimeSpan staleAfter, CancellationToken ct)
+    public async Task<PluggySyncRun?> TryStartRunAsync(Guid workspaceId, Guid connectionId, Guid userId, DateTimeOffset now, TimeSpan staleAfter, PluggySyncTrigger trigger, CancellationToken ct)
     {
         var staleBefore = now - staleAfter;
         // Coleta abandonada (processo encerrado no meio) não deve bloquear a conexão para sempre.
         await db.PluggySyncRuns.Where(r => r.ConnectionId == connectionId && r.Status == PluggySyncStatus.Running && r.StartedAt < staleBefore)
             .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, PluggySyncStatus.Failed).SetProperty(r => r.FinishedAt, now)
                 .SetProperty(r => r.Errors, r => r.Errors + 1).SetProperty(r => r.ErrorSummary, "Abandoned"), ct);
-        var run = PluggySyncRun.Start(workspaceId, connectionId, userId, now);
+        var run = PluggySyncRun.Start(workspaceId, connectionId, userId, now, trigger);
         db.PluggySyncRuns.Add(run);
         try { await db.SaveChangesAsync(ct); return run; }
         catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })

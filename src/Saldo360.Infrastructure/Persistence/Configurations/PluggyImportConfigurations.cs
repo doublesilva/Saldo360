@@ -13,11 +13,13 @@ internal sealed class PluggySyncRunConfiguration : IEntityTypeConfiguration<Plug
         b.ToTable("pluggy_sync_runs", t =>
         {
             t.HasCheckConstraint("ck_pluggy_sync_runs_status", "status IN ('Running','Completed','CompletedWithErrors','Failed')");
+            t.HasCheckConstraint("ck_pluggy_sync_runs_trigger", "\"trigger\" IN ('Manual','Scheduled')");
             t.HasCheckConstraint("ck_pluggy_sync_runs_finished", "(status = 'Running') = (finished_at IS NULL)");
             t.HasCheckConstraint("ck_pluggy_sync_runs_counts", "seen >= 0 AND created >= 0 AND updated >= 0 AND unchanged >= 0 AND missing >= 0 AND errors >= 0");
         });
         b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+        b.Property(x => x.Trigger).HasConversion<string>().HasMaxLength(12).HasDefaultValue(PluggySyncTrigger.Manual);
         b.Property(x => x.ErrorSummary).HasMaxLength(PluggySyncRun.ErrorSummaryMaxLength);
         // Uma única coleta em andamento por conexão: impede sincronizações simultâneas mesmo entre instâncias.
         b.HasIndex(x => x.ConnectionId).IsUnique().HasFilter("status = 'Running'").HasDatabaseName("ux_pluggy_sync_runs_running");
@@ -25,6 +27,29 @@ internal sealed class PluggySyncRunConfiguration : IEntityTypeConfiguration<Plug
         b.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<PluggyItemLink>().WithMany().HasForeignKey(x => x.ConnectionId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class PluggySyncStateConfiguration : IEntityTypeConfiguration<PluggySyncState>
+{
+    public void Configure(EntityTypeBuilder<PluggySyncState> b)
+    {
+        b.ToTable("pluggy_sync_states", t =>
+        {
+            t.HasCheckConstraint("ck_pluggy_sync_states_outcome", "last_outcome IN ('Never','Completed','CompletedWithErrors','Failed','ConsentExpired','SourceNotUpdated')");
+            t.HasCheckConstraint("ck_pluggy_sync_states_trigger", "last_trigger IS NULL OR last_trigger IN ('Manual','Scheduled')");
+            t.HasCheckConstraint("ck_pluggy_sync_states_failures", "consecutive_failures >= 0");
+        });
+        b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
+        b.Property(x => x.LastOutcome).HasConversion<string>().HasMaxLength(24);
+        b.Property(x => x.LastTrigger).HasConversion<string>().HasMaxLength(12);
+        b.Property(x => x.SourceStatus).HasMaxLength(PluggySyncState.StatusMaxLength);
+        b.Property(x => x.LastError).HasMaxLength(PluggySyncState.ErrorMaxLength);
+        // Uma linha de estado por conexão.
+        b.HasIndex(x => x.ConnectionId).IsUnique().HasDatabaseName("ux_pluggy_sync_states_connection");
+        b.HasIndex(x => x.NextAttemptAt);
+        b.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<PluggyItemLink>().WithMany().HasForeignKey(x => x.ConnectionId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
