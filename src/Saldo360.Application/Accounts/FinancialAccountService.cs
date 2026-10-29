@@ -15,6 +15,11 @@ public sealed class FinancialAccountService(
 {
     private const string ResponsibleField = "responsibleUserId";
     private const string InvalidResponsible = "Responsável inválido.";
+    private const string PrimaryField = "isPrimary";
+    private const string ReplacementField = "replacementPrimaryAccountId";
+    private const string PrimaryMustBeBank = "Somente uma conta bancária (corrente ou poupança) ativa pode ser a conta principal.";
+    private const string PrimaryNeedsReplacement =
+        "Esta é a conta principal. Informe a conta substituta (replacementPrimaryAccountId) ou remova a condição de principal (isPrimary=false) antes de desativá-la.";
 
     public async Task<AccountResult> CreateAsync(Guid workspaceId, Guid userId, AccountInput input, CancellationToken cancellationToken)
     {
@@ -24,14 +29,28 @@ public sealed class FinancialAccountService(
         }
 
         var (details, errors) = await ValidateAsync(workspaceId, input, cancellationToken);
+        if (input.IsPrimary == true && details is not null && !FinancialAccount.IsBankType(details.Type))
+        {
+            errors[PrimaryField] = [PrimaryMustBeBank];
+            details = null;
+        }
+
         if (details is null)
         {
             return AccountResult.Invalid(errors);
         }
 
         var account = FinancialAccount.Create(workspaceId, details, userId, timeProvider.GetUtcNow());
-        await accounts.AddAsync(account, cancellationToken);
-        return AccountResult.Ok((await accounts.GetAsync(workspaceId, account.Id, cancellationToken))!);
+        return await accounts.RunExclusiveAsync(workspaceId, async () =>
+        {
+            await accounts.AddAsync(account, cancellationToken);
+            if (input.IsPrimary == true)
+            {
+                await MakePrimaryAsync(workspaceId, account, cancellationToken);
+            }
+
+            return AccountResult.Ok((await accounts.GetAsync(workspaceId, account.Id, cancellationToken))!);
+        }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<FinancialAccountDto>?> ListAsync(
@@ -45,12 +64,14 @@ public sealed class FinancialAccountService(
             ? await accounts.GetAsync(workspaceId, accountId, cancellationToken)
             : null;
 
-    /// <summary>Atualiza campos cadastrais e situação. Família, criador, moeda e data de criação não mudam.</summary>
+    /// <summary>
+    /// Atualiza campos cadastrais e situação. Família, criador, moeda e data de criação não mudam. A conta principal só pode ser
+    /// desativada (ou deixar de ser bancária) junto com uma substituta ou com a remoção explícita da condição de principal.
+    /// </summary>
     public async Task<AccountResult> UpdateAsync(
         Guid workspaceId, Guid accountId, Guid userId, AccountInput input, bool? isActive, CancellationToken cancellationToken)
     {
-        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
-            || await accounts.FindAsync(workspaceId, accountId, cancellationToken) is not { } account)
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
         {
             return AccountResult.NotFound;
         }
@@ -66,9 +87,140 @@ public sealed class FinancialAccountService(
             return AccountResult.Invalid(errors);
         }
 
-        account.Update(details, isActive.Value);
+        return await accounts.RunExclusiveAsync(workspaceId, async () =>
+        {
+            if (await accounts.FindAsync(workspaceId, accountId, cancellationToken) is not { } account)
+            {
+                return AccountResult.NotFound;
+            }
+
+            var stillEligible = isActive.Value && FinancialAccount.IsBankType(details.Type);
+            var leaving = account.IsPrimary && !stillEligible;
+            FinancialAccount? replacement = null;
+            if (leaving && input.IsPrimary != false && input.ReplacementPrimaryAccountId is null)
+            {
+                return AccountResult.Invalid(new Dictionary<string, string[]> { ["isActive"] = [PrimaryNeedsReplacement] });
+            }
+
+            if (input.IsPrimary == true && !stillEligible)
+            {
+                return AccountResult.Invalid(new Dictionary<string, string[]> { [PrimaryField] = [PrimaryMustBeBank] });
+            }
+
+            if (input.ReplacementPrimaryAccountId is { } replacementId)
+            {
+                if (!leaving || input.IsPrimary is not null)
+                {
+                    return AccountResult.Invalid(new Dictionary<string, string[]> { [ReplacementField] = ["A substituta só vale ao desativar a conta principal."] });
+                }
+
+                replacement = replacementId == accountId ? null : await accounts.FindAsync(workspaceId, replacementId, cancellationToken);
+                if (replacement is not { IsEligiblePayer: true })
+                {
+                    return AccountResult.Invalid(new Dictionary<string, string[]> { [ReplacementField] = ["A substituta precisa ser outra conta bancária ativa do orçamento."] });
+                }
+            }
+
+            var becomesPrimary = input.IsPrimary == true && !account.IsPrimary;
+            if (becomesPrimary)
+            {
+                // A principal anterior é desmarcada e gravada antes da nova, para respeitar o índice único.
+                await ClearCurrentPrimaryAsync(workspaceId, account.Id, cancellationToken);
+            }
+
+            if (leaving || input.IsPrimary == false)
+            {
+                account.ClearPrimary();
+            }
+
+            account.Update(details, isActive.Value);
+            await accounts.SaveChangesAsync(cancellationToken);
+            if (becomesPrimary)
+            {
+                account.MarkPrimary();
+                await accounts.SaveChangesAsync(cancellationToken);
+            }
+            else if (replacement is not null)
+            {
+                replacement.MarkPrimary();
+                await accounts.SaveChangesAsync(cancellationToken);
+            }
+
+            return AccountResult.Ok((await accounts.GetAsync(workspaceId, account.Id, cancellationToken))!);
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Define a conta como a principal do orçamento, substituindo a anterior de forma atômica. Só conta bancária ativa. Não altera saldo,
+    /// movimentações nem a conta pagadora dos cartões. Idempotente para a conta que já é a principal.
+    /// </summary>
+    public async Task<AccountResult> SetPrimaryAsync(Guid workspaceId, Guid accountId, Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
+        {
+            return AccountResult.NotFound;
+        }
+
+        return await accounts.RunExclusiveAsync(workspaceId, async () =>
+        {
+            if (await accounts.FindAsync(workspaceId, accountId, cancellationToken) is not { } account)
+            {
+                return AccountResult.NotFound;
+            }
+
+            if (!account.IsEligiblePayer)
+            {
+                return AccountResult.Invalid(new Dictionary<string, string[]> { [PrimaryField] = [PrimaryMustBeBank] });
+            }
+
+            if (!account.IsPrimary)
+            {
+                await MakePrimaryAsync(workspaceId, account, cancellationToken);
+            }
+
+            return AccountResult.Ok((await accounts.GetAsync(workspaceId, account.Id, cancellationToken))!);
+        }, cancellationToken);
+    }
+
+    /// <summary>Remove explicitamente a condição de conta principal (o orçamento fica sem principal). Idempotente.</summary>
+    public async Task<AccountResult> ClearPrimaryAsync(Guid workspaceId, Guid accountId, Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
+        {
+            return AccountResult.NotFound;
+        }
+
+        return await accounts.RunExclusiveAsync(workspaceId, async () =>
+        {
+            if (await accounts.FindAsync(workspaceId, accountId, cancellationToken) is not { } account)
+            {
+                return AccountResult.NotFound;
+            }
+
+            if (account.IsPrimary)
+            {
+                account.ClearPrimary();
+                await accounts.SaveChangesAsync(cancellationToken);
+            }
+
+            return AccountResult.Ok((await accounts.GetAsync(workspaceId, account.Id, cancellationToken))!);
+        }, cancellationToken);
+    }
+
+    private async Task MakePrimaryAsync(Guid workspaceId, FinancialAccount account, CancellationToken cancellationToken)
+    {
+        await ClearCurrentPrimaryAsync(workspaceId, account.Id, cancellationToken);
+        account.MarkPrimary();
         await accounts.SaveChangesAsync(cancellationToken);
-        return AccountResult.Ok((await accounts.GetAsync(workspaceId, account.Id, cancellationToken))!);
+    }
+
+    private async Task ClearCurrentPrimaryAsync(Guid workspaceId, Guid exceptAccountId, CancellationToken cancellationToken)
+    {
+        if (await accounts.FindPrimaryAsync(workspaceId, cancellationToken) is { } current && current.Id != exceptAccountId)
+        {
+            current.ClearPrimary();
+            await accounts.SaveChangesAsync(cancellationToken);
+        }
     }
 
     /// <summary>
@@ -179,10 +331,10 @@ public sealed class FinancialAccountService(
             amount, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut);
         return new AccountBalanceDto(
             accountId, date, amount, referenceDate, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut,
-            balance, null);
+            balance, null, opening.Source);
 
         AccountBalanceDto Unavailable(BalanceUnavailableReason reason) =>
-            new(accountId, date, opening.Amount, opening.Date, null, null, null, null, null, reason);
+            new(accountId, date, opening.Amount, opening.Date, null, null, null, null, null, reason, opening.Source);
     }
 
     private async Task<bool> IsParticipantAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>

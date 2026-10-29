@@ -6,7 +6,7 @@ import { Accounts } from './Accounts'
 const api = vi.hoisted(() => ({
   isPluggyIntegrationAvailable: vi.fn(), listIntegrationConnections: vi.fn(), listAvailableAccounts: vi.fn(), linkAccount: vi.fn(), getLinkDetail: vi.fn(),
   applyOpeningBalanceSuggestion: vi.fn(), reprocessImported: vi.fn(), listReview: vi.fn(), resolveReview: vi.fn(), listLinks: vi.fn(),
-  getCategorizationOverview: vi.fn(), runCategorization: vi.fn(),
+  getCategorizationOverview: vi.fn(), runCategorization: vi.fn(), applyCardScheduleSuggestion: vi.fn(),
 }))
 vi.mock('../api/pluggyIntegration', () => api)
 
@@ -57,6 +57,21 @@ describe('Accounts — origem Pluggy', () => {
     expect(within(pluggyItem).getByText('Origem: Pluggy')).toBeTruthy()
     expect(await within(pluggyItem).findByLabelText(/Integração Itaú · Conta corrente/)).toBeTruthy()
     expect(within(pluggyItem).getByText(/Saldo informado pelo banco/)).toBeTruthy()
+  })
+
+  it('mostra que o saldo veio da referência bancária (sem saldo inicial manual) e a data a partir da qual o histórico existe', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
+      if (/\/balance$/.test(url)) return Response.json({ accountId: 'x', asOf: '2026-10-28', openingBalance: '1507.75', openingBalanceDate: '2026-10-24', totalIncome: '0.00', totalExpense: '7.00', totalTransferIn: '0.00', totalTransferOut: '0.00', balance: '1500.75', unavailableReason: null, openingSource: 'BalanceAnchor' })
+      if (/\/projection\?/.test(url)) return Response.json({ accountId: 'x', baseDate: '2026-10-28', through: '2026-10-31', realizedBalance: null, overdueIncome: null, overdueExpense: null, plannedIncome: null, plannedExpense: null, projectedBalance: null, unavailableReason: 'OpeningBalanceNotConfigured' })
+      return Response.json([manual, integrated])
+    }))
+    render(<Accounts workspaceId="w1" members={[]} />)
+
+    const item = (await screen.findByText('Carteira', { selector: '.account__name' })).closest('li')!
+    expect((await within(item).findAllByText(/referência bancária/))[0]).toBeTruthy()
+    expect(within(item).getAllByText(/Desde 24\/10\/2026/).length).toBeGreaterThan(0)
   })
 
   it('"Nova conta" oferece a origem Pluggy e abre o fluxo de seleção da conta do banco; manual continua disponível', async () => {

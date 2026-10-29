@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Application.Pluggy;
+using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
 using Saldo360.Domain.CreditCards;
@@ -553,7 +554,9 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
         var linkId = cardLink.GetProperty("link").GetProperty("id").GetGuid();
         var bills = (await JsonGetAsync(c, $"{Integration(c.Workspace)}/links/{linkId}")).GetProperty("reconciliation").GetProperty("card").GetProperty("bills").EnumerateArray().ToList();
         var bill = Assert.Single(bills);
-        Assert.Equal(("Official", "230.00", "230.00", "0.00"), (bill.GetProperty("status").GetString(), bill.GetProperty("bankTotal").GetString(), bill.GetProperty("saldo360Total").GetString(), bill.GetProperty("difference").GetString()));
+        // Fechada pelo banco e paga, independentemente da conciliação: o histórico importado começa dentro deste ciclo, então a conciliação é incompleta.
+        Assert.Equal(("Closed", "Paid", "Incomplete", "MissingHistory"), (bill.GetProperty("cycle").GetString(), bill.GetProperty("payment").GetString(), bill.GetProperty("reconciliation").GetString(), bill.GetProperty("reconciliationReason").GetString()));
+        Assert.Equal(("230.00", "230.00", "0.00"), (bill.GetProperty("bankTotal").GetString(), bill.GetProperty("saldo360Total").GetString(), bill.GetProperty("difference").GetString()));
         var postings = await db.PluggyPostings.AsNoTracking().ToListAsync();
         Assert.Equal(1, postings.Count(p => p.State == PluggyPostingState.Covered));
         Assert.Equal(PluggyPostingKind.CardBillPayment, postings.Single(p => p.State == PluggyPostingState.Applied && p.Kind == PluggyPostingKind.CardBillPayment).Kind);
@@ -568,7 +571,65 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
     }
 
     [Fact]
-    public async Task AnInvoiceWhoseBankTotalDiffersStaysOpenAndItsPaymentIsNotRecordedAutomatically()
+    public async Task APersonalAccountPaysABusinessCardWithOneCashOutflowAndNeitherASecondConsumptionNorATransfer()
+    {
+        var c = await ArrangeAsync("t933-pf-pays-pj", seed: false);
+        var itemB = await LinkAsync(c.Client, c.Session, c.Workspace, ItemB, "Itaú PF");
+        // Item A: conta e cartão da PJ. Item B: conta da PF, de onde sai o dinheiro que paga o cartão PJ.
+        Pluggy.TransactionsByAccount[BankA] = [];
+        Pluggy.TransactionsByAccount[BankB] = [Tx("pay-bank", BankB, 10, -230m, operation: "PIX", description: "PAGAMENTO DE FATURA", category: null)];
+        SeedCard(Tx("pay-card", CardA, 10, 230m, operation: "PAGAMENTO_FATURA", description: "PAGAMENTO FATURA", type: "CREDIT", category: null));
+        var pj = (await LinkBankAsync(c, name: "Itaú PJ", extra: new { financialScope = "PJ" })).GetProperty("link").GetProperty("financialAccountId").GetGuid();
+        var pfLink = await PostAsync(c, $"{Integration(c.Workspace)}/links", new { connectionId = itemB, pluggyAccountId = BankB, mode = "CreateNew", name = "Itaú PF", financialScope = "PF" });
+        Assert.Equal(HttpStatusCode.Created, pfLink.StatusCode);
+        var pf = (await JsonOf(pfLink)).GetProperty("link").GetProperty("financialAccountId").GetGuid();
+        var cardResponse = await PostAsync(c, $"{Integration(c.Workspace)}/links", new
+        {
+            connectionId = c.Connection, pluggyAccountId = CardA, mode = "CreateNew", name = "Itaú Empresas Visa",
+            closingDay = Today.AddDays(-15).Day, dueDay = Today.AddDays(-8).Day, paymentAccountId = pf,
+        });
+        Assert.Equal(HttpStatusCode.Created, cardResponse.StatusCode);
+        var cardId = (await JsonOf(cardResponse)).GetProperty("link").GetProperty("creditCardId").GetGuid();
+
+        await SyncAsync(c);
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(c, $"{Root(c.Workspace)}/connections/{itemB}/sync")).StatusCode);
+
+        // O cartão continua identificado como da PJ (escopo da conexão onde ele nasceu); a pagadora é só uma preferência.
+        var card = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/credit-cards/{cardId}");
+        Assert.Equal(("PJ", "Pluggy", pf), (card.GetProperty("scope").GetString(), card.GetProperty("origin").GetString(), card.GetProperty("defaultPaymentAccountId").GetGuid()));
+
+        // Uma única saída de caixa, na conta PF; liquida a fatura do cartão PJ sem segunda despesa de consumo e sem transferência PF/PJ.
+        var core = await CoreAsync(c.Workspace);
+        var payment = Assert.Single(core);
+        Assert.Equal((FinancialTransactionOrigin.CreditCardInvoicePayment, CategoryType.Expense, pf, 230m), (payment.Origin, payment.Type, payment.AccountId, payment.Amount));
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialTransfers.CountAsync());
+        var invoicePayment = await db.FinancialCreditCardInvoicePayments.AsNoTracking().SingleAsync();
+        Assert.Equal((payment.Id, 230m), (invoicePayment.TransactionId, invoicePayment.Amount));
+        var invoice = (await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/credit-cards/{cardId}/invoices?from={Today.AddMonths(-3):yyyy-MM}&through={Today.AddMonths(3):yyyy-MM}")).EnumerateArray().Single();
+        Assert.Equal(("230.00", "Paid"), (invoice.GetProperty("paidAmount").GetString(), invoice.GetProperty("paymentStatus").GetString()));
+        // Consumo por cartão e caixa por conta pagadora são consultas separadas: a PF tem a saída, a PJ nenhuma movimentação.
+        Assert.Equal(1, await db.FinancialTransactions.CountAsync(t => t.AccountId == pf));
+        Assert.Equal(0, await db.FinancialTransactions.CountAsync(t => t.AccountId == pj));
+
+        // Trocar a conta pagadora padrão depois não mexe no histórico: o pagamento segue na conta que realmente pagou.
+        var changed = await Send(c.Client, HttpMethod.Put, $"/api/financial-workspaces/{c.Workspace}/credit-cards/{cardId}", c.Session, new
+        {
+            name = card.GetProperty("name").GetString(), issuer = card.GetProperty("issuer").GetString(), lastFourDigits = card.GetProperty("lastFourDigits").GetString(),
+            creditLimit = card.GetProperty("creditLimit").GetString(), closingDay = card.GetProperty("closingDay").GetInt32(), dueDay = card.GetProperty("dueDay").GetInt32(),
+            defaultPaymentAccountId = pj,
+        });
+        Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+        await SyncAsync(c);
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(c, $"{Root(c.Workspace)}/connections/{itemB}/sync")).StatusCode);
+        var afterChange = Assert.Single(await CoreAsync(c.Workspace));
+        Assert.Equal((payment.Id, pf), (afterChange.Id, afterChange.AccountId));
+        Assert.Equal(1, await db.FinancialCreditCardInvoicePayments.CountAsync());
+        Assert.Equal(0, await db.FinancialTransfers.CountAsync());
+    }
+
+    [Fact]
+    public async Task ABillClosedByTheBankIsClosedAndPaidEvenWhenItsTotalDiffersFromTheImportedPurchases()
     {
         var c = await ArrangeAsync("t93-bill-mismatch", seed: false);
         Pluggy.TransactionsByAccount[BankA] = [Tx("pay-bank", BankA, 10, -235m, category: null)];
@@ -579,14 +640,17 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
 
         await SyncAsync(c);
 
-        Assert.Empty(await CoreAsync(c.Workspace));
-        Assert.Equal(["NoInvoiceForPayment", "NoInvoiceForPayment"], Reasons(await ReviewAsync(c)));
-        var linkId = cardLink.GetProperty("link").GetProperty("id").GetGuid();
-        var bill = (await JsonGetAsync(c, $"{Integration(c.Workspace)}/links/{linkId}")).GetProperty("reconciliation").GetProperty("card").GetProperty("bills")[0];
-        Assert.Equal(("Mismatch", "235.00", "230.00", "5.00"), (bill.GetProperty("status").GetString(), bill.GetProperty("bankTotal").GetString(), bill.GetProperty("saldo360Total").GetString(), bill.GetProperty("difference").GetString()));
+        // Fechamento e pagamento não dependem da conciliação: a saída bancária quita a fatura e a diferença só é registrada.
+        Assert.Equal(["Payment"], (await CoreAsync(c.Workspace)).Select(t => t.Amount == 235m && t.Origin == FinancialTransactionOrigin.CreditCardInvoicePayment ? "Payment" : "Other"));
+        Assert.Empty(Reasons(await ReviewAsync(c)));
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "Paid", "Incomplete"), States(bill));
+        Assert.Equal(("235.00", "230.00", "5.00"), (bill.GetProperty("bankTotal").GetString(), bill.GetProperty("saldo360Total").GetString(), bill.GetProperty("difference").GetString()));
         await using var db = Db();
-        Assert.Equal(0, await db.FinancialCreditCardInvoicePayments.CountAsync());
-        Assert.Equal(0, await db.FinancialCreditCardInvoices.CountAsync(i => i.OfficialVersion > 0));
+        var invoice = await db.FinancialCreditCardInvoices.AsNoTracking().SingleAsync();
+        Assert.Equal((235m, 0), (invoice.InstitutionTotal, invoice.OfficialVersion));
+        Assert.Equal(1, await db.FinancialCreditCardInvoicePayments.CountAsync());
+        Assert.Equal(0, await db.FinancialCreditCardInvoiceAdjustments.CountAsync()); // nenhum ajuste para "compensar" a diferença
     }
 
     [Fact]
@@ -720,7 +784,7 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
         var cardLink = await LinkCardAsync(c, Today.AddDays(-15).Day, Today.AddDays(-8).Day);
         var cardId = cardLink.GetProperty("link").GetProperty("creditCardId").GetGuid();
         await SyncAsync(c);
-        Assert.Equal(0, await Db().FinancialCreditCardInvoices.CountAsync(i => i.OfficialVersion > 0)); // 230 × 240: aberta e divergente
+        Assert.Equal(1, await Db().FinancialCreditCardInvoices.CountAsync(i => i.InstitutionClosedAt != null)); // fechada pelo banco com total 240; as compras somam 230 (divergente)
 
         Pluggy.TransactionsByAccount[CardA] = [.. Pluggy.TransactionsByAccount[CardA].Select(t => t.Id == "c1" ? t with { Amount = 160m } : t)];
         await SyncAsync(c);
@@ -730,16 +794,17 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
         Assert.Equal(2, purchases.Count);
         Assert.Equal(new[] { 80m, 160m }, purchases.Select(p => p.TotalAmount).Order());
         Assert.Equal(240m, purchases.SelectMany(p => p.Installments).Where(i => i.Status == CreditCardInstallmentStatus.Active).Sum(i => i.Amount));
-        // Com o total do banco agora igual à soma, a fatura passa a fechar oficialmente.
-        Assert.Equal(1, await db.FinancialCreditCardInvoices.CountAsync(i => i.OfficialVersion > 0));
+        Assert.Equal(0, await db.FinancialCreditCardInvoices.CountAsync(i => i.OfficialVersion > 0));
 
-        // Depois de oficial a fatura é imutável: se o banco corrigir o total, a divergência aparece e nada é reescrito sozinho.
+        // Fatura fechada pelo banco não é imutável: se o banco corrige o total e o valor da compra, a mesma compra é atualizada e a fatura segue fechada.
         SeedBill(250m);
         Pluggy.TransactionsByAccount[CardA] = [.. Pluggy.TransactionsByAccount[CardA].Select(t => t.Id == "c1" ? t with { Amount = 170m } : t)];
         await SyncAsync(c);
-        Assert.Equal(new[] { 80m, 160m }, (await db.FinancialCreditCardPurchases.AsNoTracking().Where(p => p.CreditCardId == cardId).ToListAsync()).Select(p => p.TotalAmount).Order());
+        Assert.Equal(new[] { 80m, 170m }, (await db.FinancialCreditCardPurchases.AsNoTracking().Where(p => p.CreditCardId == cardId).ToListAsync()).Select(p => p.TotalAmount).Order());
+        Assert.Equal(250m, (await db.FinancialCreditCardInvoices.AsNoTracking().SingleAsync(i => i.InstitutionClosedAt != null)).InstitutionTotal);
         var bill = (await JsonGetAsync(c, $"{Integration(c.Workspace)}/links/{cardLink.GetProperty("link").GetProperty("id").GetGuid()}")).GetProperty("reconciliation").GetProperty("card").GetProperty("bills")[0];
-        Assert.Equal(("OfficialDiverges", "10.00"), (bill.GetProperty("status").GetString(), bill.GetProperty("difference").GetString()));
+        Assert.Equal("Closed", bill.GetProperty("cycle").GetString());
+        Assert.Equal("250.00", bill.GetProperty("bankTotal").GetString());
     }
 
     [Fact]
@@ -794,7 +859,7 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
         await SyncAsync(c);
 
         Assert.Empty(await CoreAsync(c.Workspace));
-        Assert.Equal(["Card:CardRefund", "CreditOperation", "PossibleRefund"], Reasons(await ReviewAsync(c)));
+        Assert.Equal(["CreditOperation", "CreditWithoutBillReference", "PossibleRefund"], Reasons(await ReviewAsync(c))); // sem a fatura de referência, nada é adivinhado
     }
 
     [Fact]
@@ -846,6 +911,7 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
     public async Task ObservedAndCalculatedBalancesStaySeparateAndTheOpeningBalanceIsOnlyAppliedOnExplicitRequest()
     {
         var c = await ArrangeAsync("t93-balance");
+        Pluggy.AccountsByItem[ItemA] = [FakePluggyClient.Account(BankA, ItemA) with { UpdatedAt = DateTimeOffset.UtcNow }, FakePluggyClient.Account(CardA, ItemA, "CREDIT", "5555444433332222")];
         var detail = await LinkBankAsync(c);
         var linkId = detail.GetProperty("link").GetProperty("id").GetGuid();
         var accountId = detail.GetProperty("link").GetProperty("financialAccountId").GetGuid();
@@ -854,9 +920,11 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
 
         var before = (await JsonGetAsync(c, url)).GetProperty("reconciliation");
         Assert.Equal("1500.75", before.GetProperty("observedBalance").GetString());
-        Assert.Equal(JsonValueKind.Null, before.GetProperty("calculatedBalance").ValueKind); // sem saldo inicial: indisponível, nunca zero
-        Assert.Equal("OpeningBalanceNotConfigured", before.GetProperty("calculatedUnavailableReason").GetString());
+        // Sem saldo inicial manual: o saldo calculado parte da referência bancária (âncora) e dos movimentos consistentes; a diferença seria zero por construção e não é exibida.
+        Assert.Equal("1500.75", before.GetProperty("calculatedBalance").GetString());
+        Assert.Equal(JsonValueKind.Null, before.GetProperty("calculatedUnavailableReason").ValueKind);
         Assert.Equal(JsonValueKind.Null, before.GetProperty("difference").ValueKind);
+        Assert.Null((await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}")).GetProperty("openingBalance").GetString()); // nada foi gravado na conta
         Assert.Equal("ReviewPending", before.GetProperty("suggestionUnavailableReason").GetString()); // há movimento em revisão
         Assert.Equal(HttpStatusCode.Conflict, (await PostAsync(c, $"{url}/opening-balance-suggestion", new { confirm = true })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await PostAsync(c, $"{url}/opening-balance-suggestion", new { })).StatusCode);
@@ -924,5 +992,479 @@ public sealed class PluggyFinancialIntegrationTests(PostgresFixture postgres) : 
         var months = dashboard.GetProperty("monthlyProjection").EnumerateArray().ToList();
         Assert.Equal(99.90m, months.Sum(m => decimal.Parse(m.GetProperty("realizedIncome").GetString()!, System.Globalization.CultureInfo.InvariantCulture)));
         Assert.Equal(17.25m, months.Sum(m => decimal.Parse(m.GetProperty("realizedExpense").GetString()!, System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    // ============================================================================================================================
+    // T09.3.2: fatura fechada pela instituição, pagamentos, créditos, âncora de saldo e fechamento/vencimento
+    // ============================================================================================================================
+
+    private static PluggyBill Bill(string id, int closedDaysAgo, int dueDaysAgo, decimal total, IEnumerable<(decimal Amount, int DaysAgo)>? payments = null, IEnumerable<decimal>? charges = null) =>
+        new(id, DateTimeOffset.Parse(D(dueDaysAgo) + "T00:00:00Z"), total, "BRL", null, null,
+            (charges ?? []).Select(a => new PluggyFinanceCharge("IOF", a, "BRL", null)).ToList(), DateTimeOffset.Parse(D(closedDaysAgo) + "T00:00:00Z"),
+            (payments ?? []).Select(p => new PluggyBillPayment(p.Amount, "BRL", DateTimeOffset.Parse(D(p.DaysAgo) + "T00:00:00Z"), "DEBIT_ACCOUNT", null)).ToList());
+
+    private static PluggyBill FixedBill(string id, DateOnly closing, DateOnly due) =>
+        new(id, DateTimeOffset.Parse(due.ToString("yyyy-MM-dd") + "T00:00:00Z"), 0m, "BRL", null, null, [], DateTimeOffset.Parse(closing.ToString("yyyy-MM-dd") + "T00:00:00Z"), []);
+
+    private static PluggyCardMetadata OnBill(string id) => new(null, null, null, null, id, "2222", null, null);
+
+    /// <summary>Dois ciclos: "bill-0" (fechou há 46 dias, com a compra mais antiga do histórico) e "bill-1" (fechou há 15 dias), com 230,00 em compras.</summary>
+    private void SeedCycle(decimal bill1Total, IEnumerable<(decimal Amount, int DaysAgo)>? payments = null, IEnumerable<decimal>? charges = null, params PluggyTransaction[] extra)
+    {
+        Pluggy.BillsByAccount[CardA] = [Bill("bill-1", 15, 8, bill1Total, payments, charges), Bill("bill-0", 46, 39, 10m)];
+        Pluggy.TransactionsByAccount[CardA] =
+        [
+            Tx("c-old", CardA, 60, 10m, operation: "PAGAMENTO", description: "ANTIGA", card: OnBill("bill-0"), type: "DEBIT", category: null),
+            Tx("c1", CardA, 20, 150m, operation: "PAGAMENTO", description: "LOJA", card: OnBill("bill-1"), type: "DEBIT", category: null),
+            Tx("c2", CardA, 19, 80m, operation: "PAGAMENTO", description: "TV", card: OnBill("bill-1"), type: "DEBIT", category: null),
+            ..extra,
+        ];
+    }
+
+    private async Task<List<JsonElement>> BillsOfAsync(Ctx c, JsonElement cardLink)
+    {
+        var linkId = cardLink.GetProperty("link").GetProperty("id").GetGuid();
+        return (await JsonGetAsync(c, $"{Integration(c.Workspace)}/links/{linkId}")).GetProperty("reconciliation").GetProperty("card").GetProperty("bills").EnumerateArray().ToList();
+    }
+
+    private static (string Cycle, string Payment, string Reconciliation) States(JsonElement bill) =>
+        (bill.GetProperty("cycle").GetString()!, bill.GetProperty("payment").GetString()!, bill.GetProperty("reconciliation").GetString()!);
+
+    private static string Money2(JsonElement bill, string property) => bill.GetProperty(property).GetString()!;
+
+    private static PluggyTransaction BankPayment(string id, int daysAgo, decimal amount) =>
+        Tx(id, BankA, daysAgo, -amount, operation: "BOLETO", description: "PAGAMENTO", category: "Credit card payment");
+
+    // ---- 1 a 5. Fechamento pela instituição, independente da conciliação ----------------------------------------------------
+
+    [Fact]
+    public async Task ABillClosedByTheBankWithEverythingImportedIsClosedUnpaidAndReconciled()
+    {
+        var c = await ArrangeAsync("t932-reconciled", seed: false);
+        SeedCycle(230m);
+        var cardLink = await LinkCardAsync(c, 3, 12); // dias habituais diferentes dos do banco: as compras precisam migrar para a fatura real
+
+        await SyncAsync(c);
+
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "Unpaid", "Reconciled"), States(bill));
+        Assert.Equal(("230.00", "230.00", "0.00"), (Money2(bill, "bankTotal"), Money2(bill, "saldo360Total"), Money2(bill, "difference")));
+        await using var db = Db();
+        var invoices = await db.FinancialCreditCardInvoices.AsNoTracking().ToListAsync();
+        Assert.All(invoices, i => Assert.Equal("Pluggy", i.InstitutionSource)); // só existem faturas do banco: as de calendário foram removidas depois de as compras migrarem
+        var closed = invoices.Single(i => i.ClosingDate == Today.AddDays(-15));
+        Assert.Equal((230m, 0), (closed.InstitutionTotal, closed.OfficialVersion));
+        Assert.Equal(0, await db.FinancialCreditCardInvoiceAdjustments.CountAsync());
+        Assert.All(await db.FinancialCreditCardInstallments.AsNoTracking().ToListAsync(), i => Assert.Contains(i.InvoiceId, invoices.Select(x => (Guid?)x.Id)));
+    }
+
+    [Fact]
+    public async Task ABillClosedByTheBankWithMissingPurchasesIsDivergentAndTheBankTotalIsPreservedWithoutAnyCompensation()
+    {
+        var c = await ArrangeAsync("t932-missing", seed: false);
+        SeedCycle(500m); // o banco cobra 270,00 que não aparecem como compras
+        var cardLink = await LinkCardAsync(c, 3, 12);
+
+        await SyncAsync(c);
+
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "Unpaid", "Divergent"), States(bill));
+        Assert.Equal(("500.00", "230.00", "270.00", "TotalMismatch"), (Money2(bill, "bankTotal"), Money2(bill, "saldo360Total"), Money2(bill, "difference"), Money2(bill, "reconciliationReason")));
+        await using var db = Db();
+        Assert.Equal(500m, (await db.PluggyCardBills.AsNoTracking().SingleAsync(b => b.PluggyBillId == "bill-1")).TotalAmount);
+        Assert.Equal(500m, (await db.FinancialCreditCardInvoices.AsNoTracking().SingleAsync(i => i.ClosingDate == Today.AddDays(-15))).InstitutionTotal);
+        Assert.Equal(0, await db.FinancialCreditCardInvoiceAdjustments.CountAsync()); // nenhum ajuste fictício
+        Assert.Equal(0, await db.FinancialTransactions.CountAsync());
+    }
+
+    [Fact]
+    public async Task PendingPurchasesNeverChangeTheClosureReportedByTheBankAndMakeTheReconciliationIncomplete()
+    {
+        var c = await ArrangeAsync("t932-pending", seed: false);
+        SeedCycle(230m, extra: [Tx("pending", CardA, 3, 30m, "PENDING", "PAGAMENTO", "AGUARDANDO", card: OnBill("bill-1"), type: "DEBIT", category: null)]);
+        var cardLink = await LinkCardAsync(c, 3, 12);
+
+        await SyncAsync(c);
+
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "Unpaid", "Incomplete"), States(bill));
+        Assert.Equal("OpenItems", Money2(bill, "reconciliationReason"));
+        await using var db = Db();
+        Assert.Equal(230m, (await db.FinancialCreditCardInvoices.AsNoTracking().SingleAsync(i => i.ClosingDate == Today.AddDays(-15))).InstitutionTotal);
+    }
+
+    [Fact]
+    public async Task FinanceChargesAreCardConsumptionAndABillWithThemIsReconciled()
+    {
+        var c = await ArrangeAsync("t932-charges", seed: false);
+        SeedCycle(240m, charges: [10m], extra: [Tx("iof", CardA, 18, 10m, operation: "OUTROS", description: "IOF", card: OnBill("bill-1"), type: "DEBIT", category: "Tax on financial operations")]);
+        var cardLink = await LinkCardAsync(c, 3, 12);
+
+        await SyncAsync(c);
+
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "Unpaid", "Reconciled"), States(bill));
+        Assert.Equal(("240.00", "10.00"), (Money2(bill, "saldo360Total"), Money2(bill, "financeCharges")));
+        await using var db = Db();
+        Assert.Equal(4, await db.FinancialCreditCardPurchases.CountAsync()); // o encargo entra como consumo do cartão (uma compra de uma parcela)
+        Assert.Empty(await CoreAsync(c.Workspace)); // e nunca como lançamento bancário nem receita
+    }
+
+    [Fact]
+    public async Task RefundsAndCashbackWithABillReferenceBecomeInvoiceCreditsNeverIncomeAndAreNotDuplicatedOnReprocess()
+    {
+        var c = await ArrangeAsync("t932-credits", seed: false);
+        var shopping = await CreateCategoryAsync(c, "Compras", "Expense");
+        SeedCycle(185m, extra:
+        [
+            Tx("refund", CardA, 12, 40m, operation: "ESTORNO", description: "ESTORNO LOJA", card: OnBill("bill-1"), type: "CREDIT", category: "Shopping"),
+            Tx("cashback", CardA, 11, 5m, operation: "OUTROS", description: "CASHBACK", card: OnBill("bill-1"), type: "CREDIT", category: "Cashback"),
+        ]);
+        var cardLink = await LinkCardAsync(c, 3, 12);
+
+        await SyncAsync(c);
+        await PostAsync(c, $"{Integration(c.Workspace)}/reprocess");
+        await PostAsync(c, $"{Integration(c.Workspace)}/reprocess");
+
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "Unpaid", "Reconciled"), States(bill)); // 230 - 40 - 5 = 185
+        await using var db = Db();
+        var adjustments = await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking().OrderBy(a => a.Amount).ToListAsync();
+        Assert.Equal([5m, 40m], adjustments.Select(a => a.Amount));
+        Assert.All(adjustments, a => { Assert.Equal(FinancialCreditCardInvoiceAdjustmentNature.Credit, a.Nature); Assert.StartsWith("pluggy:", a.ExternalId); });
+        Assert.Equal([FinancialCreditCardInvoiceAdjustmentType.Credit, FinancialCreditCardInvoiceAdjustmentType.Refund], adjustments.Select(a => a.Type));
+        Assert.Equal(shopping, adjustments.Single(a => a.Type == FinancialCreditCardInvoiceAdjustmentType.Refund).CategoryId); // o estorno reduz o consumo da categoria da compra
+        Assert.Equal(2, await db.PluggyPostings.CountAsync(p => p.Kind == PluggyPostingKind.CardCredit && p.State == PluggyPostingState.Applied));
+        Assert.Empty(await CoreAsync(c.Workspace)); // nada de receita
+    }
+
+    [Fact]
+    public async Task ACardCreditWhoseSourceChangesIsRecreatedWithANewExternalIdInsteadOfBreakingTheSync()
+    {
+        var c = await ArrangeAsync("t933-credit-change", seed: false);
+        SeedCycle(185m, extra: [Tx("refund", CardA, 12, 40m, operation: "ESTORNO", description: "ESTORNO LOJA", card: OnBill("bill-1"), type: "CREDIT", category: "Shopping")]);
+        await LinkCardAsync(c, 3, 12);
+        await SyncAsync(c);
+
+        // O banco corrige o valor duas vezes: cada correção cancela o ajuste anterior e cria o novo, sem violar o índice único.
+        foreach (var amount in new[] { 50m, 60m })
+        {
+            SeedCycle(185m, extra: [Tx("refund", CardA, 12, amount, operation: "ESTORNO", description: "ESTORNO LOJA", card: OnBill("bill-1"), type: "CREDIT", category: "Shopping")]);
+            await SyncAsync(c);
+        }
+
+        await using var db = Db();
+        var adjustments = await db.FinancialCreditCardInvoiceAdjustments.AsNoTracking().OrderBy(a => a.CreatedAt).ThenBy(a => a.Amount).ToListAsync();
+        Assert.Equal(3, adjustments.Count);
+        Assert.Equal(3, adjustments.Select(a => a.ExternalId).Distinct().Count());
+        Assert.All(adjustments, a => Assert.StartsWith("pluggy:", a.ExternalId));
+        var active = Assert.Single(adjustments, a => a.Status == FinancialCreditCardInvoiceAdjustmentStatus.Active);
+        Assert.Equal(60m, active.Amount);
+        Assert.Equal(2, adjustments.Count(a => a.Status == FinancialCreditCardInvoiceAdjustmentStatus.Cancelled));
+        var posting = await db.PluggyPostings.AsNoTracking().SingleAsync(p => p.Kind == PluggyPostingKind.CardCredit);
+        Assert.Equal((PluggyPostingState.Applied, active.Id), (posting.State, posting.CreditCardInvoiceAdjustmentId));
+
+        await SyncAsync(c); // sem mudança na origem nada é recriado
+        Assert.Equal(3, await db.FinancialCreditCardInvoiceAdjustments.CountAsync());
+        Assert.Empty(await CoreAsync(c.Workspace)); // nunca vira receita
+    }
+
+    [Fact]
+    public async Task APaymentAlreadyRecordedInAnEarlierRunIsNeverPairedAgainWithAnotherLookAlikeDebit()
+    {
+        var c = await ArrangeAsync("t933-payment-rerun", seed: false);
+        // A fatura (460) ainda comporta outro pagamento de 230: sem a proteção, o payments[] seria reaproveitado por um segundo débito igual.
+        Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 230m)];
+        SeedCycle(460m, payments: [(230m, 10)], extra: [Tx("pay-card", CardA, 10, 230m, operation: "PAGAMENTO_FATURA", description: "PAGAMENTO FATURA", type: "CREDIT", category: null)]);
+        await LinkBankAsync(c);
+        await LinkCardAsync(c, 3, 12);
+        await SyncAsync(c);
+        await using var db = Db();
+        Assert.Equal(1, await db.FinancialCreditCardInvoicePayments.CountAsync());
+
+        Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 230m), BankPayment("look-alike", 9, 230m)];
+        await SyncAsync(c);
+        await PostAsync(c, $"{Integration(c.Workspace)}/reprocess");
+
+        Assert.Equal(1, await db.FinancialCreditCardInvoicePayments.CountAsync(p => p.Status == FinancialCreditCardInvoicePaymentStatus.Active));
+        var lookAlike = await db.PluggyPostings.AsNoTracking().SingleAsync(p => db.PluggyImportedTransactions.Any(t => t.Id == p.ImportedTransactionId && t.PluggyTransactionId == "look-alike"));
+        Assert.NotEqual(PluggyPostingKind.CardBillPayment, lookAlike.Kind);
+        Assert.Equal(1, await db.FinancialTransactions.CountAsync(t => t.Origin == FinancialTransactionOrigin.CreditCardInvoicePayment && !t.IsCancelled));
+    }
+
+    // ---- 6 a 11. Pagamentos --------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task AFullBankPaymentRecognizedByThePaymentsOfTheBillSettlesTheInvoiceWithoutDuplicatingConsumption()
+    {
+        var c = await ArrangeAsync("t932-paid", seed: false);
+        Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 230m), Tx("other", BankA, 4, -12m)];
+        SeedCycle(230m, payments: [(230m, 10)]);
+        await LinkBankAsync(c);
+        var cardLink = await LinkCardAsync(c, 3, 12);
+
+        await SyncAsync(c);
+
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "Paid", "Reconciled"), States(bill));
+        Assert.Equal(("230.00", "230.00"), (Money2(bill, "paidAmount"), Money2(bill, "bankReportedPaid")));
+        var core = await CoreAsync(c.Workspace);
+        Assert.Equal(2, core.Count);
+        var payment = core.Single(t => t.Amount == 230m);
+        Assert.Equal(FinancialTransactionOrigin.CreditCardInvoicePayment, payment.Origin);
+        Assert.Null(payment.CategoryId); // saída de caixa sem categoria de consumo
+        await using var db = Db();
+        Assert.Equal(1, await db.FinancialCreditCardInvoicePayments.CountAsync());
+        Assert.Equal(PluggyPostingKind.CardBillPayment, (await db.PluggyPostings.AsNoTracking().SingleAsync(p => p.FinancialTransactionId == payment.Id)).Kind);
+        // Caixa: só o pagamento (230) e a outra despesa (12) aparecem; as compras (230) ficam no cartão e não somam outra vez.
+        var calendar = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-calendar?from={D(40)}&through={D(0)}");
+        Assert.Equal("242.00", calendar.GetProperty("summary").GetProperty("realizedExpense").GetString());
+
+        await SyncAsync(c);
+        Assert.Equal(1, await db.FinancialCreditCardInvoicePayments.CountAsync()); // idempotente
+    }
+
+    [Fact]
+    public async Task APartialPaymentSettlesPartOfTheInvoiceAndLeavesItPartiallyPaid()
+    {
+        var c = await ArrangeAsync("t932-partial", seed: false);
+        Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 100m)];
+        SeedCycle(230m, payments: [(100m, 10)]);
+        await LinkBankAsync(c);
+        var cardLink = await LinkCardAsync(c, 3, 12);
+
+        await SyncAsync(c);
+
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "PartiallyPaid", "Reconciled"), States(bill));
+        Assert.Equal("100.00", Money2(bill, "paidAmount"));
+        await using var db = Db();
+        Assert.Equal(100m, (await db.FinancialCreditCardInvoicePayments.AsNoTracking().SingleAsync()).Amount);
+    }
+
+    [Fact]
+    public async Task AnAmbiguousPaymentIsNeverDecidedAndNothingIsSettled()
+    {
+        var c = await ArrangeAsync("t932-ambiguous", seed: false);
+        Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 230m)];
+        SeedCycle(230m, payments: [(230m, 10)]);
+        // Outra fatura do mesmo cartão informa um pagamento idêntico (mesmo valor e data): um débito só não pode quitar as duas.
+        Pluggy.BillsByAccount[CardA] = [.. Pluggy.BillsByAccount[CardA], Bill("bill-x", 25, 18, 230m, payments: [(230m, 10)])];
+        await LinkBankAsync(c);
+        await LinkCardAsync(c, 3, 12);
+
+        await SyncAsync(c);
+
+        Assert.Empty(await CoreAsync(c.Workspace));
+        Assert.Equal(["AmbiguousCardBillPayment"], Reasons(await ReviewAsync(c)));
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialCreditCardInvoicePayments.CountAsync());
+    }
+
+    [Fact]
+    public async Task APaymentFromABankAccountThatIsNotIntegratedIsNotInventedButTheBankReportedPaymentIsShown()
+    {
+        var c = await ArrangeAsync("t932-no-bank", seed: false);
+        SeedCycle(230m, payments: [(230m, 10)], extra: [Tx("pay-card", CardA, 10, 230m, operation: "PAGAMENTO_FATURA", description: "PAGAMENTO FATURA", card: OnBill("bill-1"), type: "CREDIT", category: null)]);
+        var cardLink = await LinkCardAsync(c, 3, 12);
+
+        await SyncAsync(c);
+
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "Paid", "Reconciled"), States(bill)); // o banco informa o pagamento
+        Assert.Equal(("0.00", "230.00"), (Money2(bill, "paidAmount"), Money2(bill, "bankReportedPaid"))); // mas o Saldo360 não registrou saída (não há conta integrada)
+        Assert.Equal(["BillPaymentWithoutBankDebit"], Reasons(await ReviewAsync(c)));
+        await using var db = Db();
+        Assert.Equal(0, await db.FinancialCreditCardInvoicePayments.CountAsync());
+    }
+
+    [Fact]
+    public async Task ABankDebitAlreadyBookedAsAPlainExpenseIsReclassifiedWhenTheCardAndItsBillArrive()
+    {
+        var c = await ArrangeAsync("t932-reclassify", seed: false);
+        Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 230m)];
+        await LinkBankAsync(c);
+        await SyncAsync(c);
+        var before = Assert.Single(await CoreAsync(c.Workspace));
+        Assert.Equal(FinancialTransactionOrigin.PluggyImport, before.Origin); // até aqui é uma despesa simples (rótulo estruturado: sem categoria de consumo)
+
+        SeedCycle(230m, payments: [(230m, 10)]);
+        var cardLink = await LinkCardAsync(c, 3, 12);
+        await SyncAsync(c);
+
+        var after = Assert.Single(await CoreAsync(c.Workspace));
+        Assert.Equal((FinancialTransactionOrigin.CreditCardInvoicePayment, 230m), (after.Origin, after.Amount));
+        Assert.True((await CoreAsync(c.Workspace, includeCancelled: true)).Single(t => t.Id == before.Id).IsCancelled); // a despesa simples foi substituída, não somada
+        Assert.Equal("Paid", (await BillsOfAsync(c, cardLink))[0].GetProperty("payment").GetString());
+        await PostAsync(c, $"{Integration(c.Workspace)}/reprocess");
+        Assert.Single(await CoreAsync(c.Workspace));
+    }
+
+    // ---- 13 a 15. Âncora de saldo -----------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TheBankBalanceIsAReferenceThatEnablesTheBalanceWithoutManualOpeningAndOnlyOverTheConsistentInterval()
+    {
+        var c = await ArrangeAsync("t932-anchor");
+        Pluggy.AccountsByItem[ItemA] = [FakePluggyClient.Account(BankA, ItemA) with { UpdatedAt = DateTimeOffset.UtcNow }, FakePluggyClient.Account(CardA, ItemA, "CREDIT", "5555444433332222")];
+        var detail = await LinkBankAsync(c);
+        var accountId = detail.GetProperty("link").GetProperty("financialAccountId").GetGuid();
+        await SyncAsync(c);
+        await using var db = Db();
+        var movementsBefore = await db.FinancialTransactions.CountAsync();
+
+        var balance = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}/balance");
+
+        // Há um movimento postado em revisão em D-6: o intervalo calculável começa no dia seguinte e o saldo inicial derivado reproduz o observado.
+        Assert.Equal(("1500.75", "BalanceAnchor", D(5)), (balance.GetProperty("balance").GetString(), balance.GetProperty("openingSource").GetString(), balance.GetProperty("openingBalanceDate").GetString()));
+        var earlier = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}/balance?asOf={D(8)}");
+        Assert.Equal(JsonValueKind.Null, earlier.GetProperty("balance").ValueKind); // antes do intervalo coberto: indisponível, nunca estimado
+        Assert.Equal("BeforeOpeningBalanceDate", earlier.GetProperty("unavailableReason").GetString());
+        var anchor = await db.FinancialAccountBalanceAnchors.AsNoTracking().SingleAsync();
+        Assert.Equal((1500.75m, BalanceAnchorKind.CurrentBalance, "Pluggy", BalanceAnchorReliability.Provisional, "ExcludedMovementsLimitHistory", true),
+            (anchor.Amount, anchor.Kind, anchor.Source, anchor.Reliability, anchor.UnavailableReason, anchor.IsCurrent));
+        Assert.Equal(movementsBefore, await db.FinancialTransactions.CountAsync()); // a âncora não gera receita nem despesa
+        Assert.Null((await db.FinancialAccounts.AsNoTracking().SingleAsync(a => a.Id == accountId)).OpeningBalance); // e não altera o cadastro da conta
+
+        var posting = (await ReviewAsync(c)).GetProperty("items")[0].GetProperty("postingId").GetGuid();
+        await PostAsync(c, $"{Integration(c.Workspace)}/review/{posting}/resolve", new { resolution = "AsExpense" });
+        var wider = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}/balance");
+        Assert.Equal(("1500.75", D(9)), (wider.GetProperty("balance").GetString(), wider.GetProperty("openingBalanceDate").GetString())); // resolvido o item, o histórico calculável se amplia
+    }
+
+    [Fact]
+    public async Task TheOverdraftLimitIsNeverAddedToTheBalanceAndAContradictoryBalanceNatureIsNotUsed()
+    {
+        var c = await ArrangeAsync("t932-overdraft", seed: false);
+        Pluggy.TransactionsByAccount[BankA] = [Tx("x", BankA, 3, -100m)];
+        Pluggy.AccountsByItem[ItemA] = [FakePluggyClient.Account(BankA, ItemA, balance: -500m) with { UpdatedAt = DateTimeOffset.UtcNow, Bank = new PluggyBankData("0001", -500m, null, 1000m, 500m, null) },
+            FakePluggyClient.Account(CardA, ItemA, "CREDIT", "5555444433332222")];
+        var detail = await LinkBankAsync(c);
+        var accountId = detail.GetProperty("link").GetProperty("financialAccountId").GetGuid();
+        await SyncAsync(c);
+
+        var balance = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}/balance");
+        var view = (await JsonGetAsync(c, $"{Integration(c.Workspace)}/links/{detail.GetProperty("link").GetProperty("id").GetGuid()}"));
+
+        Assert.Equal(("-500.00", "BalanceAnchor"), (balance.GetProperty("balance").GetString(), balance.GetProperty("openingSource").GetString())); // saldo negativo; o limite (1000) não é somado
+        Assert.Equal("1000.00", view.GetProperty("link").GetProperty("observed").GetProperty("overdraftContractedLimit").GetString());
+        Assert.Contains(view.GetProperty("reconciliation").GetProperty("notes").EnumerateArray().Select(n => n.GetString()), n => n!.Contains("cheque especial"));
+
+        // Saldo positivo com cheque especial em uso é incoerente: a natureza do saldo é incerta e a referência não é usada.
+        Pluggy.AccountsByItem[ItemA] = [FakePluggyClient.Account(BankA, ItemA, balance: 200m) with { UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(1), Bank = new PluggyBankData("0001", 200m, null, 1000m, 100m, null) },
+            FakePluggyClient.Account(CardA, ItemA, "CREDIT", "5555444433332222")];
+        await SyncAsync(c);
+        var unusable = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}/balance");
+        Assert.Equal(JsonValueKind.Null, unusable.GetProperty("balance").ValueKind);
+        await using var db = Db();
+        var current = await db.FinancialAccountBalanceAnchors.AsNoTracking().SingleAsync(a => a.IsCurrent);
+        Assert.Equal((BalanceAnchorReliability.Unreliable, "BalanceNatureAmbiguous"), (current.Reliability, current.UnavailableReason));
+        Assert.Equal(2, await db.FinancialAccountBalanceAnchors.CountAsync()); // o histórico de referências é mantido
+    }
+
+    // ---- 16. Fechamento e vencimento ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TheUsualClosingAndDueDaysAreSuggestedFromTheBankHistoryAndOnlyChangedAfterConfirmation()
+    {
+        var c = await ArrangeAsync("t932-schedule", seed: false);
+        // Fechamento no dia 8 e vencimento no dia 15 em quatro faturas passadas (fechamento e vencimento são datas diferentes e nunca se substituem).
+        Pluggy.BillsByAccount[CardA] = [.. new[] { 3, 4, 5, 6 }.Select(m => FixedBill($"b{m}", new DateOnly(2026, m, 8), new DateOnly(2026, m, 15)))];
+        var cardLink = await LinkCardAsync(c, 20, 25);
+        var linkId = cardLink.GetProperty("link").GetProperty("id").GetGuid();
+        await SyncAsync(c);
+        var url = $"{Integration(c.Workspace)}/links/{linkId}";
+
+        var card = (await JsonGetAsync(c, url)).GetProperty("reconciliation").GetProperty("card");
+        Assert.Equal((20, 25, 8, 15), (card.GetProperty("currentClosingDay").GetInt32(), card.GetProperty("currentDueDay").GetInt32(), card.GetProperty("suggestedClosingDay").GetInt32(), card.GetProperty("suggestedDueDay").GetInt32()));
+        Assert.Equal(HttpStatusCode.BadRequest, (await PostAsync(c, $"{url}/card-schedule-suggestion", new { })).StatusCode); // sem confirmação não altera
+        await using (var db = Db()) { var row = await db.FinancialCreditCards.AsNoTracking().SingleAsync(); Assert.Equal((20, 25), (row.ClosingDay, row.DueDay)); }
+
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(c, $"{url}/card-schedule-suggestion", new { confirm = true })).StatusCode);
+
+        await using var after = Db();
+        var updated = await after.FinancialCreditCards.AsNoTracking().SingleAsync();
+        Assert.Equal((8, 15), (updated.ClosingDay, updated.DueDay));
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(c, $"{url}/card-schedule-suggestion", new { confirm = true })).StatusCode); // idempotente
+    }
+
+    [Fact]
+    public async Task AnInconsistentBillHistoryNeverProducesASuggestion()
+    {
+        var c = await ArrangeAsync("t932-schedule-inconsistent", seed: false);
+        Pluggy.BillsByAccount[CardA] = [.. new[] { 3, 4, 5, 6 }.Select(m => FixedBill($"b{m}", new DateOnly(2026, m, m * 4), new DateOnly(2026, m, m * 4 + 3)))]; // dias 12, 16, 20 e 24
+        var cardLink = await LinkCardAsync(c, 20, 25);
+        await SyncAsync(c);
+        var url = $"{Integration(c.Workspace)}/links/{cardLink.GetProperty("link").GetProperty("id").GetGuid()}";
+
+        var card = (await JsonGetAsync(c, url)).GetProperty("reconciliation").GetProperty("card");
+        Assert.Equal(JsonValueKind.Null, card.GetProperty("suggestedClosingDay").ValueKind);
+        Assert.Equal("Inconsistent", card.GetProperty("closingScheduleReason").GetString());
+        Assert.Equal(HttpStatusCode.Conflict, (await PostAsync(c, $"{url}/card-schedule-suggestion", new { confirm = true })).StatusCode);
+    }
+
+    // ---- 17 a 20. Reprocessamento, categorias, transferências e consistência -----------------------------------------------------
+
+    [Fact]
+    public async Task ReprocessingIsIdempotentPreservesManualCategoriesAndKeepsTransfersAndPaymentsStable()
+    {
+        var c = await ArrangeAsync("t932-reprocess", seed: false);
+        var itemB = await LinkAsync(c.Client, c.Session, c.Workspace, ItemB, "Nubank");
+        Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 230m), Tx("own-out", BankA, 6, -500m, operation: "PIX", description: "PIX ENVIADO", category: "Transfer - PIX"), Tx("shop", BankA, 5, -30m)];
+        Pluggy.TransactionsByAccount[BankB] = [Tx("own-in", BankB, 6, 500m, operation: "PIX", description: "PIX RECEBIDO", category: "Transfer - PIX")];
+        SeedCycle(230m, payments: [(230m, 10)]);
+        await LinkBankAsync(c);
+        await PostAsync(c, $"{Integration(c.Workspace)}/links", new { connectionId = itemB, pluggyAccountId = BankB, mode = "CreateNew", name = "Nubank", financialScope = "PF" });
+        var cardLink = await LinkCardAsync(c, 3, 12);
+        await SyncAsync(c);
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(c, $"{Root(c.Workspace)}/connections/{itemB}/sync")).StatusCode);
+        var manual = await CreateCategoryAsync(c, "Mercado manual", "Expense");
+        var shop = (await CoreAsync(c.Workspace)).Single(t => t.Amount == 30m);
+        Assert.Equal(HttpStatusCode.OK, (await Send(c.Client, HttpMethod.Put, $"/api/financial-workspaces/{c.Workspace}/transactions/{shop.Id}/category", c.Session, new { categoryId = manual })).StatusCode);
+        string Snapshot()
+        {
+            using var db = Db();
+            var parts = new List<string>();
+            parts.AddRange(db.FinancialTransactions.AsNoTracking().Where(t => !t.IsCancelled).OrderBy(t => t.Id).ToList().Select(t => $"{t.Id}:{t.Amount}:{t.Origin}:{t.CategoryId}"));
+            parts.AddRange(db.FinancialTransfers.AsNoTracking().Where(t => !t.IsCancelled).OrderBy(t => t.Id).ToList().Select(t => $"T{t.Id}:{t.Amount}"));
+            parts.AddRange(db.FinancialCreditCardInvoicePayments.AsNoTracking().OrderBy(p => p.Id).ToList().Select(p => $"P{p.Id}:{p.Amount}:{p.Status}"));
+            parts.AddRange(db.FinancialCreditCardInvoices.AsNoTracking().OrderBy(i => i.Id).ToList().Select(i => $"I{i.Id}:{i.InstitutionTotal}"));
+            return string.Join('|', parts);
+        }
+        var before = Snapshot();
+
+        var first = await JsonOf(await PostAsync(c, $"{Integration(c.Workspace)}/reprocess"));
+        var second = await JsonOf(await PostAsync(c, $"{Integration(c.Workspace)}/reprocess"));
+
+        Assert.Equal(before, Snapshot()); // nada duplicado, nada desfeito
+        Assert.Equal((0, 0, 0, 0), (first.GetProperty("created").GetInt32(), first.GetProperty("updated").GetInt32(), second.GetProperty("created").GetInt32(), second.GetProperty("purchasesRehomed").GetInt32()));
+        await using var check = Db();
+        Assert.Equal(manual, (await check.FinancialTransactions.AsNoTracking().SingleAsync(t => t.Id == shop.Id)).CategoryId); // categoria manual preservada
+        Assert.Equal(1, await check.FinancialTransfers.CountAsync(t => !t.IsCancelled)); // transferência PF/PJ preservada
+        Assert.Equal(1, await check.FinancialCreditCardInvoicePayments.CountAsync());
+        Assert.Equal("Paid", (await BillsOfAsync(c, cardLink))[0].GetProperty("payment").GetString());
+    }
+
+    [Fact]
+    public async Task DashboardAndAgendaStayConsistentWithPaymentsCreditsAndAnchoredBalances()
+    {
+        var c = await ArrangeAsync("t932-consistency", seed: false);
+        Pluggy.AccountsByItem[ItemA] = [FakePluggyClient.Account(BankA, ItemA, balance: 1000m) with { UpdatedAt = DateTimeOffset.UtcNow }, FakePluggyClient.Account(CardA, ItemA, "CREDIT", "5555444433332222")];
+        Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 190m), Tx("salary", BankA, 12, 1200m, operation: "OUTROS", description: "SALARIO", category: "Salary")];
+        SeedCycle(190m, payments: [(190m, 10)], extra: [Tx("refund", CardA, 12, 40m, operation: "ESTORNO", description: "ESTORNO", card: OnBill("bill-1"), type: "CREDIT", category: "Shopping")]);
+        var bank = await LinkBankAsync(c);
+        await LinkCardAsync(c, 3, 12);
+        await SyncAsync(c);
+
+        var from = Today.AddDays(-40); var through = Today;
+        var calendar = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-calendar?from={from:yyyy-MM-dd}&through={through:yyyy-MM-dd}");
+        var summary = calendar.GetProperty("summary");
+        // Caixa: o salário entra e só o pagamento da fatura (190) sai; compras (230) e o estorno (40) ficam no cartão e não viram receita nem despesa bancária.
+        Assert.Equal(("1200.00", "190.00"), (summary.GetProperty("realizedIncome").GetString(), summary.GetProperty("realizedExpense").GetString()));
+        var items = calendar.GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal(2, items.Count);
+        var dashboard = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-dashboard?month={Today:yyyy-MM}");
+        Assert.Equal("1000.00", dashboard.GetProperty("position").GetProperty("realizedBalance").GetString()); // o saldo da conta vem da referência bancária
+        Assert.Equal(1000m, (await Db().FinancialAccountBalanceAnchors.AsNoTracking().SingleAsync(a => a.IsCurrent)).Amount);
     }
 }

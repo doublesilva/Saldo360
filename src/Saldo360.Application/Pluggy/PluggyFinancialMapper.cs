@@ -38,6 +38,11 @@ public enum PluggyDisposition
     CardPurchase,
     /// <summary>Crédito no cartão que paga a fatura: evidência do pagamento, nunca receita.</summary>
     CardBillPayment,
+    /// <summary>
+    /// Crédito no cartão com evidência estruturada de ser estorno, devolução ou cashback: vira crédito da fatura onde aparece (reduz a obrigação e o
+    /// consumo da categoria), nunca receita. Sem evidência, o crédito vai para revisão.
+    /// </summary>
+    CardCredit,
     /// <summary>Sem classificação segura.</summary>
     Review,
 }
@@ -126,18 +131,42 @@ public static class PluggyFinancialMapper
         return f.LinkKind == PluggyLinkedAccountKind.Card ? DecideCard(f, resolution, Result) : DecideBank(f, today, resolution, isDebit, isCredit, Result);
     }
 
+    private static readonly HashSet<string> CardChargeCategories = new(StringComparer.Ordinal)
+        { "tax on financial operations", "bank fees", "interests charged", "late payment and overdraft costs" };
+
     private static PluggyMovement DecideCard(ImportedFacts f, PluggyResolution? resolution, Func<PluggyDisposition, string?, CategoryType?, PluggyMovement> result)
     {
         if (f.Status != PluggyTransactionStatus.Posted) return result(PluggyDisposition.Waiting, "Pending", null);
         var isDebit = string.Equals(f.Type, "DEBIT", StringComparison.OrdinalIgnoreCase);
         if (resolution == PluggyResolution.AsCardPurchase && isDebit) return result(PluggyDisposition.CardPurchase, "UserDecision", CategoryType.Expense);
+        var category = Saldo360.Application.Classification.FinancialCategoryMatching.Key(f.Category);
+        var operation = f.OperationType?.Trim().ToUpperInvariant();
+        var inCatalog = Saldo360.Application.Classification.FinancialExternalCategoryCatalog.Find(f.Category, CategoryType.Expense) is not null;
         return f.Class switch
         {
             PluggyTransactionClass.PotentialTransfer when f.ClassReason == "CardBillPayment" && !isDebit => result(PluggyDisposition.CardBillPayment, f.ClassReason, CategoryType.Income),
             PluggyTransactionClass.CardPurchase or PluggyTransactionClass.CardInstallment or PluggyTransactionClass.PotentialExpense when isDebit => result(PluggyDisposition.CardPurchase, f.ClassReason, CategoryType.Expense),
-            // Estornos, créditos e operações de crédito: não são receita nem consumo sem decisão humana.
+            // Encargos e tarifas da fatura (IOF, tarifas, juros, multa) são consumo do cartão: rótulo estruturado do banco, nunca descrição.
+            PluggyTransactionClass.InsufficientInformation when isDebit && f.ClassReason == "UnclassifiedCardOperation" && CardChargeCategories.Contains(category) =>
+                result(PluggyDisposition.CardPurchase, "CardCharge", CategoryType.Expense),
+            // Débito de operação genérica, mas com categoria de consumo do banco: é compra comum (transferência e financiamento continuam em revisão).
+            PluggyTransactionClass.InsufficientInformation when isDebit && f.ClassReason == "UnclassifiedCardOperation" && inCatalog =>
+                result(PluggyDisposition.CardPurchase, "CardPurchaseByCategory", CategoryType.Expense),
+            // Estornos, devoluções e cashback: crédito da fatura quando há evidência estruturada; senão revisão (nunca receita comum).
+            PluggyTransactionClass.InsufficientInformation when !isDebit && f.ClassReason is "CardRefund" or "CardCredit" => CardCreditDecision(f, category, operation, result),
+            // Operações de crédito contratadas e demais casos: sem decisão humana não são consumo nem receita.
             _ => result(PluggyDisposition.Review, "Card:" + f.ClassReason, null),
         };
+    }
+
+    private static PluggyMovement CardCreditDecision(ImportedFacts f, string category, string? operation, Func<PluggyDisposition, string?, CategoryType?, PluggyMovement> result)
+    {
+        if (operation == "ESTORNO") return result(PluggyDisposition.CardCredit, "CardRefund", CategoryType.Income);
+        if (category == "cashback") return result(PluggyDisposition.CardCredit, "CardCashback", CategoryType.Income);
+        // Crédito com a categoria de consumo de uma compra (operação genérica): devolução dessa compra.
+        if (Saldo360.Application.Classification.FinancialExternalCategoryCatalog.Find(f.Category, CategoryType.Expense) is not null)
+            return result(PluggyDisposition.CardCredit, "CardPurchaseCredit", CategoryType.Income);
+        return result(PluggyDisposition.Review, "Card:" + f.ClassReason, null);
     }
 
     private static PluggyMovement DecideBank(ImportedFacts f, DateOnly today, PluggyResolution? resolution, bool isDebit, bool isCredit,

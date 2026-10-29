@@ -38,10 +38,21 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             IsolationLevel.RepeatableRead, cancellationToken);
         await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
 
-        var selectedAccounts = db.FinancialAccounts
-            .AsNoTracking()
-            .Where(account => account.WorkspaceId == workspaceId
-                && (accountId == null || account.Id == accountId));
+        // Saldo inicial efetivo: o manual (quando informado) ou, sem ele, o derivado da referência bancária confiável (âncora). Nada é gravado na conta.
+        var selectedAccounts =
+            from account in db.FinancialAccounts.AsNoTracking()
+            where account.WorkspaceId == workspaceId && (accountId == null || account.Id == accountId)
+            join anchor in db.FinancialAccountBalanceAnchors.AsNoTracking().Where(a => a.IsCurrent && a.Reliability != Saldo360.Domain.Accounts.BalanceAnchorReliability.Unreliable
+                && a.DerivedOpeningAmount != null && a.DerivedOpeningDate != null) on account.Id equals anchor.AccountId into anchors
+            from anchor in anchors.DefaultIfEmpty()
+            let manual = account.OpeningBalance != null && account.OpeningBalanceDate != null
+            select new
+            {
+                account.WorkspaceId,
+                account.Id,
+                OpeningBalance = manual ? account.OpeningBalance : anchor.DerivedOpeningAmount,
+                OpeningBalanceDate = manual ? account.OpeningBalanceDate : anchor.DerivedOpeningDate,
+            };
         var accounts = await selectedAccounts
             .Select(account => new FinancialCalendarBalanceAccount(
                 account.Id, account.OpeningBalance, account.OpeningBalanceDate))

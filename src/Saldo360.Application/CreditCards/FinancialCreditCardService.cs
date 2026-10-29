@@ -55,7 +55,7 @@ public sealed class FinancialCreditCardService(
     {
         var details = CreditCardDetails.TryCreate(input.Name, input.Issuer, input.LastFourDigits, input.HolderUserId, input.CreditLimit, input.ClosingDay, input.DueDay, input.DefaultPaymentAccountId, out var errors, input.GmailQuery);
         if (input.HolderUserId is { } holder && !await cards.IsHolderOfWorkspaceAsync(workspaceId, holder, cancellationToken)) errors["holderUserId"] = ["O titular não pertence à família."];
-        if (input.DefaultPaymentAccountId is { } account && !await cards.IsActiveAccountOfWorkspaceAsync(workspaceId, account, cancellationToken)) errors["defaultPaymentAccountId"] = ["A conta de pagamento não pertence à família ou está inativa."];
+        if (input.DefaultPaymentAccountId is { } account && !await cards.IsActiveAccountOfWorkspaceAsync(workspaceId, account, cancellationToken)) errors["defaultPaymentAccountId"] = ["A conta de pagamento precisa ser uma conta bancária ativa do orçamento."];
         return (errors.Count == 0 ? details : null, errors);
     }
 

@@ -3,7 +3,7 @@ import type { FinancialCalendarSource } from './financialCalendar'
 export type DashboardTrend = 'Improving' | 'Stable' | 'Deteriorating' | 'Unknown'
 export type DashboardAlertSeverity = 'Info' | 'Warning' | 'Critical'
 
-export interface DashboardAccountBalance { accountId: string; name: string; realizedBalance: string | null; complete: boolean }
+export interface DashboardAccountBalance { accountId: string; name: string; realizedBalance: string | null; complete: boolean; isPrimary?: boolean }
 export interface DashboardPosition { realizedBalance: string | null; accounts: DashboardAccountBalance[]; consideredAccounts: number; negativeBalance: string; allocatedToGoals: string; unallocatedRealizedBalance: string | null }
 export interface DashboardCashFlow { realizedIncome: string; realizedExpense: string; pendingIncome: string; pendingExpense: string }
 export interface DashboardObligations { pendingIncome: string; pendingExpense: string; creditCardOutstanding: string; debtOutstanding: string; pendingItems: number }

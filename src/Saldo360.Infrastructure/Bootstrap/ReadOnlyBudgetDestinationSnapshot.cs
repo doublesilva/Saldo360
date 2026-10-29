@@ -49,6 +49,8 @@ public sealed record ReadOnlyBudgetDestinationSnapshot(int SchemaVersion, Guid W
         if (AppliedMigrations.Contains("20261028172653_AddPluggyFinancialIntegration", StringComparer.Ordinal))
             foreach (var table in new[] { "pluggy_account_links", "pluggy_postings" }) expected.Add(table);
         if (AppliedMigrations.Contains("20261028181549_AddPluggyCardBills", StringComparer.Ordinal)) expected.Add("pluggy_card_bills");
+        if (AppliedMigrations.Contains("20261029000121_AddPluggyInvoiceClosureCreditsAndBalanceAnchors", StringComparer.Ordinal))
+            foreach (var table in new[] { "pluggy_card_bill_payments", "financial_account_balance_anchors" }) expected.Add(table);
         if (Baseline.Split(' ').Any(t => !Counts.ContainsKey(t)) || Counts.Keys.Any(t => !expected.Contains(t)) || Counts.Values.Any(n => n < 0)) Invalid("IncompleteDestinationInventoryRequiresDirectPreflight");
         if (schemaReady && expected.Any(t => !Counts.ContainsKey(t))) Invalid("MissingT09.1TablesRequiresDirectPreflight");
         foreach (var p in Counts.Where(p => p.Value != 0 && p.Key != "financial_workspace_reset_audit"))

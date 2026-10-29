@@ -76,6 +76,12 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
 
+                    b.Property<bool>("IsPrimary")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_primary");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -119,6 +125,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("CreatedByUserId")
                         .HasDatabaseName("ix_financial_accounts_created_by_user_id");
 
+                    b.HasIndex("WorkspaceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_financial_accounts_primary")
+                        .HasFilter("is_primary");
+
                     b.HasIndex("WorkspaceId", "IsActive")
                         .HasDatabaseName("ix_financial_accounts_workspace_id_is_active");
 
@@ -137,9 +148,103 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_financial_accounts_opening_balance_scale", "scale(opening_balance) <= 2");
 
+                            t.HasCheckConstraint("ck_financial_accounts_primary_eligible", "NOT is_primary OR (is_active AND type IN ('Checking', 'Savings'))");
+
                             t.HasCheckConstraint("ck_financial_accounts_scope", "scope IN ('PF', 'PJ')");
 
                             t.HasCheckConstraint("ck_financial_accounts_type", "type IN ('Checking', 'Savings', 'Cash')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Accounts.FinancialAccountBalanceAnchor", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateOnly>("AsOfDate")
+                        .HasColumnType("date")
+                        .HasColumnName("as_of_date");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<decimal?>("DerivedOpeningAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("derived_opening_amount");
+
+                    b.Property<DateOnly?>("DerivedOpeningDate")
+                        .HasColumnType("date")
+                        .HasColumnName("derived_opening_date");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_current");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("ObservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("observed_at");
+
+                    b.Property<string>("Reliability")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("reliability");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("source");
+
+                    b.Property<Guid?>("SourceLinkId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_link_id");
+
+                    b.Property<string>("UnavailableReason")
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)")
+                        .HasColumnName("unavailable_reason");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_account_balance_anchors");
+
+                    b.HasIndex("AccountId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_balance_anchors_current")
+                        .HasFilter("is_current");
+
+                    b.HasIndex("WorkspaceId", "AccountId", "ObservedAt")
+                        .HasDatabaseName("ix_financial_account_balance_anchors_workspace_id_account_id_o");
+
+                    b.ToTable("financial_account_balance_anchors", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_balance_anchors_derivation", "(derived_opening_amount IS NULL) = (derived_opening_date IS NULL) AND (reliability <> 'Unreliable' OR derived_opening_amount IS NULL)");
+
+                            t.HasCheckConstraint("ck_balance_anchors_kind", "kind IN ('CurrentBalance','AvailableBalance','Unknown')");
+
+                            t.HasCheckConstraint("ck_balance_anchors_reliability", "reliability IN ('Reliable','Provisional','Unreliable')");
                         });
                 });
 
@@ -1044,6 +1149,19 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("due_date");
 
+                    b.Property<DateTimeOffset?>("InstitutionClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("institution_closed_at");
+
+                    b.Property<string>("InstitutionSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("institution_source");
+
+                    b.Property<decimal?>("InstitutionTotal")
+                        .HasColumnType("numeric")
+                        .HasColumnName("institution_total");
+
                     b.Property<DateTimeOffset?>("OfficialClosedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("official_closed_at");
@@ -1072,6 +1190,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                     b.ToTable("financial_credit_card_invoices", null, t =>
                         {
+                            t.HasCheckConstraint("ck_invoice_institution_state", "(institution_closed_at IS NULL AND institution_total IS NULL AND institution_source IS NULL) OR (institution_closed_at IS NOT NULL AND institution_total >= 0 AND scale(institution_total) <= 2 AND institution_source IS NOT NULL)");
+
                             t.HasCheckConstraint("ck_invoice_official_state", "(official_version = 0 AND official_total IS NULL AND official_closed_at IS NULL) OR (official_version > 0 AND official_total >= 0 AND scale(official_total) <= 2 AND official_closed_at IS NOT NULL)");
                         });
                 });
@@ -2902,6 +3022,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("closing_date");
 
+                    b.Property<decimal?>("ComponentsTotal")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("components_total");
+
                     b.Property<string>("Currency")
                         .HasMaxLength(8)
                         .HasColumnType("character varying(8)")
@@ -2911,6 +3036,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("due_date");
 
+                    b.Property<decimal?>("FinanceChargesTotal")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("finance_charges_total");
+
                     b.Property<DateTimeOffset>("FirstObservedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("first_observed_at");
@@ -2919,11 +3049,31 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_observed_at");
 
+                    b.Property<decimal?>("MinimumPayment")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("minimum_payment");
+
                     b.Property<string>("PluggyBillId")
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)")
                         .HasColumnName("pluggy_bill_id");
+
+                    b.Property<DateTimeOffset?>("ReconciledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reconciled_at");
+
+                    b.Property<string>("Reconciliation")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("reconciliation");
+
+                    b.Property<string>("ReconciliationReason")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("reconciliation_reason");
 
                     b.Property<decimal?>("TotalAmount")
                         .HasPrecision(19, 4)
@@ -2947,7 +3097,63 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_pluggy_card_bills_external");
 
-                    b.ToTable("pluggy_card_bills", (string)null);
+                    b.ToTable("pluggy_card_bills", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pluggy_card_bills_reconciliation", "reconciliation IN ('NotVerified','Reconciled','Divergent','Incomplete')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyCardBillPayment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("numeric(19,4)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("BillId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bill_id");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("integer")
+                        .HasColumnName("ordinal");
+
+                    b.Property<DateOnly>("PaymentDate")
+                        .HasColumnType("date")
+                        .HasColumnName("payment_date");
+
+                    b.Property<string>("PaymentMode")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("payment_mode");
+
+                    b.Property<string>("ValueType")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("value_type");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_card_bill_payments");
+
+                    b.HasIndex("WorkspaceId")
+                        .HasDatabaseName("ix_pluggy_card_bill_payments_workspace_id");
+
+                    b.HasIndex("BillId", "Ordinal")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_card_bill_payments_ordinal");
+
+                    b.ToTable("pluggy_card_bill_payments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pluggy_card_bill_payments_amount", "amount > 0");
+                        });
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyImportedTransaction", b =>
@@ -3246,6 +3452,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<Guid?>("CreditCardInvoiceAdjustmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_card_invoice_adjustment_id");
+
                     b.Property<Guid?>("CreditCardInvoicePaymentId")
                         .HasColumnType("uuid")
                         .HasColumnName("credit_card_invoice_payment_id");
@@ -3313,6 +3523,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("CounterpartPostingId")
                         .HasDatabaseName("ix_pluggy_postings_counterpart_posting_id");
 
+                    b.HasIndex("CreditCardInvoiceAdjustmentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_postings_invoice_adjustment")
+                        .HasFilter("credit_card_invoice_adjustment_id IS NOT NULL");
+
                     b.HasIndex("CreditCardInvoicePaymentId")
                         .IsUnique()
                         .HasDatabaseName("ux_pluggy_postings_invoice_payment")
@@ -3354,11 +3569,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_pluggy_postings_applied_snapshot", "(state = 'Applied') = (applied_amount IS NOT NULL AND applied_date IS NOT NULL)");
 
-                            t.HasCheckConstraint("ck_pluggy_postings_applied_targets", "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL) OR (kind = 'CardPurchase' AND credit_card_purchase_id IS NOT NULL) OR (kind = 'CardBillPayment' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_payment_id IS NOT NULL))) OR (state <> 'Applied' AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL)");
+                            t.HasCheckConstraint("ck_pluggy_postings_applied_targets", "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'CardPurchase' AND credit_card_purchase_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'CardBillPayment' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_payment_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'CardCredit' AND credit_card_invoice_adjustment_id IS NOT NULL AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL))) OR (state <> 'Applied' AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL AND credit_card_invoice_adjustment_id IS NULL)");
 
                             t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User','Pluggy','Rule','AI')");
 
-                            t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment')");
+                            t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment','CardCredit')");
 
                             t.HasCheckConstraint("ck_pluggy_postings_resolution", "resolution IS NULL OR resolution IN ('AsIncome','AsExpense','AsCardPurchase','Ignore')");
 
@@ -4321,6 +4536,23 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_financial_accounts_workspace_responsible");
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Accounts.FinancialAccountBalanceAnchor", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_account_balance_anchors_financial_accounts_accoun");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_account_balance_anchors_financial_workspaces_work");
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance", b =>
                 {
                     b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
@@ -5157,6 +5389,23 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_pluggy_card_bills_financial_workspaces_workspace_id");
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyCardBillPayment", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyCardBill", null)
+                        .WithMany()
+                        .HasForeignKey("BillId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_card_bill_payments_pluggy_card_bills_bill_id");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_card_bill_payments_financial_workspaces_workspace_id");
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyImportedTransaction", b =>
                 {
                     b.HasOne("Saldo360.Domain.Pluggy.PluggyItemLink", null)
@@ -5231,6 +5480,12 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CounterpartPostingId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_pluggy_postings_pluggy_postings_counterpart_posting_id");
+
+                    b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardInvoiceAdjustment", null)
+                        .WithMany()
+                        .HasForeignKey("CreditCardInvoiceAdjustmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pluggy_postings_financial_credit_card_invoice_adjustments_c");
 
                     b.HasOne("Saldo360.Domain.CreditCards.FinancialCreditCardInvoicePayment", null)
                         .WithMany()

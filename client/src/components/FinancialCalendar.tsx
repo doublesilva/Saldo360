@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { listAccounts, type FinancialAccount } from '../api/accounts'
+import { listAccounts, primaryAccountOf, type FinancialAccount } from '../api/accounts'
 import type { CategoryType } from '../api/categories'
 import {
   getFinancialCalendar,
@@ -48,6 +48,8 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
   const [month, setMonth] = useState(() => initialMonth ? startOfMonth(initialMonth) : startOfMonth(today))
   const [selectedDate, setSelectedDate] = useState(today)
   const [accountId, setAccountId] = useState('')
+  // A conta principal é só a seleção inicial; o consolidado continua a uma escolha de distância e a escolha do usuário nunca é sobrescrita.
+  const accountChosen = useRef(false)
   const [type, setType] = useState<CategoryType | ''>('')
   const [view, setView] = useState<'month' | 'planning'>('month')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -68,7 +70,12 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
   useEffect(() => {
     const controller = new AbortController()
     listAccounts(workspaceId, true, controller.signal)
-      .then((items) => { if (!controller.signal.aborted) setAccounts({ kind: 'loaded', data: items }) })
+      .then((items) => {
+        if (controller.signal.aborted) return
+        setAccounts({ kind: 'loaded', data: items })
+        const primary = primaryAccountOf(items)
+        if (primary && !accountChosen.current) setAccountId(primary.id)
+      })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setAccounts({ kind: 'error', message: errorMessage(error) })
       })
@@ -76,6 +83,8 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
   }, [workspaceId])
 
   useEffect(() => {
+    // Espera as contas: a conta principal define a seleção inicial e não deve haver uma consulta consolidada à toa.
+    if (accounts.kind === 'loading') return
     const controller = new AbortController()
     const version = ++requestVersion.current
     getFinancialCalendar(
@@ -94,7 +103,7 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
         }
       })
     return () => controller.abort()
-  }, [workspaceId, from, through, accountId, type, requestKey, refreshKey])
+  }, [workspaceId, from, through, accountId, type, requestKey, refreshKey, accounts.kind])
 
   const handleFinancialChange = () => {
     setRefreshKey((current) => current + 1)
@@ -120,7 +129,7 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
         onPrevious={() => selectMonth(addCalendarMonths(month, -1))}
         onNext={() => selectMonth(addCalendarMonths(month, 1))}
         onToday={() => selectMonth(startOfMonth(today), today)}
-        onAccountChange={setAccountId}
+        onAccountChange={(value) => { accountChosen.current = true; setAccountId(value) }}
         onTypeChange={setType}
         showTypeFilter={view === 'month'}
       />
@@ -163,7 +172,7 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
           </div>
         </>
       )}
-      {view === 'month' ? (
+      {accounts.kind === 'loading' ? null : view === 'month' ? (
         <FinancialCalendarBalanceEvolution
           workspaceId={workspaceId}
           from={from}

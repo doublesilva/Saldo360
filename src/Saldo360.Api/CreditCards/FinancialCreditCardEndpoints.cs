@@ -69,7 +69,7 @@ public sealed record CreditCardRequest(string? Name, string? Issuer, string? Las
     public CreditCardInput ToInput() => new(Name, Issuer, LastFourDigits, HolderUserId, CreditLimit, ClosingDay, DueDay, DefaultPaymentAccountId, GmailQuery);
 }
 
-public sealed record CreditCardResponse(Guid Id, string Name, string Issuer, string? LastFourDigits, Guid? HolderUserId, string CreditLimit, int ClosingDay, int DueDay, Guid? DefaultPaymentAccountId, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt, string? GmailQuery = null)
+public sealed record CreditCardResponse(Guid Id, string Name, string Issuer, string? LastFourDigits, Guid? HolderUserId, string CreditLimit, int ClosingDay, int DueDay, Guid? DefaultPaymentAccountId, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt, string? GmailQuery = null, string Origin = "Manual", string? Scope = null)
 {
-    public static CreditCardResponse From(FinancialCreditCardDto card) => new(card.Id, card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId, card.CreditLimit, card.ClosingDay, card.DueDay, card.DefaultPaymentAccountId, card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt, card.GmailQuery);
+    public static CreditCardResponse From(FinancialCreditCardDto card) => new(card.Id, card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId, card.CreditLimit, card.ClosingDay, card.DueDay, card.DefaultPaymentAccountId, card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt, card.GmailQuery, card.Origin, card.Scope);
 }

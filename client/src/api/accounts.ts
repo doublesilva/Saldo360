@@ -42,6 +42,8 @@ export interface FinancialAccount {
   /** 'Pluggy' quando a conta está integrada a uma conta bancária externa (T09.3); a origem é derivada do vínculo. */
   origin?: 'Manual' | 'Pluggy'
   integration?: AccountIntegration | null
+  /** Conta principal do orçamento (T09.3.3): no máximo uma, sempre bancária e ativa. É só a seleção padrão das telas. */
+  isPrimary?: boolean
 }
 
 /** Integração da conta. observedBalance é o saldo informado pelo banco (texto decimal), separado do saldo calculado. */
@@ -67,7 +69,14 @@ export interface AccountInput {
   /** Texto decimal exato ("-1234.56"). Valor e data juntos ou ambos null. */
   openingBalance: string | null
   openingBalanceDate: string | null
+  /** true define (e substitui a anterior), false remove a condição de principal e ausente não altera. */
+  isPrimary?: boolean
+  /** Só ao desativar a conta principal: a substituta vira a principal na mesma operação. */
+  replacementPrimaryAccountId?: string | null
 }
+
+/** Conta bancária (corrente ou poupança): a única que pode ser principal ou pagadora padrão de cartão. */
+export const isBankAccount = (account: Pick<FinancialAccount, 'type'>): boolean => account.type !== 'Cash'
 
 export type SaveAccountResult =
   | { ok: true; account: FinancialAccount }
@@ -87,11 +96,11 @@ export async function listAccounts(workspaceId: string, includeInactive: boolean
   return (await response.json()) as FinancialAccount[]
 }
 
-async function send(method: 'POST' | 'PUT', url: string, body: unknown, expected: number): Promise<SaveAccountResult> {
+async function send(method: 'POST' | 'PUT' | 'DELETE', url: string, body: unknown, expected: number): Promise<SaveAccountResult> {
   const response = await fetch(url, {
     method,
     headers: { ...jsonHeaders, 'Content-Type': 'application/json', [CSRF_HEADER]: await getCsrfToken() },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
   })
 
   if (response.status === expected) return { ok: true, account: (await response.json()) as FinancialAccount }
@@ -116,6 +125,20 @@ export function updateAccount(
 ): Promise<SaveAccountResult> {
   return send('PUT', accountsUrl(workspaceId, accountId), { ...input, isActive }, 200)
 }
+
+/** Define a conta como a principal do orçamento, substituindo a anterior de forma atômica. */
+export function setPrimaryAccount(workspaceId: string, accountId: string): Promise<SaveAccountResult> {
+  return send('PUT', `${accountsUrl(workspaceId, accountId)}/primary`, undefined, 200)
+}
+
+/** Remove explicitamente a condição de conta principal; o orçamento fica sem conta principal. */
+export function clearPrimaryAccount(workspaceId: string, accountId: string): Promise<SaveAccountResult> {
+  return send('DELETE', `${accountsUrl(workspaceId, accountId)}/primary`, undefined, 200)
+}
+
+/** A conta principal ativa do orçamento, quando existe. */
+export const primaryAccountOf = (accounts: FinancialAccount[]): FinancialAccount | undefined =>
+  accounts.find((account) => account.isPrimary === true && account.isActive)
 
 export function toInput(account: FinancialAccount): AccountInput {
   return {
@@ -147,6 +170,8 @@ export interface AccountBalance {
   totalTransferOut: string | null
   balance: string | null
   unavailableReason: BalanceUnavailableReason | null
+  /** Origem do saldo inicial usado: 'Manual' (cadastro) ou 'BalanceAnchor' (derivado do saldo informado pelo banco, sem cadastro manual). */
+  openingSource?: 'Manual' | 'BalanceAnchor' | null
 }
 
 /** Saldo realizado até hoje (America/Sao_Paulo, definido pela API). */

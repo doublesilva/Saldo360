@@ -14,6 +14,8 @@ export interface FinancialCreditCard {
   id: string; name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string
   closingDay: number; dueDay: number; defaultPaymentAccountId: string | null; isArchived: boolean
   createdAt: string; updatedAt: string; archivedAt: string | null
+  /** 'Pluggy' quando o cartão nasceu de uma conexão; o escopo (PF/PJ) é o das contas bancárias da mesma conexão e nunca muda com a conta pagadora. */
+  origin?: 'Manual' | 'Pluggy'; scope?: 'PF' | 'PJ' | null
 }
 export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null; gmailQuery?: string | null }
 export interface CardLatestEmailResult { status: string; cardId: string; documentId: string | null; receivedAt: string | null; fileName: string | null; inboxStatus: string | null; alreadyExisted: boolean; failureCode: string | null; processing?: StatementProcessingResult | null }

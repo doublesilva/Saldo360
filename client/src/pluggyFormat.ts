@@ -80,10 +80,16 @@ export const resolutionLabels: Record<string, string> = {
   AsIncome: 'Contabilizar como receita', AsExpense: 'Contabilizar como despesa', AsCardPurchase: 'Contabilizar como compra de cartão', Ignore: 'Não contabilizar',
 }
 
-export const billStatusLabels: Record<string, string> = {
-  Official: 'Fechada com o total do banco', OfficialDiverges: 'Fechada, mas o banco informou outro total', Open: 'Aberta (confere com o banco)',
-  Mismatch: 'Aberta e diverge do banco', NoInvoice: 'Sem compras importadas',
+export const billCycleLabels: Record<string, string> = { Open: 'Aberta', Closed: 'Fechada pelo banco' }
+export const billPaymentLabels: Record<string, string> = { Unpaid: 'Não paga', PartiallyPaid: 'Parcialmente paga', Paid: 'Paga' }
+export const billReconciliationLabels: Record<string, string> = {
+  NotVerified: 'Conciliação não verificada', Reconciled: 'Conciliada com o banco', Divergent: 'Divergente do total do banco', Incomplete: 'Conciliação incompleta',
 }
+export const billReconciliationReasonLabels: Record<string, string> = {
+  OpenItems: 'há itens pendentes ou em revisão nesta fatura', MissingHistory: 'o histórico importado não cobre a fatura inteira',
+  NoImportedItems: 'nenhuma compra importada', TotalMismatch: 'a soma importada difere do total do banco', Open: 'fatura ainda aberta',
+}
+export const scheduleReasonLabels: Record<string, string> = { NotEnoughHistory: 'histórico insuficiente', Inconsistent: 'histórico inconsistente' }
 
 export const unavailableReasonLabels: Record<string, string> = {
   OpeningBalanceNotConfigured: 'sem saldo inicial configurado', BeforeOpeningBalanceDate: 'antes da data do saldo inicial',

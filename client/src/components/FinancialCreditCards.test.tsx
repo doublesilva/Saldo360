@@ -116,3 +116,35 @@ describe('FinancialCreditCardsPage', () => {
     await waitFor(() => expect(changed).toHaveBeenCalled())
   })
 })
+
+describe('FinancialCreditCardsPage — conta pagadora padrão (T09.3.3)', () => {
+  const acct = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ id, name, institution: null, type: 'Checking', financialScope: 'PF', responsible: null, openingBalance: null, openingBalanceDate: null, isActive: true, currency: 'BRL', createdAt: '', ...extra })
+  const accounts = [acct('pf', 'Itaú PF', { isPrimary: true }), acct('pj', 'Itaú PJ', { financialScope: 'PJ' }), acct('cash', 'Dinheiro', { type: 'Cash' }), acct('old', 'Conta antiga', { isActive: false })]
+  const pjCard = { ...card, name: 'Itaú Empresas Visa', defaultPaymentAccountId: 'pf', origin: 'Pluggy', scope: 'PJ' }
+
+  it('mostra a pagadora e o escopo do cartão e só oferece conta bancária ativa, inclusive PF para cartão PJ', async () => {
+    let saved: Record<string, unknown> | null = null
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/auth/csrf') return json({ token: 'synthetic' })
+      if (url.endsWith(`/credit-cards/${card.id}`) && init?.method === 'PUT') { saved = JSON.parse(init.body as string); return json({ ...pjCard, ...saved }) }
+      if (url.includes('/credit-cards?')) return json([pjCard])
+      if (url.includes('/accounts?')) return json(accounts)
+      if (url.includes('/summary?')) return json({ cardCount: 1, totalLimit: '10000.00', invoiceTotal: '0.00', availableLimit: '10000.00', cards: [] })
+      if (url.endsWith('/limit')) return json({ creditLimit: '10000.00', usedLimit: '0.00', availableLimit: '10000.00', overLimitAmount: '0.00' })
+      return json([])
+    }))
+    render(<FinancialCreditCardsPage workspaceId="workspace" />)
+    await screen.findAllByText('Itaú Empresas Visa')
+    expect(screen.getByText('Cartão PJ')).toBeTruthy()
+    expect(screen.getByText(/pagadora padrão: Itaú PF \(PF\)/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    const select = await screen.findByLabelText(/Conta bancária de pagamento padrão/) as HTMLSelectElement
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual(['Selecionar depois', 'Itaú PF (PF) — principal', 'Itaú PJ (PJ)'])
+    expect(select.value).toBe('pf')
+
+    fireEvent.change(select, { target: { value: 'pj' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(saved).toMatchObject({ defaultPaymentAccountId: 'pj', creditLimit: '10000.00' }))
+  })
+})

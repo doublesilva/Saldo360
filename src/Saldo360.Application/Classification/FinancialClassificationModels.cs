@@ -33,7 +33,7 @@ public sealed record FinancialClassificationUsage(int Calls, int Items, int Inpu
     string? StoppedBecause, string? FailureCode, string? Model);
 
 /// <summary>Resposta cru-validada do modelo para um item (código do menu enviado, nunca identificador interno).</summary>
-public sealed record FinancialModelDecision(int Index, int? CategoryCode, double Confidence, bool NeedsReview, string? Reason);
+public sealed record FinancialModelDecision(int Index, int? CategoryCode, double Confidence, bool NeedsReview, string? Reason, string? SuggestedCategory = null);
 
 public sealed record FinancialModelItem(int Index, FinancialMovementKind Kind, string Text, string? OperationType, string? ExternalCategory);
 
@@ -64,15 +64,24 @@ public sealed class FinancialClassificationOptions
     public const string SectionName = "FinancialClassification";
     /// <summary>A IA só roda com esta chave ligada, a credencial do provider presente e a confirmação explícita do usuário na chamada.</summary>
     public bool AiEnabled { get; set; }
-    public string Model { get; set; } = "gpt-4o-mini";
+    public string Model { get; set; } = "gpt-6.1-sol";
     public int BatchSize { get; set; } = 20;
     public int MaxItemsPerRun { get; set; } = 200;
     public int MaxEstimatedInputTokensPerRun { get; set; } = 60000;
     public decimal MaxEstimatedCostUsdPerRun { get; set; } = 0.50m;
     public double MinConfidence { get; set; } = 0.80;
+    /// <summary>
+    /// A IA pode SUGERIR uma categoria nova quando nenhuma existente serve. Quem cria é o backend, depois de validar o nome (sem dígitos nem dados
+    /// pessoais, sem duplicar equivalentes, do tipo do lançamento) e dentro do limite abaixo por execução.
+    /// </summary>
+    public bool AllowCategorySuggestions { get; set; } = true;
+    public int MaxNewCategoriesPerRun { get; set; } = 10;
     public int MaxRetries { get; set; } = 2;
     public int RetryDelayMilliseconds { get; set; } = 1500;
-    /// <summary>Preços de tabela (USD por 1 milhão de tokens) usados só para estimar o custo mostrado ao usuário.</summary>
+    /// <summary>
+    /// Preços (USD por 1 milhão de tokens) usados só para estimar o custo mostrado ao usuário. Os valores padrão são placeholders do modelo
+    /// anterior: ajuste-os à tabela vigente do modelo configurado, senão a estimativa não reflete a cobrança real.
+    /// </summary>
     public decimal InputUsdPerMillionTokens { get; set; } = 0.15m;
     public decimal OutputUsdPerMillionTokens { get; set; } = 0.60m;
 }

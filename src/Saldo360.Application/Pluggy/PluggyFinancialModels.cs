@@ -33,13 +33,40 @@ public sealed record PluggyReconciliationView(string? ObservedBalance, DateTimeO
     string? SuggestionUnavailableReason, PluggyCardFiguresView? Card, IReadOnlyList<string> Notes);
 
 public sealed record PluggyCardFiguresView(string? CreditLimit, string? UsedLimit, string? AvailableLimit, string? ObservedBalanceDue, string? ObservedAvailableLimit,
-    IReadOnlyList<PluggyBillReconciliationView> Bills);
+    IReadOnlyList<PluggyBillReconciliationView> Bills)
+{
+    /// <summary>Dia habitual cadastrado no cartão e o sugerido pelo histórico de faturas do banco (quando consistente). Só é alterado com confirmação.</summary>
+    public int? CurrentClosingDay { get; init; }
+    public int? CurrentDueDay { get; init; }
+    public int? SuggestedClosingDay { get; init; }
+    public int? SuggestedDueDay { get; init; }
+    public string? ClosingScheduleReason { get; init; }
+    public string? DueScheduleReason { get; init; }
+}
 
-/// <summary>Fatura do banco × fatura do Saldo360. <c>Status</c>: Official (fechada com o total do banco), OfficialDiverges (fechada, mas o banco informou outro total depois: a fatura oficial é imutável e precisa de revisão manual), Open (ainda aberta, confere), Mismatch (aberta e diverge do banco) ou NoInvoice.</summary>
-public sealed record PluggyBillReconciliationView(DateOnly? ClosingDate, DateOnly? DueDate, string? BankTotal, string? Saldo360Total, string? Difference, string Status);
+/// <summary>
+/// Fatura do banco × fatura do Saldo360, em três dimensões independentes. <c>Cycle</c>: Open ou Closed (fechada pela instituição: a data de
+/// fechamento informada já chegou e há total). <c>Payment</c>: Unpaid, PartiallyPaid ou Paid, pelo maior entre o que o Saldo360 registrou e o que o
+/// banco informou em <c>payments[]</c>. <c>Reconciliation</c>: NotVerified, Reconciled, Divergent ou Incomplete (total bancário × o que foi importado).
+/// Uma não depende da outra: fatura fechada pode estar divergente e paga.
+/// </summary>
+public sealed record PluggyBillReconciliationView(DateOnly? ClosingDate, DateOnly? DueDate, string? BankTotal, string? Saldo360Total, string? Difference,
+    string Cycle, string Payment, string Reconciliation, string? ReconciliationReason, string? PaidAmount, string? BankReportedPaid, string? FinanceCharges, string? MinimumPayment);
 
-/// <summary>Fatura informada pelo banco, já normalizada (datas de negócio e total).</summary>
-public sealed record PluggyBillFact(string BillId, DateOnly? ClosingDate, DateOnly? DueDate, decimal? Total, string? Currency);
+/// <summary>Pagamento informado pelo banco dentro da fatura (<c>payments[]</c>).</summary>
+public sealed record PluggyBillPaymentFact(decimal Amount, DateOnly Date, string? Mode, string? ValueType);
+
+/// <summary>Fatura informada pelo banco, já normalizada (datas de negócio, total, encargos e pagamentos informados).</summary>
+public sealed record PluggyBillFact(string BillId, DateOnly? ClosingDate, DateOnly? DueDate, decimal? Total, string? Currency)
+{
+    public decimal? FinanceChargesTotal { get; init; }
+    public decimal? MinimumPayment { get; init; }
+    public IReadOnlyList<PluggyBillPaymentFact> Payments { get; init; } = [];
+}
+
+/// <summary>Fatura do banco com o que o Saldo360 sabe dela: conciliação persistida, componentes importados, pagamentos registrados e informados.</summary>
+public sealed record PluggyBillStateRow(PluggyBillFact Bill, PluggyBillReconciliation Reconciliation, string? ReconciliationReason, decimal? ComponentsTotal,
+    bool InvoiceExists, decimal RecordedPaid, decimal ReportedPaid);
 
 public sealed record PluggyAccountLinkDetailView(PluggyAccountLinkView Link, PluggyReconciliationView Reconciliation);
 
@@ -50,7 +77,19 @@ public sealed record PluggyReviewItemView(Guid PostingId, Guid ImportedTransacti
 public sealed record PluggyReviewPage(IReadOnlyList<PluggyReviewItemView> Items, int Total, int Page, int PageSize, PluggyPostingCounts Counts);
 
 public sealed record PluggyApplySummary(int Created, int Updated, int Waiting, int NeedsReview, int Covered, int TransfersPaired, int BillPaymentsPaired,
-    int OutOfRange, int Unchanged);
+    int OutOfRange, int Unchanged)
+{
+    /// <summary>Compras reposicionadas na fatura real do banco (em vez da fatura calculada pelo dia de fechamento configurado).</summary>
+    public int PurchasesRehomed { get; init; }
+    /// <summary>Estornos, devoluções e cashback aplicados como crédito da fatura (nunca como receita).</summary>
+    public int CardCreditsApplied { get; init; }
+    /// <summary>Faturas em que o fechamento informado pela instituição foi registrado nesta execução.</summary>
+    public int InvoicesClosedByInstitution { get; init; }
+    /// <summary>Faturas calculadas por calendário, sem nenhum componente, removidas depois de as compras irem para a fatura real do banco.</summary>
+    public int StaleInvoicesRemoved { get; init; }
+    public int BillsEvaluated { get; init; }
+    public int BalanceAnchorsUpdated { get; init; }
+}
 
 // ---- Entradas ---------------------------------------------------------------------------------------------------------
 
@@ -88,6 +127,8 @@ public interface IPluggyFinancialRepository
     /// <summary>Guarda (insere ou atualiza) as faturas informadas pelo banco para um cartão integrado.</summary>
     Task UpsertBillsAsync(Guid workspaceId, Guid linkId, IReadOnlyList<PluggyBillFact> bills, DateTimeOffset now, CancellationToken ct);
     Task<IReadOnlyList<PluggyBillFact>> ListBillsAsync(Guid workspaceId, Guid linkId, CancellationToken ct);
+    /// <summary>Faturas do banco (mais recentes primeiro) com conciliação, componentes e pagamentos, para a tela de integração do cartão.</summary>
+    Task<IReadOnlyList<PluggyBillStateRow>> ListBillStatesAsync(Guid workspaceId, Guid linkId, int take, CancellationToken ct);
     /// <summary>Registra a data da última coleta completa de uma conta integrada.</summary>
     Task MarkSyncedAsync(Guid workspaceId, Guid connectionId, string pluggyAccountId, DateTimeOffset now, CancellationToken ct);
     Task SetConnectionStatusAsync(Guid workspaceId, Guid connectionId, PluggyAccountLinkStatus status, CancellationToken ct);

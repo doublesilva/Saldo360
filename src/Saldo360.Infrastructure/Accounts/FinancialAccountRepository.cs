@@ -22,6 +22,44 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
 
     public Task SaveChangesAsync(CancellationToken cancellationToken) => db.SaveChangesAsync(cancellationToken);
 
+    public Task<FinancialAccount?> FindPrimaryAsync(Guid workspaceId, CancellationToken cancellationToken) =>
+        db.FinancialAccounts.SingleOrDefaultAsync(a => a.WorkspaceId == workspaceId && a.IsPrimary, cancellationToken);
+
+    // Mesmo padrão do motor de lançamentos: transação própria (ou a corrente) com o workspace bloqueado.
+    public async Task<T> RunExclusiveAsync<T>(Guid workspaceId, Func<Task<T>> work, CancellationToken cancellationToken)
+    {
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        var transaction = ownsTransaction ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", cancellationToken);
+            var result = await work();
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            return result;
+        }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+
+            db.ChangeTracker.Clear();
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+        }
+    }
+
     public async Task<IReadOnlyList<FinancialAccountDto>> ListAsync(
         Guid workspaceId, bool includeInactive, CancellationToken cancellationToken)
     {
@@ -47,11 +85,29 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
     public Task<bool> IsWorkspaceOwnerAsync(Guid workspaceId, Guid memberId, CancellationToken cancellationToken) =>
         db.FinancialWorkspaces.AnyAsync(w => w.OwnerUserId == memberId && w.Id == workspaceId && w.IsActive && w.Type == Saldo360.Domain.Workspaces.FinancialWorkspaceType.Personal, cancellationToken);
 
-    public Task<AccountOpeningBalance?> GetOpeningBalanceAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken) =>
-        db.FinancialAccounts
-            .Where(a => a.WorkspaceId == workspaceId && a.Id == accountId)
-            .Select(a => new AccountOpeningBalance(a.OpeningBalance, a.OpeningBalanceDate))
-            .SingleOrDefaultAsync(cancellationToken);
+    public async Task<AccountOpeningBalance?> GetOpeningBalanceAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken)
+    {
+        var account = await db.FinancialAccounts.AsNoTracking().Where(a => a.WorkspaceId == workspaceId && a.Id == accountId)
+            .Select(a => new { a.OpeningBalance, a.OpeningBalanceDate }).SingleOrDefaultAsync(cancellationToken);
+        if (account is null) return null;
+        if (account.OpeningBalance is not null && account.OpeningBalanceDate is not null) return new AccountOpeningBalance(account.OpeningBalance, account.OpeningBalanceDate, "Manual");
+        var anchor = await db.FinancialAccountBalanceAnchors.AsNoTracking()
+            .Where(a => a.WorkspaceId == workspaceId && a.AccountId == accountId && a.IsCurrent && a.Reliability != Saldo360.Domain.Accounts.BalanceAnchorReliability.Unreliable
+                && a.DerivedOpeningAmount != null && a.DerivedOpeningDate != null)
+            .Select(a => new { a.DerivedOpeningAmount, a.DerivedOpeningDate }).SingleOrDefaultAsync(cancellationToken);
+        return anchor is null ? new AccountOpeningBalance(account.OpeningBalance, account.OpeningBalanceDate) : new AccountOpeningBalance(anchor.DerivedOpeningAmount, anchor.DerivedOpeningDate, "BalanceAnchor");
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, AccountOpeningBalance>> GetAnchoredOpeningsAsync(Guid workspaceId, CancellationToken cancellationToken)
+    {
+        var rows = await (from anchor in db.FinancialAccountBalanceAnchors.AsNoTracking()
+                          join account in db.FinancialAccounts.AsNoTracking() on anchor.AccountId equals account.Id
+                          where anchor.WorkspaceId == workspaceId && account.WorkspaceId == workspaceId && anchor.IsCurrent
+                              && anchor.Reliability != Saldo360.Domain.Accounts.BalanceAnchorReliability.Unreliable && anchor.DerivedOpeningAmount != null && anchor.DerivedOpeningDate != null
+                              && (account.OpeningBalance == null || account.OpeningBalanceDate == null)
+                          select new { anchor.AccountId, anchor.DerivedOpeningAmount, anchor.DerivedOpeningDate }).ToListAsync(cancellationToken);
+        return rows.ToDictionary(r => r.AccountId, r => new AccountOpeningBalance(r.DerivedOpeningAmount, r.DerivedOpeningDate, "BalanceAnchor"));
+    }
 
     // Duas consultas agregadas no PostgreSQL (numeric, sem perda), uma por tabela: SUM condicional por tipo
     // nos lançamentos e por papel da conta (destino/origem) nas transferências. O período é o desta conta, então
@@ -187,6 +243,7 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             account.IsActive,
             account.Currency,
             account.CreatedAt,
+            account.IsPrimary,
             link == null ? null : new AccountIntegrationDto(link.Id, link.ConnectionId, link.DisplayName, link.InstitutionName, link.Status.ToString(), link.LastSyncedAt,
                 link.ImportFrom, link.ObservedBalance, link.ObservedAt));
 
@@ -203,7 +260,8 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         row.Currency,
         row.CreatedAt,
         row.Integration is null ? AccountOrigins.Manual : AccountOrigins.Pluggy,
-        row.Integration);
+        row.Integration,
+        row.IsPrimary);
 
     private sealed record AccountRow(
         Guid Id,
@@ -218,5 +276,6 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
         bool IsActive,
         string Currency,
         DateTimeOffset CreatedAt,
+        bool IsPrimary,
         AccountIntegrationDto? Integration);
 }

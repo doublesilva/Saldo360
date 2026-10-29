@@ -82,6 +82,8 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<Saldo360.Domain.Pluggy.PluggyAccountLink> PluggyAccountLinks => Set<Saldo360.Domain.Pluggy.PluggyAccountLink>();
     public DbSet<Saldo360.Domain.Pluggy.PluggyPosting> PluggyPostings => Set<Saldo360.Domain.Pluggy.PluggyPosting>();
     public DbSet<Saldo360.Domain.Pluggy.PluggyCardBill> PluggyCardBills => Set<Saldo360.Domain.Pluggy.PluggyCardBill>();
+    public DbSet<Saldo360.Domain.Pluggy.PluggyCardBillPayment> PluggyCardBillPayments => Set<Saldo360.Domain.Pluggy.PluggyCardBillPayment>();
+    public DbSet<Saldo360.Domain.Accounts.FinancialAccountBalanceAnchor> FinancialAccountBalanceAnchors => Set<Saldo360.Domain.Accounts.FinancialAccountBalanceAnchor>();
     public DbSet<FinancialGoalAllocation> FinancialGoalAllocations => Set<FinancialGoalAllocation>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)

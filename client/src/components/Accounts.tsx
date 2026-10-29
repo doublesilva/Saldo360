@@ -3,7 +3,10 @@ import {
   ACCOUNT_INSTITUTION_MAX_LENGTH,
   ACCOUNT_NAME_MAX_LENGTH,
   accountTypeLabels,
+  clearPrimaryAccount,
   createAccount,
+  isBankAccount,
+  setPrimaryAccount,
   getAccountBalance,
   getAccountProjection,
   listAccounts,
@@ -84,15 +87,38 @@ export function Accounts({
 
   const handleToggleActive = async (account: FinancialAccount) => {
     const question = account.isActive
-      ? `Desativar a conta "${account.name}"? Ela deixa de aparecer na lista, mas o cadastro é preservado.`
+      ? account.isPrimary
+        ? `A conta "${account.name}" é a conta principal. Ao desativá-la ela deixa de ser a principal e o orçamento fica sem conta principal até você escolher outra. Continuar?`
+        : `Desativar a conta "${account.name}"? Ela deixa de aparecer na lista, mas o cadastro é preservado.`
       : `Reativar a conta "${account.name}"?`
     if (!window.confirm(question)) return
 
     setTogglingId(account.id)
     setToggleError(null)
     try {
-      const result = await updateAccount(workspaceId, account.id, toInput(account), !account.isActive)
+      // Desativar a principal exige remover a condição de forma explícita (a API recusa o contrário).
+      const input = account.isActive && account.isPrimary ? { ...toInput(account), isPrimary: false } : toInput(account)
+      const result = await updateAccount(workspaceId, account.id, input, !account.isActive)
       if (!result.ok) setToggleError(Object.values(result.errors).flat()[0] ?? 'Não foi possível alterar a situação.')
+      reload()
+    } catch (error: unknown) {
+      setToggleError(errorMessage(error))
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  const handlePrimary = async (account: FinancialAccount, makePrimary: boolean) => {
+    const question = makePrimary
+      ? `Definir "${account.name}" como a conta principal? A principal atual deixa de ser. Saldos e movimentações não mudam.`
+      : `Remover a condição de conta principal de "${account.name}"? O orçamento fica sem conta principal.`
+    if (!window.confirm(question)) return
+
+    setTogglingId(account.id)
+    setToggleError(null)
+    try {
+      const result = makePrimary ? await setPrimaryAccount(workspaceId, account.id) : await clearPrimaryAccount(workspaceId, account.id)
+      if (!result.ok) setToggleError(Object.values(result.errors).flat()[0] ?? 'Não foi possível alterar a conta principal.')
       reload()
     } catch (error: unknown) {
       setToggleError(errorMessage(error))
@@ -176,6 +202,7 @@ export function Accounts({
                 <span className="account__name">{account.name}</span>
                 <span className={`badge badge--${account.financialScope.toLowerCase()}`}>{account.financialScope}</span>
                 <span className="badge">{account.origin === 'Pluggy' ? 'Origem: Pluggy' : 'Origem: Manual'}</span>
+                {account.isPrimary && <span className="badge badge--primary">Conta principal</span>}
               </div>
               <dl className="account__details">
                 <div>
@@ -210,6 +237,17 @@ export function Accounts({
                 <button type="button" onClick={() => setEditing(account)}>
                   Editar
                 </button>
+                {account.isPrimary ? (
+                  <button type="button" onClick={() => void handlePrimary(account, false)} disabled={togglingId === account.id}>
+                    Remover condição de principal
+                  </button>
+                ) : (
+                  account.isActive && isBankAccount(account) && (
+                    <button type="button" onClick={() => void handlePrimary(account, true)} disabled={togglingId === account.id}>
+                      Definir como principal
+                    </button>
+                  )
+                )}
                 <button
                   type="button"
                   onClick={() => void handleToggleActive(account)}
@@ -360,6 +398,11 @@ function RealizedBalance({ workspaceId, accountId, refreshKey }: { workspaceId: 
         <strong className={negative ? 'amount amount--negative' : 'amount'}>{formatBrlDecimal(balance.balance)}</strong>
         {negative && <span className="meta"> — saldo negativo: valor devido, não é crédito disponível.</span>}
       </p>
+      {balance.openingSource === 'BalanceAnchor' && (
+        <p className="meta">
+          Saldo calculado a partir da referência bancária (saldo informado pelo banco) e dos movimentos consistentes, sem cadastro manual de saldo inicial. O histórico só existe a partir da data abaixo.
+        </p>
+      )}
       <p className="meta">
         Desde {balance.openingBalanceDate ? formatDate(balance.openingBalanceDate) : '—'}: receitas{' '}
         {formatBrlDecimal(balance.totalIncome)} · despesas {formatBrlDecimal(balance.totalExpense)}
@@ -402,6 +445,8 @@ function AccountForm({
   )
   const [errors, setErrors] = useState<Record<string, string[]>>({})
   const [busy, setBusy] = useState(false)
+  // Conta principal (T09.3.3): só conta bancária ativa; a escolha só é enviada quando muda.
+  const [wantsPrimary, setWantsPrimary] = useState(account?.isPrimary === true)
 
   const set = <K extends keyof AccountInput>(field: K, value: AccountInput[K]) =>
     setInput((current) => ({ ...current, [field]: value }))
@@ -433,6 +478,8 @@ function AccountForm({
         openingBalance: amount.kind === 'ok' ? amount.text : null,
         openingBalanceDate: date,
       }
+      const primaryNow = input.type !== 'Cash' && wantsPrimary
+      if (primaryNow !== (account?.isPrimary === true)) payload.isPrimary = primaryNow
       const result = account
         ? await updateAccount(workspaceId, account.id, payload, account.isActive)
         : await createAccount(workspaceId, payload)
@@ -502,6 +549,11 @@ function AccountForm({
       </select>
       {fieldError('financialScope')}
 
+      {input.type !== 'Cash' && (account?.isActive ?? true) && (
+        <label className="checkbox" htmlFor="account-primary">
+          <input id="account-primary" type="checkbox" checked={wantsPrimary} onChange={(event) => setWantsPrimary(event.target.checked)} /> Definir como conta principal
+        </label>
+      )}
       <label htmlFor="account-responsible">Responsável</label>
       <select
         id="account-responsible"

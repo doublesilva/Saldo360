@@ -19,6 +19,26 @@ describe('FinancialDashboard', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it('identifica a conta principal na lista de contas sem alterar o consolidado nem a ordem das contas', async () => {
+    const withAccounts = {
+      ...dashboard,
+      position: { ...dashboard.position, accounts: [
+        { accountId: 'a1', name: 'Itaú PF', realizedBalance: '1000.00', complete: true, isPrimary: true },
+        { accountId: 'a2', name: 'Itaú PJ', realizedBalance: '250.50', complete: true, isPrimary: false },
+      ] },
+    }
+    vi.stubGlobal('fetch', vi.fn(async input => String(input).includes('/financial-dashboard') ? Response.json(withAccounts) : dashboardResponse(input)))
+    render(<FinancialDashboard workspaceId="personal" />)
+
+    const list = (await screen.findByText('Itaú PF')).closest('ul')!
+    const rows = within(list).getAllByRole('listitem')
+    expect(rows.map((row) => row.textContent)).toEqual(['Itaú PF PrincipalR$ 1.000,00', 'Itaú PJR$ 250,50'].map((text) => expect.stringContaining(text.slice(0, 7))))
+    expect(within(rows[0]).getByText('Principal')).toBeTruthy()
+    expect(within(rows[1]).queryByText('Principal')).toBeNull()
+    // O consolidado do painel segue vindo da API: nenhuma conta é filtrada nem somada no navegador.
+    expect(screen.getByText('Saldo realizado · efetivo')).toBeTruthy()
+  })
+
   it('routes all four quick actions to existing modules and prioritizes overdue alerts', async () => {
     const navigate = vi.fn()
     vi.mocked(fetch).mockImplementation(async input => dashboardResponse(input, { ...dashboard, alerts: [dashboard.alerts[0], { ...dashboard.alerts[0], code: 'incomplete-coverage', title: 'Cobertura parcial' }, { ...dashboard.alerts[0], code: 'overdue-obligation', title: 'Despesa atrasada' }] }))

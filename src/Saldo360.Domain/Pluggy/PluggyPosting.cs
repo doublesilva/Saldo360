@@ -16,6 +16,8 @@ public enum PluggyPostingKind
     CardPurchase,
     /// <summary>Pagamento de fatura: a ponta bancária gera o pagamento; a ponta do cartão só o evidencia.</summary>
     CardBillPayment,
+    /// <summary>Crédito no cartão (estorno, cashback, devolução): vira crédito da fatura correspondente, nunca receita.</summary>
+    CardCredit,
 }
 
 public enum PluggyPostingState
@@ -62,6 +64,8 @@ public sealed class PluggyPosting : Entity
     public Guid? FinancialTransferId { get; private set; }
     public Guid? CreditCardPurchaseId { get; private set; }
     public Guid? CreditCardInvoicePaymentId { get; private set; }
+    /// <summary>Crédito aplicado na fatura (estorno/cashback): ajuste de fatura do tipo crédito que este rastro gerou.</summary>
+    public Guid? CreditCardInvoiceAdjustmentId { get; private set; }
     /// <summary>Posting da outra ponta (transferência ou pagamento de fatura) quando a correspondência foi confirmada.</summary>
     public Guid? CounterpartPostingId { get; private set; }
     /// <summary>Decisão manual do usuário para este item; prevalece sobre a classificação automática.</summary>
@@ -111,14 +115,14 @@ public sealed class PluggyPosting : Entity
     public void ApplyBankMovement(Guid financialTransactionId, decimal amount, DateOnly date, CategoryType type, DateTimeOffset now)
     {
         Move(PluggyPostingState.Applied, PluggyPostingKind.BankMovement, null, now);
-        FinancialTransactionId = financialTransactionId; FinancialTransferId = null; CreditCardPurchaseId = null; CreditCardInvoicePaymentId = null;
+        FinancialTransactionId = financialTransactionId; FinancialTransferId = null; CreditCardPurchaseId = null; CreditCardInvoicePaymentId = null; CreditCardInvoiceAdjustmentId = null;
         Snapshot(amount, date, type);
     }
 
     public void ApplyTransfer(Guid financialTransferId, Guid counterpartPostingId, decimal amount, DateOnly date, DateTimeOffset now)
     {
         Move(PluggyPostingState.Applied, PluggyPostingKind.Transfer, null, now);
-        FinancialTransactionId = null; CreditCardPurchaseId = null; CreditCardInvoicePaymentId = null;
+        FinancialTransactionId = null; CreditCardPurchaseId = null; CreditCardInvoicePaymentId = null; CreditCardInvoiceAdjustmentId = null;
         FinancialTransferId = financialTransferId; CounterpartPostingId = counterpartPostingId;
         Snapshot(amount, date, null);
     }
@@ -126,17 +130,26 @@ public sealed class PluggyPosting : Entity
     public void ApplyCardPurchase(Guid purchaseId, decimal amount, DateOnly date, DateTimeOffset now)
     {
         Move(PluggyPostingState.Applied, PluggyPostingKind.CardPurchase, null, now);
-        FinancialTransactionId = null; FinancialTransferId = null; CreditCardInvoicePaymentId = null;
+        FinancialTransactionId = null; FinancialTransferId = null; CreditCardInvoicePaymentId = null; CreditCardInvoiceAdjustmentId = null;
         CreditCardPurchaseId = purchaseId;
         Snapshot(amount, date, CategoryType.Expense);
     }
 
-    public void ApplyBillPayment(Guid financialTransactionId, Guid invoicePaymentId, Guid counterpartPostingId, decimal amount, DateOnly date, DateTimeOffset now)
+    /// <param name="counterpartPostingId">Ponta do cartão (crédito de pagamento), quando a evidência veio dela; null quando veio de <c>payments[]</c> da fatura.</param>
+    public void ApplyBillPayment(Guid financialTransactionId, Guid invoicePaymentId, Guid? counterpartPostingId, decimal amount, DateOnly date, DateTimeOffset now)
     {
         Move(PluggyPostingState.Applied, PluggyPostingKind.CardBillPayment, null, now);
-        FinancialTransferId = null; CreditCardPurchaseId = null;
+        FinancialTransferId = null; CreditCardPurchaseId = null; CreditCardInvoiceAdjustmentId = null;
         FinancialTransactionId = financialTransactionId; CreditCardInvoicePaymentId = invoicePaymentId; CounterpartPostingId = counterpartPostingId;
         Snapshot(amount, date, CategoryType.Expense);
+    }
+
+    public void ApplyCardCredit(Guid invoiceAdjustmentId, decimal amount, DateOnly date, DateTimeOffset now)
+    {
+        Move(PluggyPostingState.Applied, PluggyPostingKind.CardCredit, null, now);
+        FinancialTransactionId = null; FinancialTransferId = null; CreditCardPurchaseId = null; CreditCardInvoicePaymentId = null;
+        CreditCardInvoiceAdjustmentId = invoiceAdjustmentId;
+        Snapshot(amount, date, null);
     }
 
     /// <summary>Atualiza o retrato aplicado depois de o núcleo ter sido atualizado pela mudança de origem.</summary>
@@ -182,7 +195,7 @@ public sealed class PluggyPosting : Entity
         Reason = reason is null ? null : reason.Length > ReasonMaxLength ? reason[..ReasonMaxLength] : reason;
         if (state is PluggyPostingState.WaitingPosted or PluggyPostingState.NeedsReview or PluggyPostingState.Ignored or PluggyPostingState.Covered)
         {
-            FinancialTransactionId = null; FinancialTransferId = null; CreditCardPurchaseId = null; CreditCardInvoicePaymentId = null;
+            FinancialTransactionId = null; FinancialTransferId = null; CreditCardPurchaseId = null; CreditCardInvoicePaymentId = null; CreditCardInvoiceAdjustmentId = null;
             if (state != PluggyPostingState.Covered) CounterpartPostingId = null;
             AppliedAmount = null; AppliedDate = null; AppliedType = null;
         }

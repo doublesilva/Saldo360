@@ -255,10 +255,29 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     }
 
     [Fact]
+    public async Task PurchasesOfAnInvoiceClosedByTheBankStayEditableSoTheirCategoryCanBeApplied()
+    {
+        var c = await ArrangeCardAsync("t931-card-closed", billTotal: 200m); // o banco informou o fechamento (total 200); as compras somam 200
+        await using (var db = Db()) Assert.Equal(1, await db.FinancialCreditCardInvoices.CountAsync(i => i.InstitutionClosedAt != null && i.OfficialVersion == 0));
+
+        await RunAsync(c);
+
+        Assert.Equal(["50.00:Outros", "150.00:Restaurantes"], await PurchaseCategoriesAsync());
+    }
+
+    [Fact]
     public async Task PurchasesOfAnOfficiallyClosedInvoiceAreImmutableAndSkippedWithoutFailing()
     {
-        var c = await ArrangeCardAsync("t931-card-official", billTotal: 200m); // total exato: a integração fecha a fatura oficialmente
-        await using (var db = Db()) Assert.Equal(1, await db.FinancialCreditCardInvoices.CountAsync(i => i.OfficialVersion > 0));
+        var c = await ArrangeCardAsync("t931-card-official", billTotal: 999m);
+        // Fatura oficial (consolidada por extrato com documento) torna as compras imutáveis no banco; a categorização as ignora sem falhar.
+        await using (var db = Db())
+        {
+            var invoice = await db.FinancialCreditCardInvoices.SingleAsync(i => i.InstitutionClosedAt != null);
+            invoice.CloseOfficial(1, 200m, DateTimeOffset.UtcNow);
+            db.FinancialCreditCardInvoiceConsolidations.Add(FinancialCreditCardInvoiceConsolidation.Create(invoice.WorkspaceId, invoice.CreditCardId, invoice.Id, null,
+                new string('a', 64), new string('b', 64), new string('c', 64), "{}", 1, 200m, await db.Users.Select(u => u.Id).FirstAsync(), DateTimeOffset.UtcNow));
+            await db.SaveChangesAsync();
+        }
 
         await RunAsync(c);
 
@@ -305,6 +324,30 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
         var calls = Ai.Calls;
         await RunAsync(c, new { useAi = true, confirmExternal = true });
         Assert.Equal(calls, Ai.Calls); // idempotente: nada novo é reenviado
+    }
+
+    [Fact]
+    public async Task TheAiCanSuggestANewCategoryWhichTheBackendCreatesOnceAndAppliesWithoutDuplicating()
+    {
+        var c = await ArrangeAsync("t931-ai-suggest");
+        await SyncAsync(c);
+        Ai.Available = true;
+        Ai.Responder = FakeFinancialClassificationModel.Suggest("Entretenimento");
+
+        var run = await RunAsync(c, new { useAi = true, confirmExternal = true });
+
+        var categories = await CategoriesByImportedAsync(c.Workspace);
+        Assert.Equal(("Entretenimento", PluggyCategorySource.AI), categories["unk"]);
+        Assert.Equal((1, 1), (run.GetProperty("ai").GetInt32(), run.GetProperty("aiItemsSent").GetInt32()));
+        await using var db = Db();
+        Assert.Equal(1, await db.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace && x.Name == "Entretenimento" && x.Type == CategoryType.Expense));
+        var posting = await (from p in db.PluggyPostings join i in db.PluggyImportedTransactions on p.ImportedTransactionId equals i.Id where i.PluggyTransactionId == "unk" select p).AsNoTracking().SingleAsync();
+        Assert.StartsWith("ai:", posting.CategoryMethodVersion);
+
+        var calls = Ai.Calls;
+        await RunAsync(c, new { useAi = true, confirmExternal = true });
+        Assert.Equal(calls, Ai.Calls); // idempotente: nada reenviado e nenhuma categoria duplicada
+        Assert.Equal(1, await db.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace && x.Name == "Entretenimento"));
     }
 
     [Fact]

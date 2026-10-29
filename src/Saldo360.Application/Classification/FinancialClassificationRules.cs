@@ -86,7 +86,7 @@ public static class FinancialExternalCategoryCatalog
         Add(m, e, ["vehicle ownership taxes and fees"], "Impostos do veículo", "Tributos", "Impostos");
         Add(m, e, ["insurance"], "Seguros");
         Add(m, e, ["taxes", "income taxes", "tax on financial operations"], "Tributos", "Impostos");
-        Add(m, e, ["bank fees", "interests charged"], "Tarifas e juros", "Tarifas bancárias", "Juros");
+        Add(m, e, ["bank fees", "interests charged", "late payment and overdraft costs"], "Tarifas e juros", "Tarifas bancárias", "Juros");
         Add(m, e, ["pharmacy"], "Farmácia", "Saúde");
         Add(m, e, ["healthcare", "hospital clinics and labs", "health", "saude"], "Saúde");
         Add(m, e, ["wellness", "wellness and fitness", "gyms and fitness centers"], "Academia e bem-estar", "Bem-estar", "Saúde");

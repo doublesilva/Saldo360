@@ -30,13 +30,21 @@ export interface AccountLink {
   lastSyncedAt: string | null; observed: ObservedFigures; postings: PostingCounts
 }
 
+/**
+ * Fatura do banco em três dimensões independentes (T09.3.2): ciclo (fechada pela instituição quando a data de fechamento informada já chegou),
+ * pagamento e conciliação (total bancário × o que foi importado). O total do banco é preservado como veio; a diferença só é informada.
+ */
 export interface BillReconciliation {
   closingDate: string | null; dueDate: string | null; bankTotal: string | null; saldo360Total: string | null; difference: string | null
-  status: 'Official' | 'OfficialDiverges' | 'Open' | 'Mismatch' | 'NoInvoice'
+  cycle: 'Open' | 'Closed'; payment: 'Unpaid' | 'PartiallyPaid' | 'Paid'; reconciliation: 'NotVerified' | 'Reconciled' | 'Divergent' | 'Incomplete'
+  reconciliationReason: string | null; paidAmount: string | null; bankReportedPaid: string | null; financeCharges: string | null; minimumPayment: string | null
 }
 export interface CardFigures {
   creditLimit: string | null; usedLimit: string | null; availableLimit: string | null; observedBalanceDue: string | null; observedAvailableLimit: string | null
   bills: BillReconciliation[]
+  /** Dia habitual cadastrado e o sugerido pelo histórico de faturas do banco (só quando consistente). Alterar exige confirmação. */
+  currentClosingDay?: number | null; currentDueDay?: number | null; suggestedClosingDay?: number | null; suggestedDueDay?: number | null
+  closingScheduleReason?: string | null; dueScheduleReason?: string | null
 }
 export interface Reconciliation {
   observedBalance: string | null; observedAt: string | null; calculatedBalance: string | null; calculatedAsOf: string | null; difference: string | null
@@ -58,7 +66,10 @@ export interface ReviewItem {
   operationType: string | null; allowedResolutions: Resolution[]; resolution: Resolution | null
 }
 export interface ReviewPage { items: ReviewItem[]; total: number; page: number; pageSize: number; counts: PostingCounts }
-export interface ApplySummary { created: number; updated: number; waiting: number; needsReview: number; covered: number; transfersPaired: number; billPaymentsPaired: number; outOfRange: number; unchanged: number }
+export interface ApplySummary {
+  created: number; updated: number; waiting: number; needsReview: number; covered: number; transfersPaired: number; billPaymentsPaired: number; outOfRange: number; unchanged: number
+  purchasesRehomed?: number; cardCreditsApplied?: number; invoicesClosedByInstitution?: number; staleInvoicesRemoved?: number; billsEvaluated?: number; balanceAnchorsUpdated?: number
+}
 
 const base = (workspaceId: string) => `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/pluggy-integration`
 const get = <T,>(url: string, fallback: string, signal?: AbortSignal) =>
@@ -94,6 +105,10 @@ export const linkAccount = (workspaceId: string, request: LinkRequest) =>
 /** O valor sugerido é recalculado pela API; o navegador só confirma. */
 export const applyOpeningBalanceSuggestion = (workspaceId: string, linkId: string, replaceExisting: boolean) =>
   post<AccountLinkDetail>(`${base(workspaceId)}/links/${encodeURIComponent(linkId)}/opening-balance-suggestion`, { confirm: true, replaceExisting }, 'Falha ao aplicar o saldo inicial sugerido.')
+
+/** O dia sugerido é recalculado pela API a partir das faturas do banco; o navegador só confirma. */
+export const applyCardScheduleSuggestion = (workspaceId: string, linkId: string) =>
+  post<AccountLinkDetail>(`${base(workspaceId)}/links/${encodeURIComponent(linkId)}/card-schedule-suggestion`, { confirm: true }, 'Falha ao aplicar o fechamento e o vencimento sugeridos.')
 
 export const reprocessImported = (workspaceId: string) =>
   post<ApplySummary>(`${base(workspaceId)}/reprocess`, {}, 'Falha ao reprocessar as transações importadas.')

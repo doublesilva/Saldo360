@@ -8,7 +8,7 @@ import { PluggyAccountPanel, PluggyCategorizationPanel, PluggyReviewPanel } from
 
 const api = vi.hoisted(() => ({
   listIntegrationConnections: vi.fn(), listAvailableAccounts: vi.fn(), linkAccount: vi.fn(), getLinkDetail: vi.fn(), applyOpeningBalanceSuggestion: vi.fn(),
-  reprocessImported: vi.fn(), listReview: vi.fn(), resolveReview: vi.fn(), listLinks: vi.fn(), getCategorizationOverview: vi.fn(), runCategorization: vi.fn(),
+  reprocessImported: vi.fn(), listReview: vi.fn(), resolveReview: vi.fn(), listLinks: vi.fn(), getCategorizationOverview: vi.fn(), runCategorization: vi.fn(), applyCardScheduleSuggestion: vi.fn(),
 }))
 vi.mock('../api/pluggyIntegration', () => api)
 
@@ -175,22 +175,62 @@ describe('PluggyAccountPanel', () => {
     expect((await screen.findByLabelText(/Integração Itaú/)).textContent).toContain('— confere.')
   })
 
-  it('cartão mostra limites separados do saldo de caixa e as faturas do banco × Saldo360', async () => {
-    api.getLinkDetail.mockResolvedValue(detail({
-      calculatedBalance: null, difference: null, calculatedUnavailableReason: 'CardHasNoCashBalance',
-      card: {
-        creditLimit: '5000.00', usedLimit: '230.00', availableLimit: '4770.00', observedBalanceDue: '200.00', observedAvailableLimit: '800.00',
-        bills: [{ closingDate: '2026-10-10', dueDate: '2026-10-17', bankTotal: '235.00', saldo360Total: '230.00', difference: '5.00', status: 'Mismatch' }],
-      },
-    }, { kind: 'Card', financialAccountId: null, creditCardId: 'c1' }))
+  const bill = (over: Partial<NonNullable<AccountLinkDetail['reconciliation']['card']>['bills'][number]> = {}) => ({
+    closingDate: '2026-10-10', dueDate: '2026-10-17', bankTotal: '235.00', saldo360Total: '230.00', difference: '5.00', cycle: 'Closed' as const, payment: 'Unpaid' as const,
+    reconciliation: 'Divergent' as const, reconciliationReason: 'TotalMismatch', paidAmount: '0.00', bankReportedPaid: '0.00', financeCharges: null, minimumPayment: null, ...over,
+  })
+  const cardDetail = (bills: ReturnType<typeof bill>[], extra: Record<string, unknown> = {}) => detail({
+    calculatedBalance: null, difference: null, calculatedUnavailableReason: 'CardHasNoCashBalance',
+    card: { creditLimit: '5000.00', usedLimit: '230.00', availableLimit: '4770.00', observedBalanceDue: '200.00', observedAvailableLimit: '800.00', bills, ...extra },
+  }, { kind: 'Card', financialAccountId: null, creditCardId: 'c1' })
+
+  it('cartão mostra limites separados do saldo de caixa e cada fatura em três dimensões independentes: ciclo, pagamento e conciliação', async () => {
+    api.getLinkDetail.mockResolvedValue(cardDetail([
+      bill(),
+      bill({ closingDate: '2026-09-10', dueDate: '2026-09-17', bankTotal: '100.00', saldo360Total: '100.00', difference: '0.00', payment: 'Paid', reconciliation: 'Reconciled', reconciliationReason: null, paidAmount: '100.00' }),
+      bill({ closingDate: '2026-08-10', dueDate: '2026-08-17', bankTotal: '300.00', saldo360Total: '120.00', difference: '180.00', payment: 'PartiallyPaid', reconciliation: 'Incomplete', reconciliationReason: 'OpenItems', paidAmount: '150.00' }),
+      bill({ closingDate: '2026-12-10', dueDate: '2026-12-17', bankTotal: null, saldo360Total: null, difference: null, cycle: 'Open', reconciliation: 'NotVerified', reconciliationReason: 'Open' }),
+    ]))
     render(<PluggyAccountPanel workspaceId="w1" linkId="l1" refreshKey="0" />)
 
     const panel = await screen.findByLabelText(/Integração Itaú/)
-    const text = (panel.textContent ?? '').replace(/ /g, ' ')
+    const text = (panel.textContent ?? '').replace(/ /g, ' ').replace(/\s+/g, ' ')
     expect(text).toContain('Cartão não soma saldo de caixa')
     expect(text).toContain('Limite do cartão: R$ 5.000,00 · usado (Saldo360): R$ 230,00 · disponível (Saldo360): R$ 4.770,00')
-    expect(text).toContain('Fatura com fechamento em 10/10/2026: banco R$ 235,00 · Saldo360 R$ 230,00 · diferença R$ 5,00 — Aberta e diverge do banco')
+    // Fechada pelo banco, divergente e não paga: o fechamento não depende da conciliação.
+    expect(text).toContain('Fatura com fechamento em 10/10/2026 e vencimento em 17/10/2026: Fechada pelo banco · Não paga · Divergente do total do banco. Banco R$ 235,00 · importado R$ 230,00 · diferença R$ 5,00 (a soma importada difere do total do banco)')
+    expect(text).toContain('Fechada pelo banco · Paga · Conciliada com o banco. Banco R$ 100,00 · importado R$ 100,00 · pago (registrado) R$ 100,00')
+    expect(text).toContain('Fechada pelo banco · Parcialmente paga · Conciliação incompleta. Banco R$ 300,00 · importado R$ 120,00 · diferença R$ 180,00 · pago (registrado) R$ 150,00 (há itens pendentes ou em revisão nesta fatura)')
+    expect(text).toContain('Aberta · Não paga · Conciliação não verificada')
     expect(text).not.toContain('Saldo calculado pelo Saldo360')
+  })
+
+  it('sugere fechamento e vencimento habituais pelo histórico do banco e só aplica com confirmação', async () => {
+    api.getLinkDetail.mockResolvedValue(cardDetail([bill()], { currentClosingDay: 15, currentDueDay: 15, suggestedClosingDay: 8, suggestedDueDay: null, closingScheduleReason: null, dueScheduleReason: null }))
+    api.applyCardScheduleSuggestion.mockResolvedValue(cardDetail([bill()], { currentClosingDay: 8, currentDueDay: 15 }))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    render(<PluggyAccountPanel workspaceId="w1" linkId="l1" refreshKey="0" />)
+    const panel = await screen.findByLabelText(/Integração Itaú/)
+    expect(panel.textContent).toContain('Fechamento habitual cadastrado: 15 · vencimento habitual: 15.')
+    expect(panel.textContent).toContain('sugere fechamento no dia 8')
+    const button = within(panel).getByRole('button', { name: 'Aplicar fechamento e vencimento sugeridos' })
+
+    fireEvent.click(button)
+    expect(api.applyCardScheduleSuggestion).not.toHaveBeenCalled() // recusou a confirmação
+
+    fireEvent.click(button)
+    await waitFor(() => expect(api.applyCardScheduleSuggestion).toHaveBeenCalledWith('w1', 'l1'))
+    expect((await screen.findByLabelText(/Integração Itaú/)).textContent).toContain('Fechamento habitual cadastrado: 8 · vencimento habitual: 15.')
+    confirm.mockRestore()
+  })
+
+  it('sem histórico consistente não sugere nada e explica o motivo', async () => {
+    api.getLinkDetail.mockResolvedValue(cardDetail([bill()], { currentClosingDay: 10, currentDueDay: 17, suggestedClosingDay: null, suggestedDueDay: null, closingScheduleReason: 'Inconsistent', dueScheduleReason: null }))
+    render(<PluggyAccountPanel workspaceId="w1" linkId="l1" refreshKey="0" />)
+
+    const panel = await screen.findByLabelText(/Integração Itaú/)
+    expect(panel.textContent).toContain('Sem sugestão do histórico do banco (histórico inconsistente)')
+    expect(within(panel).queryByRole('button', { name: 'Aplicar fechamento e vencimento sugeridos' })).toBeNull()
   })
 
   it('reprocessa os importados e recarrega', async () => {

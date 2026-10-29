@@ -61,14 +61,16 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
         b.ToTable("pluggy_postings", t =>
         {
             t.HasCheckConstraint("ck_pluggy_postings_state", "state IN ('WaitingPosted','Applied','NeedsReview','Covered','Ignored')");
-            t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment')");
+            t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment','CardCredit')");
             t.HasCheckConstraint("ck_pluggy_postings_resolution", "resolution IS NULL OR resolution IN ('AsIncome','AsExpense','AsCardPurchase','Ignore')");
             t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User','Pluggy','Rule','AI')");
             // Aplicado sempre aponta para o registro que gerou; qualquer outro estado não aponta para movimento próprio.
             t.HasCheckConstraint("ck_pluggy_postings_applied_targets",
-                "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL) "
-                + "OR (kind = 'CardPurchase' AND credit_card_purchase_id IS NOT NULL) OR (kind = 'CardBillPayment' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_payment_id IS NOT NULL))) "
-                + "OR (state <> 'Applied' AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL)");
+                "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) "
+                + "OR (kind = 'CardPurchase' AND credit_card_purchase_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) "
+                + "OR (kind = 'CardBillPayment' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_payment_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) "
+                + "OR (kind = 'CardCredit' AND credit_card_invoice_adjustment_id IS NOT NULL AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL))) "
+                + "OR (state <> 'Applied' AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL AND credit_card_invoice_adjustment_id IS NULL)");
             t.HasCheckConstraint("ck_pluggy_postings_applied_snapshot", "(state = 'Applied') = (applied_amount IS NOT NULL AND applied_date IS NOT NULL)");
         });
         b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
@@ -88,6 +90,7 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
         b.HasIndex(x => x.FinancialTransactionId).IsUnique().HasFilter("financial_transaction_id IS NOT NULL").HasDatabaseName("ux_pluggy_postings_transaction");
         b.HasIndex(x => x.CreditCardPurchaseId).IsUnique().HasFilter("credit_card_purchase_id IS NOT NULL").HasDatabaseName("ux_pluggy_postings_purchase");
         b.HasIndex(x => x.CreditCardInvoicePaymentId).IsUnique().HasFilter("credit_card_invoice_payment_id IS NOT NULL").HasDatabaseName("ux_pluggy_postings_invoice_payment");
+        b.HasIndex(x => x.CreditCardInvoiceAdjustmentId).IsUnique().HasFilter("credit_card_invoice_adjustment_id IS NOT NULL").HasDatabaseName("ux_pluggy_postings_invoice_adjustment");
         b.HasIndex(x => new { x.WorkspaceId, x.State });
         b.HasIndex(x => new { x.AccountLinkId, x.State });
 
@@ -100,6 +103,7 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
         b.HasOne<FinancialCreditCardPurchase>().WithMany().HasForeignKey(x => new { x.WorkspaceId, x.CreditCardPurchaseId }).HasPrincipalKey(p => new { p.WorkspaceId, p.Id })
             .HasConstraintName("fk_pluggy_postings_purchases_same_workspace").OnDelete(DeleteBehavior.Restrict);
         b.HasOne<FinancialCreditCardInvoicePayment>().WithMany().HasForeignKey(x => x.CreditCardInvoicePaymentId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<FinancialCreditCardInvoiceAdjustment>().WithMany().HasForeignKey(x => x.CreditCardInvoiceAdjustmentId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<PluggyPosting>().WithMany().HasForeignKey(x => x.CounterpartPostingId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<FinancialCategory>().WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ResolvedByUserId).OnDelete(DeleteBehavior.Restrict);
@@ -110,16 +114,67 @@ internal sealed class PluggyCardBillConfiguration : IEntityTypeConfiguration<Plu
 {
     public void Configure(EntityTypeBuilder<PluggyCardBill> b)
     {
-        b.ToTable("pluggy_card_bills");
+        b.ToTable("pluggy_card_bills", t => t.HasCheckConstraint("ck_pluggy_card_bills_reconciliation", "reconciliation IN ('NotVerified','Reconciled','Divergent','Incomplete')"));
         b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
         b.Property(x => x.PluggyBillId).HasMaxLength(80).IsRequired();
         b.Property(x => x.ClosingDate).HasColumnType("date");
         b.Property(x => x.DueDate).HasColumnType("date");
         b.Property(x => x.TotalAmount).HasPrecision(19, 4);
         b.Property(x => x.Currency).HasMaxLength(8);
+        b.Property(x => x.FinanceChargesTotal).HasPrecision(19, 4);
+        b.Property(x => x.MinimumPayment).HasPrecision(19, 4);
+        b.Property(x => x.ComponentsTotal).HasPrecision(19, 4);
+        b.Property(x => x.Reconciliation).HasConversion<string>().HasMaxLength(16);
+        b.Property(x => x.ReconciliationReason).HasMaxLength(40);
         b.HasIndex(x => new { x.AccountLinkId, x.PluggyBillId }).IsUnique().HasDatabaseName("ux_pluggy_card_bills_external");
         b.HasIndex(x => new { x.AccountLinkId, x.ClosingDate });
         b.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<PluggyAccountLink>().WithMany().HasForeignKey(x => x.AccountLinkId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+
+internal sealed class PluggyCardBillPaymentConfiguration : IEntityTypeConfiguration<PluggyCardBillPayment>
+{
+    public void Configure(EntityTypeBuilder<PluggyCardBillPayment> b)
+    {
+        b.ToTable("pluggy_card_bill_payments", t => t.HasCheckConstraint("ck_pluggy_card_bill_payments_amount", "amount > 0"));
+        b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
+        b.Property(x => x.Amount).HasPrecision(19, 4);
+        b.Property(x => x.PaymentDate).HasColumnType("date");
+        b.Property(x => x.PaymentMode).HasMaxLength(24);
+        b.Property(x => x.ValueType).HasMaxLength(24);
+        b.HasIndex(x => new { x.BillId, x.Ordinal }).IsUnique().HasDatabaseName("ux_pluggy_card_bill_payments_ordinal");
+        b.HasIndex(x => x.WorkspaceId);
+        b.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<PluggyCardBill>().WithMany().HasForeignKey(x => x.BillId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class FinancialAccountBalanceAnchorConfiguration : IEntityTypeConfiguration<Saldo360.Domain.Accounts.FinancialAccountBalanceAnchor>
+{
+    public void Configure(EntityTypeBuilder<Saldo360.Domain.Accounts.FinancialAccountBalanceAnchor> b)
+    {
+        b.ToTable("financial_account_balance_anchors", t =>
+        {
+            t.HasCheckConstraint("ck_balance_anchors_kind", "kind IN ('CurrentBalance','AvailableBalance','Unknown')");
+            t.HasCheckConstraint("ck_balance_anchors_reliability", "reliability IN ('Reliable','Provisional','Unreliable')");
+            // Derivação utilizável sempre traz valor e data; indisponível nunca traz.
+            t.HasCheckConstraint("ck_balance_anchors_derivation", "(derived_opening_amount IS NULL) = (derived_opening_date IS NULL) AND (reliability <> 'Unreliable' OR derived_opening_amount IS NULL)");
+        });
+        b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
+        b.Property(x => x.Amount).HasPrecision(19, 4);
+        b.Property(x => x.DerivedOpeningAmount).HasPrecision(19, 4);
+        b.Property(x => x.AsOfDate).HasColumnType("date");
+        b.Property(x => x.DerivedOpeningDate).HasColumnType("date");
+        b.Property(x => x.Kind).HasConversion<string>().HasMaxLength(16);
+        b.Property(x => x.Reliability).HasConversion<string>().HasMaxLength(12);
+        b.Property(x => x.Source).HasMaxLength(Saldo360.Domain.Accounts.FinancialAccountBalanceAnchor.SourceMaxLength).IsRequired();
+        b.Property(x => x.UnavailableReason).HasMaxLength(Saldo360.Domain.Accounts.FinancialAccountBalanceAnchor.ReasonMaxLength);
+        // Uma referência vigente por conta; o histórico das anteriores é mantido.
+        b.HasIndex(x => x.AccountId).IsUnique().HasFilter("is_current").HasDatabaseName("ux_balance_anchors_current");
+        b.HasIndex(x => new { x.WorkspaceId, x.AccountId, x.ObservedAt });
+        b.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Saldo360.Domain.Accounts.FinancialAccount>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
     }
 }

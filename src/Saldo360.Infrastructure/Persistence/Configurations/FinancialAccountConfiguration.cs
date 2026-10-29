@@ -28,6 +28,10 @@ internal sealed class FinancialAccountConfiguration : IEntityTypeConfiguration<F
                 $"scale(opening_balance) <= {Money.MaxScale}");
             table.HasCheckConstraint("ck_financial_accounts_opening_balance_range",
                 $"abs(opening_balance) < {Money.Limit}");
+
+            // Conta principal (T09.3.3): só conta bancária e ativa pode ser a principal.
+            table.HasCheckConstraint("ck_financial_accounts_primary_eligible",
+                "NOT is_primary OR (is_active AND type IN ('Checking', 'Savings'))");
         });
 
         builder.HasKey(account => account.Id);
@@ -40,6 +44,9 @@ internal sealed class FinancialAccountConfiguration : IEntityTypeConfiguration<F
         builder.Property(account => account.OpeningBalanceDate).HasColumnType("date");
         builder.Property(account => account.Currency).HasMaxLength(3).IsFixedLength();
         builder.HasIndex(account => new { account.WorkspaceId, account.IsActive });
+        builder.Property(account => account.IsPrimary).HasDefaultValue(false);
+        // No máximo uma conta principal por workspace; a troca atômica desmarca a anterior antes de marcar a nova.
+        builder.HasIndex(account => account.WorkspaceId).IsUnique().HasFilter("is_primary").HasDatabaseName("ux_financial_accounts_primary");
 
         // Restrict em todas as FKs: contas nunca são apagadas por cascata (não há exclusão física).
         builder.HasOne<FinancialWorkspace>()

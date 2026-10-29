@@ -136,12 +136,49 @@ public sealed class PluggyFinancialMapperTests
         Assert.Equal(PluggyDisposition.CardBillPayment, payment.Disposition);
     }
 
-    [Theory]
-    [InlineData("ESTORNO")]
-    [InlineData("OUTRO")]
-    public void CardCreditsAreNotIncomeAndGoToReview(string operation)
+    [Fact]
+    public void CardCreditsWithoutStructuredEvidenceAreNeverIncomeAndGoToReview()
     {
-        var decision = PluggyFinancialMapper.Decide(Facts(PluggyLinkedAccountKind.Card, "CREDIT", 40m, operation: operation), Today);
+        var unknown = PluggyFinancialMapper.Decide(Facts(PluggyLinkedAccountKind.Card, "CREDIT", 40m, operation: "OUTRO"), Today);
+        var transfers = PluggyFinancialMapper.Decide(Facts(PluggyLinkedAccountKind.Card, "CREDIT", 40m, operation: "OUTROS", category: "Transfers"), Today);
+
+        Assert.Equal(PluggyDisposition.Review, unknown.Disposition);
+        Assert.Equal(PluggyDisposition.Review, transfers.Disposition);
+    }
+
+    [Theory]
+    [InlineData("ESTORNO", null, "CardRefund")]
+    [InlineData("OUTROS", "Cashback", "CardCashback")]
+    [InlineData("OUTROS", "Shopping", "CardPurchaseCredit")]
+    public void CardRefundsCashbackAndPurchaseCreditsBecomeInvoiceCreditsNeverIncome(string operation, string? category, string reason)
+    {
+        var decision = PluggyFinancialMapper.Decide(Facts(PluggyLinkedAccountKind.Card, "CREDIT", 40m, operation: operation, category: category), Today);
+
+        Assert.Equal((PluggyDisposition.CardCredit, reason), (decision.Disposition, decision.Reason));
+        Assert.Equal(40m, decision.Amount);
+    }
+
+    [Theory]
+    [InlineData("Tax on financial operations", "CardCharge")]
+    [InlineData("Bank fees", "CardCharge")]
+    [InlineData("Interests charged", "CardCharge")]
+    [InlineData("Late payment and overdraft costs", "CardCharge")]
+    [InlineData("Clothing", "CardPurchaseByCategory")]
+    public void CardChargesAndGenericOperationsWithAConsumptionCategoryAreCardConsumption(string category, string reason)
+    {
+        var decision = PluggyFinancialMapper.Decide(Facts(PluggyLinkedAccountKind.Card, "DEBIT", 12m, operation: "OUTROS", category: category), Today);
+
+        Assert.Equal((PluggyDisposition.CardPurchase, reason), (decision.Disposition, decision.Reason));
+    }
+
+    [Theory]
+    [InlineData("OPERACOES_CREDITO_CONTRATADAS_CARTAO", "Transfers")]
+    [InlineData("OUTROS", "Transfer - PIX")]
+    [InlineData("OUTROS", null)]
+    public void ContractedCreditOperationsAndTransfersOnTheCardAreNotConsumptionWithoutADecision(string operation, string? category)
+    {
+        var decision = PluggyFinancialMapper.Decide(Facts(PluggyLinkedAccountKind.Card, "DEBIT", 12m, operation: operation, category: category), Today);
+
         Assert.Equal(PluggyDisposition.Review, decision.Disposition);
     }
 

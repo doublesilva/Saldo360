@@ -60,7 +60,7 @@ public sealed record FinancialDashboardResponse(
 {
     public static FinancialDashboardResponse From(FinancialDashboard x) => new(
         x.Competence.ToString("yyyy-MM", CultureInfo.InvariantCulture), x.Months,
-        new(x.Position.RealizedBalance is { } b ? Money.Format(b) : null, x.Position.Accounts.Select(a => new FinancialDashboardAccountBalanceResponse(a.AccountId, a.Name, a.RealizedBalance is { } v ? Money.Format(v) : null, a.Complete)).ToList(), x.Position.ConsideredAccounts, Money.Format(x.Position.NegativeBalance), Money.Format(x.Position.AllocatedToGoals), x.Position.UnallocatedRealizedBalance is { } u ? Money.Format(u) : null),
+        new(x.Position.RealizedBalance is { } b ? Money.Format(b) : null, x.Position.Accounts.Select(a => new FinancialDashboardAccountBalanceResponse(a.AccountId, a.Name, a.RealizedBalance is { } v ? Money.Format(v) : null, a.Complete, a.IsPrimary)).ToList(), x.Position.ConsideredAccounts, Money.Format(x.Position.NegativeBalance), Money.Format(x.Position.AllocatedToGoals), x.Position.UnallocatedRealizedBalance is { } u ? Money.Format(u) : null),
         new(Money.Format(x.CashFlow.RealizedIncome), Money.Format(x.CashFlow.RealizedExpense), Money.Format(x.CashFlow.PendingIncome), Money.Format(x.CashFlow.PendingExpense)),
         new(Money.Format(x.Obligations.PendingIncome), Money.Format(x.Obligations.PendingExpense), Money.Format(x.Obligations.CreditCardOutstanding), Money.Format(x.Obligations.DebtOutstanding), x.Obligations.PendingItems),
         new(x.Budgets.TargetCount, Money.Format(x.Budgets.Planned), Money.Format(x.Budgets.Committed), Money.Format(x.Budgets.Realized), x.Budgets.ExceededCount, x.Budgets.AttentionCount),
@@ -74,7 +74,7 @@ public sealed record FinancialDashboardResponse(
 }
 
 public sealed record FinancialDashboardPositionResponse(string? RealizedBalance, IReadOnlyList<FinancialDashboardAccountBalanceResponse> Accounts, int ConsideredAccounts, string NegativeBalance, string AllocatedToGoals, string? UnallocatedRealizedBalance);
-public sealed record FinancialDashboardAccountBalanceResponse(Guid AccountId, string Name, string? RealizedBalance, bool Complete);
+public sealed record FinancialDashboardAccountBalanceResponse(Guid AccountId, string Name, string? RealizedBalance, bool Complete, bool IsPrimary = false);
 public sealed record FinancialDashboardCashFlowResponse(string RealizedIncome, string RealizedExpense, string PendingIncome, string PendingExpense);
 public sealed record FinancialDashboardObligationsResponse(string PendingIncome, string PendingExpense, string CreditCardOutstanding, string DebtOutstanding, int PendingItems);
 public sealed record FinancialDashboardBudgetsResponse(int TargetCount, string Planned, string Committed, string Realized, int ExceededCount, int AttentionCount);

@@ -22,6 +22,7 @@ public sealed class PluggyAccountLinkService(
     FinancialAccountService accountService,
     IFinancialAccountRepository accounts,
     IFinancialCreditCardPurchaseRepository cardPurchases,
+    Saldo360.Application.CreditCards.FinancialCreditCardService cardService,
     IPluggyPostingEngine engine,
     TimeProvider time)
 {
@@ -112,7 +113,7 @@ public sealed class PluggyAccountLinkService(
                 request.PaymentAccountId, out var cardErrors);
             errors.AddRange(cardErrors.Values.SelectMany(v => v));
             if (request.PaymentAccountId is { } paymentAccount && !cardErrors.ContainsKey("defaultPaymentAccountId")
-                && await accounts.GetAsync(workspaceId, paymentAccount, ct) is null) errors.Add("Conta de pagamento inválida.");
+                && await accounts.GetAsync(workspaceId, paymentAccount, ct) is not { IsActive: true, Type: AccountType.Checking or AccountType.Savings }) errors.Add("A conta de pagamento precisa ser uma conta bancária ativa do orçamento.");
         }
         if (errors.Count > 0) return PluggyResult<PluggyAccountLinkDetailView>.Invalid(string.Join(" ", errors.Distinct()));
 
@@ -181,6 +182,28 @@ public sealed class PluggyAccountLinkService(
         return await GetDetailAsync(workspaceId, userId, linkId, ct);
     }
 
+    /// <summary>
+    /// Aplica ao cartão o dia habitual de fechamento e/ou vencimento sugerido pelo histórico de faturas do banco, SOMENTE com confirmação explícita.
+    /// O valor é recalculado aqui a partir das faturas guardadas (o navegador não informa número) e só o que o histórico sustenta é alterado.
+    /// </summary>
+    public async Task<PluggyResult<PluggyAccountLinkDetailView>> ApplyCardScheduleSuggestionAsync(Guid workspaceId, Guid userId, Guid linkId, bool confirm, CancellationToken ct)
+    {
+        if (!await CanAccessAsync(workspaceId, userId, ct) || await repository.FindLinkAsync(workspaceId, linkId, ct) is not { Kind: PluggyLinkedAccountKind.Card, CreditCardId: { } cardId } link)
+            return PluggyResult<PluggyAccountLinkDetailView>.NotFound();
+        if (!confirm) return PluggyResult<PluggyAccountLinkDetailView>.Invalid("Confirme para alterar o fechamento e o vencimento habituais do cartão.");
+        var suggestion = PluggyCardSchedule.Suggest(await repository.ListBillsAsync(workspaceId, linkId, ct), BusinessCalendar.Today(time.GetUtcNow()));
+        var card = await cardService.GetAsync(workspaceId, cardId, userId, ct);
+        if (card is null) return PluggyResult<PluggyAccountLinkDetailView>.NotFound();
+        var closing = suggestion.ClosingDay ?? card.ClosingDay; var due = suggestion.DueDay ?? card.DueDay;
+        if (suggestion.ClosingDay is null && suggestion.DueDay is null)
+            return new(PluggyAccess.Conflict, Message: "O histórico de faturas do banco não é consistente o bastante para sugerir o fechamento e o vencimento.");
+        if (closing == card.ClosingDay && due == card.DueDay) return await GetDetailAsync(workspaceId, userId, linkId, ct);
+        var result = await cardService.UpdateAsync(workspaceId, cardId, userId, new Saldo360.Application.CreditCards.CreditCardInput(card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId,
+            decimal.Parse(card.CreditLimit, CultureInfo.InvariantCulture), closing, due, card.DefaultPaymentAccountId, card.GmailQuery), ct);
+        if (result.Access != Saldo360.Application.CreditCards.CreditCardAccess.Allowed) return PluggyResult<PluggyAccountLinkDetailView>.Invalid("Não foi possível atualizar o cartão.");
+        return await GetDetailAsync(workspaceId, userId, linkId, ct);
+    }
+
     // ---- Saldos (observado × calculado) ----------------------------------------------------------------------------------
 
     private async Task<PluggyReconciliationView> ReconcileAsync(Guid workspaceId, Guid userId, PluggyAccountLink link, PluggyPostingCounts counts, CancellationToken ct)
@@ -190,16 +213,28 @@ public sealed class PluggyAccountLinkService(
         {
             var limit = link.CreditCardId is { } cardId ? await cardPurchases.GetLimitAsync(workspaceId, cardId, ct) : null;
             notes.Add("Cartão não soma saldo de caixa: limite e saldo devedor são exibidos separadamente do saldo bancário.");
+            var current = link.CreditCardId is { } id ? await cardService.GetAsync(workspaceId, id, userId, ct) : null;
+            var schedule = PluggyCardSchedule.Suggest(await repository.ListBillsAsync(workspaceId, link.Id, ct), BusinessCalendar.Today(time.GetUtcNow()));
             return new(null, link.ObservedAt, null, null, null, "CardHasNoCashBalance", counts.NeedsReview, counts.Waiting, null, null, "CardHasNoCashBalance",
                 new PluggyCardFiguresView(limit?.CreditLimit, limit?.UsedLimit, limit?.AvailableLimit, Format(link.ObservedBalance), Format(link.AvailableCreditLimit),
-                    await BillsAsync(workspaceId, link, ct)), notes);
+                    await BillsAsync(workspaceId, link, ct))
+                {
+                    CurrentClosingDay = current?.ClosingDay, CurrentDueDay = current?.DueDay,
+                    // Só sugere o que difere do cadastrado; sem consistência no histórico não há sugestão.
+                    SuggestedClosingDay = schedule.ClosingDay is { } sc && sc != current?.ClosingDay ? sc : null,
+                    SuggestedDueDay = schedule.DueDay is { } sd && sd != current?.DueDay ? sd : null,
+                    ClosingScheduleReason = schedule.ClosingReason, DueScheduleReason = schedule.DueReason,
+                }, notes);
         }
 
         var accountId = link.FinancialAccountId!.Value;
         var balance = await accountService.GetBalanceAsync(workspaceId, accountId, userId, null, ct);
         decimal? calculated = balance.Balance?.Balance;
         string? reason = balance.Balance?.UnavailableReason?.ToString();
-        var difference = calculated is { } c && link.ObservedBalance is { } o ? o - c : (decimal?)null;
+        // Com saldo inicial derivado da referência bancária (âncora), o calculado reproduz o observado por construção: não há diferença a mostrar.
+        var anchored = balance.Balance?.OpeningSource == "BalanceAnchor";
+        var difference = !anchored && calculated is { } c && link.ObservedBalance is { } o ? o - c : (decimal?)null;
+        if (anchored) notes.Add("O saldo calculado parte da referência bancária (saldo observado no banco) e dos movimentos consistentes; não houve cadastro manual de saldo inicial.");
         if (link.OverdraftContractedLimit is not null) notes.Add("O limite de cheque especial informado pelo banco não compõe o saldo.");
         if (counts.NeedsReview > 0) notes.Add($"{counts.NeedsReview} movimento(s) em revisão ainda não entram no saldo calculado.");
         if (counts.Waiting > 0) notes.Add($"{counts.Waiting} movimento(s) pendentes ou futuros ainda não entram no saldo calculado.");
@@ -225,22 +260,24 @@ public sealed class PluggyAccountLinkService(
             reason, counts.NeedsReview, counts.Waiting, suggested, suggestedDate, suggestionReason, null, notes);
     }
 
-    /// <summary>Faturas do banco × faturas do Saldo360 (últimas 12): onde há divergência a fatura permanece aberta e o pagamento não é registrado sozinho.</summary>
+    /// <summary>
+    /// Faturas do banco (últimas 12) em três dimensões independentes: ciclo (aberta/fechada pela instituição), pagamento (não paga/parcial/paga) e
+    /// conciliação (não verificada/conciliada/divergente/incompleta). O total bancário é preservado como veio; a diferença é só informada.
+    /// </summary>
     private async Task<IReadOnlyList<PluggyBillReconciliationView>> BillsAsync(Guid workspaceId, PluggyAccountLink link, CancellationToken ct)
     {
-        var bills = (await repository.ListBillsAsync(workspaceId, link.Id, ct)).Where(b => b.ClosingDate is not null).Take(12).ToList();
-        if (bills.Count == 0 || link.CreditCardId is not { } cardId) return [];
-        var from = bills.Min(b => b.DueDate ?? b.ClosingDate!.Value).AddMonths(-1).ToString("yyyy-MM", CultureInfo.InvariantCulture);
-        var through = bills.Max(b => b.DueDate ?? b.ClosingDate!.Value).AddMonths(1).ToString("yyyy-MM", CultureInfo.InvariantCulture);
-        var invoices = await cardPurchases.ListInvoicesAsync(workspaceId, cardId, from, through, BusinessCalendar.Today(time.GetUtcNow()), ct);
-        return bills.Select(bill =>
+        var today = BusinessCalendar.Today(time.GetUtcNow());
+        var rows = await repository.ListBillStatesAsync(workspaceId, link.Id, 12, ct);
+        return rows.Select(row =>
         {
-            var invoice = invoices.FirstOrDefault(i => i.ClosingDate == bill.ClosingDate);
-            var bank = bill.Total is { } t ? Format(t) : null;
-            var ours = invoice is null ? null : invoice.TotalAmount;
-            string? difference = bill.Total is { } b && ours is not null ? Format(b - decimal.Parse(ours, CultureInfo.InvariantCulture)) : null;
-            var status = invoice is null ? "NoInvoice" : invoice.Status == FinancialCreditCardInvoiceStatus.Closed ? (difference == "0.00" ? "Official" : "OfficialDiverges") : difference == "0.00" ? "Open" : "Mismatch";
-            return new PluggyBillReconciliationView(bill.ClosingDate, bill.DueDate, bank, ours, difference, status);
+            var bill = row.Bill;
+            var closed = bill.ClosingDate is { } closing && closing <= today && bill.Total is not null;
+            var effectivePaid = Math.Max(row.RecordedPaid, row.ReportedPaid);
+            var payment = bill.Total is not { } total || !closed ? "Unpaid"
+                : total > 0m && effectivePaid >= total ? "Paid" : effectivePaid > 0m ? "PartiallyPaid" : total == 0m ? "Paid" : "Unpaid";
+            string? difference = bill.Total is { } b && row.ComponentsTotal is { } ours ? Format(b - ours) : null;
+            return new PluggyBillReconciliationView(bill.ClosingDate, bill.DueDate, Format(bill.Total), Format(row.ComponentsTotal), difference, closed ? "Closed" : "Open", payment,
+                row.Reconciliation.ToString(), row.ReconciliationReason, Format(row.RecordedPaid), Format(row.ReportedPaid), Format(bill.FinanceChargesTotal), Format(bill.MinimumPayment));
         }).ToList();
     }
 

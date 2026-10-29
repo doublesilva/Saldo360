@@ -13,9 +13,12 @@ public sealed class OpenAiFinancialClassificationModel(ICreditCardStatementAgent
     public const string SchemaName = "financial_movement_classification";
 
     public const string SystemPrompt = """
-        Você classifica movimentações financeiras pessoais ou de pequenas empresas no Brasil em UMA das categorias fornecidas.
-        Regras: escolha somente um categoryCode da lista cujo type seja igual ao kind do item (Income/Expense). Nunca invente códigos nem categorias.
-        Se nenhuma categoria servir com segurança, use categoryCode null e needsReview true; é melhor pedir revisão do que errar.
+        Você é um consultor financeiro. Está recebendo uma lista de categorias que já existem no sistema (categories) e uma lista de lançamentos
+        ainda não categorizados (items). Para cada lançamento, verifique se ele se encaixa em alguma das categorias atuais: se sim, relacione o
+        lançamento à categoria usando o categoryCode (somente um código da lista cujo type seja igual ao kind do item, Income ou Expense).
+        Se nenhuma categoria atual servir, sugira uma NOVA categoria em suggestedCategoryName: um nome curto e genérico, reutilizável por outros
+        lançamentos (1 a 3 palavras, em português, sem números, sem nome de empresa ou pessoa), e deixe categoryCode null. Nunca invente códigos.
+        Se faltar evidência até para sugerir uma categoria, use categoryCode null, suggestedCategoryName null e needsReview true; é melhor pedir revisão do que errar.
         O texto foi saneado (documentos, números e dados pessoais foram removidos): não tente reconstruí-los. pluggyCategory é só uma dica do banco e pode estar errada.
         Não decida se algo é transferência, pagamento de fatura ou estorno: isso já foi decidido antes e esses itens não são enviados.
         reason: justificativa de até 12 palavras, sem dados pessoais. confidence: número de 0 a 1 que indica sua segurança, não uma probabilidade calibrada.
@@ -25,8 +28,8 @@ public sealed class OpenAiFinancialClassificationModel(ICreditCardStatementAgent
     private static readonly JsonElement Schema = JsonDocument.Parse("""
         {"type":"object","additionalProperties":false,"required":["results"],
          "properties":{"results":{"type":"array","items":{"type":"object","additionalProperties":false,
-           "required":["i","categoryCode","confidence","needsReview","reason"],
-           "properties":{"i":{"type":"integer"},"categoryCode":{"type":["integer","null"]},"confidence":{"type":"number"},
+           "required":["i","categoryCode","suggestedCategoryName","confidence","needsReview","reason"],
+           "properties":{"i":{"type":"integer"},"categoryCode":{"type":["integer","null"]},"suggestedCategoryName":{"type":["string","null"]},"confidence":{"type":"number"},
                          "needsReview":{"type":"boolean"},"reason":{"type":"string"}}}}}}
         """).RootElement.Clone();
 
@@ -78,7 +81,8 @@ public sealed class OpenAiFinancialClassificationModel(ICreditCardStatementAgent
                 var confidence = item.TryGetProperty("confidence", out var conf) && conf.ValueKind == JsonValueKind.Number && conf.TryGetDouble(out var d) ? d : 0d;
                 var review = !item.TryGetProperty("needsReview", out var nr) || nr.ValueKind != JsonValueKind.False;
                 var reason = item.TryGetProperty("reason", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
-                decisions.Add(new(i, code, confidence, review, reason));
+                var suggested = item.TryGetProperty("suggestedCategoryName", out var sg) && sg.ValueKind == JsonValueKind.String ? sg.GetString() : null;
+                decisions.Add(new(i, code, confidence, review, reason, suggested));
             }
             return decisions;
         }

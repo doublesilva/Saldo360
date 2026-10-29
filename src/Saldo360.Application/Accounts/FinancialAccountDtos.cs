@@ -19,7 +19,8 @@ public sealed record FinancialAccountDto(
     string Currency,
     DateTimeOffset CreatedAt,
     string Origin = AccountOrigins.Manual,
-    AccountIntegrationDto? Integration = null);
+    AccountIntegrationDto? Integration = null,
+    bool IsPrimary = false);
 
 /// <summary>Origem do cadastro: digitado pelo usuário ou integrado a uma conta externa (T09.3). A origem é derivada do vínculo.</summary>
 public static class AccountOrigins
@@ -43,7 +44,11 @@ public sealed record AccountIntegrationDto(
 /// <summary>Responsável: somente UserId e nome de exibição, sem vínculo familiar obrigatório.</summary>
 public sealed record AccountResponsibleDto(Guid UserId, string DisplayName);
 
-/// <summary>Dados cadastrais enviados pelo cliente (texto bruto, validado pelo serviço).</summary>
+/// <summary>
+/// Dados cadastrais enviados pelo cliente (texto bruto, validado pelo serviço). <c>IsPrimary</c>: true define a conta como principal
+/// (substituindo a anterior), false remove a condição de principal e ausente não altera. <c>ReplacementPrimaryAccountId</c>
+/// só vale ao desativar a conta principal: a substituta passa a ser a principal na mesma operação.
+/// </summary>
 public sealed record AccountInput(
     string? Name,
     string? Institution,
@@ -51,10 +56,13 @@ public sealed record AccountInput(
     string? FinancialScope,
     Guid? ResponsibleUserId,
     decimal? OpeningBalance,
-    DateOnly? OpeningBalanceDate);
+    DateOnly? OpeningBalanceDate,
+    bool? IsPrimary = null,
+    Guid? ReplacementPrimaryAccountId = null);
 
 /// <summary>Saldo inicial da conta; ambos nulos = não configurado.</summary>
-public sealed record AccountOpeningBalance(decimal? Amount, DateOnly? Date);
+/// <summary>Saldo inicial usado no cálculo. <c>Source</c>: Manual (cadastro) ou BalanceAnchor (derivado da referência bancária, sem cadastro manual).</summary>
+public sealed record AccountOpeningBalance(decimal? Amount, DateOnly? Date, string? Source = null);
 
 /// <summary>Totais de uma conta no período: lançamentos (receita/despesa) e transferências (recebidas/enviadas).</summary>
 public sealed record AccountTotals(decimal Income, decimal Expense, decimal TransferIn, decimal TransferOut);
@@ -114,7 +122,8 @@ public sealed record AccountBalanceDto(
     decimal? TotalTransferIn,
     decimal? TotalTransferOut,
     decimal? Balance,
-    BalanceUnavailableReason? UnavailableReason);
+    BalanceUnavailableReason? UnavailableReason,
+    string? OpeningSource = null);
 
 public enum BalanceAccess
 {

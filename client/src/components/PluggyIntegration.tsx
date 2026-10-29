@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  applyOpeningBalanceSuggestion, getCategorizationOverview, getLinkDetail, listLinks, listReview, reprocessImported, resolveReview, runCategorization,
+  applyCardScheduleSuggestion, applyOpeningBalanceSuggestion, getCategorizationOverview, getLinkDetail, listLinks, listReview, reprocessImported, resolveReview, runCategorization,
   type AccountLink, type AccountLinkDetail, type CategorizationOverview, type CategorizationResult, type ReviewPage, type Resolution,
 } from '../api/pluggyIntegration'
 import { formatBrlDecimal, formatDate, isNegativeDecimal } from '../money'
-import { aiStopLabels, billStatusLabels, dateTime, linkStatusLabels, money, NOT_INFORMED, resolutionLabels, reviewReason, unavailableReasonLabels } from '../pluggyFormat'
+import { aiStopLabels, billCycleLabels, billPaymentLabels, billReconciliationLabels, billReconciliationReasonLabels, dateTime, scheduleReasonLabels, linkStatusLabels, money, NOT_INFORMED, resolutionLabels, reviewReason, unavailableReasonLabels } from '../pluggyFormat'
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Falha inesperada.')
 
@@ -39,6 +39,13 @@ export function PluggyAccountPanel({ workspaceId, linkId, refreshKey, onChanged 
     catch (cause) { setError(errorText(cause)) }
     finally { setBusy(false) }
   }
+  const applySchedule = async () => {
+    if (!window.confirm('Alterar o fechamento e o vencimento habituais do cartão para os dias sugeridos pelo histórico de faturas do banco? As faturas já importadas continuam como o banco informou.')) return
+    setBusy(true); setError(null)
+    try { setDetail(await applyCardScheduleSuggestion(workspaceId, linkId)); onChanged?.() }
+    catch (cause) { setError(errorText(cause)) }
+    finally { setBusy(false) }
+  }
   const reprocess = async () => {
     setBusy(true); setError(null)
     try { await reprocessImported(workspaceId); setVersion(value => value + 1); onChanged?.() }
@@ -68,8 +75,22 @@ export function PluggyAccountPanel({ workspaceId, linkId, refreshKey, onChanged 
     {link.kind === 'Card' && r.card && <>
       <p>Limite do cartão: {money(r.card.creditLimit)} · usado (Saldo360): {money(r.card.usedLimit)} · disponível (Saldo360): {money(r.card.availableLimit)}</p>
       <p className="meta">Informado pelo banco: saldo devedor {money(r.card.observedBalanceDue)} · limite disponível {money(r.card.observedAvailableLimit)}. Cartão não soma saldo de caixa.</p>
+      <p className="meta" aria-label="Fechamento e vencimento habituais">
+        Fechamento habitual cadastrado: {r.card.currentClosingDay ?? NOT_INFORMED} · vencimento habitual: {r.card.currentDueDay ?? NOT_INFORMED}.
+        {r.card.suggestedClosingDay != null || r.card.suggestedDueDay != null
+          ? <> O histórico de faturas do banco sugere {r.card.suggestedClosingDay != null ? `fechamento no dia ${r.card.suggestedClosingDay}` : ''}{r.card.suggestedClosingDay != null && r.card.suggestedDueDay != null ? ' e ' : ''}{r.card.suggestedDueDay != null ? `vencimento no dia ${r.card.suggestedDueDay}` : ''}. <button type="button" onClick={() => void applySchedule()} disabled={busy}>Aplicar fechamento e vencimento sugeridos</button></>
+          : r.card.closingScheduleReason || r.card.dueScheduleReason
+            ? <> Sem sugestão do histórico do banco ({scheduleReasonLabels[r.card.closingScheduleReason ?? r.card.dueScheduleReason ?? ''] ?? 'indisponível'}).</>
+            : null}
+      </p>
       {r.card.bills.length > 0 && <ul aria-label="Faturas do banco">
-        {r.card.bills.map(bill => <li key={`${bill.closingDate}-${bill.dueDate}`}>Fatura com fechamento em {bill.closingDate ? formatDate(bill.closingDate) : NOT_INFORMED}: banco {money(bill.bankTotal)} · Saldo360 {money(bill.saldo360Total)}{bill.difference && bill.difference !== '0.00' ? ` · diferença ${money(bill.difference)}` : ''} — {billStatusLabels[bill.status] ?? bill.status}</li>)}
+        {r.card.bills.map(bill => <li key={`${bill.closingDate}-${bill.dueDate}`}>
+          Fatura com fechamento em {bill.closingDate ? formatDate(bill.closingDate) : NOT_INFORMED}{bill.dueDate ? ` e vencimento em ${formatDate(bill.dueDate)}` : ''}:
+          {' '}{billCycleLabels[bill.cycle] ?? bill.cycle} · {billPaymentLabels[bill.payment] ?? bill.payment} · {billReconciliationLabels[bill.reconciliation] ?? bill.reconciliation}.
+          {' '}Banco {money(bill.bankTotal)} · importado {money(bill.saldo360Total)}{bill.difference && bill.difference !== '0.00' ? ` · diferença ${money(bill.difference)}` : ''}
+          {bill.paidAmount && bill.paidAmount !== '0.00' ? ` · pago (registrado) ${money(bill.paidAmount)}` : ''}
+          {bill.reconciliationReason && bill.reconciliation !== 'Reconciled' ? ` (${billReconciliationReasonLabels[bill.reconciliationReason] ?? bill.reconciliationReason})` : ''}
+        </li>)}
       </ul>}
     </>}
     {r.notes.map(note => <p key={note} className="meta">{note}</p>)}
@@ -101,7 +122,7 @@ export function PluggyIntegrationSection({ workspaceId, refreshKey, onChanged }:
 const AI_CONFIRMATION = 'Enviar à OpenAI, para sugerir categorias, a descrição saneada dos lançamentos que continuarem sem categoria? '
   + 'Antes do envio são removidos CPF/CNPJ, números de conta e cartão, chaves Pix, e-mails, telefones e identificadores; '
   + 'transferências e descrições que parecem nomes de pessoas nunca são enviadas. Valores, datas e contas não são enviados. '
-  + 'A IA só escolhe entre as suas categorias existentes e nada é gravado sem validação.'
+  + 'A IA relaciona cada lançamento a uma das suas categorias existentes ou sugere uma nova categoria genérica, que só é criada depois de validada e nunca duplica uma equivalente.'
 
 /**
  * Categorização automática dos lançamentos importados: a etapa local (regras do domínio e categoria da Pluggy) não envia nada; a IA é o último

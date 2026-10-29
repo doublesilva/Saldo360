@@ -130,7 +130,14 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
             {
                 var result = await client.ListBillsAsync(account.Id, page, 50, ct);
                 facts.AddRange(result.Items.Select(b => new PluggyBillFact(b.Id, b.ClosingDate is { } c ? PluggyFinancialMapper.BusinessDate(c) : null,
-                    b.DueDate is { } d ? PluggyFinancialMapper.BusinessDate(d) : null, b.TotalAmount, b.TotalAmountCurrencyCode)));
+                    b.DueDate is { } d ? PluggyFinancialMapper.BusinessDate(d) : null, b.TotalAmount, b.TotalAmountCurrencyCode)
+                {
+                    FinanceChargesTotal = b.FinanceCharges.Count == 0 ? null : b.FinanceCharges.Where(x => IsBrl(x.CurrencyCode)).Sum(x => x.Amount ?? 0m),
+                    MinimumPayment = b.MinimumPaymentAmount,
+                    // Só pagamentos completos (valor positivo com no máximo duas casas, data e moeda BRL): referência estruturada para reconhecer a saída bancária.
+                    Payments = b.Payments.Where(p => p.Amount is > 0m && p.PaymentDate is not null && IsBrl(p.CurrencyCode) && PluggyFinancialMapper.ExactCents(p.Amount.Value) is not null)
+                        .Select(p => new PluggyBillPaymentFact(PluggyFinancialMapper.ExactCents(p.Amount!.Value)!.Value, PluggyFinancialMapper.BusinessDate(p.PaymentDate!.Value), p.PaymentMode, p.ValueType)).ToList(),
+                }));
                 if (result.TotalPages is not { } pages || page >= pages) break;
                 if (options.SyncPageDelayMilliseconds > 0) await Task.Delay(options.SyncPageDelayMilliseconds, ct);
             }
@@ -138,6 +145,8 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
         catch (PluggyException error) { run.AddError($"{error.Kind}:bills"); }
         await financial.UpsertBillsAsync(cardLink.WorkspaceId, cardLink.Id, facts, time.GetUtcNow(), ct);
     }
+
+    private static bool IsBrl(string? currency) => string.IsNullOrWhiteSpace(currency) || string.Equals(currency, "BRL", StringComparison.OrdinalIgnoreCase);
 
     /// <returns>Verdadeiro se a Pluggy continuou limitando as requisições após as tentativas.</returns>
     private async Task<bool> SyncAccountAsync(PluggyItemLink link, PluggySyncRun run, PluggyAccount account, CancellationToken ct)

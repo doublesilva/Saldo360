@@ -37,4 +37,8 @@ public sealed class FakeFinancialClassificationModel : IFinancialClassificationM
         }).ToList();
         return new FinancialModelResponse(decisions, 100 * request.Items.Count, 10 * request.Items.Count);
     };
+
+    /// <summary>Responde a todos os itens sugerindo uma categoria nova (sem código), como faria o consultor quando nada existente serve.</summary>
+    public static Func<FinancialModelRequest, FinancialModelResponse> Suggest(string newCategory, double confidence = 0.95) => request =>
+        new FinancialModelResponse(request.Items.Select(item => new FinancialModelDecision(item.Index, null, confidence, false, "Teste", newCategory)).ToList(), 100 * request.Items.Count, 10 * request.Items.Count);
 }

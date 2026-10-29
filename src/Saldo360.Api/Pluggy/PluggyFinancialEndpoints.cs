@@ -26,6 +26,7 @@ public static class PluggyFinancialEndpoints
         group.MapPost("/links", Link).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/links/{linkId:guid}", GetLink);
         group.MapPost("/links/{linkId:guid}/opening-balance-suggestion", ApplyOpeningBalance).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/links/{linkId:guid}/card-schedule-suggestion", ApplyCardSchedule).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/reprocess", Reprocess).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/review", ListReview);
         group.MapPost("/review/{postingId:guid}/resolve", Resolve).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -71,6 +72,10 @@ public static class PluggyFinancialEndpoints
         if (request?.Confirm != true) return Results.ValidationProblem(new Dictionary<string, string[]> { ["confirm"] = ["Confirme explicitamente a aplicação do saldo inicial sugerido."] });
         return PluggyPocEndpoints.Map(await service.ApplyOpeningBalanceSuggestionAsync(workspaceId, userId, linkId, request.ReplaceExisting == true, ct), Results.Ok);
     }
+
+    private static async Task<IResult> ApplyCardSchedule(Guid workspaceId, Guid linkId, ConfirmRequest? request, CurrentUser user, PluggyAccountLinkService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : PluggyPocEndpoints.Map(await service.ApplyCardScheduleSuggestionAsync(workspaceId, userId, linkId, request?.Confirm == true, ct), Results.Ok);
 
     private static async Task<IResult> Reprocess(Guid workspaceId, CurrentUser user, PluggyAccountLinkService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
@@ -125,3 +130,6 @@ public sealed record ResolveRequest(string? Resolution);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CategorizationRequest(bool? UseAi, bool? ConfirmExternal, bool? Force);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ConfirmRequest(bool? Confirm);

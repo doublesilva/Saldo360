@@ -150,6 +150,7 @@ function mockApi(
   calendar: (url: string) => Response | Promise<Response> = () => Response.json(response()),
   balances: (url: string) => Response | Promise<Response> = () => Response.json(balanceResponse()),
   monthly: (url: string) => Response | Promise<Response> = () => Response.json(monthlyResponse()),
+  accounts: FinancialAccount[] = [itau, nubank],
 ) {
   const calls: Call[] = []
   vi.stubGlobal(
@@ -157,7 +158,7 @@ function mockApi(
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push({ url, init })
-      if (/\/accounts(?:\?|$)/.test(url)) return Response.json([itau, nubank])
+      if (/\/accounts(?:\?|$)/.test(url)) return Response.json(accounts)
       if (url.includes('/financial-planning/six-months?')) return monthly(url)
       if (url.includes('/financial-calendar/balances?')) return balances(url)
       if (url.includes('/financial-calendar?')) return calendar(url)
@@ -440,7 +441,7 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
     fireEvent.click(within(navigation).getByRole('button', { name: 'Agenda' }))
 
     expect(await screen.findByText('Agenda Financeira')).toBeTruthy()
-    expect(calendarCalls(calls)).toHaveLength(1)
+    await waitFor(() => expect(calendarCalls(calls)).toHaveLength(1))
   })
 })
 
@@ -451,6 +452,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
     render(<FinancialCalendarPage workspaceId="family-1" onChanged={changed} />)
     const future = await screen.findByRole('button', { name: /^Selecionar 20\/12\/2026:/ })
     const reads = balanceCalls(calls).length
+    await screen.findByRole('gridcell', { name: /20\/12\/2026/ })
     fireEvent.click(future)
     expect(future.getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByRole('gridcell', { name: /20\/12\/2026/ }).getAttribute('aria-pressed')).toBe('true')
@@ -522,7 +524,7 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
     const rendered = render(<FinancialCalendarPage workspaceId="family-1" />)
     await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
 
-    fireEvent.click(screen.getByRole('gridcell', { name: /20\/12\/2026/ }))
+    fireEvent.click(await screen.findByRole('gridcell', { name: /20\/12\/2026/ }))
 
     expect(screen.getByText('20/12/2026 (selecionado)')).toBeTruthy()
     const selected = rendered.container.querySelector('.balance-chart__point--selected')
@@ -586,5 +588,40 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
 
     await Promise.resolve()
     expect(screen.queryByText(/R\$\s111,00/)).toBeNull()
+  })
+})
+
+describe('FinancialCalendarPage — conta principal como seleção inicial (T09.3.3)', () => {
+  it('abre na conta principal, sem consulta consolidada à toa, e o consolidado segue disponível', async () => {
+    const calls = mockApi(undefined, undefined, undefined, [{ ...itau, isPrimary: true }, nubank])
+    render(<FinancialCalendarPage workspaceId="family-1" />)
+
+    const select = await screen.findByLabelText('Conta') as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe('acc-itau'))
+    await waitFor(() => expect(calendarCalls(calls).length).toBeGreaterThan(0))
+    expect(calendarCalls(calls).every((call) => call.url.includes('accountId=acc-itau'))).toBe(true)
+    expect(balanceCalls(calls).every((call) => call.url.includes('accountId=acc-itau'))).toBe(true)
+
+    fireEvent.change(select, { target: { value: '' } })
+    await waitFor(() => expect(calendarCalls(calls).some((call) => !call.url.includes('accountId='))).toBe(true))
+    expect((screen.getByLabelText('Conta') as HTMLSelectElement).value).toBe('')
+    expect(screen.getByRole('option', { name: 'Todas as contas' })).toBeTruthy()
+  })
+
+  it('sem conta principal a Agenda continua consolidada', async () => {
+    const calls = mockApi()
+    render(<FinancialCalendarPage workspaceId="family-1" />)
+
+    await waitFor(() => expect(calendarCalls(calls).length).toBeGreaterThan(0))
+    expect((screen.getByLabelText('Conta') as HTMLSelectElement).value).toBe('')
+    expect(calendarCalls(calls).every((call) => !call.url.includes('accountId='))).toBe(true)
+  })
+
+  it('conta principal inativa nunca vira seleção inicial', async () => {
+    const calls = mockApi(undefined, undefined, undefined, [{ ...itau, isPrimary: true, isActive: false }, nubank])
+    render(<FinancialCalendarPage workspaceId="family-1" />)
+
+    await waitFor(() => expect(calendarCalls(calls).length).toBeGreaterThan(0))
+    expect((screen.getByLabelText('Conta') as HTMLSelectElement).value).toBe('')
   })
 })

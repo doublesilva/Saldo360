@@ -97,6 +97,7 @@ public sealed class FinancialClassificationService(IFinancialClassificationModel
         foreach (var skipped in candidates.Skip(remaining.Count)) outcomes.Add(Skipped(skipped.Input.Key, "Limite de itens da execução"));
         if (candidates.Count > remaining.Count) stopped = "MaxItemsPerRun";
 
+        var newNames = new HashSet<string>(StringComparer.Ordinal);
         var batchSize = Math.Clamp(options.BatchSize, 1, 50);
         for (var offset = 0; offset < remaining.Count; offset += batchSize)
         {
@@ -135,23 +136,60 @@ public sealed class FinancialClassificationService(IFinancialClassificationModel
             for (var i = 0; i < batch.Count; i++)
             {
                 var input = batch[i].Input;
-                outcomes.Add(byIndex.TryGetValue(i, out var d) ? Validate(input, d, codeToCategory, method) : Review(input.Key, "Sem resposta válida da IA", method));
+                outcomes.Add(byIndex.TryGetValue(i, out var d) ? Validate(input, d, codeToCategory, categories, newNames, method) : Review(input.Key, "Sem resposta válida da IA", method));
             }
         }
 
         return new(outcomes, new(calls, sent, inputTokens, outputTokens, EstimateCost(inputTokens, outputTokens), stopped, failure, model_));
     }
 
-    private FinancialClassificationOutcome Validate(FinancialClassificationInput input, FinancialModelDecision decision, Dictionary<int, MappableCategory> codeToCategory, string method)
+    private FinancialClassificationOutcome Validate(FinancialClassificationInput input, FinancialModelDecision decision, Dictionary<int, MappableCategory> codeToCategory,
+        IReadOnlyCollection<MappableCategory> categories, HashSet<string> newNames, string method)
     {
         var expected = input.Kind == FinancialMovementKind.Income ? CategoryType.Income : CategoryType.Expense;
         var reason = SafeReason(decision.Reason);
-        if (decision.NeedsReview || decision.CategoryCode is null) return Review(input.Key, reason ?? "IA sem evidência suficiente", method);
+        if (decision.NeedsReview) return Review(input.Key, reason ?? "IA sem evidência suficiente", method);
         if (double.IsNaN(decision.Confidence) || decision.Confidence < options.MinConfidence) return Review(input.Key, reason ?? "Confiança insuficiente", method);
-        // Categoria inexistente, inativa ou de outro tipo: rejeitada. A IA nunca cria categorias nem escapa do menu enviado.
-        if (!codeToCategory.TryGetValue(decision.CategoryCode.Value, out var category) || !category.IsActive || category.Type != expected)
-            return Review(input.Key, "Categoria inválida ou incompatível com o tipo", method);
-        return new(input.Key, category.Id, FinancialClassificationSource.AI, null, null, false, reason ?? "Classificado pela IA", method);
+        if (decision.CategoryCode is { } code)
+        {
+            // Categoria inexistente, inativa ou de outro tipo: rejeitada. A IA nunca escapa do menu enviado.
+            if (!codeToCategory.TryGetValue(code, out var category) || !category.IsActive || category.Type != expected)
+                return Review(input.Key, "Categoria inválida ou incompatível com o tipo", method);
+            return new(input.Key, category.Id, FinancialClassificationSource.AI, null, null, false, reason ?? "Classificado pela IA", method);
+        }
+        return options.AllowCategorySuggestions && SuggestedName(decision.SuggestedCategory) is { } suggestion
+            ? Suggest(input, suggestion, expected, categories, newNames, reason, method)
+            : Review(input.Key, reason ?? "IA sem evidência suficiente", method);
+    }
+
+    /// <summary>
+    /// Sugestão de categoria nova da IA. Se já existe equivalente ativa, usa-a; se existe equivalente inativa (o usuário a desativou), não recria.
+    /// Só vira proposta (criada pelo backend) com nome válido e dentro do limite de novas categorias da execução.
+    /// </summary>
+    private FinancialClassificationOutcome Suggest(FinancialClassificationInput input, string name, CategoryType type, IReadOnlyCollection<MappableCategory> categories,
+        HashSet<string> newNames, string? reason, string method)
+    {
+        if (FinancialCategoryMatching.Find(categories, name, type) is { } existing)
+            return new(input.Key, existing.Id, FinancialClassificationSource.AI, null, null, false, reason ?? "Sugestão equivalente a categoria existente", method);
+        if (FinancialCategoryMatching.ExistsInAnyState(categories, name, type)) return Review(input.Key, "Categoria equivalente está desativada", method);
+        var key = type + ":" + FinancialCategoryMatching.Key(name);
+        if (!newNames.Contains(key) && newNames.Count >= Math.Max(0, options.MaxNewCategoriesPerRun)) return Review(input.Key, "Limite de novas categorias da execução", method);
+        newNames.Add(key);
+        return new(input.Key, null, FinancialClassificationSource.AI, name, type, false, reason ?? "Nova categoria sugerida pela IA", method);
+    }
+
+    private static readonly HashSet<string> GenericNames = new(StringComparer.Ordinal)
+        { "outros", "outras", "diversos", "diversas", "geral", "categoria", "sem categoria", "nao categorizado", "indefinido", "desconhecido", "variados", "misc" };
+
+    /// <summary>Nome seguro para uma categoria nova: curto, só letras, sem dígitos/e-mail/símbolos, não genérico. Devolve null se recusado.</summary>
+    internal static string? SuggestedName(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var name = string.Join(' ', raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        if (!FinancialCategory.TryNormalizeName(name, out var normalized, out _) || normalized.Length is < 3 or > 40) return null;
+        if (normalized.Split(' ').Length > 4 || normalized.Any(c => !(char.IsLetter(c) || c is ' ' or '-' or '/' or '&'))) return null;
+        if (GenericNames.Contains(FinancialCategoryMatching.Key(normalized))) return null;
+        return char.ToUpperInvariant(normalized[0]) + normalized[1..];
     }
 
     private static FinancialClassificationOutcome Review(string key, string reason, string method) =>

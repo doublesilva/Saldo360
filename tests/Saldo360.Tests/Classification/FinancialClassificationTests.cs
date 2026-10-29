@@ -277,4 +277,82 @@ public sealed class FinancialClassificationTests
         Assert.Equal(0, model.Calls);
         Assert.True(result.Outcomes.Single().NeedsReview);
     }
+
+    // ---- 5. Sugestão de categoria nova (consultor financeiro) -------------------------------------------------------------
+
+    [Fact]
+    public async Task WhenNoExistingCategoryFitsTheModelSuggestsANewOneAndTheBackendProposesItOnce()
+    {
+        var (service, model) = Create();
+        model.Responder = FakeFinancialClassificationModel.Suggest("Entretenimento");
+        var inputs = new[] { Input("a", description: "CINEMA CENTRAL", card: true), Input("b", description: "TEATRO MUNICIPAL", card: true) };
+
+        var result = await service.ClassifyWithAiAsync(inputs, [Food], default);
+
+        Assert.All(result.Outcomes, o => Assert.Equal(("Entretenimento", CategoryType.Expense, FinancialClassificationSource.AI, (Guid?)null), (o.ProposedName, o.ProposedType, o.Source, o.CategoryId)));
+        Assert.Contains("consultor financeiro", OpenAiFinancialClassificationModel.SystemPrompt);
+    }
+
+    [Fact]
+    public async Task ASuggestionEquivalentToAnExistingCategoryReusesItAndOneEquivalentToAnInactiveOneIsNeverRecreated()
+    {
+        var (service, model) = Create();
+        var existing = new MappableCategory(Guid.NewGuid(), "Entretenimento", CategoryType.Expense, true);
+        model.Responder = FakeFinancialClassificationModel.Suggest("  entretenimento ");
+
+        var reused = await service.ClassifyWithAiAsync([Input("a", card: true)], [existing], default);
+        var inactive = new MappableCategory(Guid.NewGuid(), "Entretenimento", CategoryType.Expense, false);
+        var blocked = await service.ClassifyWithAiAsync([Input("b", card: true)], [inactive, Leisure], default);
+
+        Assert.Equal((existing.Id, (string?)null), (reused.Outcomes.Single().CategoryId, reused.Outcomes.Single().ProposedName));
+        Assert.Null(blocked.Outcomes.Single().ProposedName);
+        Assert.Null(blocked.Outcomes.Single().CategoryId);
+        Assert.True(blocked.Outcomes.Single().NeedsReview);
+    }
+
+    [Theory]
+    [InlineData("Outros")]
+    [InlineData("Diversos")]
+    [InlineData("Loja 123")]
+    [InlineData("joao@exemplo.com")]
+    [InlineData("Categoria muito longa que nao deveria ser aceita como nome")]
+    [InlineData("A")]
+    [InlineData("")]
+    public async Task UnsafeOrGenericSuggestedNamesAreRejected(string suggestion)
+    {
+        var (service, model) = Create();
+        model.Responder = FakeFinancialClassificationModel.Suggest(suggestion);
+
+        var result = await service.ClassifyWithAiAsync([Input("a", card: true)], [Leisure], default);
+
+        Assert.Null(result.Outcomes.Single().ProposedName);
+        Assert.True(result.Outcomes.Single().NeedsReview);
+    }
+
+    [Fact]
+    public async Task SuggestionsRespectTheConfidenceTheModelReviewFlagTheOptionAndTheNewCategoryLimit()
+    {
+        var (service, model) = Create(o => o.MaxNewCategoriesPerRun = 1);
+        model.Responder = request => new FinancialModelResponse([
+            new(0, null, 0.95, false, "ok", "Viagens"),
+            new(1, null, 0.40, false, "baixa confiança", "Esportes"),
+            new(2, null, 0.95, true, "incerto", "Esportes"),
+            new(3, null, 0.95, false, "outra", "Hobbies"),
+            new(4, null, 0.95, false, "mesma", "viagens"),
+        ], 10, 5);
+        var inputs = Enumerable.Range(0, 5).Select(i => Input($"k{i}", description: $"LOJA QUALQUER {(char)('A' + i)}")).ToList();
+
+        var result = await service.ClassifyWithAiAsync(inputs, [Leisure], default);
+
+        var byKey = result.Outcomes.ToDictionary(o => o.Key);
+        Assert.Equal("Viagens", byKey["k0"].ProposedName);
+        Assert.Null(byKey["k1"].ProposedName); // confiança baixa
+        Assert.Null(byKey["k2"].ProposedName); // o próprio modelo pediu revisão
+        Assert.Null(byKey["k3"].ProposedName); // passou do limite de 1 categoria nova por execução
+        Assert.Equal("Viagens", byKey["k4"].ProposedName); // mesmo nome (equivalente) não conta como outra categoria
+
+        var (disabled, disabledModel) = Create(o => o.AllowCategorySuggestions = false);
+        disabledModel.Responder = FakeFinancialClassificationModel.Suggest("Viagens");
+        Assert.Null((await disabled.ClassifyWithAiAsync([Input("a", card: true)], [Leisure], default)).Outcomes.Single().ProposedName);
+    }
 }

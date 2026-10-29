@@ -15,9 +15,47 @@ public static class FinancialAccountEndpoints
         accounts.MapGet("/", List);
         accounts.MapGet("/{accountId:guid}", Get);
         accounts.MapPut("/{accountId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        accounts.MapPut("/{accountId:guid}/primary", SetPrimary).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        accounts.MapDelete("/{accountId:guid}/primary", ClearPrimary).AddEndpointFilter<ValidateCsrfTokenFilter>();
         accounts.MapGet("/{accountId:guid}/balance", GetBalance);
         accounts.MapGet("/{accountId:guid}/projection", GetProjection);
         return app;
+    }
+
+    /// <summary>Define a conta como a principal do orçamento, substituindo a anterior de forma atômica (só conta bancária ativa).</summary>
+    private static async Task<IResult> SetPrimary(
+        Guid workspaceId, Guid accountId, CurrentUser currentUser, FinancialAccountService accounts, CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await accounts.SetPrimaryAsync(workspaceId, accountId, userId, cancellationToken);
+        return result.Access switch
+        {
+            AccountAccess.NotFound => Results.NotFound(),
+            AccountAccess.Invalid => Results.ValidationProblem(result.Errors!),
+            _ => Results.Ok(AccountResponse.From(result.Account!)),
+        };
+    }
+
+    /// <summary>Remove explicitamente a condição de conta principal. O orçamento fica sem conta principal; nada mais é alterado.</summary>
+    private static async Task<IResult> ClearPrimary(
+        Guid workspaceId, Guid accountId, CurrentUser currentUser, FinancialAccountService accounts, CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await accounts.ClearPrimaryAsync(workspaceId, accountId, userId, cancellationToken);
+        return result.Access switch
+        {
+            AccountAccess.NotFound => Results.NotFound(),
+            AccountAccess.Invalid => Results.ValidationProblem(result.Errors!),
+            _ => Results.Ok(AccountResponse.From(result.Account!)),
+        };
     }
 
     /// <summary>
@@ -142,7 +180,7 @@ public static class FinancialAccountEndpoints
 
         var input = new AccountInput(
             request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleUserId,
-            request?.OpeningBalance, request?.OpeningBalanceDate);
+            request?.OpeningBalance, request?.OpeningBalanceDate, request?.IsPrimary, request?.ReplacementPrimaryAccountId);
         var result = await accounts.UpdateAsync(workspaceId, accountId, userId, input, request?.IsActive, cancellationToken);
         return result.Access switch
         {
@@ -154,7 +192,7 @@ public static class FinancialAccountEndpoints
 
     private static AccountInput ToInput(CreateAccountRequest? request) =>
         new(request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleUserId,
-            request?.OpeningBalance, request?.OpeningBalanceDate);
+            request?.OpeningBalance, request?.OpeningBalanceDate, request?.IsPrimary);
 }
 
 /// <summary>
@@ -171,7 +209,8 @@ public sealed record CreateAccountRequest(
     string? FinancialScope,
     Guid? ResponsibleUserId,
     decimal? OpeningBalance,
-    DateOnly? OpeningBalanceDate);
+    DateOnly? OpeningBalanceDate,
+    bool? IsPrimary = null);
 
 /// <summary>
 /// Edição (substituição completa): os mesmos campos cadastrais mais a situação. Saldo inicial ausente ou nulo
@@ -186,7 +225,9 @@ public sealed record UpdateAccountRequest(
     Guid? ResponsibleUserId,
     decimal? OpeningBalance,
     DateOnly? OpeningBalanceDate,
-    bool? IsActive);
+    bool? IsActive,
+    bool? IsPrimary = null,
+    Guid? ReplacementPrimaryAccountId = null);
 
 /// <summary>
 /// Saldo realizado. Valores monetários como texto decimal exato com duas casas ("1300.00"), nunca number JSON,
@@ -202,7 +243,8 @@ public sealed record AccountBalanceResponse(
     string? TotalTransferIn,
     string? TotalTransferOut,
     string? Balance,
-    BalanceUnavailableReason? UnavailableReason)
+    BalanceUnavailableReason? UnavailableReason,
+    string? OpeningSource = null)
 {
     public static AccountBalanceResponse From(AccountBalanceDto dto) => new(
         dto.AccountId,
@@ -214,7 +256,8 @@ public sealed record AccountBalanceResponse(
         Format(dto.TotalTransferIn),
         Format(dto.TotalTransferOut),
         Format(dto.Balance),
-        dto.UnavailableReason);
+        dto.UnavailableReason,
+        dto.OpeningSource);
 
     private static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
 }
@@ -236,7 +279,8 @@ public sealed record AccountResponse(
     string Currency,
     DateTimeOffset CreatedAt,
     string Origin = AccountOrigins.Manual,
-    AccountIntegrationResponse? Integration = null)
+    AccountIntegrationResponse? Integration = null,
+    bool IsPrimary = false)
 {
     public static AccountResponse From(FinancialAccountDto dto) => new(
         dto.Id,
@@ -251,7 +295,8 @@ public sealed record AccountResponse(
         dto.Currency,
         dto.CreatedAt,
         dto.Origin,
-        dto.Integration is { } integration ? AccountIntegrationResponse.From(integration) : null);
+        dto.Integration is { } integration ? AccountIntegrationResponse.From(integration) : null,
+        dto.IsPrimary);
 }
 
 /// <summary>Integração da conta. <c>observedBalance</c> é o saldo informado pelo banco (texto decimal com duas casas), separado do saldo calculado.</summary>

@@ -47,16 +47,20 @@ public sealed class FinancialDashboardService(
 
         var accountDtos = await accounts.ListAsync(workspaceId, true, ct);
         var accountBalances = new List<FinancialDashboardAccountBalance>();
+        // Conta sem saldo inicial manual pode usar o derivado da referência bancária (âncora), quando confiável; o manual sempre prevalece.
+        var anchored = await accounts.GetAnchoredOpeningsAsync(workspaceId, ct);
         foreach (var account in accountDtos)
         {
             decimal? balance = null;
-            var complete = account.OpeningBalance is not null && account.OpeningBalanceDate is not null;
+            var opening = account.OpeningBalance; var openingDate = account.OpeningBalanceDate;
+            if ((opening is null || openingDate is null) && anchored.TryGetValue(account.Id, out var derived)) { opening = derived.Amount; openingDate = derived.Date; }
+            var complete = opening is not null && openingDate is not null;
             if (complete)
             {
-                var totals = await accounts.SumMovementsAsync(workspaceId, account.Id, account.OpeningBalanceDate!.Value, asOf, ct);
-                balance = account.OpeningBalance!.Value + totals.Income - totals.Expense + totals.TransferIn - totals.TransferOut;
+                var totals = await accounts.SumMovementsAsync(workspaceId, account.Id, openingDate!.Value, asOf, ct);
+                balance = opening!.Value + totals.Income - totals.Expense + totals.TransferIn - totals.TransferOut;
             }
-            accountBalances.Add(new(account.Id, account.Name, balance, complete));
+            accountBalances.Add(new(account.Id, account.Name, balance, complete, account.IsPrimary));
         }
         var knownBalances = accountBalances.Where(x => x.RealizedBalance is not null).Select(x => x.RealizedBalance!.Value).ToList();
         var realized = knownBalances.Count == accountBalances.Count && accountBalances.Count > 0 ? knownBalances.Sum() : (decimal?)null;

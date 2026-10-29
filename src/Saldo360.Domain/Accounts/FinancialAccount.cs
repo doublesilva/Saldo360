@@ -48,6 +48,12 @@ public sealed class FinancialAccount : Entity
 
     public bool IsActive { get; private set; }
 
+    /// <summary>
+    /// Conta principal do orçamento (T09.3.3): no máximo uma por workspace, sempre bancária (corrente ou poupança) e ativa. É só a
+    /// seleção padrão das telas financeiras: não é origem obrigatória de pagamentos e não altera saldo nem movimentação.
+    /// </summary>
+    public bool IsPrimary { get; private set; }
+
     public string Currency { get; private init; }
 
     public DateTimeOffset CreatedAt { get; private init; }
@@ -67,12 +73,36 @@ public sealed class FinancialAccount : Entity
         return account;
     }
 
+    /// <summary>Conta bancária (corrente ou poupança); dinheiro em espécie não é conta bancária.</summary>
+    public static bool IsBankType(AccountType type) => type is AccountType.Checking or AccountType.Savings;
+
+    /// <summary>Elegível a principal ou a pagadora padrão de cartão: bancária e ativa.</summary>
+    public bool IsEligiblePayer => IsActive && IsBankType(Type);
+
     /// <summary>Atualiza os campos cadastrais e a situação. Família, criador e moeda não mudam.</summary>
     public void Update(AccountDetails details, bool isActive)
     {
+        if (IsPrimary && (!isActive || !IsBankType(details.Type)))
+        {
+            throw new InvalidOperationException("A conta principal precisa continuar ativa e bancária; remova a condição de principal antes.");
+        }
+
         Apply(details);
         IsActive = isActive;
     }
+
+    /// <summary>Marca como principal. A anterior precisa ter sido desmarcada antes (índice único parcial no banco).</summary>
+    public void MarkPrimary()
+    {
+        if (!IsEligiblePayer)
+        {
+            throw new InvalidOperationException("Somente conta bancária ativa pode ser a conta principal.");
+        }
+
+        IsPrimary = true;
+    }
+
+    public void ClearPrimary() => IsPrimary = false;
 
     private void Apply(AccountDetails details)
     {

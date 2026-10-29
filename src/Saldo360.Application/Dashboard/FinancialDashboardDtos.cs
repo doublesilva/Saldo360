@@ -19,7 +19,7 @@ public sealed record FinancialDashboard(
     DateOnly AsOf);
 
 public sealed record FinancialDashboardPosition(decimal? RealizedBalance, IReadOnlyList<FinancialDashboardAccountBalance> Accounts, int ConsideredAccounts, decimal NegativeBalance, decimal AllocatedToGoals, decimal? UnallocatedRealizedBalance);
-public sealed record FinancialDashboardAccountBalance(Guid AccountId, string Name, decimal? RealizedBalance, bool Complete);
+public sealed record FinancialDashboardAccountBalance(Guid AccountId, string Name, decimal? RealizedBalance, bool Complete, bool IsPrimary = false);
 public sealed record FinancialDashboardCashFlow(decimal RealizedIncome, decimal RealizedExpense, decimal PendingIncome, decimal PendingExpense);
 public sealed record FinancialDashboardObligations(decimal PendingIncome, decimal PendingExpense, decimal CreditCardOutstanding, decimal DebtOutstanding, int PendingItems);
 public sealed record FinancialDashboardBudgets(int TargetCount, decimal Planned, decimal Committed, decimal Realized, int ExceededCount, int AttentionCount);
