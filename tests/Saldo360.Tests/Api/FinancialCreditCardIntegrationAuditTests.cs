@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Saldo360.Application.CreditCards;
 using Saldo360.Domain.Common;
 using Saldo360.Tests.Support;
 
@@ -114,6 +116,46 @@ public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture pos
         await using var db = Db();
         Assert.Equal(2, await db.FinancialCreditCardInvoicePayments.CountAsync());
         Assert.Equal(2, await db.FinancialTransactions.CountAsync(transaction => transaction.Origin == Saldo360.Domain.Transactions.FinancialTransactionOrigin.CreditCardInvoicePayment));
+    }
+
+    /// <summary>
+    /// Reproduz sem depender de tempo a janela da concorrência: a requisição B consultou a operação e não achou nada; a requisição A conclui o pagamento;
+    /// só então B chega ao repositório com o mesmo OperationId. Ela deve ser reconhecida como operação duplicada (e o serviço compara o payload), nunca como
+    /// "pagamento excedente" só porque a fatura já foi quitada por ela mesma.
+    /// </summary>
+    [Fact]
+    public async Task PaymentCommittedAfterInitialLookupIsRecognizedBeforeOutstandingValidation()
+    {
+        await ArrangeAsync();
+        Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{_family.Id}/credit-cards/{_card}/purchases", _owner,
+            new { description = "Compra auditada", purchaseDate = PurchaseDate, totalAmount = "1200.00", installmentCount = 3, categoryId = _category })).StatusCode);
+        var invoices = await GetJsonAsync($"/api/financial-workspaces/{_family.Id}/credit-cards/{_card}/invoices?from=2026-09&through=2026-11");
+        var invoiceId = invoices[0].GetProperty("id").GetGuid();
+        await using (var official = Db()) await OfficialInvoiceFixture.CloseAsync(official, invoiceId);
+        var operationId = Guid.NewGuid();
+        var paymentUrl = $"/api/financial-workspaces/{_family.Id}/credit-cards/{_card}/invoices/{invoiceId}/payments";
+        Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, paymentUrl, _owner, new { operationId, financialAccountId = _account, paymentDate = Today, amount = "400.00" })).StatusCode);
+        Guid user;
+        await using (var db = Db()) user = await db.FinancialWorkspaces.AsNoTracking().Where(w => w.Id == _family.Id).Select(w => w.OwnerUserId).SingleAsync();
+
+        using var scope = Factory.Services.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IFinancialCreditCardInvoicePaymentRepository>();
+        var now = DateTimeOffset.UtcNow;
+        // Mesma operação, mesmo conteúdo: duplicada, e o conteúdo confere.
+        var duplicate = await repository.CreateAsync(_family.Id, _card, invoiceId, operationId, _account, Today, 400m, user, Today, now, CancellationToken.None);
+        Assert.Equal(PaymentOperationResult.DuplicateOperation, duplicate.Result);
+        Assert.True(await repository.PayloadMatchesAsync(_family.Id, operationId, invoiceId, _account, Today, 400m, CancellationToken.None));
+        // Mesma operação com valor diferente: continua reconhecida como duplicada, mas o conteúdo NÃO confere (o serviço responde conflito, nunca sucesso).
+        var different = await repository.CreateAsync(_family.Id, _card, invoiceId, operationId, _account, Today, 399.99m, user, Today, now, CancellationToken.None);
+        Assert.Equal(PaymentOperationResult.DuplicateOperation, different.Result);
+        Assert.False(await repository.PayloadMatchesAsync(_family.Id, operationId, invoiceId, _account, Today, 399.99m, CancellationToken.None));
+        // Operação nova que tenta pagar além do devido segue recusada.
+        var excess = await repository.CreateAsync(_family.Id, _card, invoiceId, Guid.NewGuid(), _account, Today, 400m, user, Today, now, CancellationToken.None);
+        Assert.Equal(PaymentOperationResult.ExceedsDue, excess.Result);
+
+        await using var check = Db();
+        Assert.Equal(1, await check.FinancialCreditCardInvoicePayments.CountAsync());
+        Assert.Equal(1, await check.FinancialTransactions.CountAsync(t => t.Origin == Saldo360.Domain.Transactions.FinancialTransactionOrigin.CreditCardInvoicePayment));
     }
 
     [Fact]

@@ -49,6 +49,13 @@ internal sealed class FinancialCreditCardInvoicePaymentRepository(Saldo360DbCont
     {
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", cancellationToken);
+        // O serviço consultou a operação ANTES do lock: uma requisição concorrente com o mesmo OperationId pode ter concluído entre aquela consulta e este ponto. Com o lock
+        // já adquirido a leitura é definitiva; sem ela, a fatura recém-quitada pela própria operação seria recusada como pagamento excedente. O serviço compara o payload.
+        if (await db.FinancialCreditCardInvoicePayments.AsNoTracking().AnyAsync(p => p.WorkspaceId == workspaceId && p.OperationId == operationId, cancellationToken))
+        {
+            await tx.RollbackAsync(cancellationToken);
+            return new(PaymentOperationResult.DuplicateOperation);
+        }
         var invoice = await db.FinancialCreditCardInvoices.SingleOrDefaultAsync(i => i.WorkspaceId == workspaceId && i.CreditCardId == cardId && i.Id == invoiceId, cancellationToken);
         if (invoice is null) return new(PaymentOperationResult.NotFound);
         if (invoice.OfficialVersion == 0) return new(PaymentOperationResult.OpenInvoice);

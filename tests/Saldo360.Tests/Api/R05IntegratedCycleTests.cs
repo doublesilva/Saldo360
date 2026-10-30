@@ -12,7 +12,11 @@ namespace Saldo360.Tests.Api;
 /// </summary>
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "CORE")]
-[Trait("Area", "Integration")]
+[Trait("Area", "Planning")]
+[Trait("Area", "Recurrences")]
+[Trait("Area", "Budgets")]
+[Trait("Area", "Dashboard")]
+[Trait("Area", "Goals")]
 [Trait("Dependency", "PostgreSQL")]
 public sealed class R05IntegratedCycleTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
