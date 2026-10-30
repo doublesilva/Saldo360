@@ -176,7 +176,7 @@ public sealed class DashboardOverviewTests(PostgresFixture postgres) : PostgresA
 
         Assert.Equal(("Complete", 1), (Text(goals, "state"), goals.GetProperty("activeCount").GetInt32()));
         var item = Assert.Single(goals.GetProperty("items").EnumerateArray());
-        Assert.Equal(("Reserva", "1000.00", "250.00", "25.0", false), (Text(item, "name"), Text(item, "target"), Text(item, "allocated"), Text(item, "progressPercent"), item.GetProperty("funded").GetBoolean()));
+        Assert.Equal(("Reserva", "1000.00", "250.00", "750.00", "25.0", false), (Text(item, "name"), Text(item, "target"), Text(item, "allocated"), Text(item, "remaining"), Text(item, "progressPercent"), item.GetProperty("funded").GetBoolean()));
     }
 
     [Fact]

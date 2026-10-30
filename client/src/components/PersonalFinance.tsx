@@ -52,6 +52,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
   const agenda = (value: string) => { setMonth(`${value}-01`); setSection('calendar') }
   const budgets = (value: string) => { setCompetence(value); setBudgetGroup(undefined); setSection('budgets') }
   // Orçamento → central de automação: abre a lista de revisão com as despesas do período sem tipo definido, inclusive as compras de cartão importadas.
+  const [goalId, setGoalId] = useState<string | undefined>()
   const [automationEntry, setAutomationEntry] = useState<AutomationEntry | undefined>()
   const reviewClassification = (range: { from: string; to: string }) => { setAutomationEntry({ key: Date.now(), tab: 'automations', review: { kind: 'nature', ...range } }); setSection('automation') }
   const workspaceId = workspace.id
@@ -61,6 +62,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     setCompetence(target === 'budgets' ? context?.competence : undefined)
     setBudgetGroup(target === 'budgets' ? context?.budgetGroup : undefined)
     setTransactionContext(target === 'transactions' ? { key: Date.now(), filters: context?.transactions, newTransaction: context?.newTransaction } : null)
+    setGoalId(target === 'goals' ? context?.goalId : undefined)
     if (target === 'automation') setAutomationEntry({ key: Date.now(), tab: context?.automationTab, review: context?.review })
     setSection(target)
   }
@@ -75,13 +77,13 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     {section === 'automation' && pluggyLab && <AutomationCenter key={automationEntry?.key} workspaceId={workspaceId} refreshKey={String(version)} onChanged={changed} entry={automationEntry} />}
     {section === 'settings' && <WorkspaceSettings workspaceId={workspaceId} onReset={onReset} />}
     {section === 'overview' && <Overview workspaceId={workspaceId} refreshKey={version} selection={overviewSelection} onSelectionChange={setOverviewSelection} onNavigate={openFromOverview} />}
-    {section === 'calendar' && <FinancialCalendarPage key={month} workspaceId={workspaceId} initialMonth={month} onChanged={changed} onNavigateToBudgets={budgets} />}
+    {section === 'calendar' && <FinancialCalendarPage key={month} workspaceId={workspaceId} initialMonth={month} onChanged={changed} onNavigateToBudgets={budgets} onNavigateToCards={() => setSection('cards')} />}
     {section === 'budgets' && <FinancialBudgetsPage key={`${competence}:${budgetGroup}`} workspaceId={workspaceId} initialCompetence={competence} initialGroup={budgetGroup} refreshKey={version} onNavigateToAgenda={agenda} onReviewClassification={reviewClassification} />}
     {section === 'cards' && <FinancialCreditCardsPage workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'recurrences' && <FinancialRecurrences workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToAgenda={agenda} />}
     {section === 'planning' && <PlanningHub workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'debts' && <FinancialDebts workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
-    {section === 'goals' && <FinancialGoals workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToPlanning={() => setSection('planning')} />}
+    {section === 'goals' && <FinancialGoals key={goalId} initialGoalId={goalId} workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToPlanning={() => setSection('planning')} />}
     {section === 'accounts' && <Accounts workspaceId={workspaceId} members={[{ userId: workspace.ownerUserId, displayName: 'Você', isCurrentUser: true }]} balanceVersion={version} />}
     {section === 'categories' && <Categories workspaceId={workspaceId} />}
     {section === 'transactions' && <Transactions key={transactionContext?.key} workspaceId={workspaceId} onChanged={changed} refreshKey={version} initialFilters={transactionContext?.filters ? { from: transactionContext.filters.from, to: transactionContext.filters.to, accountId: transactionContext.filters.accountId ?? '', ...(transactionContext.filters.expenseNature ? { expenseNature: transactionContext.filters.expenseNature, type: 'Expense' as const } : {}) } : undefined} startWithForm={transactionContext?.newTransaction} />}

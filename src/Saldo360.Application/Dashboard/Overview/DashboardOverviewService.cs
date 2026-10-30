@@ -26,9 +26,18 @@ public sealed record OverviewCommitmentDto(Guid Id, string Source, string Descri
 public sealed record OverviewCommitmentGroupDto(int Count, string Total, IReadOnlyList<OverviewCommitmentDto> Items);
 
 /// <summary>Despesas pendentes da Agenda. <c>Overdue</c> = vencidas até ontem; <c>Upcoming</c> = de hoje até o fim do horizonte.</summary>
-public sealed record OverviewCommitmentsDto(string State, DateOnly AsOf, DateOnly HorizonThrough, int HorizonDays, OverviewCommitmentGroupDto Overdue, OverviewCommitmentGroupDto Upcoming);
+/// <summary>
+/// Próximo pagamento de uma fatura: obrigação de CAIXA pelo vencimento (o que ainda falta pagar), não as compras da fatura. <c>Status</c>: Confirmed (total do banco),
+/// Provisional (projeção sem fatura fechada) ou AwaitingBankBill (fatura do banco ainda não chegou).
+/// </summary>
+public sealed record OverviewCardPaymentDto(Guid CardId, string CardName, string? CardScope, string Competence, DateOnly Due, int DaysFromToday, string Obligation, string Paid, string Remaining, string Status, string PaymentState);
 
-public sealed record OverviewGoalDto(Guid GoalId, string Name, string Priority, string Target, string Allocated, string ProgressPercent, DateOnly? TargetDate, bool Funded);
+/// <summary><c>Total</c> soma só o que falta pagar das próximas faturas listadas; <c>OverdueRemaining</c> é o que falta de faturas já vencidas (por cartão não listado a data).</summary>
+public sealed record OverviewCardPaymentsDto(string State, string Total, string OverdueRemaining, int OverdueCards, IReadOnlyList<OverviewCardPaymentDto> Items);
+
+public sealed record OverviewCommitmentsDto(string State, DateOnly AsOf, DateOnly HorizonThrough, int HorizonDays, OverviewCommitmentGroupDto Overdue, OverviewCommitmentGroupDto Upcoming, OverviewCardPaymentsDto? CardPayments = null);
+
+public sealed record OverviewGoalDto(Guid GoalId, string Name, string Priority, string Target, string Allocated, string Remaining, string ProgressPercent, DateOnly? TargetDate, bool Funded);
 
 public sealed record OverviewGoalsDto(string State, int ActiveCount, int CompletedCount, IReadOnlyList<OverviewGoalDto> Items);
 
@@ -63,6 +72,7 @@ public sealed class DashboardOverviewService(
     FinancialGoalAllocationService allocationService,
     FinancialBudgetService budgetService,
     FinancialBudgetExecutionService budgetExecution,
+    Saldo360.Application.CreditCards.Projection.CardProjectionService cardProjection,
     FinancialTransactionService transactionService,
     IPluggyCategorizationService categorization,
     TimeProvider time)
@@ -103,6 +113,7 @@ public sealed class DashboardOverviewService(
 
         var accounts = await BuildAccountsAsync(workspaceId, userId, all, selected, today, ct);
         var commitments = await BuildCommitmentsAsync(workspaceId, userId, selected?.Id, today, ct);
+        commitments = commitments with { CardPayments = await BuildCardPaymentsAsync(workspaceId, userId, selected?.Id, today, ct) };
         var goals = await BuildGoalsAsync(workspaceId, userId, ct);
         var budget = await BuildBudgetAsync(workspaceId, userId, month, ct);
         var recent = await BuildRecentAsync(workspaceId, userId, month, selected?.Id, today, ct);
@@ -159,6 +170,34 @@ public sealed class DashboardOverviewService(
         }
     }
 
+    /// <summary>
+    /// Próxima fatura a pagar de cada cartão ativo, pela mesma projeção de Cartões e da Agenda (nada é recalculado aqui). Com uma conta escolhida, só os cartões que ela
+    /// paga. A obrigação é a fatura pelo vencimento; as compras individuais continuam sendo consumo do orçamento e não entram como saídas bancárias.
+    /// </summary>
+    private async Task<OverviewCardPaymentsDto> BuildCardPaymentsAsync(Guid workspaceId, Guid userId, Guid? accountId, DateOnly today, CancellationToken ct)
+    {
+        var empty = new OverviewCardPaymentsDto("Unavailable", Money.Format(0m), Money.Format(0m), 0, []);
+        try
+        {
+            var result = await cardProjection.InvoiceOverviewAsync(workspaceId, userId, null, ct);
+            if (result.Value is null) return empty;
+            var cards = result.Value.Cards.Where(card => accountId is null || card.Payer?.AccountId == accountId).ToList();
+            var items = cards.Where(card => card.NextDue is not null).Select(card =>
+            {
+                var invoice = card.NextDue!;
+                var status = invoice.AwaitingBankBill ? "AwaitingBankBill" : invoice.Provisional ? "Provisional" : "Confirmed";
+                return new OverviewCardPaymentDto(card.CardId, card.Name, card.Scope, invoice.Competence, invoice.Due, invoice.Due.DayNumber - today.DayNumber, invoice.Obligation, invoice.Paid, invoice.Remaining, status, invoice.PaymentState);
+            }).OrderBy(item => item.Due).ThenBy(item => item.CardName, StringComparer.CurrentCultureIgnoreCase).ToList();
+            var parse = (string value) => decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+            var overdue = cards.Select(card => parse(card.OverdueRemaining)).ToList();
+            return new("Complete", Money.Format(items.Sum(item => parse(item.Remaining))), Money.Format(overdue.Sum()), overdue.Count(value => value > 0m), items);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return empty;
+        }
+    }
+
     private async Task<OverviewGoalsDto> BuildGoalsAsync(Guid workspaceId, Guid userId, CancellationToken ct)
     {
         try
@@ -171,7 +210,7 @@ public sealed class DashboardOverviewService(
             {
                 var progress = await allocationService.ProgressAsync(workspaceId, goal.Id, userId, ct);
                 if (progress is null) continue;
-                visible.Add(new(goal.Id, goal.Name, goal.Priority.ToString(), Money.Format(progress.TargetAmount), Money.Format(progress.AllocatedAmount),
+                visible.Add(new(goal.Id, goal.Name, goal.Priority.ToString(), Money.Format(progress.TargetAmount), Money.Format(progress.AllocatedAmount), Money.Format(progress.RemainingToTarget),
                     progress.ProgressPercentage.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), goal.TargetDate, progress.IsFunded));
             }
             return new("Complete", active.Count, items.Count(g => g.Status == FinancialGoalStatus.Completed), visible);

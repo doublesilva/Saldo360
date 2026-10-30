@@ -234,6 +234,38 @@ describe('Visão Geral — blocos', () => {
     expect(navigations.at(-1)?.section).toBe('goals')
   })
 
+  it('compromissos: a fatura do cartão aparece como obrigação de caixa pelo vencimento, com o restante e se é confirmada ou estimada', async () => {
+    mockApi({ overview: { ...overview, commitments: { ...overview.commitments, cardPayments: { state: 'Complete', total: '1500.00', overdueRemaining: '200.00', overdueCards: 1, items: [
+      { cardId: 'c1', cardName: 'Itaú Visa', cardScope: 'PF', competence: '2026-11', due: '2026-11-15', daysFromToday: 5, obligation: '1000.00', paid: '400.00', remaining: '600.00', status: 'Confirmed', paymentState: 'Partial' },
+      { cardId: 'c2', cardName: 'Nubank', cardScope: 'PF', competence: '2026-11', due: '2026-11-20', daysFromToday: 10, obligation: '900.00', paid: '0.00', remaining: '900.00', status: 'Provisional', paymentState: 'Unpaid' },
+    ] } } } }); renderPage()
+    const group = await screen.findByLabelText('Faturas de cartão')
+    expect(group.textContent).toMatch(/2 · falta pagar R\$\s1\.500,00/)
+    expect(group.textContent).toContain('Confirmada pelo banco')
+    expect(group.textContent).toMatch(/paga em parte: já pago R\$\s400,00 de R\$\s1\.000,00/)
+    expect(group.textContent).toContain('Estimada (provisória)')
+    expect(group.textContent).toMatch(/R\$\s200,00 a pagar em fatura\(s\) já vencida\(s\) de 1 cartão/)
+    expect(screen.getByText(/As compras do cartão não aparecem aqui como saídas/)).toBeTruthy()
+    fireEvent.click(within(group).getByRole('button', { name: /Fatura Nubank/ }))
+    expect(navigations.at(-1)?.section).toBe('cards')
+  })
+
+  it('metas: mostra o que falta, prazo vencido e alvo superado em texto, e abre o objetivo escolhido', async () => {
+    const base = overview.goals.items[0]
+    mockApi({ overview: { ...overview, goals: { ...overview.goals, activeCount: 3, items: [
+      { ...base, goalId: 'g1', targetDate: '2020-01-10' },
+      { ...base, goalId: 'g2', name: 'Viagem', allocated: '1200.00', remaining: '0.00', progressPercent: '120.0', funded: true, targetDate: null },
+    ] } } }); renderPage()
+    const goals = await screen.findByRole('region', { name: 'Metas' })
+    expect(within(goals).getByText(/faltam R\$\s7\.500,00/)).toBeTruthy()
+    expect(within(goals).getByText('Prazo vencido em 10/01/2020')).toBeTruthy()
+    expect(within(goals).getByText(/Alocado acima do alvo \(120,0%\)/)).toBeTruthy()
+    expect(within(goals).getByText('Sem prazo definido')).toBeTruthy()
+    expect(within(goals).getByText(/não aumentam o saldo nem são um limite de orçamento/)).toBeTruthy()
+    fireEvent.click(within(goals).getByRole('button', { name: 'Abrir o objetivo Viagem' }))
+    expect(navigations.at(-1)).toMatchObject({ section: 'goals', context: { goalId: 'g2' } })
+  })
+
   it('últimos lançamentos: período, escopo e exclusão de pagamento de fatura ficam explícitos; classificação pendente é marcada', async () => {
     mockApi(); renderPage()
     const recent = await screen.findByRole('region', { name: 'Últimos lançamentos' })

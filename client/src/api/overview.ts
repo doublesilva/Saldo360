@@ -16,9 +16,12 @@ export interface OverviewAccounts { state: BlockState; asOf: string; items: Over
 
 export interface OverviewCommitment { id: string; source: string; description: string; date: string; amount: string; accountName: string | null; daysFromToday: number }
 export interface OverviewCommitmentGroup { count: number; total: string; items: OverviewCommitment[] }
-export interface OverviewCommitments { state: BlockState; asOf: string; horizonThrough: string; horizonDays: number; overdue: OverviewCommitmentGroup; upcoming: OverviewCommitmentGroup }
+/** Próxima fatura de um cartão como obrigação de CAIXA pelo vencimento. `status`: Confirmed (total do banco), Provisional (projeção) ou AwaitingBankBill. */
+export interface OverviewCardPayment { cardId: string; cardName: string; cardScope: string | null; competence: string; due: string; daysFromToday: number; obligation: string; paid: string; remaining: string; status: 'Confirmed' | 'Provisional' | 'AwaitingBankBill'; paymentState: string }
+export interface OverviewCardPayments { state: BlockState; total: string; overdueRemaining: string; overdueCards: number; items: OverviewCardPayment[] }
+export interface OverviewCommitments { state: BlockState; asOf: string; horizonThrough: string; horizonDays: number; overdue: OverviewCommitmentGroup; upcoming: OverviewCommitmentGroup; cardPayments?: OverviewCardPayments | null }
 
-export interface OverviewGoal { goalId: string; name: string; priority: string; target: string; allocated: string; progressPercent: string; targetDate: string | null; funded: boolean }
+export interface OverviewGoal { goalId: string; name: string; priority: string; target: string; allocated: string; remaining: string; progressPercent: string; targetDate: string | null; funded: boolean }
 export interface OverviewGoals { state: BlockState; activeCount: number; completedCount: number; items: OverviewGoal[] }
 
 export type BudgetStatus = 'WithinBudget' | 'ApproachingLimit' | 'LimitReached' | 'Exceeded'

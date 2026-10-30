@@ -153,6 +153,7 @@ function mockApi() {
     if (/\/accounts(?:\?|$)/.test(url)) return Response.json([itau, inactiveAccount])
     if (/\/categories(?:\?|$)/.test(url)) return Response.json([incomeCategory, expenseCategory, inactiveCategory])
 
+    if (url.includes('/credit-cards/invoice-overview')) return Response.json({ competence: '2026-12', today: '2026-12-10', cards: [], obligation: '0.00', paid: '0.00', remaining: '0.00', coverage: { complete: true, reasons: [] } })
     if (url.includes('/financial-calendar/balances?')) return Response.json(balance(state.changed ? '777.77' : '1000.00'))
     if (url.includes('/financial-calendar?')) {
       const currentItems = state.linkedCancelled

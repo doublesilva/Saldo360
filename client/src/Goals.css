@@ -1,0 +1,26 @@
+/* R05: objetivos financeiros (acumulação). Variáveis de tema existentes; valores e rótulos quebram linha em vez de cortar. */
+.goals { min-width: 0; }
+.goal-list { list-style: none; margin: 1rem 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
+.goal-card { border: 1px solid var(--border); border-radius: .6rem; padding: 1rem; min-width: 0; display: grid; gap: .6rem; align-content: start; }
+.goal-card--completed, .goal-card--paused { border-style: dashed; }
+.goal-card__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.goal-card__open { min-height: 2.5rem; border: 0; background: transparent; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.goal-card__open:focus-visible, .goal-card button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.goal-card__facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: .5rem; margin: 0; }
+.goal-card__facts dt { color: var(--muted); font-size: .8rem; }
+.goal-card__facts dd { margin: .1rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.goal-card__overdue { color: var(--danger, #b42318); }
+.goal-card .meta, .goal-details .meta { overflow-wrap: anywhere; }
+.goal-progress { display: grid; gap: .35rem; }
+.goal-progress__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .4rem; }
+.goal-progress__track { height: .7rem; border-radius: 999px; background: var(--border); overflow: hidden; }
+.goal-progress__track span { display: block; height: 100%; background: var(--accent); }
+.goal-standing--funded, .goal-standing--overfunded { color: var(--success, #1a7f37); }
+.goal-standing--empty, .goal-standing--unavailable { color: var(--warning, #9a6700); }
+.goal-details { margin-top: 1rem; min-width: 0; }
+.goal-allocations { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .5rem; }
+.goal-allocation { display: grid; gap: .2rem; border-top: 1px dashed var(--border); padding-top: .5rem; overflow-wrap: anywhere; }
+.goal-allocation--cancelled { opacity: .75; text-decoration: line-through; text-decoration-color: transparent; }
+.goal-allocation button { justify-self: start; min-height: 2.5rem; }
+.goal-summary p { overflow-wrap: anywhere; }
+@media (max-width: 480px) { .goal-card button, .goal-details button { min-height: 2.75rem; } }

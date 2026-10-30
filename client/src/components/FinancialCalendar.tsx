@@ -15,6 +15,7 @@ import {
 import { addCalendarMonths, endOfMonth, formatMonthYear, startOfMonth, todayInSaoPaulo } from '../dates'
 import { formatBrlDecimal, formatDate } from '../money'
 import { FinancialCalendarDetails } from './FinancialCalendarDetails'
+import { FinancialCalendarCardInvoices } from './FinancialCalendarCardInvoices'
 import { FinancialCalendarBudgetSummary } from './FinancialCalendarBudgetSummary'
 import { OperationalError, OperationalLoading } from './OperationalFeedback'
 
@@ -37,13 +38,13 @@ function errorMessage(error: unknown): string {
 }
 
 /** Visão mensal da Agenda Financeira, com detalhes e operações financeiras existentes. */
-type FinancialCalendarPageProps = { workspaceId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void }
+type FinancialCalendarPageProps = { workspaceId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void; onNavigateToCards?: () => void }
 
 export function FinancialCalendarPage(props: FinancialCalendarPageProps) {
   return <FinancialCalendarPageContent key={props.workspaceId} {...props} />
 }
 
-function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, onNavigateToBudgets }: FinancialCalendarPageProps) {
+function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, onNavigateToBudgets, onNavigateToCards }: FinancialCalendarPageProps) {
   const today = todayInSaoPaulo()
   const [month, setMonth] = useState(() => initialMonth ? startOfMonth(initialMonth) : startOfMonth(today))
   const [selectedDate, setSelectedDate] = useState(today)
@@ -170,6 +171,7 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
               onOpen={(item, trigger) => setOpened({ item, trigger })}
             />
           </div>
+          <FinancialCalendarCardInvoices workspaceId={workspaceId} month={month} accountId={accountId} selectedDate={selectedDate} refreshKey={refreshKey} onOpenCards={onNavigateToCards} />
         </>
       )}
       {accounts.kind === 'loading' ? null : view === 'month' ? (

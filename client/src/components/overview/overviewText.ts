@@ -6,6 +6,11 @@ import type { PlanActualScope } from '../../api/planActual'
 // Textos e formatadores da Visão Geral. Valores monetários continuam sendo texto decimal exato: aqui só se formata, nunca se calcula.
 
 export const money = (value: string | null | undefined) => value === null || value === undefined ? 'Indisponível' : formatBrlDecimal(value)
+/** Valor monetário em texto maior que zero (só comparação de texto; nada é somado nem arredondado). */
+export const isPositiveAmount = (value: string | null | undefined) => typeof value === 'string' && /^\d+\.\d{2}$/.test(value) && /[1-9]/.test(value)
+/** Percentual em texto acima de 100 (alocado passou do alvo). */
+export const exceedsHundred = (percent: string | null | undefined) => typeof percent === 'string' && /^\d+(\.\d+)?$/.test(percent)
+  && (Number.parseInt(percent, 10) > 100 || (Number.parseInt(percent, 10) === 100 && /[1-9]/.test(percent.split('.')[1] ?? '')))
 export const isNegative = (value: string | null | undefined) => typeof value === 'string' && /^-\d+\.\d{2}$/.test(value) && /[1-9]/.test(value)
 export const percentText = (value: string | null) => value === null ? null : `${value.replace('.', ',')}%`
 

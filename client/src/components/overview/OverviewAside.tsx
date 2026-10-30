@@ -1,6 +1,7 @@
-import type { OverviewAccounts, OverviewCommitment, OverviewCommitments, OverviewGoals, OverviewRecent } from '../../api/overview'
+import type { OverviewAccounts, OverviewCardPayments, OverviewCommitment, OverviewCommitments, OverviewGoals, OverviewRecent } from '../../api/overview'
 import { formatDate } from '../../money'
-import { barWidth, percentNow, dayDistance, isNegative, money, monthTitle, percentText, unavailableBalanceReasons } from './overviewText'
+import { todayInSaoPaulo } from '../../dates'
+import { barWidth, percentNow, dayDistance, exceedsHundred, isNegative, isPositiveAmount, money, monthTitle, percentText, unavailableBalanceReasons } from './overviewText'
 
 const Unavailable = ({ children }: { children: string }) => <p className="ov-empty" role="alert">{children}</p>
 
@@ -28,9 +29,10 @@ function CommitmentRow({ item, onOpen }: { item: OverviewCommitment; onOpen: (it
 }
 
 /** Próximos compromissos: despesas pendentes da Agenda, vencidas separadas das que vencem no horizonte informado. */
-export function OverviewCommitmentsBlock({ commitments, onOpenItem, onOpenAgenda }: { commitments: OverviewCommitments; onOpenItem: (item: OverviewCommitment) => void; onOpenAgenda: () => void }) {
+export function OverviewCommitmentsBlock({ commitments, onOpenItem, onOpenAgenda, onOpenCards }: { commitments: OverviewCommitments; onOpenItem: (item: OverviewCommitment) => void; onOpenAgenda: () => void; onOpenCards?: () => void }) {
   const { overdue, upcoming } = commitments
-  const none = overdue.count === 0 && upcoming.count === 0
+  const cards = commitments.cardPayments ?? null
+  const none = overdue.count === 0 && upcoming.count === 0 && !(cards && cards.state === 'Complete' && (cards.items.length > 0 || cards.overdueCards > 0))
   return <section className="ov-card ov-commitments" aria-labelledby="ov-commitments-title">
     <header><div><h3 id="ov-commitments-title">Próximos compromissos</h3>
       <p className="ov-meta">Despesas pendentes da Agenda · vencidas e as dos próximos {commitments.horizonDays} dias (até {formatDate(commitments.horizonThrough)})</p></div>
@@ -45,20 +47,47 @@ export function OverviewCommitmentsBlock({ commitments, onOpenItem, onOpenAgenda
             <ul className="ov-list">{upcoming.items.map(item => <CommitmentRow key={`${item.source}:${item.id}`} item={item} onOpen={onOpenItem} />)}</ul>
             {upcoming.count > upcoming.items.length && <p className="ov-meta">+ {upcoming.count - upcoming.items.length} na Agenda.</p>}</div>}
         </>}
-    <p className="ov-meta ov-meta--note">Faturas de cartão não entram nesta lista: acompanhe-as em Cartões.</p>
+    <CardPaymentsGroup cards={cards} onOpenCards={onOpenCards} />
+    <p className="ov-meta ov-meta--note">As compras do cartão não aparecem aqui como saídas: o que sai do caixa é o pagamento da fatura, listado em "Faturas de cartão".</p>
   </section>
 }
 
+const cardStatusText = { Confirmed: 'Confirmada pelo banco', Provisional: 'Estimada (provisória)', AwaitingBankBill: 'Aguardando a fatura do banco' } as const
+const cardPaymentText: Record<string, string> = { Unpaid: 'não paga', Partial: 'paga em parte', Paid: 'paga', Overpaid: 'paga a mais' }
+
+/**
+ * Faturas de cartão como obrigação de caixa pelo vencimento: o que ainda falta pagar, e se o valor é confirmado pelo banco ou estimado. Depois de um pagamento
+ * só o restante aparece (o pagamento não é somado de novo). O consumo das compras continua no Orçamento.
+ */
+function CardPaymentsGroup({ cards, onOpenCards }: { cards: OverviewCardPayments | null; onOpenCards?: () => void }) {
+  if (!cards) return null
+  if (cards.state === 'Unavailable') return <p className="ov-empty" role="alert">Não foi possível carregar as faturas de cartão.</p>
+  const hasOverdue = cards.overdueCards > 0 && isPositiveAmount(cards.overdueRemaining)
+  if (cards.items.length === 0 && !hasOverdue) return null
+  return <div className="ov-group ov-group--cards" aria-label="Faturas de cartão">
+    <h4>Faturas de cartão <span className="ov-tag">{cards.items.length} · falta pagar {money(cards.total)}</span></h4>
+    {hasOverdue && <p className="ov-notice ov-notice--warning" role="status">Há {money(cards.overdueRemaining)} a pagar em fatura(s) já vencida(s) de {cards.overdueCards} cartão(ões).</p>}
+    <ul className="ov-list">{cards.items.map(item => <li key={`${item.cardId}:${item.competence}`}>
+      <button type="button" className="ov-row" onClick={onOpenCards} disabled={!onOpenCards} aria-label={`Fatura ${item.cardName}, vence em ${formatDate(item.due)}, falta pagar ${money(item.remaining)}, ${cardStatusText[item.status]}. Ver em Cartões`}>
+        <span className="ov-row__main"><strong>{item.cardName}</strong><small>Vence em {formatDate(item.due)} · {dayDistance(item.daysFromToday)} · {cardStatusText[item.status]}{isPositiveAmount(item.paid) ? ` · ${cardPaymentText[item.paymentState] ?? item.paymentState}: já pago ${money(item.paid)} de ${money(item.obligation)}` : ''}</small></span>
+        <span className="ov-amount">{money(item.remaining)}</span></button></li>)}</ul>
+  </div>
+}
+
 /** Metas existentes: nome, valor acumulado, alvo e progresso. Sem novos cálculos. */
-export function OverviewGoalsBlock({ goals, onOpen }: { goals: OverviewGoals; onOpen: () => void }) {
+export function OverviewGoalsBlock({ goals, onOpen, onOpenGoal }: { goals: OverviewGoals; onOpen: () => void; onOpenGoal?: (goalId: string) => void }) {
+  const today = todayInSaoPaulo()
   return <section className="ov-card" aria-labelledby="ov-goals-title">
     <header><div><h3 id="ov-goals-title">Metas</h3>{goals.state === 'Complete' && goals.activeCount > 0 && <p className="ov-meta">{goals.activeCount} ativa(s){goals.completedCount > 0 ? ` · ${goals.completedCount} concluída(s)` : ''}</p>}</div><button type="button" onClick={onOpen}>Ver metas</button></header>
     {goals.state === 'Unavailable' ? <Unavailable>Não foi possível carregar as metas.</Unavailable>
       : goals.items.length === 0 ? <div className="ov-empty"><p>Nenhuma meta ativa.</p><button type="button" onClick={onOpen}>Criar meta</button></div>
         : <ul className="ov-goals">{goals.items.map(goal => <li key={goal.goalId}>
-          <div className="ov-limit__head"><strong>{goal.name}</strong><span className={`ov-tag${goal.funded ? ' ov-tag--ok' : ''}`}>{goal.funded ? 'Alvo atingido' : percentText(goal.progressPercent)}</span></div>
+          <div className="ov-limit__head">{onOpenGoal ? <button type="button" className="button--link" aria-label={`Abrir o objetivo ${goal.name}`} onClick={() => onOpenGoal(goal.goalId)}><strong>{goal.name}</strong></button> : <strong>{goal.name}</strong>}
+            <span className={`ov-tag${goal.funded ? ' ov-tag--ok' : ''}`}>{exceedsHundred(goal.progressPercent) ? `Alocado acima do alvo (${percentText(goal.progressPercent)})` : goal.funded ? 'Alvo atingido' : percentText(goal.progressPercent)}</span></div>
           <div className="ov-bar-track ov-bar-track--goal" role="progressbar" aria-label={`Progresso de ${goal.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentNow(goal.progressPercent)}><span style={{ width: barWidth(goal.progressPercent) }} /></div>
-          <p className="ov-limit__values"><span>{money(goal.allocated)} de {money(goal.target)}</span>{goal.targetDate && <span>até {formatDate(goal.targetDate)}</span>}</p></li>)}</ul>}
+          <p className="ov-limit__values"><span>{money(goal.allocated)} de {money(goal.target)}{goal.funded ? '' : ` · faltam ${money(goal.remaining)}`}</span>
+            {goal.targetDate ? (goal.targetDate < today && !goal.funded ? <span className="ov-tag ov-tag--warning">Prazo vencido em {formatDate(goal.targetDate)}</span> : <span>até {formatDate(goal.targetDate)}</span>) : <span>Sem prazo definido</span>}</p></li>)}</ul>}
+    <p className="ov-meta ov-meta--note">Valores alocados a objetivos são uma reserva dentro do saldo das contas: não aumentam o saldo nem são um limite de orçamento.</p>
   </section>
 }
 

@@ -16,7 +16,7 @@ import '../../Overview.css'
 
 export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions' | 'automation'
 /** Contexto levado ao detalhe: o mês da Agenda, a competência do orçamento ou o recorte da lista de lançamentos. */
-export interface OverviewNavigation { month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature }; newTransaction?: boolean; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
+export interface OverviewNavigation { month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
 
 export interface OverviewSelection { competence: string; scope: PlanActualScopeChoice }
 
@@ -95,9 +95,9 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
           onOpenAll={() => onNavigate('transactions', { transactions: { from: overviewData.recent.from, to: overviewData.recent.through, accountId: overviewData.scopeAccountId }, newTransaction: overviewData.recent.items.length === 0 })} /></div>}
       </div>
       <div className="ov-aside">
-        {overviewData && <div className="ov-slot ov-slot--commitments"><OverviewCommitmentsBlock commitments={overviewData.commitments} onOpenItem={openCommitment} onOpenAgenda={() => openAgenda()} /></div>}
+        {overviewData && <div className="ov-slot ov-slot--commitments"><OverviewCommitmentsBlock commitments={overviewData.commitments} onOpenItem={openCommitment} onOpenAgenda={() => openAgenda()} onOpenCards={() => onNavigate('cards')} /></div>}
         {overviewData && <div className="ov-slot ov-slot--accounts"><OverviewAccountsBlock accounts={overviewData.accounts} scopeKind={overviewData.scopeKind} onOpen={() => onNavigate('accounts')} /></div>}
-        {overviewData && <div className="ov-slot ov-slot--goals"><OverviewGoalsBlock goals={overviewData.goals} onOpen={() => onNavigate('goals')} /></div>}
+        {overviewData && <div className="ov-slot ov-slot--goals"><OverviewGoalsBlock goals={overviewData.goals} onOpen={() => onNavigate('goals')} onOpenGoal={goalId => onNavigate('goals', { goalId })} /></div>}
       </div>
     </div>
   </div>

@@ -22,7 +22,7 @@ export const overview: DashboardOverview = {
       ],
     },
   },
-  goals: { state: 'Complete', activeCount: 1, completedCount: 0, items: [{ goalId: 'g1', name: 'Reserva de emergência', priority: 'High', target: '10000.00', allocated: '2500.00', progressPercent: '25.0', targetDate: '2027-06-30', funded: false }] },
+  goals: { state: 'Complete', activeCount: 1, completedCount: 0, items: [{ goalId: 'g1', name: 'Reserva de emergência', priority: 'High', target: '10000.00', allocated: '2500.00', remaining: '7500.00', progressPercent: '25.0', targetDate: '2027-06-30', funded: false }] },
   budget: {
     state: 'Complete', hasBudget: true, budgetId: 'b1', competence: '2026-10',
     fixed: { targetId: 'tf', group: 'FixedExpenses', categoryId: null, name: 'Despesas fixas', planned: '600.00', consumed: '540.00', pending: '0.00', projected: '540.00', available: '60.00', availableProjected: '60.00', exceeded: '0.00', percent: '90.0', status: 'ApproachingLimit', projectedStatus: 'ApproachingLimit', state: 'Complete', reasons: [] },

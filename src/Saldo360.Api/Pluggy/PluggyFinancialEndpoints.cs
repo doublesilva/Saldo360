@@ -124,6 +124,9 @@ public static class PluggyFinancialEndpoints
             PluggyCategorizationJobOutcome.ConfirmationRequired => Results.ValidationProblem(new Dictionary<string, string[]>
                 { ["confirmExternal"] = ["Confirme explicitamente o envio de descrições saneadas à OpenAI para usar a IA."] }),
             PluggyCategorizationJobOutcome.Busy => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "Já existe uma categorização em andamento neste orçamento."),
+            // Agente de IA indisponível não é erro do servidor: o pedido não pode ser atendido agora e a categorização local continua disponível.
+            PluggyCategorizationJobOutcome.Failed when run.FailureCode == "AiUnavailable" => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "O agente de IA não está disponível neste ambiente.",
+                extensions: new Dictionary<string, object?> { ["code"] = run.FailureCode }),
             PluggyCategorizationJobOutcome.Failed => Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "A categorização não pôde ser concluída.",
                 extensions: new Dictionary<string, object?> { ["code"] = run.FailureCode }),
             _ => Results.Ok(run.Result),
