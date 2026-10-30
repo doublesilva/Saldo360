@@ -79,7 +79,7 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
         {
             using var execution = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get,
                 $"/api/financial-workspaces/{_family.Id}/budgets/{budget}/execution", _owner)).Content.ReadAsStringAsync());
-            Assert.Equal("100.00", execution.RootElement.GetProperty("total").GetProperty("planned").GetString());
+            Assert.Equal("100.00", execution.RootElement.GetProperty("categories").GetProperty("planned").GetString());
         }
     }
 

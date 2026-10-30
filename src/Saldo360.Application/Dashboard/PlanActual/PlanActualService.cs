@@ -18,21 +18,18 @@ public sealed record PlannedFacts(decimal Income, int IncomeCount, decimal Expen
 public sealed record PendingBankFacts(decimal Income, decimal Expense);
 /// <summary>Movimentações em revisão por conta (todas e as do mês) e as dos cartões por conta pagadora.</summary>
 public sealed record ReviewFacts(IReadOnlyDictionary<Guid, int> Total, IReadOnlyDictionary<Guid, int> InMonth, IReadOnlyDictionary<Guid, int> CardByPayer);
-public sealed record CardTargetRow(Guid PayerAccountId, DateOnly EffectiveFrom, decimal? Amount);
 /// <summary>Conexão Pluggy que alimenta uma conta bancária ou os cartões pagos por uma conta.</summary>
 public sealed record ConnectionLink(Guid ConnectionId, Guid? AccountId, Guid? CardPayerAccountId);
 
-/// <summary>Fatos de uma competência que alimentam o planejado e o projetado de despesas: previsões, movimentações PENDING da Pluggy e metas agregadas.</summary>
-public sealed record PlanBasisFacts(PlannedFacts Planned, PendingBankFacts PendingBank, decimal? AggregateCardTarget, decimal? AggregateTotalExpenses);
+/// <summary>Fatos de uma competência que alimentam o planejado e o projetado de despesas: previsões, movimentações PENDING da Pluggy e metas. A meta de cartões é a "Todos os cartões" do orçamento (R03), a única fonte.</summary>
+public sealed record PlanBasisFacts(PlannedFacts Planned, PendingBankFacts PendingBank, decimal? CardBudgetTarget, decimal? AggregateTotalExpenses);
 
 public sealed record PlanActualFacts(
-    PlannedFacts Planned, PendingBankFacts PendingBank, IReadOnlyList<CardTargetRow> CardTargets, decimal? AggregateCardTarget, decimal? AggregateTotalExpenses,
+    PlannedFacts Planned, PendingBankFacts PendingBank, decimal? CardBudgetTarget, decimal? AggregateTotalExpenses,
     ReviewFacts Review, IReadOnlyList<ConnectionLink> Connections, IReadOnlySet<Guid> AccountsWithActivity);
 
 /// <summary>Impressão digital barata dos dados que alimentam o painel: se mudar durante a montagem, a montagem é refeita.</summary>
 public sealed record DataFingerprint(long Transactions, decimal TransactionTotal, long Planned, decimal PlannedTotal, long Imported, long Purchases, long Anchors, DateTimeOffset? LastRun, long PlanLines = 0, decimal PlanTotal = 0m, DateTimeOffset? PlanLastChange = null);
-
-public enum CardTargetSaveOutcome { Saved, AccountNotFound, AccountNotEligible }
 
 public interface IPlanActualRepository
 {
@@ -41,8 +38,6 @@ public interface IPlanActualRepository
     /// <summary>Somente a base de planejado/projetado de uma competência (sem revisões nem conexões): usada pela visão de seis meses. Mesmas regras do <see cref="LoadAsync"/>.</summary>
     Task<PlanBasisFacts> LoadBasisAsync(Guid workspaceId, DateOnly month, IReadOnlyList<Guid>? scopeAccountIds, CancellationToken cancellationToken);
     Task<DataFingerprint> FingerprintAsync(Guid workspaceId, CancellationToken cancellationToken);
-    /// <summary>Grava a meta de cartões de uma conta pagadora a partir da competência (substitui a linha da mesma vigência, se houver). Nunca altera outras vigências.</summary>
-    Task SaveCardTargetAsync(Guid workspaceId, Guid userId, Guid accountId, DateOnly effectiveFrom, decimal? amount, DateTimeOffset now, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -87,27 +82,6 @@ public sealed class PlanActualService(
             if (before == await repository.FingerprintAsync(workspaceId, ct)) return PlanActualResult<PlanActualDashboardDto>.Ok(last with { SnapshotConsistent = true });
         }
         return PlanActualResult<PlanActualDashboardDto>.Ok(last! with { SnapshotConsistent = false });
-    }
-
-    /// <summary>Define (ou encerra, com valor nulo) a meta mensal de cartões da conta pagadora a partir da competência. Não toca nas vigências anteriores.</summary>
-    public async Task<PlanActualResult<CardTargetSavedDto>> SaveCardTargetAsync(Guid workspaceId, Guid userId, CardTargetRequest request, CancellationToken ct)
-    {
-        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, ct) is null) return PlanActualResult<CardTargetSavedDto>.NotFound;
-        if (request.AccountId is not { } accountId) return PlanActualResult<CardTargetSavedDto>.Invalid("accountId", "Informe a conta pagadora.");
-        if (string.IsNullOrWhiteSpace(request.Competence) || !TryMonth(request.Competence, out var from)) return PlanActualResult<CardTargetSavedDto>.Invalid("competence", "Use uma competência válida no formato yyyy-MM.");
-        decimal? amount = null;
-        if (!string.IsNullOrWhiteSpace(request.Amount))
-        {
-            if (!decimal.TryParse(request.Amount, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed) || parsed < 0m)
-                return PlanActualResult<CardTargetSavedDto>.Invalid("amount", "Informe um valor decimal maior ou igual a zero, com ponto.");
-            if (Money.Validate(parsed, "A meta") is { } error) return PlanActualResult<CardTargetSavedDto>.Invalid("amount", error);
-            amount = parsed;
-        }
-        var account = (await accounts.ListAsync(workspaceId, true, ct)).FirstOrDefault(a => a.Id == accountId);
-        if (account is null) return PlanActualResult<CardTargetSavedDto>.NotFound;
-        if (!account.IsActive || !FinancialAccount.IsBankType(account.Type)) return PlanActualResult<CardTargetSavedDto>.Invalid("accountId", "A meta pertence a uma conta bancária ativa (a que paga os cartões).");
-        await repository.SaveCardTargetAsync(workspaceId, userId, accountId, from, amount, time.GetUtcNow(), ct);
-        return PlanActualResult<CardTargetSavedDto>.Ok(new(accountId, from.ToString("yyyy-MM", CultureInfo.InvariantCulture), amount is { } a ? PlanActualCalculator.Cents(a) : null));
     }
 
     private async Task<PlanActualDashboardDto?> BuildAsync(
@@ -266,26 +240,9 @@ public sealed class PlanActualService(
         if (cardReasons.Count > 0 || !projectionComplete) reasons.Add(PlanActualCalculator.Reasons.CardCoverageIncomplete);
         reasons.AddRange(cardReasons.Select(r => "Cards:" + r));
 
-        decimal? target = null; string? source = null; var partial = false;
-        IReadOnlyList<Guid> payers;
-        // Meta vigente de cada conta pagadora: a última vigência até a competência (um valor nulo encerra a meta).
-        decimal? TargetOf(Guid payer) => facts.CardTargets.Where(t => t.PayerAccountId == payer && t.EffectiveFrom <= month).OrderByDescending(t => t.EffectiveFrom).FirstOrDefault()?.Amount;
-        if (selected is not null)
-        {
-            payers = [selected.Id];
-            target = TargetOf(selected.Id); source = target is null ? null : "CardTarget";
-        }
-        else
-        {
-            payers = slices.Where(s => s.PayerAccountId is not null).Select(s => s.PayerAccountId!.Value).Distinct().ToList();
-            if (facts.AggregateCardTarget is { } aggregate) { target = aggregate; source = "AggregateTarget"; }
-            else
-            {
-                var defined = payers.Select(TargetOf).Where(t => t is not null).Select(t => t!.Value).ToList();
-                if (defined.Count > 0) { target = defined.Sum(); source = "CardTarget"; partial = defined.Count < payers.Count || slices.Any(s => s.PayerAccountId is null); }
-            }
-            if (partial) reasons.Add(PlanActualCalculator.Reasons.PartialPlan);
-        }
+        // Meta única "Todos os cartões" do orçamento do mês (R03). Ela vale para o conjunto dos cartões: numa conta específica não há meta (não existe teto individual).
+        IReadOnlyList<Guid> payers = selected is not null ? [selected.Id] : slices.Where(s => s.PayerAccountId is not null).Select(s => s.PayerAccountId!.Value).Distinct().ToList();
+        decimal? target = selected is null ? facts.CardBudgetTarget : null; string? source = target is null ? null : "BudgetTarget"; const bool partial = false;
         if (target is null && slices.Count > 0) reasons.Add(PlanActualCalculator.Reasons.PlanNotDefined);
         return PlanActualCalculator.CardTarget(slices, target, source, partial, payers, reasons);
     }

@@ -196,11 +196,11 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         var execution = await GetExecutionAsync(budget.Id);
 
         Assert.Empty(execution.Targets);
-        Assert.Equal(("0.00", "0.00", "0.00", "0.00", "0.00", "0.00", "0.00"), Values(execution.Total));
-        Assert.Equal("WithinBudget", execution.Total.Status);
-        Assert.Equal(0, execution.Total.ApproachingCount);
-        Assert.Equal(0, execution.Total.ReachedCount);
-        Assert.Equal(0, execution.Total.ExceededCount);
+        Assert.Equal(("0.00", "0.00", "0.00", "0.00", "0.00", "0.00", "0.00"), Values(execution.Categories));
+        Assert.Equal("WithinBudget", execution.Categories.Status);
+        Assert.Equal(0, execution.Categories.ApproachingCount);
+        Assert.Equal(0, execution.Categories.ReachedCount);
+        Assert.Equal(0, execution.Categories.ExceededCount);
     }
 
     [Fact]
@@ -226,7 +226,7 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
 
         Assert.Equal(("1000.00", "100.10", "200.20", "300.30", "699.70", "0.00", "30.03"), Values(housing));
         Assert.Equal(("0.00", "0.00", "0.00", "0.00", "0.00", "0.00", "0.00"), Values(empty));
-        Assert.Equal(("1000.00", "100.10", "200.20", "300.30", "699.70", "0.00", "30.03"), Values(execution.Total));
+        Assert.Equal(("1000.00", "100.10", "200.20", "300.30", "699.70", "0.00", "30.03"), Values(execution.Categories));
     }
 
     [Fact]
@@ -413,13 +413,14 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
         return await ReadAsync<ExecutionDto>(response);
     }
 
+    // Estes testes cobrem a agregação exata (projetado = efetivo + cartão + previsto); a semântica de consumido/disponível está em BudgetTargetsR03Tests.
     private static (string, string, string, string, string, string, string?) Values(ExecutionAmountsDto value) =>
-        (value.Planned, value.Realized, value.Committed, value.ProjectedConsumption, value.Available,
-            value.ExceededAmount, value.ConsumptionPercentage);
+        (value.Planned, value.Realized, value.Committed, value.ProjectedConsumption, value.AvailableProjected,
+            value.ExceededProjected, value.ProjectedPercentage);
 
     private static (string, string, string, string, string, string, string?) Values(TargetExecutionDto value) =>
-        (value.Planned, value.Realized, value.Committed, value.ProjectedConsumption, value.Available,
-            value.ExceededAmount, value.ConsumptionPercentage);
+        (value.Planned, value.Realized, value.Committed, value.ProjectedConsumption, value.AvailableProjected,
+            value.ExceededProjected, value.ProjectedPercentage);
 
     private static async Task AssertValidationAsync(HttpResponseMessage response, string field)
     {
@@ -433,11 +434,12 @@ public sealed class FinancialBudgetEndpointsTests(PostgresFixture postgres) : Po
     private sealed record TargetDto(Guid Id, string Name, string PlannedAmount, string GroupingType, CategoryDto Category, bool IsArchived);
     private sealed record BudgetDto(Guid Id, string Competence, string? Description, bool IsArchived,
         string TotalPlannedAmount, List<TargetDto> Targets, DateTimeOffset? ArchivedAt);
-    private sealed record ExecutionDto(Guid BudgetId, string Competence, ExecutionAmountsDto Total, List<TargetExecutionDto> Targets);
-    private sealed record ExecutionAmountsDto(string Planned, string Realized, string Committed,
-        string ProjectedConsumption, string Available, string ExceededAmount, string? ConsumptionPercentage,
+    private sealed record ExecutionDto(Guid BudgetId, string Competence, ExecutionAmountsDto Categories, List<TargetExecutionDto> Targets);
+    private sealed record ExecutionAmountsDto(string Planned, string Consumed, string Realized, string Committed,
+        string ProjectedConsumption, string Available, string AvailableProjected, string ExceededAmount, string ExceededProjected,
+        string? ConsumptionPercentage, string? ProjectedPercentage,
         string? Status, string? AlertMessage, int ApproachingCount, int ReachedCount, int ExceededCount);
-    private sealed record TargetExecutionDto(Guid TargetId, Guid CategoryId, string Planned, string Realized,
-        string Committed, string ProjectedConsumption, string Available, string ExceededAmount, string? ConsumptionPercentage,
-        string? Status, string? AlertMessage);
+    private sealed record TargetExecutionDto(Guid TargetId, Guid CategoryId, string Planned, string Consumed, string Realized,
+        string Committed, string ProjectedConsumption, string Available, string AvailableProjected, string ExceededAmount, string ExceededProjected,
+        string? ConsumptionPercentage, string? ProjectedPercentage, string? Status, string? AlertMessage);
 }

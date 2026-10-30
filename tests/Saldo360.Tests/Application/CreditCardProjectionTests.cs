@@ -16,7 +16,9 @@ public sealed class CreditCardProjectionTests
         Assert.Equal(100m, amounts.Committed);
         Assert.Equal(300m, amounts.CreditCardCommitted);
         Assert.Equal(600m, amounts.ProjectedConsumption);
-        Assert.Equal(400m, amounts.Available);
+        Assert.Equal(500m, amounts.Consumed); // efetivo + cartão lançado
+        Assert.Equal(500m, amounts.Available); // limite − consumido
+        Assert.Equal(400m, amounts.AvailableProjected); // limite − (consumido + previsto adicional)
     }
 
 }

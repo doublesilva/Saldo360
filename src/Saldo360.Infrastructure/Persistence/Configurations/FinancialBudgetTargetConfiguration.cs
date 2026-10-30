@@ -10,13 +10,17 @@ namespace Saldo360.Infrastructure.Persistence.Configurations;
 internal sealed class FinancialBudgetTargetConfiguration : IEntityTypeConfiguration<FinancialBudgetTarget>
 {
     public const string UniqueGroupingIndex = "ux_financial_budget_targets_budget_grouping_category";
+    public const string UniqueAggregateIndex = "ux_financial_budget_targets_budget_aggregate";
 
     public void Configure(EntityTypeBuilder<FinancialBudgetTarget> builder)
     {
         builder.ToTable("financial_budget_targets", table =>
         {
-            table.HasCheckConstraint("ck_financial_budget_targets_grouping_type", "grouping_type = 'Category'");
-            table.HasCheckConstraint("ck_financial_budget_targets_category_type", "category_type = 'Expense'");
+            table.HasCheckConstraint("ck_financial_budget_targets_grouping_type", "grouping_type IN ('Category', 'FixedExpenses', 'AllCards')");
+            table.HasCheckConstraint("ck_financial_budget_targets_category_type", "category_type IS NULL OR category_type = 'Expense'");
+            // Meta por categoria exige categoria; fixas e cartões não têm categoria.
+            table.HasCheckConstraint("ck_financial_budget_targets_category_scope",
+                "(grouping_type = 'Category') = (category_id IS NOT NULL) AND (category_id IS NULL) = (category_type IS NULL)");
             table.HasCheckConstraint("ck_financial_budget_targets_name_not_blank", "btrim(name) <> ''");
             table.HasCheckConstraint("ck_financial_budget_targets_name_trimmed", "octet_length(name) = octet_length(btrim(name))");
             table.HasCheckConstraint("ck_financial_budget_targets_amount_nonnegative", "planned_amount >= 0");
@@ -33,6 +37,9 @@ internal sealed class FinancialBudgetTargetConfiguration : IEntityTypeConfigurat
         builder.Property(item => item.CategoryType).HasConversion<string>().HasMaxLength(20);
         builder.HasIndex(item => new { item.BudgetId, item.GroupingType, item.CategoryId })
             .IsUnique().HasDatabaseName(UniqueGroupingIndex);
+        // No máximo uma meta de despesas fixas e uma de todos os cartões por orçamento (category_id nulo não se distingue no índice acima).
+        builder.HasIndex(item => new { item.BudgetId, item.GroupingType })
+            .IsUnique().HasFilter("category_id IS NULL").HasDatabaseName(UniqueAggregateIndex);
         builder.HasOne<FinancialBudget>().WithMany()
             .HasForeignKey(item => new { item.WorkspaceId, item.BudgetId })
             .HasPrincipalKey(item => new { item.WorkspaceId, item.Id })

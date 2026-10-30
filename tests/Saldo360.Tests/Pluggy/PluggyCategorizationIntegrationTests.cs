@@ -285,15 +285,16 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
         Assert.Equal(0, Ai.Calls); // sincronização nunca depende nem aciona a IA
     }
 
-    private async Task<Ctx> ArrangeCardAsync(string user, decimal billTotal)
+    private async Task<Ctx> ArrangeCardAsync(string user, decimal billTotal, bool withBill = true)
     {
         var c = await ArrangeAsync(user, link: false);
         Pluggy.TransactionsByAccount[BankA] = [];
-        Pluggy.BillsByAccount[CardA] = [new("bill-1", DateTimeOffset.Parse(D(8) + "T00:00:00Z"), billTotal, "BRL", null, null, [], DateTimeOffset.Parse(D(15) + "T00:00:00Z"), [])];
+        Pluggy.BillsByAccount[CardA] = withBill ? [new("bill-1", DateTimeOffset.Parse(D(8) + "T00:00:00Z"), billTotal, "BRL", null, null, [], DateTimeOffset.Parse(D(15) + "T00:00:00Z"), [])] : [];
+        var billId = withBill ? "bill-1" : null;
         Pluggy.TransactionsByAccount[CardA] =
         [
-            Tx("c1", CardA, 20, 150m, "PAGAMENTO", "Restaurante", "Eating out", new(null, null, null, null, "bill-1", "2222", null, null), "DEBIT"),
-            Tx("c2", CardA, 19, 50m, "PAGAMENTO", "Coisa", "Strange", new(null, null, null, null, "bill-1", "2222", null, null), "DEBIT"),
+            Tx("c1", CardA, 20, 150m, "PAGAMENTO", "Restaurante", "Eating out", new(null, null, null, null, billId, "2222", null, null), "DEBIT"),
+            Tx("c2", CardA, 19, 50m, "PAGAMENTO", "Coisa", "Strange", new(null, null, null, null, billId, "2222", null, null), "DEBIT"),
         ];
         var response = await PostAsync(c, $"{Integration(c.Workspace)}/links", new { connectionId = c.Connection, pluggyAccountId = CardA, mode = "CreateNew", name = "Cartão", closingDay = 10, dueDay = 18 });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -318,6 +319,54 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
 
         Assert.Equal(["50.00:Outros", "150.00:Restaurantes"], await PurchaseCategoriesAsync()); // reconhecida muda; desconhecida mantém "Outros"; valores intactos
         Assert.Equal(1, run.GetProperty("pluggy").GetInt32());
+    }
+
+    /// <summary>Cria, para cada mês de vencimento de fatura, o orçamento com a meta "Todos os cartões" e soma o consumo, os registros de competência estimada e os itens.</summary>
+    private async Task<(decimal Consumed, int Estimated, List<JsonElement> Items)> CardBudgetAsync(Ctx c)
+    {
+        List<DateOnly> dues;
+        await using (var db = Db()) dues = await db.FinancialCreditCardInvoices.Where(i => i.WorkspaceId == c.Workspace).Select(i => i.DueDate).ToListAsync();
+        var root = $"/api/financial-workspaces/{c.Workspace}/budgets";
+        decimal consumed = 0m; var estimated = 0; var items = new List<JsonElement>();
+        foreach (var competence in dues.Select(d => d.ToString("yyyy-MM")).Distinct())
+        {
+            var budget = await JsonOf(await Send(c.Client, HttpMethod.Post, root, c.Session, new { competence }));
+            var budgetId = budget.GetProperty("id").GetGuid();
+            var withTarget = await JsonOf(await Send(c.Client, HttpMethod.Post, $"{root}/{budgetId}/targets", c.Session, new { groupingType = "AllCards", plannedAmount = "1000.00" }));
+            var targetId = withTarget.GetProperty("targets")[0].GetProperty("id").GetGuid();
+            var execution = await JsonOf(await Send(c.Client, HttpMethod.Get, $"{root}/{budgetId}/execution", c.Session));
+            var target = execution.GetProperty("targets").EnumerateArray().Single();
+            consumed += decimal.Parse(target.GetProperty("consumed").GetString()!, System.Globalization.CultureInfo.InvariantCulture);
+            estimated += target.GetProperty("coverage").GetProperty("estimatedCompetenceCount").GetInt32();
+            var composition = await JsonOf(await Send(c.Client, HttpMethod.Get, $"{root}/{budgetId}/targets/{targetId}/composition", c.Session));
+            items.AddRange(composition.GetProperty("items").EnumerateArray().Select(i => i.Clone()));
+        }
+        return (consumed, estimated, items);
+    }
+
+    [Fact]
+    public async Task CardPurchasesWithTheBanksBillHaveAReliableCompetenceAndAreCountedInTheInvoiceDueMonth()
+    {
+        var c = await ArrangeCardAsync("r03-card-bill", billTotal: 999m);
+
+        var (consumed, estimated, items) = await CardBudgetAsync(c);
+
+        Assert.Equal((200m, 0, 2), (consumed, estimated, items.Count));
+        Assert.All(items, item => Assert.True(item.GetProperty("competenceReliable").GetBoolean()));
+    }
+
+    [Fact]
+    public async Task CardPurchasesWithoutTheBanksBillAreFlaggedAsEstimatedCompetenceInsteadOfSilentlyPlacedInTheCurrentMonth()
+    {
+        var c = await ArrangeCardAsync("r03-card-nobill", billTotal: 999m, withBill: false);
+
+        var (consumed, estimated, items) = await CardBudgetAsync(c);
+
+        // A compra entra pela competência do calendário configurado do cartão (mês de vencimento da fatura), nunca "no mês corrente" por omissão, e a meta avisa
+        // que a cobertura é incompleta; os registros afetados são identificáveis na composição.
+        Assert.Equal((200m, 2, 2), (consumed, estimated, items.Count));
+        Assert.All(items, item => Assert.False(item.GetProperty("competenceReliable").GetBoolean()));
+        Assert.All(items, item => Assert.False(string.IsNullOrEmpty(item.GetProperty("invoiceCompetence").GetString())));
     }
 
     [Fact]

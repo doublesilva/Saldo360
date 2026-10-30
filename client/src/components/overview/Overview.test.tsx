@@ -182,37 +182,45 @@ describe('Visão Geral — blocos', () => {
     expect(await screen.findByText(/Nenhuma despesa pendente na Agenda neste horizonte/)).toBeTruthy()
   })
 
-  it('orçamento: cada meta mostra valores junto da barra, o excedente é destacado e abre o orçamento da competência', async () => {
+  it('orçamento: fixas, todos os cartões e categorias aparecem à parte, cada meta com limite, consumido e disponível', async () => {
     mockApi(); renderPage()
     const budget = await screen.findByRole('region', { name: /Orçamento de/ })
-    expect(within(budget).getByText(/1 meta\(s\) excedida\(s\)/)).toBeTruthy()
-    const housing = within(budget).getByRole('progressbar', { name: 'Consumo de Moradia' })
-    expect(housing.getAttribute('aria-valuetext')).toBe('120,0% do limite')
+    expect(within(budget).getByText(/1 meta\(s\) de categoria excedida\(s\)/)).toBeTruthy()
+    const fixed = within(budget).getByRole('progressbar', { name: 'Consumo de Despesas fixas' })
+    expect(fixed.getAttribute('aria-valuetext')).toBe('90,0%')
+    expect(within(budget).getByText(/R\$ 540,00 de R\$ 600,00 · 90,0%/)).toBeTruthy()
+    expect(within(budget).getByText('Disponível R$ 60,00')).toBeTruthy()
+    expect(within(budget).getByText(/R\$ 4\.200,00 de R\$ 5\.000,00 · 84,0%/)).toBeTruthy() // todos os cartões somados, um limite só
+    expect(within(budget).getByText(/Faturas com vencimento em/)).toBeTruthy()
     expect(within(budget).getByText(/R\$ 1\.200,00 de R\$ 1\.000,00 · 120,0%/)).toBeTruthy()
     expect(within(budget).getByText('Excedido em R$ 200,00')).toBeTruthy()
-    expect(within(budget).getByText('Excedido')).toBeTruthy()
-    expect(within(budget).getByText('Dentro do limite')).toBeTruthy()
+    expect(within(budget).getByText('Excedido')).toBeTruthy() // o estado vem em texto
+    expect(within(budget).getByText(/Dados incompletos: competência de cartão estimada/)).toBeTruthy()
     expect(within(budget).getByText(/seus valores não são somados/)).toBeTruthy()
+    expect(within(budget).queryByText(/Total do orçamento/i)).toBeNull() // nenhuma soma entre perspectivas
+  })
+
+  it('orçamento: cada grupo abre o orçamento da competência já nele', async () => {
+    mockApi(); renderPage()
+    const budget = await screen.findByRole('region', { name: /Orçamento de/ })
+    const open = within(budget).getAllByRole('button', { name: 'Abrir composição' })
+
+    fireEvent.click(open[0])
+    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10', budgetGroup: 'fixed' } })
+    fireEvent.click(open[1])
+    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10', budgetGroup: 'cards' } })
+    fireEvent.click(open[2])
+    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10', budgetGroup: 'categories' } })
     fireEvent.click(within(budget).getByRole('button', { name: 'Abrir orçamento' }))
     expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10' } })
   })
 
-  it('orçamento: a meta dos cartões aparece à parte, com perspectiva própria', async () => {
-    mockApi(); renderPage()
-    const budget = await screen.findByRole('region', { name: /Orçamento de/ })
-    const cards = await within(budget).findByRole('progressbar', { name: 'Consumo da meta dos cartões' })
-    expect(cards.getAttribute('aria-valuetext')).toBe('86,0% da meta')
-    expect(within(budget).getByText('Meta própria')).toBeTruthy()
-    expect(within(budget).getByText(/R\$ 4\.300,00 de R\$ 5\.000,00/)).toBeTruthy()
-  })
-
-  it('orçamento: sem orçamento no mês mostra o estado vazio com a ação correspondente', async () => {
-    mockApi({ overview: { ...overview, budget: { state: 'Complete', hasBudget: false, budgetId: null, planned: null, projected: null, realized: null, exceededCount: 0, approachingCount: 0, targets: [] } },
-      plan: plan({ cards: { ...planActual.cards, plannedState: 'NotDefined', target: null } }) })
+  it('orçamento: sem metas no mês mostra o estado vazio com a ação correspondente', async () => {
+    mockApi({ overview: { ...overview, budget: { state: 'Complete', hasBudget: false, budgetId: null, competence: '2026-10', fixed: null, cards: null, categories: { count: 0, planned: null, consumed: null, exceededCount: 0, approachingCount: 0, targets: [] } } } })
     renderPage()
     const budget = await screen.findByRole('region', { name: /Orçamento de/ })
-    expect(await within(budget).findByText(/Nenhum orçamento definido para/)).toBeTruthy()
-    fireEvent.click(within(budget).getByRole('button', { name: 'Definir orçamento' }))
+    expect(await within(budget).findByText(/Nenhuma meta definida para/)).toBeTruthy()
+    fireEvent.click(within(budget).getByRole('button', { name: 'Definir metas' }))
     expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10' } })
   })
 
@@ -284,7 +292,7 @@ describe('Visão Geral — estados e falhas', () => {
 
   it('um bloco indisponível dentro da resposta é dito como indisponível, nunca como vazio ou zero', async () => {
     mockApi({ overview: { ...overview, accounts: { ...overview.accounts, state: 'Unavailable', items: [] }, goals: { ...overview.goals, state: 'Unavailable', items: [], activeCount: 0 },
-      commitments: { ...overview.commitments, state: 'Unavailable' }, recent: { ...overview.recent, state: 'Unavailable', items: [], totalCount: 0 }, budget: { ...overview.budget, state: 'Unavailable', hasBudget: false, targets: [] } } })
+      commitments: { ...overview.commitments, state: 'Unavailable' }, recent: { ...overview.recent, state: 'Unavailable', items: [], totalCount: 0 }, budget: { ...overview.budget, state: 'Unavailable', hasBudget: false, fixed: null, cards: null, categories: { count: 0, planned: null, consumed: null, exceededCount: 0, approachingCount: 0, targets: [] } } } })
     renderPage()
     expect(await screen.findByText('Não foi possível carregar as contas.')).toBeTruthy()
     expect(screen.getByText('Não foi possível carregar as metas.')).toBeTruthy()

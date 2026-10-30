@@ -1,3 +1,4 @@
+using Saldo360.Domain.Budgets;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Saldo360.Application.MonthlyPlan;
@@ -21,9 +22,9 @@ internal sealed class MonthlyPlanRepository(Saldo360DbContext db) : IMonthlyPlan
         var limits = await (from t in db.FinancialBudgetTargets.AsNoTracking()
                             join b in db.FinancialBudgets.AsNoTracking() on t.BudgetId equals b.Id
                             join c in db.FinancialCategories.AsNoTracking() on t.CategoryId equals c.Id
-                            where t.WorkspaceId == workspaceId && !t.IsArchived && !b.IsArchived && b.Competence >= first && b.Competence <= last
+                            where t.WorkspaceId == workspaceId && t.GroupingType == BudgetTargetGroupingType.Category && t.CategoryId != null && !t.IsArchived && !b.IsArchived && b.Competence >= first && b.Competence <= last
                             orderby b.Competence, c.Name, t.Id
-                            select new { t.Id, t.BudgetId, b.Competence, t.CategoryId, CategoryName = c.Name, t.PlannedAmount }).ToListAsync(ct);
+                            select new { t.Id, t.BudgetId, b.Competence, CategoryId = t.CategoryId!.Value, CategoryName = c.Name, t.PlannedAmount }).ToListAsync(ct);
 
         // O valor original de um limite é o da primeira entrada do histórico: o criado, ou o anterior à primeira revisão (metas anteriores ao histórico).
         var ids = limits.Select(l => l.Id).ToList();

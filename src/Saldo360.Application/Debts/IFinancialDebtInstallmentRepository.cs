@@ -12,6 +12,8 @@ public interface IFinancialDebtInstallmentRepository
  Task<PaymentDto?> GetPaymentAsync(Guid workspaceId, Guid paymentId, CancellationToken ct);
  Task AddInstallmentAsync(FinancialDebtInstallment item, CancellationToken ct);
  Task<(FinancialDebtPayment Payment, FinancialTransaction Transaction)?> AddPaymentAsync(FinancialDebtPayment payment, FinancialTransaction transaction, CancellationToken ct);
+ /// <summary>Categoria de despesa do orçamento disponível para nova classificação (ativa e, numa subcategoria, com a principal ativa).</summary>
+ Task<bool> IsExpenseCategoryAvailableAsync(Guid workspaceId, Guid categoryId, CancellationToken ct);
  Task SaveAsync(CancellationToken ct);
  Task<bool> CancelPaymentAsync(Guid workspaceId, Guid paymentId, Guid userId, DateTimeOffset now, CancellationToken ct);
 }

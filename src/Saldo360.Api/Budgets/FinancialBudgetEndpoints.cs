@@ -15,6 +15,7 @@ public static class FinancialBudgetEndpoints
         budgets.MapGet("/", List);
         budgets.MapGet("/{budgetId:guid}", Get);
         budgets.MapGet("/{budgetId:guid}/execution", GetExecution);
+        budgets.MapGet("/{budgetId:guid}/targets/{targetId:guid}/composition", GetComposition);
         budgets.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         budgets.MapPut("/{budgetId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
         budgets.MapDelete("/{budgetId:guid}", Archive).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -52,6 +53,16 @@ public static class FinancialBudgetEndpoints
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
         var result = await service.GetAsync(workspaceId, budgetId, userId, cancellationToken);
         return result is null ? Results.NotFound() : Results.Ok(FinancialBudgetExecutionResponse.From(result));
+    }
+
+    /// <summary>Registros que compõem o consumo de uma meta (mesma lista e regra do resumo), paginados. O total vem do servidor.</summary>
+    private static async Task<IResult> GetComposition(
+        Guid workspaceId, Guid budgetId, Guid targetId, int? page, int? pageSize, CurrentUser currentUser, FinancialBudgetExecutionService service,
+        CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        var result = await service.GetCompositionAsync(workspaceId, budgetId, targetId, userId, page, pageSize, cancellationToken);
+        return result is null ? Results.NotFound() : Results.Ok(BudgetCompositionResponse.From(result));
     }
 
     private static async Task<IResult> Create(
@@ -156,7 +167,7 @@ public sealed record FinancialBudgetTargetResponse(
     string Name,
     string PlannedAmount,
     BudgetTargetGroupingType GroupingType,
-    FinancialBudgetCategoryDto Category,
+    FinancialBudgetCategoryDto? Category,
     bool IsArchived,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
@@ -167,71 +178,100 @@ public sealed record FinancialBudgetTargetResponse(
         dto.CreatedAt, dto.UpdatedAt, dto.ArchivedAt);
 }
 
+/// <summary>
+/// Execução do mês. <c>categories</c> resume só as metas de categoria (que não se sobrepõem); fixas e cartões vêm em <c>targets</c> e nunca entram em
+/// uma soma global, porque contam os mesmos gastos por outra perspectiva.
+/// </summary>
 public sealed record FinancialBudgetExecutionResponse(
     Guid BudgetId,
     string Competence,
-    FinancialBudgetExecutionSummaryResponse Total,
+    FinancialBudgetExecutionSummaryResponse Categories,
     IReadOnlyList<FinancialBudgetTargetExecutionResponse> Targets)
 {
     public static FinancialBudgetExecutionResponse From(FinancialBudgetExecutionDto dto) => new(
         dto.BudgetId,
         dto.Competence.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-        FinancialBudgetExecutionSummaryResponse.From(dto.Total),
+        FinancialBudgetExecutionSummaryResponse.From(dto.Categories),
         dto.Targets.Select(FinancialBudgetTargetExecutionResponse.From).ToList());
+}
+
+public sealed record BudgetCoverageResponse(int EstimatedCompetenceCount, int UndefinedNatureCount, string UndefinedNatureAmount, bool NoCards)
+{
+    public static BudgetCoverageResponse From(BudgetCoverage? coverage) => coverage is null
+        ? new(0, 0, Money.Format(0m), false)
+        : new(coverage.EstimatedCompetenceCount, coverage.UndefinedNatureCount, Money.Format(coverage.UndefinedNatureAmount), coverage.NoCards);
 }
 
 public sealed record FinancialBudgetTargetExecutionResponse(
     Guid TargetId,
-    Guid CategoryId,
+    BudgetTargetGroupingType GroupingType,
+    Guid? CategoryId,
     string Planned,
+    string Consumed,
     string Realized,
+    string CreditCardCommitted,
     string Committed,
     string ProjectedConsumption,
     string Available,
+    string AvailableProjected,
     string ExceededAmount,
+    string ExceededProjected,
     string? ConsumptionPercentage,
+    string? ProjectedPercentage,
     FinancialBudgetAlertStatus Status,
+    FinancialBudgetAlertStatus ProjectedStatus,
     string AlertMessage,
-    string CreditCardCommitted = "0.00")
+    BudgetCoverageResponse Coverage)
 {
     public static FinancialBudgetTargetExecutionResponse From(FinancialBudgetTargetExecutionDto dto)
     {
         var amounts = FinancialBudgetExecutionAmountsResponse.From(dto.Amounts);
-        return new(dto.TargetId, dto.CategoryId, amounts.Planned, amounts.Realized, amounts.Committed,
-            amounts.ProjectedConsumption, amounts.Available, amounts.ExceededAmount, amounts.ConsumptionPercentage,
-            dto.Status, dto.AlertMessage, amounts.CreditCardCommitted);
+        return new(dto.TargetId, dto.GroupingType, dto.CategoryId, amounts.Planned, amounts.Consumed, amounts.Realized, amounts.CreditCardCommitted, amounts.Committed,
+            amounts.ProjectedConsumption, amounts.Available, amounts.AvailableProjected, amounts.ExceededAmount, amounts.ExceededProjected,
+            amounts.ConsumptionPercentage, amounts.ProjectedPercentage, dto.Status, dto.ProjectedStatus, dto.AlertMessage, BudgetCoverageResponse.From(dto.Coverage));
     }
 }
 
 public sealed record FinancialBudgetExecutionAmountsResponse(
     string Planned,
+    string Consumed,
     string Realized,
+    string CreditCardCommitted,
     string Committed,
     string ProjectedConsumption,
     string Available,
+    string AvailableProjected,
     string ExceededAmount,
+    string ExceededProjected,
     string? ConsumptionPercentage,
-    string CreditCardCommitted = "0.00")
+    string? ProjectedPercentage)
 {
+    private static string? Percent(decimal? value) => value is { } percentage ? percentage.ToString("F2", CultureInfo.InvariantCulture) : null;
+
     public static FinancialBudgetExecutionAmountsResponse From(FinancialBudgetExecutionAmounts amounts) => new(
         Money.Format(amounts.Planned),
+        Money.Format(amounts.Consumed),
         Money.Format(amounts.Realized),
+        Money.Format(amounts.CreditCardCommitted),
         Money.Format(amounts.Committed),
         Money.Format(amounts.ProjectedConsumption),
         Money.Format(amounts.Available),
+        Money.Format(amounts.AvailableProjected),
         Money.Format(amounts.ExceededAmount),
-        amounts.ConsumptionPercentage is { } percentage
-            ? percentage.ToString("F2", CultureInfo.InvariantCulture)
-            : null,
-        Money.Format(amounts.CreditCardCommitted));
+        Money.Format(amounts.ExceededProjected),
+        Percent(amounts.ConsumptionPercentage),
+        Percent(amounts.ProjectedPercentage));
 }
 
 public sealed record FinancialBudgetExecutionSummaryResponse(
     string Planned,
+    string Consumed,
     string Realized,
+    string CreditCardCommitted,
     string Committed,
     string ProjectedConsumption,
     string Available,
+    string AvailableProjected,
     string ExceededAmount,
     string? ConsumptionPercentage,
     FinancialBudgetAlertStatus Status,
@@ -239,22 +279,69 @@ public sealed record FinancialBudgetExecutionSummaryResponse(
     int ApproachingCount,
     int ReachedCount,
     int ExceededCount,
-    string CreditCardCommitted = "0.00")
+    int TargetCount,
+    string ExceededProjected,
+    string? ProjectedPercentage,
+    FinancialBudgetAlertStatus ProjectedStatus)
 {
     public static FinancialBudgetExecutionSummaryResponse From(FinancialBudgetExecutionSummary summary) => new(
         Money.Format(summary.Planned),
+        Money.Format(summary.Consumed),
         Money.Format(summary.Realized),
+        Money.Format(summary.CreditCardCommitted),
         Money.Format(summary.Committed),
         Money.Format(summary.ProjectedConsumption),
         Money.Format(summary.Available),
+        Money.Format(summary.AvailableProjected),
         Money.Format(summary.ExceededAmount),
-        summary.ConsumptionPercentage is { } percentage
-            ? percentage.ToString("F2", CultureInfo.InvariantCulture)
-            : null,
+        summary.ConsumptionPercentage is { } percentage ? percentage.ToString("F2", CultureInfo.InvariantCulture) : null,
         summary.Status,
         summary.AlertMessage,
         summary.ApproachingCount,
         summary.ReachedCount,
         summary.ExceededCount,
-        Money.Format(summary.CreditCardCommitted));
+        summary.TargetCount,
+        Money.Format(summary.ExceededProjected),
+        summary.ProjectedPercentage is { } projected ? projected.ToString("F2", CultureInfo.InvariantCulture) : null,
+        summary.ProjectedStatus);
+}
+
+public sealed record BudgetCompositionItemResponse(
+    BudgetFactOrigin Origin,
+    Guid RecordId,
+    DateOnly Date,
+    string Amount,
+    BudgetFactState State,
+    Guid? CategoryId,
+    string? CategoryPath,
+    Saldo360.Domain.Categories.ExpenseNature ExpenseNature,
+    string Description,
+    Guid? CardId,
+    string? CardName,
+    string? AccountName,
+    string? InvoiceCompetence,
+    bool CompetenceReliable);
+
+public sealed record BudgetCompositionCardResponse(Guid CardId, string CardName, string Consumed, int Count);
+
+public sealed record BudgetCompositionResponse(
+    Guid BudgetId,
+    string Competence,
+    Guid TargetId,
+    BudgetTargetGroupingType GroupingType,
+    FinancialBudgetExecutionAmountsResponse Amounts,
+    FinancialBudgetAlertStatus Status,
+    BudgetCoverageResponse Coverage,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    IReadOnlyList<BudgetCompositionItemResponse> Items,
+    IReadOnlyList<BudgetCompositionCardResponse> Cards)
+{
+    public static BudgetCompositionResponse From(BudgetCompositionDto dto) => new(
+        dto.BudgetId, dto.Competence.ToString("yyyy-MM", CultureInfo.InvariantCulture), dto.TargetId, dto.GroupingType,
+        FinancialBudgetExecutionAmountsResponse.From(dto.Amounts), dto.Status, BudgetCoverageResponse.From(dto.Coverage), dto.Page, dto.PageSize, dto.TotalCount,
+        dto.Items.Select(item => new BudgetCompositionItemResponse(item.Origin, item.RecordId, item.Date, Money.Format(item.Amount), item.State, item.CategoryId, item.CategoryPath,
+            item.Nature, item.Description, item.CardId, item.CardName, item.AccountName, item.InvoiceCompetence, item.CompetenceReliable)).ToList(),
+        dto.Cards.Select(card => new BudgetCompositionCardResponse(card.CardId, card.CardName, Money.Format(card.Consumed), card.Count)).ToList());
 }

@@ -98,12 +98,13 @@ export function FinancialCalendarBudgetSummary({
 }
 
 function CalendarBudgetTotals({ execution }: { execution: FinancialBudgetExecution }) {
-  const total = execution.total
+  // A Agenda é uma visão projetada: usa as metas de categoria (que não se sobrepõem) e a situação pela projeção.
+  const total = execution.categories
   return (
     <div className="calendar-budget__content">
-      <div className={`calendar-budget__status calendar-budget__status--${total.status}`} role="status">
-        <span aria-hidden="true">{statusIcons[total.status]}</span>
-        <strong>{statusLabels[total.status]}</strong>
+      <div className={`calendar-budget__status calendar-budget__status--${total.projectedStatus}`} role="status">
+        <span aria-hidden="true">{statusIcons[total.projectedStatus]}</span>
+        <strong>{statusLabels[total.projectedStatus]}</strong>
         <span>{total.alertMessage}</span>
       </div>
       <dl className="calendar-budget__totals">
@@ -111,8 +112,8 @@ function CalendarBudgetTotals({ execution }: { execution: FinancialBudgetExecuti
         <CalendarBudgetValue label="Realizado" value={total.realized} />
         <CalendarBudgetValue label="Comprometido" value={total.committed} />
         <CalendarBudgetValue label="Consumo projetado" value={total.projectedConsumption} />
-        <CalendarBudgetValue label="Disponível" value={total.available} />
-        <CalendarBudgetValue label="Excedente" value={total.exceededAmount} />
+        <CalendarBudgetValue label="Disponível" value={total.availableProjected} />
+        <CalendarBudgetValue label="Excedente" value={total.exceededProjected} />
       </dl>
       <div className="calendar-budget__counts" aria-label="Contagem de alertas">
         <span>Atenção: <strong>{total.approachingCount}</strong></span>
@@ -129,12 +130,12 @@ function CalendarBudgetValue({ label, value }: { label: string; value: string })
 
 function CalendarBudgetAlerts({ budget, execution }: { budget: FinancialBudget; execution: FinancialBudgetExecution }) {
   const targets = useMemo(() => execution.targets
-    .filter((item) => item.status !== 'WithinBudget')
+    .filter((item) => item.groupingType === 'Category' && item.projectedStatus !== 'WithinBudget')
     .map((item) => ({
       item,
-      name: budget.targets.find((target) => target.id === item.targetId)?.category.name ?? 'Categoria',
+      name: (() => { const found = budget.targets.find((target) => target.id === item.targetId); return found?.category?.path ?? found?.category?.name ?? found?.name ?? 'Categoria' })(),
     }))
-    .sort((a, b) => severity[a.item.status] - severity[b.item.status] || a.name.localeCompare(b.name, 'pt-BR')), [budget.targets, execution.targets])
+    .sort((a, b) => severity[a.item.projectedStatus] - severity[b.item.projectedStatus] || a.name.localeCompare(b.name, 'pt-BR')), [budget.targets, execution.targets])
 
   return (
     <section className="calendar-budget__alerts" aria-labelledby="calendar-budget-alerts-title">
@@ -142,12 +143,12 @@ function CalendarBudgetAlerts({ budget, execution }: { budget: FinancialBudget; 
       {targets.length === 0 ? <p className="meta">Nenhuma meta ativa exige atenção.</p> : (
         <ul>
           {targets.map(({ item, name }) => (
-            <li key={item.targetId} className={`calendar-budget-alert calendar-budget-alert--${item.status}`}>
-              <div><strong>{name}</strong><span><span aria-hidden="true">{statusIcons[item.status]}</span> {statusLabels[item.status]}</span></div>
+            <li key={item.targetId} className={`calendar-budget-alert calendar-budget-alert--${item.projectedStatus}`}>
+              <div><strong>{name}</strong><span><span aria-hidden="true">{statusIcons[item.projectedStatus]}</span> {statusLabels[item.projectedStatus]}</span></div>
               <dl>
                 <div><dt>Planejado</dt><dd>{formatBrlDecimal(item.planned)}</dd></div>
                 <div><dt>Projetado</dt><dd>{formatBrlDecimal(item.projectedConsumption)}</dd></div>
-                <div><dt>{item.status === 'Exceeded' ? 'Excedente' : 'Disponível'}</dt><dd>{formatBrlDecimal(item.status === 'Exceeded' ? item.exceededAmount : item.available)}</dd></div>
+                <div><dt>{item.projectedStatus === 'Exceeded' ? 'Excedente' : 'Disponível'}</dt><dd>{formatBrlDecimal(item.projectedStatus === 'Exceeded' ? item.exceededProjected : item.availableProjected)}</dd></div>
               </dl>
             </li>
           ))}

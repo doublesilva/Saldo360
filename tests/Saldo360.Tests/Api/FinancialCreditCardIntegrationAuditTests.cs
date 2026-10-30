@@ -49,8 +49,8 @@ public sealed class FinancialCreditCardIntegrationAuditTests(PostgresFixture pos
             new { categoryId = _category, name = "Compras", groupingType = "Category", plannedAmount = "2000.00" });
         Assert.Equal(HttpStatusCode.Created, target.StatusCode);
         var execution = await GetJsonAsync($"/api/financial-workspaces/{_family.Id}/budgets/{budget}/execution");
-        Assert.Equal("400.00", Money(execution.GetProperty("total"), "creditCardCommitted"));
-        Assert.Equal("400.00", Money(execution.GetProperty("total"), "projectedConsumption"));
+        Assert.Equal("400.00", Money(execution.GetProperty("categories"), "creditCardCommitted"));
+        Assert.Equal("400.00", Money(execution.GetProperty("categories"), "projectedConsumption"));
 
         var projectionBefore = await GetJsonAsync($"/api/financial-workspaces/{_family.Id}/accounts/{_account}/projection?through=2026-11-30");
         Assert.Equal("1200.00", Money(projectionBefore, "creditCardOutstanding"));

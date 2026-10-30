@@ -1,12 +1,20 @@
 import { CSRF_HEADER, getCsrfToken } from './csrf'
 import type { FinancialCategory } from './categories'
+import type { ExpenseNature } from './expenseNature'
+
+/**
+ * Tipo de meta: por categoria (a principal inclui as subcategorias), despesas fixas (toda despesa fixa, de qualquer categoria e meio de pagamento) e
+ * todos os cartões (somados). As três são perspectivas dos mesmos gastos: coexistem e nunca se somam.
+ */
+export type BudgetGroupingType = 'Category' | 'FixedExpenses' | 'AllCards'
 
 export interface FinancialBudgetTarget {
   id: string
   name: string
   plannedAmount: string
-  groupingType: 'Category'
-  category: Pick<FinancialCategory, 'id' | 'name' | 'isActive'>
+  groupingType: BudgetGroupingType
+  /** Só nas metas por categoria. */
+  category: (Pick<FinancialCategory, 'id' | 'name' | 'isActive'> & { parentName?: string | null; path?: string }) | null
   isArchived: boolean
   createdAt: string
   updatedAt: string
@@ -25,45 +33,113 @@ export interface FinancialBudget {
   archivedAt: string | null
 }
 
-export interface FinancialBudgetExecutionAmounts {
-  planned: string
-  realized: string
-  committed: string
-  projectedConsumption: string
-  available: string
-  exceededAmount: string
-  consumptionPercentage: string | null
-}
-
 export type FinancialBudgetAlertStatus = 'WithinBudget' | 'ApproachingLimit' | 'LimitReached' | 'Exceeded'
 
+/** Sinais de dados incompletos de uma meta. Nunca viram "zero confirmado". */
+export interface BudgetCoverage {
+  /** Compras de cartão cuja competência veio só do calendário configurado do cartão (sem a fatura do banco). */
+  estimatedCompetenceCount: number
+  /** Despesas do mês sem tipo definido (só informado na meta de fixas): não entram nela. */
+  undefinedNatureCount: number
+  undefinedNatureAmount: string
+  /** Meta de cartões sem nenhum cartão cadastrado: não há consumo a medir. */
+  noCards: boolean
+}
+
+/**
+ * Consumido = efetivo + compras/parcelas já lançadas nos cartões. Previsto adicional (`committed`) = compromissos cadastrados ainda não realizados.
+ * Projetado = consumido + previsto. Disponível = limite − consumido; disponível projetado = limite − projetado.
+ */
 export interface FinancialBudgetTargetExecution {
   targetId: string
-  categoryId: string
+  groupingType: BudgetGroupingType
+  categoryId: string | null
   planned: string
+  consumed: string
+  realized: string
+  creditCardCommitted: string
+  committed: string
+  projectedConsumption: string
+  available: string
+  availableProjected: string
+  exceededAmount: string
+  exceededProjected: string
+  consumptionPercentage: string | null
+  projectedPercentage: string | null
+  status: FinancialBudgetAlertStatus
+  projectedStatus: FinancialBudgetAlertStatus
+  alertMessage: string
+  coverage: BudgetCoverage
+}
+
+/** Resumo conjunto só das metas de categoria (não se sobrepõem). Fixas e cartões nunca entram em soma alguma. */
+export interface FinancialBudgetCategoriesSummary {
+  planned: string
+  consumed: string
   realized: string
   committed: string
   projectedConsumption: string
   available: string
+  availableProjected: string
   exceededAmount: string
   consumptionPercentage: string | null
+  exceededProjected: string
+  projectedPercentage: string | null
   status: FinancialBudgetAlertStatus
-  alertMessage: string
-}
-
-export interface FinancialBudgetExecutionSummary extends FinancialBudgetExecutionAmounts {
-  status: FinancialBudgetAlertStatus
+  /** Situação pela projeção (consumido + previsto adicional): é a que a Agenda, de natureza projetada, usa. */
+  projectedStatus: FinancialBudgetAlertStatus
   alertMessage: string
   approachingCount: number
   reachedCount: number
   exceededCount: number
+  targetCount: number
 }
 
 export interface FinancialBudgetExecution {
   budgetId: string
   competence: string
-  total: FinancialBudgetExecutionSummary
+  categories: FinancialBudgetCategoriesSummary
   targets: FinancialBudgetTargetExecution[]
+}
+
+export type BudgetFactState = 'Realized' | 'CardLaunched' | 'Pending'
+export type BudgetFactOrigin = 'Transaction' | 'PlannedTransaction' | 'DebtPayment' | 'DebtInstallment' | 'CardInstallment' | 'CardKnownInstallment' | 'CardAdjustment'
+
+export interface BudgetCompositionItem {
+  origin: BudgetFactOrigin
+  recordId: string
+  date: string
+  /** Assinado: crédito/estorno de cartão é negativo. */
+  amount: string
+  state: BudgetFactState
+  categoryId: string | null
+  categoryPath: string | null
+  expenseNature: ExpenseNature
+  description: string
+  cardId: string | null
+  cardName: string | null
+  accountName: string | null
+  invoiceCompetence: string | null
+  /** False: a competência do cartão é estimativa (sem a fatura do banco). */
+  competenceReliable: boolean
+}
+
+export interface BudgetCompositionCard { cardId: string; cardName: string; consumed: string; count: number }
+
+export interface BudgetComposition {
+  budgetId: string
+  competence: string
+  targetId: string
+  groupingType: BudgetGroupingType
+  amounts: Omit<FinancialBudgetTargetExecution, 'targetId' | 'groupingType' | 'categoryId' | 'status' | 'projectedStatus' | 'alertMessage' | 'coverage'>
+  status: FinancialBudgetAlertStatus
+  coverage: BudgetCoverage
+  page: number
+  pageSize: number
+  totalCount: number
+  items: BudgetCompositionItem[]
+  /** Participação de cada cartão: só informativa (não há teto individual). */
+  cards: BudgetCompositionCard[]
 }
 
 export type BudgetSaveResult =
@@ -130,19 +206,27 @@ export function updateBudget(workspaceId: string, budgetId: string, description:
 
 export type TargetSaveResult = BudgetSaveResult
 
-export function addBudgetTarget(
+export type NewBudgetTarget =
+  | { groupingType: 'Category'; categoryId: string; name: string; plannedAmount: string }
+  | { groupingType: 'FixedExpenses' | 'AllCards'; plannedAmount: string }
+
+/** Cria a meta. Fixas e todos os cartões não têm categoria nem nome (o servidor define) e há no máximo uma de cada por orçamento. */
+export function addBudgetTarget(workspaceId: string, budgetId: string, target: NewBudgetTarget): Promise<TargetSaveResult> {
+  return writeBudget('POST', `${budgetsUrl(workspaceId, budgetId)}/targets`, target, 201)
+}
+
+/** Registros que compõem o consumo de uma meta, paginados no servidor (mesma lista e regra do resumo). */
+export async function getBudgetComposition(
   workspaceId: string,
   budgetId: string,
-  categoryId: string,
-  plannedAmount: string,
-  name: string,
-): Promise<TargetSaveResult> {
-  return writeBudget('POST', `${budgetsUrl(workspaceId, budgetId)}/targets`, {
-    categoryId,
-    plannedAmount,
-    name,
-    groupingType: 'Category',
-  }, 201)
+  targetId: string,
+  page: number,
+  pageSize: number,
+  signal?: AbortSignal,
+): Promise<BudgetComposition> {
+  const response = await fetch(`${budgetsUrl(workspaceId, budgetId)}/targets/${encodeURIComponent(targetId)}/composition?page=${page}&pageSize=${pageSize}`, { signal, headers: jsonHeaders })
+  if (!response.ok) throw new Error(`Falha ao carregar a composição da meta (HTTP ${response.status}).`)
+  return (await response.json()) as BudgetComposition
 }
 
 export function updateBudgetTarget(

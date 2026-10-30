@@ -7,6 +7,8 @@ import { OperationalError, OperationalLoading } from '../OperationalFeedback'
 import { OverviewIndicators, OverviewNotices } from './OverviewIndicators'
 import { OverviewEvolution } from './OverviewEvolution'
 import { OverviewBudget } from './OverviewBudget'
+import type { BudgetGroup } from '../budget/budgetText'
+import type { ExpenseNature } from '../../api/expenseNature'
 import { OverviewAccountsBlock, OverviewCommitmentsBlock, OverviewGoalsBlock, OverviewRecentBlock } from './OverviewAside'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
 import { useLoad } from './useLoad'
@@ -14,7 +16,7 @@ import '../../Overview.css'
 
 export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions'
 /** Contexto levado ao detalhe: o mês da Agenda, a competência do orçamento ou o recorte da lista de lançamentos. */
-export interface OverviewNavigation { month?: string; competence?: string; transactions?: { from: string; to: string; accountId: string | null }; newTransaction?: boolean }
+export interface OverviewNavigation { month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature }; newTransaction?: boolean }
 
 export interface OverviewSelection { competence: string; scope: PlanActualScopeChoice }
 
@@ -88,7 +90,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
 
         {overview.load.state === 'loading' && !overviewData && <section className="ov-card"><OperationalLoading>Carregando orçamento, contas e compromissos…</OperationalLoading></section>}
         {overview.load.state === 'error' && <section className="ov-card"><h3>Orçamento, contas e compromissos</h3><OperationalError error={overview.load.error} onRetry={overview.retry} retryLabel="Recarregar" /></section>}
-        {overviewData && <div className="ov-slot ov-slot--budget"><OverviewBudget competence={competence} budget={overviewData.budget} cards={planData?.cards ?? null} onOpenBudget={() => onNavigate('budgets', { competence })} /></div>}
+        {overviewData && <div className="ov-slot ov-slot--budget"><OverviewBudget competence={competence} budget={overviewData.budget} onOpenBudget={group => onNavigate('budgets', { competence, budgetGroup: group })} /></div>}
         {overviewData && <div className="ov-slot ov-slot--recent"><OverviewRecentBlock recent={overviewData.recent} competence={competence} scopeText={scopeText}
           onOpenAll={() => onNavigate('transactions', { transactions: { from: overviewData.recent.from, to: overviewData.recent.through, accountId: overviewData.scopeAccountId }, newTransaction: overviewData.recent.items.length === 0 })} /></div>}
       </div>

@@ -79,8 +79,9 @@ public sealed class FinancialBudgetService(
             || await budgets.FindBudgetAsync(workspaceId, budgetId, cancellationToken) is not { } budget)
             return BudgetResult.NotFound;
         if (budget.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
-        var errors = ValidateTarget(name, amount, groupingType, categoryId, out var normalized);
+        var errors = ValidateTarget(name, amount, groupingType, categoryId, out var normalized, out var grouping);
         if (errors.Count > 0) return BudgetResult.Invalid(errors);
+        if (grouping != BudgetTargetGroupingType.Category) return await AddAggregateTargetAsync(workspaceId, budget, userId, amount!.Value, grouping, cancellationToken);
         var category = await budgets.GetCategoryAsync(workspaceId, categoryId!.Value, cancellationToken);
         if (category is null) return BudgetResult.NotFound;
         if (!category.IsExpense)
@@ -109,12 +110,13 @@ public sealed class FinancialBudgetService(
             || await budgets.FindTargetAsync(budgetId, targetId, cancellationToken) is not { } target)
             return BudgetResult.NotFound;
         if (budget.IsArchived || target.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
-        var errors = ValidateTarget(name, amount, nameof(BudgetTargetGroupingType.Category), target.CategoryId, out var normalized);
+        // Metas consolidadas têm nome fixo; só o limite muda.
+        var errors = ValidateTarget(target.GroupingType == BudgetTargetGroupingType.Category ? name : target.Name, amount, target.GroupingType.ToString(), target.CategoryId, out var normalized, out _);
         if (errors.Count > 0) return BudgetResult.Invalid(errors);
         var now = timeProvider.GetUtcNow();
         var previous = target.PlannedAmount;
         target.Update(normalized, amount!.Value, userId, now);
-        if (previous != amount.Value)
+        if (previous != amount.Value && target.GroupingType == BudgetTargetGroupingType.Category)
             history.Stage(FinancialPlanHistoryEntry.Create(workspaceId, budget.Competence, PlanHistorySubject.CategoryLimit, target.Id, PlanHistoryAction.Revised,
                 normalized, previous, amount.Value, note, userId, now));
         await budgets.TrySaveChangesAsync(cancellationToken);
@@ -130,7 +132,7 @@ public sealed class FinancialBudgetService(
             return BudgetResult.NotFound;
         if (budget.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
         var now = timeProvider.GetUtcNow();
-        if (!target.IsArchived)
+        if (!target.IsArchived && target.GroupingType == BudgetTargetGroupingType.Category)
             history.Stage(FinancialPlanHistoryEntry.Create(workspaceId, budget.Competence, PlanHistorySubject.CategoryLimit, target.Id, PlanHistoryAction.Removed,
                 target.Name, target.PlannedAmount, null, note, userId, now));
         target.Archive(userId, now);
@@ -147,12 +149,12 @@ public sealed class FinancialBudgetService(
             || await budgets.FindTargetAsync(budgetId, targetId, cancellationToken) is not { } target)
             return BudgetResult.NotFound;
         if (budget.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
-        if (await budgets.RelatedTargetExistsAsync(budgetId, target.CategoryId, cancellationToken)) return BudgetResult.Conflict(BudgetResult.OverlappingTargetMessage);
-        var errors = ValidateTarget(target.Name, amount, nameof(BudgetTargetGroupingType.Category), target.CategoryId, out var normalized);
+        if (target.CategoryId is { } restoredCategory && await budgets.RelatedTargetExistsAsync(budgetId, restoredCategory, cancellationToken)) return BudgetResult.Conflict(BudgetResult.OverlappingTargetMessage);
+        var errors = ValidateTarget(target.Name, amount, target.GroupingType.ToString(), target.CategoryId, out var normalized, out _);
         if (errors.Count > 0) return BudgetResult.Invalid(errors);
         var now = timeProvider.GetUtcNow();
         target.Restore(normalized, amount!.Value, userId, now);
-        history.Stage(FinancialPlanHistoryEntry.Create(workspaceId, budget.Competence, PlanHistorySubject.CategoryLimit, target.Id, PlanHistoryAction.Restored,
+        if (target.GroupingType == BudgetTargetGroupingType.Category) history.Stage(FinancialPlanHistoryEntry.Create(workspaceId, budget.Competence, PlanHistorySubject.CategoryLimit, target.Id, PlanHistoryAction.Restored,
             normalized, null, amount.Value, note, userId, now));
         await budgets.TrySaveChangesAsync(cancellationToken);
         return BudgetResult.Ok((await budgets.GetAsync(workspaceId, budgetId, cancellationToken))!);
@@ -177,17 +179,52 @@ public sealed class FinancialBudgetService(
         return errors;
     }
 
+    public const string FixedExpensesName = "Despesas fixas";
+    public const string AllCardsName = "Todos os cartões";
+
+    private async Task<BudgetResult> AddAggregateTargetAsync(
+        Guid workspaceId, FinancialBudget budget, Guid userId, decimal amount, BudgetTargetGroupingType grouping, CancellationToken cancellationToken)
+    {
+        var name = grouping == BudgetTargetGroupingType.FixedExpenses ? FixedExpensesName : AllCardsName;
+        var now = timeProvider.GetUtcNow();
+        var existing = await budgets.FindAggregateTargetAsync(budget.Id, grouping, cancellationToken);
+        if (existing is { IsArchived: false })
+            return BudgetResult.Conflict(grouping == BudgetTargetGroupingType.FixedExpenses ? BudgetResult.DuplicateFixedTargetMessage : BudgetResult.DuplicateCardsTargetMessage);
+        if (existing is not null)
+        {
+            // A meta removida volta no mesmo registro, com o novo limite.
+            existing.Restore(name, amount, userId, now);
+            await budgets.TrySaveChangesAsync(cancellationToken);
+            return BudgetResult.Ok((await budgets.GetAsync(workspaceId, budget.Id, cancellationToken))!);
+        }
+        var target = FinancialBudgetTarget.CreateAggregate(workspaceId, budget.Id, name, amount, grouping, userId, now);
+        return await budgets.TryAddTargetAsync(target, cancellationToken)
+            ? BudgetResult.Ok((await budgets.GetAsync(workspaceId, budget.Id, cancellationToken))!)
+            : BudgetResult.Conflict(grouping == BudgetTargetGroupingType.FixedExpenses ? BudgetResult.DuplicateFixedTargetMessage : BudgetResult.DuplicateCardsTargetMessage);
+    }
+
     private static Dictionary<string, string[]> ValidateTarget(
-        string? name, decimal? amount, string? groupingType, Guid? categoryId, out string normalized)
+        string? name, decimal? amount, string? groupingType, Guid? categoryId, out string normalized, out BudgetTargetGroupingType grouping)
     {
         var errors = new Dictionary<string, string[]>();
+        grouping = BudgetTargetGroupingType.Category;
+        var knownGrouping = Enum.TryParse(groupingType, ignoreCase: false, out BudgetTargetGroupingType parsed) && Enum.IsDefined(parsed);
+        if (knownGrouping) grouping = parsed;
+        // Metas consolidadas têm nome fixo, definido aqui; o cliente só informa o limite.
+        if (knownGrouping && grouping == BudgetTargetGroupingType.FixedExpenses) name = FixedExpensesName;
+        else if (knownGrouping && grouping == BudgetTargetGroupingType.AllCards) name = AllCardsName;
         if (!FinancialBudgetTarget.TryNormalizeName(name, out normalized, out var nameError)) errors["name"] = [nameError!];
         if (amount is null) errors["plannedAmount"] = ["Informe o valor planejado."];
         else if (amount < 0m) errors["plannedAmount"] = ["O valor planejado não pode ser negativo."];
         else if (Money.Validate(amount.Value, "O valor planejado") is { } amountError) errors["plannedAmount"] = [amountError];
-        if (groupingType != nameof(BudgetTargetGroupingType.Category))
-            errors["groupingType"] = ["Agrupamento inválido. Use Category."];
-        if (categoryId is null || categoryId == Guid.Empty) errors["categoryId"] = ["Informe a categoria de despesa."];
+        if (!knownGrouping)
+            errors["groupingType"] = ["Tipo de meta inválido. Use Category, FixedExpenses ou AllCards."];
+        else if (grouping == BudgetTargetGroupingType.Category)
+        {
+            if (categoryId is null || categoryId == Guid.Empty) errors["categoryId"] = ["Informe a categoria de despesa."];
+        }
+        else if (categoryId is { } given && given != Guid.Empty)
+            errors["categoryId"] = ["Esta meta não tem categoria: despesas fixas e todos os cartões valem para qualquer categoria."];
         return errors;
     }
 

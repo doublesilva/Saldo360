@@ -1,0 +1,119 @@
+/* R03: orçamento com três grupos de metas (fixas, todos os cartões e categorias) e a composição de cada meta. */
+
+.budgets__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.budget-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.budget-group__empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.budget-group__empty p {
+  margin: 0;
+  flex: 1 1 16rem;
+}
+
+.budget-group__summary {
+  margin: 0;
+}
+
+.budget-overlap-note {
+  margin-top: 1.25rem;
+}
+
+.budget-footer {
+  margin-top: 1rem;
+}
+
+.budget-target__extra,
+.budget-target__hint {
+  margin: 0.25rem 0;
+}
+
+.notice {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--warn, #d6b35a);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+
+/* Composição: lista paginada dos registros que formam o consumo. */
+.budget-composition {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  min-width: 0;
+}
+
+.budget-composition__cards,
+.budget-composition__list {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.budget-composition__cards li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+}
+
+.budget-composition__item {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  min-width: 0;
+}
+
+.budget-composition__main {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.budget-composition__description {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.budget-composition__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 640px) {
+  .budgets__actions {
+    width: 100%;
+  }
+
+  .budget-composition__main {
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+}

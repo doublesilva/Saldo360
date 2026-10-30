@@ -7,6 +7,7 @@ import { Categories } from './Categories'
 import { Transactions } from './Transactions'
 import { Transfers } from './Transfers'
 import { Planned } from './Planned'
+import type { BudgetGroup } from './budget/budgetText'
 import { Overview, type OverviewNavigation, type OverviewSection, type OverviewSelection } from './overview/Overview'
 import { FinancialCalendarPage } from './FinancialCalendar'
 import { FinancialBudgetsPage } from './FinancialBudgets'
@@ -43,17 +44,21 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
   const [version, setVersion] = useState(0)
   const [month, setMonth] = useState<string | undefined>()
   const [competence, setCompetence] = useState<string | undefined>()
+  const [budgetGroup, setBudgetGroup] = useState<BudgetGroup | undefined>()
   // Competência e conta da Visão Geral ficam aqui para sobreviver à ida a um detalhe e à volta.
   const [overviewSelection, setOverviewSelection] = useState<OverviewSelection>(() => ({ competence: todayInSaoPaulo().slice(0, 7), scope: { kind: 'primary' } }))
   const [transactionContext, setTransactionContext] = useState<{ key: number; filters?: OverviewNavigation['transactions']; newTransaction?: boolean } | null>(null)
   const changed = () => setVersion(value => value + 1)
   const agenda = (value: string) => { setMonth(`${value}-01`); setSection('calendar') }
-  const budgets = (value: string) => { setCompetence(value); setSection('budgets') }
+  const budgets = (value: string) => { setCompetence(value); setBudgetGroup(undefined); setSection('budgets') }
+  // Orçamento → lançamentos: leva ao fluxo existente de classificação, filtrado nas despesas do período que ainda não têm tipo definido.
+  const reviewClassification = (range: { from: string; to: string }) => { setTransactionContext({ key: Date.now(), filters: { ...range, accountId: null, expenseNature: 'Undefined' } }); setSection('transactions') }
   const workspaceId = workspace.id
   // Resumo → detalhe: leva a conta, a competência ou a data da Visão Geral para a página de destino.
   const openFromOverview = (target: OverviewSection, context?: OverviewNavigation) => {
     setMonth(target === 'calendar' && context?.month ? `${context.month}-01` : undefined)
     setCompetence(target === 'budgets' ? context?.competence : undefined)
+    setBudgetGroup(target === 'budgets' ? context?.budgetGroup : undefined)
     setTransactionContext(target === 'transactions' ? { key: Date.now(), filters: context?.transactions, newTransaction: context?.newTransaction } : null)
     setSection(target)
   }
@@ -69,7 +74,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     {section === 'settings' && <WorkspaceSettings workspaceId={workspaceId} onReset={onReset} />}
     {section === 'overview' && <Overview workspaceId={workspaceId} refreshKey={version} selection={overviewSelection} onSelectionChange={setOverviewSelection} onNavigate={openFromOverview} />}
     {section === 'calendar' && <FinancialCalendarPage key={month} workspaceId={workspaceId} initialMonth={month} onChanged={changed} onNavigateToBudgets={budgets} />}
-    {section === 'budgets' && <FinancialBudgetsPage key={competence} workspaceId={workspaceId} initialCompetence={competence} refreshKey={version} onNavigateToAgenda={agenda} />}
+    {section === 'budgets' && <FinancialBudgetsPage key={`${competence}:${budgetGroup}`} workspaceId={workspaceId} initialCompetence={competence} initialGroup={budgetGroup} refreshKey={version} onNavigateToAgenda={agenda} onReviewClassification={reviewClassification} />}
     {section === 'cards' && <FinancialCreditCardsPage workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'recurrences' && <FinancialRecurrences workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToAgenda={agenda} />}
     {section === 'planning' && <PlanningHub workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
@@ -77,7 +82,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     {section === 'goals' && <FinancialGoals workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToPlanning={() => setSection('planning')} />}
     {section === 'accounts' && <Accounts workspaceId={workspaceId} members={[{ userId: workspace.ownerUserId, displayName: 'Você', isCurrentUser: true }]} balanceVersion={version} />}
     {section === 'categories' && <Categories workspaceId={workspaceId} />}
-    {section === 'transactions' && <Transactions key={transactionContext?.key} workspaceId={workspaceId} onChanged={changed} refreshKey={version} initialFilters={transactionContext?.filters ? { from: transactionContext.filters.from, to: transactionContext.filters.to, accountId: transactionContext.filters.accountId ?? '' } : undefined} startWithForm={transactionContext?.newTransaction} />}
+    {section === 'transactions' && <Transactions key={transactionContext?.key} workspaceId={workspaceId} onChanged={changed} refreshKey={version} initialFilters={transactionContext?.filters ? { from: transactionContext.filters.from, to: transactionContext.filters.to, accountId: transactionContext.filters.accountId ?? '', ...(transactionContext.filters.expenseNature ? { expenseNature: transactionContext.filters.expenseNature, type: 'Expense' as const } : {}) } : undefined} startWithForm={transactionContext?.newTransaction} />}
     {section === 'transfers' && <Transfers workspaceId={workspaceId} onChanged={changed} />}
     {section === 'planned' && <Planned workspaceId={workspaceId} onChanged={changed} refreshKey={version} />}
   </AppShell>

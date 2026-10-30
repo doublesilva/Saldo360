@@ -215,11 +215,16 @@ public sealed class DashboardOverviewTests(PostgresFixture postgres) : PostgresA
 
         var block = (await GetAsync(s, s.Overview("?scope=all"))).GetProperty("budget");
 
-        Assert.Equal(("Complete", true, 1), (Text(block, "state"), block.GetProperty("hasBudget").GetBoolean(), block.GetProperty("exceededCount").GetInt32()));
-        var targets = block.GetProperty("targets").EnumerateArray().ToList();
-        Assert.Equal(["Despesas", "Alimentação"], targets.Select(t => Text(t, "categoryName")).ToArray()); // o excedido vem primeiro
-        Assert.Equal(("100.00", "130.00", "30.00", "Exceeded"), (Text(targets[0], "planned"), Text(targets[0], "realized"), Text(targets[0], "exceeded"), Text(targets[0], "status")));
-        Assert.Equal(("500.00", "50.00", "450.00", "WithinBudget"), (Text(targets[1], "planned"), Text(targets[1], "realized"), Text(targets[1], "available"), Text(targets[1], "status")));
+        var categories = block.GetProperty("categories");
+        Assert.Equal(("Complete", true, 1, 2), (Text(block, "state"), block.GetProperty("hasBudget").GetBoolean(), categories.GetProperty("exceededCount").GetInt32(), categories.GetProperty("count").GetInt32()));
+        // Resumo só das metas de categoria (não se sobrepõem): 600 de limite e 180 consumidos. Sem metas de fixas e cartões, não há esses grupos.
+        Assert.Equal(("600.00", "180.00"), (Text(categories, "planned"), Text(categories, "consumed")));
+        Assert.Equal(JsonValueKind.Null, block.GetProperty("fixed").ValueKind);
+        Assert.Equal(JsonValueKind.Null, block.GetProperty("cards").ValueKind);
+        var targets = categories.GetProperty("targets").EnumerateArray().ToList();
+        Assert.Equal(["Despesas", "Alimentação"], targets.Select(t => Text(t, "name")).ToArray()); // o excedido vem primeiro
+        Assert.Equal(("100.00", "130.00", "30.00", "Exceeded"), (Text(targets[0], "planned"), Text(targets[0], "consumed"), Text(targets[0], "exceeded"), Text(targets[0], "status")));
+        Assert.Equal(("500.00", "50.00", "450.00", "WithinBudget"), (Text(targets[1], "planned"), Text(targets[1], "consumed"), Text(targets[1], "available"), Text(targets[1], "status")));
     }
 
     [Fact]
@@ -229,8 +234,10 @@ public sealed class DashboardOverviewTests(PostgresFixture postgres) : PostgresA
 
         var block = (await GetAsync(s, s.Overview("?competence=2031-05"))).GetProperty("budget");
 
-        Assert.Equal(("Complete", false, 0), (Text(block, "state"), block.GetProperty("hasBudget").GetBoolean(), block.GetProperty("targets").GetArrayLength()));
-        Assert.Equal(JsonValueKind.Null, block.GetProperty("planned").ValueKind);
+        Assert.Equal(("Complete", false, 0), (Text(block, "state"), block.GetProperty("hasBudget").GetBoolean(), block.GetProperty("categories").GetProperty("targets").GetArrayLength()));
+        Assert.Equal(JsonValueKind.Null, block.GetProperty("categories").GetProperty("planned").ValueKind);
+        Assert.Equal(JsonValueKind.Null, block.GetProperty("fixed").ValueKind);
+        Assert.Equal(JsonValueKind.Null, block.GetProperty("cards").ValueKind);
     }
 
     // ---- últimos lançamentos e classificação ------------------------------------------------------------------------------------

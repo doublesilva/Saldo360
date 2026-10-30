@@ -84,5 +84,3 @@ public sealed record PlanActualResult<T>(PlanActualAccess Access, T? Value, IDic
     public static PlanActualResult<T> Invalid(string field, string message) => new(PlanActualAccess.Invalid, null, new Dictionary<string, string[]> { [field] = [message] });
 }
 
-public sealed record CardTargetRequest(Guid? AccountId, string? Competence, string? Amount);
-public sealed record CardTargetSavedDto(Guid AccountId, string EffectiveFrom, string? Amount);

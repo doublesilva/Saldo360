@@ -10,6 +10,9 @@ public interface IFinancialBudgetRepository
     /// <summary>Existe, no mesmo orçamento, meta ativa da categoria principal ou de uma subcategoria desta categoria (ou da principal dela): contaria o mesmo gasto duas vezes.</summary>
     Task<bool> RelatedTargetExistsAsync(Guid budgetId, Guid categoryId, CancellationToken cancellationToken);
 
+    /// <summary>Meta consolidada (despesas fixas ou todos os cartões) do orçamento, inclusive arquivada, para reativá-la em vez de duplicar.</summary>
+    Task<FinancialBudgetTarget?> FindAggregateTargetAsync(Guid budgetId, BudgetTargetGroupingType groupingType, CancellationToken cancellationToken);
+
     Task<bool> TargetExistsAsync(Guid budgetId, Guid categoryId, CancellationToken cancellationToken);
     Task<BudgetCategoryState?> GetCategoryAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken);
     Task<bool> TryAddBudgetAsync(FinancialBudget budget, CancellationToken cancellationToken);

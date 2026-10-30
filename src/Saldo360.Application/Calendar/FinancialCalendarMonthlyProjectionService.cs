@@ -55,7 +55,9 @@ public sealed class FinancialCalendarMonthlyProjectionService(
             var overdueTotals = Sum(pendingRows.Where(row => row.Date < today));
             var projectedDays = balances.Days.Where(day => day.Kind == FinancialCalendarBalanceKind.Projected
                 && day.ClosingBalance is not null).ToList();
-            var budget = snapshot.Budgets?.SingleOrDefault(x => x.Competence == month);
+            var budget = snapshot.Budgets?.SingleOrDefault(x => x.Competence == month) is { } source
+                ? source with { Targets = source.Targets.Where(x => x.GroupingType == Saldo360.Domain.Budgets.BudgetTargetGroupingType.Category).ToList() } // fixas e cartões repetem os mesmos gastos: só metas de categoria somam
+                : null;
             var budgetStatus = budget is null || budget.Targets.Count == 0 ? "NotDefined" : budget.Targets.Max(x =>
                 Saldo360.Application.Budgets.FinancialBudgetExecutionService.Classify(x.Planned, x.Realized + x.Committed + x.CreditCardCommitted)).ToString();
 

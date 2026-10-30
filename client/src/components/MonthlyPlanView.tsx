@@ -97,13 +97,13 @@ export function MonthlyPlanView({ workspaceId, competence, scope, refreshKey, on
         </dl>
         <p className="meta">Reservas e transferências ficam fora da comparação com o realizado: não são despesa nem receita consolidada.</p>
       </article>
-      <article className="card plan-card" aria-label="Meta dos cartões"><header><h5>Meta dos cartões</h5></header>
-        <p className="plan-card__main"><small>Meta existente do Dashboard</small><strong>{plannedMoney(plan.execution.cards.target)}</strong></p>
+      <article className="card plan-card" aria-label="Meta dos cartões"><header><h5>Meta de todos os cartões</h5></header>
+        <p className="plan-card__main"><small>Meta do Orçamento do mês (todos os cartões somados)</small><strong>{plannedMoney(plan.execution.cards.target)}</strong></p>
         <dl className="plan-card__facts">
           <div><dt>Projetado</dt><dd>{money(plan.execution.cards.projected)}</dd></div>
           <div><dt>Confirmado</dt><dd>{money(plan.execution.cards.confirmed)}</dd></div>
         </dl>
-        <p className="meta">A meta dos cartões é independente das linhas e dos limites; edite-a no painel Planejado × Realizado da Visão Geral.</p>
+        <p className="meta">A meta de todos os cartões é independente das linhas e dos limites; defina ou revise-a na página Orçamento. Ela vale para todas as contas juntas.</p>
       </article>
     </div>
 

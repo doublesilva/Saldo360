@@ -32,10 +32,17 @@ public sealed record OverviewGoalDto(Guid GoalId, string Name, string Priority, 
 
 public sealed record OverviewGoalsDto(string State, int ActiveCount, int CompletedCount, IReadOnlyList<OverviewGoalDto> Items);
 
-/// <summary>Metas por categoria do mês e o consumo de cada uma. Cada meta é lida separadamente: perspectivas diferentes (R03) nunca serão somadas num total global.</summary>
-public sealed record OverviewBudgetTargetDto(Guid TargetId, Guid CategoryId, string CategoryName, string Planned, string Realized, string Committed, string Projected, string Available, string Exceeded, string? Percent, string Status);
+/// <summary>
+/// Uma meta do mês e o que ela consumiu (R03). <c>Group</c> = Category, FixedExpenses ou AllCards. Cada meta é lida separadamente: as perspectivas
+/// contam os mesmos gastos e nunca são somadas num total global. <c>Reasons</c> explica dados incompletos (EstimatedCompetence, UndefinedNature, NoCards).
+/// </summary>
+public sealed record OverviewBudgetTargetDto(Guid TargetId, string Group, Guid? CategoryId, string Name, string Planned, string Consumed, string Pending, string Projected, string Available,
+    string AvailableProjected, string Exceeded, string? Percent, string Status, string ProjectedStatus, string State, IReadOnlyList<string> Reasons);
 
-public sealed record OverviewBudgetDto(string State, bool HasBudget, Guid? BudgetId, string? Planned, string? Projected, string? Realized, int ExceededCount, int ApproachingCount, IReadOnlyList<OverviewBudgetTargetDto> Targets);
+/// <summary>Resumo das metas de categoria (que não se sobrepõem, então a soma é válida); fixas e cartões ficam à parte.</summary>
+public sealed record OverviewBudgetCategoriesDto(int Count, string? Planned, string? Consumed, int ExceededCount, int ApproachingCount, IReadOnlyList<OverviewBudgetTargetDto> Targets);
+
+public sealed record OverviewBudgetDto(string State, bool HasBudget, Guid? BudgetId, string Competence, OverviewBudgetTargetDto? Fixed, OverviewBudgetTargetDto? Cards, OverviewBudgetCategoriesDto Categories);
 
 /// <summary>Últimos lançamentos efetivos do mês selecionado (até hoje), sem pagamentos de fatura: as compras do cartão não são contadas duas vezes.</summary>
 public sealed record OverviewRecentItemDto(Guid Id, string Type, string Amount, DateOnly Date, string Description, string? CategoryName, string AccountName, bool AwaitingClassification);
@@ -175,31 +182,51 @@ public sealed class DashboardOverviewService(
         }
     }
 
+    private static OverviewBudgetCategoriesDto NoCategories() => new(0, null, null, 0, 0, []);
+
     private async Task<OverviewBudgetDto> BuildBudgetAsync(Guid workspaceId, Guid userId, string month, CancellationToken ct)
     {
         try
         {
             var list = await budgetService.ListAsync(workspaceId, userId, month, includeArchived: false, ct);
-            if (list is null) return new("Unavailable", false, null, null, null, null, 0, 0, []);
+            if (list is null) return new("Unavailable", false, null, month, null, null, NoCategories());
             var budget = list.FirstOrDefault(b => b.Targets.Any(t => !t.IsArchived)) ?? list.FirstOrDefault();
-            if (budget is null || budget.Targets.All(t => t.IsArchived)) return new("Complete", false, budget?.Id, null, null, null, 0, 0, []);
+            if (budget is null || budget.Targets.All(t => t.IsArchived)) return new("Complete", false, budget?.Id, month, null, null, NoCategories());
             var execution = await budgetExecution.GetAsync(workspaceId, budget.Id, userId, ct);
-            if (execution is null) return new("Unavailable", true, budget.Id, null, null, null, 0, 0, []);
-            var names = budget.Targets.Where(t => !t.IsArchived).ToDictionary(t => t.Id, t => t.Category.Path);
-            var invariant = System.Globalization.CultureInfo.InvariantCulture;
-            var targets = execution.Targets.Where(t => names.ContainsKey(t.TargetId))
-                .Select(t => new OverviewBudgetTargetDto(t.TargetId, t.CategoryId, names[t.TargetId], Money.Format(t.Amounts.Planned), Money.Format(t.Amounts.Realized), Money.Format(t.Amounts.Committed),
-                    Money.Format(t.Amounts.ProjectedConsumption), Money.Format(t.Amounts.Available), Money.Format(t.Amounts.ExceededAmount),
-                    t.Amounts.ConsumptionPercentage is { } p ? p.ToString("0.0", invariant) : null, t.Status.ToString()))
-                .OrderByDescending(t => SeverityRank(t.Status)).ThenByDescending(t => t.Percent is not null && decimal.TryParse(t.Percent, System.Globalization.NumberStyles.Number, invariant, out var v) ? v : -1m)
-                .ThenBy(t => t.CategoryName, StringComparer.CurrentCultureIgnoreCase).ToList();
-            return new("Complete", true, budget.Id, Money.Format(execution.Total.Planned), Money.Format(execution.Total.ProjectedConsumption), Money.Format(execution.Total.Realized),
-                execution.Total.ExceededCount, execution.Total.ApproachingCount + execution.Total.ReachedCount, targets);
+            if (execution is null) return new("Unavailable", true, budget.Id, month, null, null, NoCategories());
+            var active = budget.Targets.Where(t => !t.IsArchived).ToDictionary(t => t.Id);
+            var targets = execution.Targets.Where(t => active.ContainsKey(t.TargetId)).Select(t => ToOverviewTarget(active[t.TargetId], t)).ToList();
+            var categories = targets.Where(t => t.Group == nameof(Saldo360.Domain.Budgets.BudgetTargetGroupingType.Category))
+                .OrderByDescending(t => SeverityRank(t.Status)).ThenByDescending(t => t.Percent is not null && decimal.TryParse(t.Percent, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : -1m)
+                .ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+            var summary = execution.Categories;
+            return new("Complete", true, budget.Id, month,
+                targets.FirstOrDefault(t => t.Group == nameof(Saldo360.Domain.Budgets.BudgetTargetGroupingType.FixedExpenses)),
+                targets.FirstOrDefault(t => t.Group == nameof(Saldo360.Domain.Budgets.BudgetTargetGroupingType.AllCards)),
+                new(categories.Count, categories.Count == 0 ? null : Money.Format(summary.Planned), categories.Count == 0 ? null : Money.Format(summary.Consumed),
+                    summary.ExceededCount, summary.ApproachingCount + summary.ReachedCount, categories));
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
-            return new("Unavailable", false, null, null, null, null, 0, 0, []);
+            return new("Unavailable", false, null, month, null, null, NoCategories());
         }
+    }
+
+    private static OverviewBudgetTargetDto ToOverviewTarget(FinancialBudgetTargetDto target, FinancialBudgetTargetExecutionDto run)
+    {
+        var amounts = run.Amounts;
+        var reasons = new List<string>();
+        if (run.Coverage is { } coverage)
+        {
+            if (coverage.EstimatedCompetenceCount > 0) reasons.Add("EstimatedCompetence");
+            if (coverage.UndefinedNatureCount > 0) reasons.Add("UndefinedNature");
+            if (coverage.NoCards) reasons.Add("NoCards");
+        }
+        var state = reasons.Contains("NoCards") ? "Unavailable" : reasons.Count > 0 ? "Partial" : "Complete";
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        return new(target.Id, target.GroupingType.ToString(), target.Category?.Id, target.Category?.Path ?? target.Name, Money.Format(amounts.Planned), Money.Format(amounts.Consumed),
+            Money.Format(amounts.Committed), Money.Format(amounts.ProjectedConsumption), Money.Format(amounts.Available), Money.Format(amounts.AvailableProjected),
+            Money.Format(amounts.ExceededAmount), amounts.ConsumptionPercentage is { } p ? p.ToString("0.0", invariant) : null, run.Status.ToString(), run.ProjectedStatus.ToString(), state, reasons);
     }
 
     private static int SeverityRank(string status) => status switch { "Exceeded" => 3, "LimitReached" => 2, "ApproachingLimit" => 1, _ => 0 };

@@ -32,7 +32,7 @@ public sealed partial class MonthlyPlanService
         }
         if (budget is null) return MonthlyPlanResult<CategoryLimitDto>.Conflict(BudgetResult.DuplicateBudgetMessage);
 
-        var existing = budget.Targets.FirstOrDefault(t => t.Category.Id == categoryId);
+        var existing = budget.Targets.FirstOrDefault(t => t.Category != null && t.Category.Id == categoryId);
         BudgetResult saved;
         if (existing is null) saved = await budgetService.AddTargetAsync(workspaceId, budget.Id, userId, category.Name, amount, nameof(BudgetTargetGroupingType.Category), categoryId, ct, request.Note);
         else if (existing.IsArchived) saved = await budgetService.RestoreTargetAsync(workspaceId, budget.Id, existing.Id, userId, amount, ct, request.Note);
@@ -52,11 +52,11 @@ public sealed partial class MonthlyPlanService
         if (!await IsParticipantAsync(workspaceId, userId, ct)) return MonthlyPlanResult<CategoryLimitDto>.NotFound;
         if (!TryMonth(competence, out var month)) return MonthlyPlanResult<CategoryLimitDto>.Invalid("competence", "Use uma competência válida no formato yyyy-MM.");
         var budget = (await budgetRepository.ListAsync(workspaceId, month, true, ct)).FirstOrDefault();
-        var target = budget?.Targets.FirstOrDefault(t => t.Category.Id == categoryId);
+        var target = budget?.Targets.FirstOrDefault(t => t.Category != null && t.Category.Id == categoryId);
         if (budget is null || target is null) return MonthlyPlanResult<CategoryLimitDto>.NotFound;
         var removed = await budgetService.ArchiveTargetAsync(workspaceId, budget.Id, target.Id, userId, ct, note);
         if (removed.Access != BudgetAccess.Allowed) return From<CategoryLimitDto>(removed);
-        return MonthlyPlanResult<CategoryLimitDto>.Ok(new(target.Id, categoryId, target.Category.Name, MonthlyPlanCalculator.Cents(target.PlannedAmount), null, false, MonthlyPlanCalculator.Cents(0m), false, null));
+        return MonthlyPlanResult<CategoryLimitDto>.Ok(new(target.Id, categoryId, target.Category!.Name, MonthlyPlanCalculator.Cents(target.PlannedAmount), null, false, MonthlyPlanCalculator.Cents(0m), false, null));
     }
 
     // ---- Histórico -------------------------------------------------------------------------------------------------------------------------
@@ -126,7 +126,7 @@ public sealed partial class MonthlyPlanService
             {
                 if (targetBudget is null) newBudget = FinancialBudget.Create(workspaceId, to, null, userId, now);
                 var budgetId = targetBudget?.Id ?? newBudget!.Id;
-                var taken = targetBudget?.Targets.Select(t => t.Category.Id).ToHashSet() ?? [];
+                var taken = targetBudget?.Targets.Where(t => t.Category != null).Select(t => t.Category!.Id).ToHashSet() ?? [];
                 foreach (var limit in source.Limits)
                 {
                     if (taken.Contains(limit.CategoryId) || await budgetRepository.GetCategoryAsync(workspaceId, limit.CategoryId, ct) is not { IsActive: true }) { skippedLimits++; continue; }

@@ -8,5 +8,9 @@ public interface IFinancialBudgetExecutionRepository
     /// </summary>
     Task<FinancialBudgetExecutionSource?> GetAsync(
         Guid workspaceId, Guid budgetId, CancellationToken cancellationToken);
+
+    /// <summary>Os registros que compõem uma meta, pela MESMA lista e regra de cobertura do resumo. Null se o orçamento ou a meta não existirem (ou estiverem arquivados).</summary>
+    Task<BudgetCompositionSource?> GetCompositionAsync(
+        Guid workspaceId, Guid budgetId, Guid targetId, CancellationToken cancellationToken);
 }
 

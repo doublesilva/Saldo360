@@ -24,11 +24,16 @@ export const overview: DashboardOverview = {
   },
   goals: { state: 'Complete', activeCount: 1, completedCount: 0, items: [{ goalId: 'g1', name: 'Reserva de emergência', priority: 'High', target: '10000.00', allocated: '2500.00', progressPercent: '25.0', targetDate: '2027-06-30', funded: false }] },
   budget: {
-    state: 'Complete', hasBudget: true, budgetId: 'b1', planned: '1600.00', projected: '1500.00', realized: '1200.00', exceededCount: 1, approachingCount: 0,
-    targets: [
-      { targetId: 't1', categoryId: 'cat-h', categoryName: 'Moradia', planned: '1000.00', realized: '900.00', committed: '300.00', projected: '1200.00', available: '0.00', exceeded: '200.00', percent: '120.0', status: 'Exceeded' },
-      { targetId: 't2', categoryId: 'cat-f', categoryName: 'Alimentação', planned: '600.00', realized: '300.00', committed: '0.00', projected: '300.00', available: '300.00', exceeded: '0.00', percent: '50.0', status: 'WithinBudget' },
-    ],
+    state: 'Complete', hasBudget: true, budgetId: 'b1', competence: '2026-10',
+    fixed: { targetId: 'tf', group: 'FixedExpenses', categoryId: null, name: 'Despesas fixas', planned: '600.00', consumed: '540.00', pending: '0.00', projected: '540.00', available: '60.00', availableProjected: '60.00', exceeded: '0.00', percent: '90.0', status: 'ApproachingLimit', projectedStatus: 'ApproachingLimit', state: 'Complete', reasons: [] },
+    cards: { targetId: 'tc', group: 'AllCards', categoryId: null, name: 'Todos os cartões', planned: '5000.00', consumed: '4200.00', pending: '0.00', projected: '4200.00', available: '800.00', availableProjected: '800.00', exceeded: '0.00', percent: '84.0', status: 'ApproachingLimit', projectedStatus: 'ApproachingLimit', state: 'Partial', reasons: ['EstimatedCompetence'] },
+    categories: {
+      count: 2, planned: '1600.00', consumed: '1200.00', exceededCount: 1, approachingCount: 0,
+      targets: [
+        { targetId: 't1', group: 'Category', categoryId: 'cat-h', name: 'Moradia', planned: '1000.00', consumed: '1200.00', pending: '300.00', projected: '1500.00', available: '-200.00', availableProjected: '-500.00', exceeded: '200.00', percent: '120.0', status: 'Exceeded', projectedStatus: 'Exceeded', state: 'Complete', reasons: [] },
+        { targetId: 't2', group: 'Category', categoryId: 'cat-f', name: 'Alimentação', planned: '600.00', consumed: '300.00', pending: '0.00', projected: '300.00', available: '300.00', availableProjected: '300.00', exceeded: '0.00', percent: '50.0', status: 'WithinBudget', projectedStatus: 'WithinBudget', state: 'Complete', reasons: [] },
+      ],
+    },
   },
   recent: {
     state: 'Complete', from: '2026-10-01', through: '2026-10-16', totalCount: 9,

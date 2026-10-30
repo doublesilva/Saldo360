@@ -25,7 +25,6 @@ public static class PlanActualEndpoints
         });
         group.MapGet("/plan-actual", Get);
         group.MapGet("/overview", Overview);
-        group.MapPut("/card-target", SaveCardTarget).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
@@ -34,9 +33,6 @@ public static class PlanActualEndpoints
 
     private static async Task<IResult> Overview(Guid workspaceId, string? competence, string? scope, Guid? accountId, CurrentUser user, DashboardOverviewService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.GetAsync(workspaceId, userId, competence, scope, accountId, ct));
-
-    private static async Task<IResult> SaveCardTarget(Guid workspaceId, CardTargetRequest request, CurrentUser user, PlanActualService service, CancellationToken ct) =>
-        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.SaveCardTargetAsync(workspaceId, userId, request, ct));
 
     private static IResult Respond<T>(PlanActualResult<T> result) where T : class => result.Access switch
     {

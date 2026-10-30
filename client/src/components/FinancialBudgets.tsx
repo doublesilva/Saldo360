@@ -1,27 +1,25 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { listCategories, type FinancialCategory } from '../api/categories'
 import {
-  addBudgetTarget,
   archiveBudget,
-  archiveBudgetTarget,
-  createBudget,
   getBudgetExecution,
   listBudgets,
+  type BudgetGroupingType,
   type FinancialBudget,
   type FinancialBudgetAlertStatus,
   type FinancialBudgetExecution,
   type FinancialBudgetTarget,
-  updateBudgetTarget,
+  type FinancialBudgetTargetExecution,
 } from '../api/budgets'
-import { decimalToInput, formatBrlDecimal, parseAmount } from '../money'
 import { addCalendarMonths, formatMonthYear, startOfMonth, todayInSaoPaulo } from '../dates'
+import { formatBrlDecimal } from '../money'
+import { BudgetTargetCard } from './budget/BudgetTargetCard'
+import { BudgetTargetForm } from './budget/BudgetTargetForm'
+import { groupHints, groupTitles, groupingOfGroup, type BudgetGroup } from './budget/budgetText'
+import '../Budget.css'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
-}
-
-function firstError(errors: Record<string, string[]>): string {
-  return Object.values(errors).flat()[0] ?? 'Verifique os dados informados.'
 }
 
 type LoadState =
@@ -29,22 +27,45 @@ type LoadState =
   | { kind: 'loaded'; budget: FinancialBudget | null; execution: FinancialBudgetExecution | null }
   | { kind: 'error'; message: string }
 
-export function FinancialBudgetsPage({ workspaceId, initialCompetence, refreshKey: externalRefreshKey = 0, onNavigateToAgenda }: { workspaceId: string; initialCompetence?: string; refreshKey?: number; onNavigateToAgenda?: (competence: string) => void }) {
+const severity = (status: FinancialBudgetAlertStatus) => ({ Exceeded: 0, LimitReached: 1, ApproachingLimit: 2, WithinBudget: 3 })[status]
+
+function lastDay(competence: string): string {
+  const [year, month] = competence.split('-').map(Number)
+  return `${competence}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`
+}
+
+/**
+ * Orçamento do mês (R03): três tipos de meta (despesas fixas, todos os cartões e categorias), cada uma respondendo "qual é o limite, quanto foi
+ * consumido e quanto está disponível". As perspectivas se sobrepõem de propósito (uma assinatura fixa no cartão conta nas três) e por isso nada aqui é
+ * somado entre elas. Todos os valores e totais vêm do servidor.
+ */
+export function FinancialBudgetsPage({ workspaceId, initialCompetence, initialGroup, refreshKey: externalRefreshKey = 0, onNavigateToAgenda, onReviewClassification }: {
+  workspaceId: string; initialCompetence?: string; initialGroup?: BudgetGroup; refreshKey?: number
+  onNavigateToAgenda?: (competence: string) => void
+  /** Leva à lista de lançamentos filtrada nas despesas sem tipo definido do período (o fluxo existente de classificação). */
+  onReviewClassification?: (range: { from: string; to: string }) => void
+}) {
   const [competence, setCompetence] = useState(() => initialCompetence ?? startOfMonth(todayInSaoPaulo()).slice(0, 7))
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [reloadKey, setReloadKey] = useState(0)
-  const [showBudgetForm, setShowBudgetForm] = useState(false)
+  const [form, setForm] = useState<{ preset?: BudgetGroupingType } | null>(null)
+  const [openTarget, setOpenTarget] = useState<string | null>(null)
+  const [categories, setCategories] = useState<FinancialCategory[]>([])
   const [notice, setNotice] = useState<string | null>(null)
+  const [groupApplied, setGroupApplied] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
-    Promise.all([
-      listBudgets(workspaceId, competence, controller.signal),
-      listCategories(workspaceId, true, controller.signal),
-    ])
-      .then(async ([budgets]) => {
-        const budget = budgets.find((item) => !item.isArchived) ?? budgets[0] ?? null
-        if (!budget || budget.isArchived) {
+    listCategories(workspaceId, true, controller.signal).then(setCategories).catch(() => undefined)
+    return () => controller.abort()
+  }, [workspaceId])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    listBudgets(workspaceId, competence, controller.signal)
+      .then(async (budgets) => {
+        const budget = budgets.find((item) => !item.isArchived) ?? null
+        if (!budget) {
           setState({ kind: 'loaded', budget: null, execution: null })
           return
         }
@@ -59,24 +80,43 @@ export function FinancialBudgetsPage({ workspaceId, initialCompetence, refreshKe
 
   const moveMonth = (offset: number) => {
     setState({ kind: 'loading' })
+    setOpenTarget(null)
     setCompetence((month) => addCalendarMonths(`${month}-01`, offset).slice(0, 7))
   }
   const refresh = () => {
     setState({ kind: 'loading' })
     setNotice(null)
+    setForm(null)
     setReloadKey((value) => value + 1)
   }
   const selectCurrentMonth = () => {
     setState({ kind: 'loading' })
+    setOpenTarget(null)
     setCompetence(startOfMonth(todayInSaoPaulo()).slice(0, 7))
   }
+
+  const budget = state.kind === 'loaded' ? state.budget : null
+  const execution = state.kind === 'loaded' ? state.execution : null
+  const active = useMemo(() => (budget?.targets ?? []).filter((target) => !target.isArchived), [budget])
+  const byGroup = (grouping: BudgetGroupingType) => active.filter((target) => target.groupingType === grouping)
+  const runOf = (target: FinancialBudgetTarget) => execution?.targets.find((item) => item.targetId === target.id) ?? null
+
+  // Vindo da Visão Geral: abre a composição da meta do grupo pedido (fixas ou cartões) uma única vez.
+  useEffect(() => {
+    if (groupApplied || !initialGroup || !execution) return
+    setGroupApplied(true)
+    const first = (budget?.targets ?? []).find((target) => !target.isArchived && target.groupingType === groupingOfGroup[initialGroup])
+    if (first && initialGroup !== 'categories') setOpenTarget(first.id)
+  }, [groupApplied, initialGroup, execution, budget])
+
+  const review = onReviewClassification ? () => onReviewClassification({ from: `${competence}-01`, to: lastDay(competence) }) : undefined
 
   return (
     <div className="budgets" aria-live="polite">
       <div className="budgets__header">
         <div>
-          <h3>Orçamentos</h3>
-          <p className="meta">Acompanhe metas e compromissos de despesas por competência.</p>
+          <h3>Orçamento</h3>
+          <p className="meta">Para cada meta: qual é o limite, quanto foi consumido e quanto está disponível.</p>
         </div>
         <div className="month-navigation" aria-label="Navegação de competência">
           <button type="button" aria-label="Competência anterior" onClick={() => moveMonth(-1)}>←</button>
@@ -84,149 +124,76 @@ export function FinancialBudgetsPage({ workspaceId, initialCompetence, refreshKe
           <button type="button" aria-label="Próxima competência" onClick={() => moveMonth(1)}>→</button>
           <button type="button" onClick={selectCurrentMonth}>Mês atual</button>
         </div>
-        {onNavigateToAgenda && <button type="button" className="button--link" onClick={() => onNavigateToAgenda(competence)}>Ver na Agenda</button>}
+        <div className="budgets__actions">
+          <button type="button" className="button--primary" onClick={() => setForm({})}>Nova meta</button>
+          {onNavigateToAgenda && <button type="button" className="button--link" onClick={() => onNavigateToAgenda(competence)}>Ver na Agenda</button>}
+        </div>
       </div>
 
       {notice && <p className="notice" role="status">{notice}</p>}
       {state.kind === 'loading' && <p className="status status--pending">Carregando orçamento…</p>}
       {state.kind === 'error' && <p className="status status--down" role="alert">{state.message}</p>}
-      {state.kind === 'loaded' && !state.budget && (
-        <section className="budget-empty">
-          <p>Nenhum orçamento definido para esta competência.</p>
-          {showBudgetForm ? (
-            <BudgetCreateForm
-              workspaceId={workspaceId}
-              competence={competence}
-              onDone={() => { setShowBudgetForm(false); refresh() }}
-              onCancel={() => setShowBudgetForm(false)}
-            />
-          ) : (
-            <button type="button" className="button--primary" onClick={() => setShowBudgetForm(true)}>Criar orçamento</button>
-          )}
+      {state.kind === 'loaded' && form && (
+        <BudgetTargetForm workspaceId={workspaceId} competence={competence} budget={budget} categories={categories} preset={form.preset} onDone={refresh} onCancel={() => setForm(null)} />
+      )}
+      {state.kind === 'loaded' && active.length === 0 && !form && (
+        <section className="budget-empty" aria-label="Sem metas">
+          <p>Nenhuma meta definida para {formatMonthYear(`${competence}-01`)}.</p>
+          <p className="meta">Defina um limite para as despesas fixas, para todos os cartões somados ou para uma categoria.</p>
+          <button type="button" className="button--primary" onClick={() => setForm({})}>Nova meta</button>
         </section>
       )}
-      {state.kind === 'loaded' && state.budget && state.execution && (
-        <BudgetContent
-          workspaceId={workspaceId}
-          budget={state.budget}
-          execution={state.execution}
-          onChanged={refresh}
-          onNotice={setNotice}
-        />
-      )}
+      {state.kind === 'loaded' && budget && execution && active.length > 0 && <>
+        {(['FixedExpenses', 'AllCards'] as const).map((grouping) => {
+          const target = byGroup(grouping)[0]
+          const run = target ? runOf(target) : null
+          return <section key={grouping} className="budget-group" aria-labelledby={`budget-group-${grouping}`}>
+            <div className="budgets__section-header">
+              <h4 id={`budget-group-${grouping}`}>{groupTitles[grouping]}</h4>
+              {grouping === 'AllCards' && <span className="meta">Faturas com vencimento em {formatMonthYear(`${competence}-01`)}</span>}
+            </div>
+            {target && run
+              ? <BudgetTargetCard workspaceId={workspaceId} budgetId={budget.id} target={target} run={run} title={groupTitles[grouping]} canEdit open={openTarget === target.id} version={reloadKey + externalRefreshKey}
+                onToggle={() => setOpenTarget(openTarget === target.id ? null : target.id)} onChanged={refresh} onNotice={setNotice} onReviewClassification={grouping === 'FixedExpenses' ? review : undefined} />
+              : <div className="budget-group__empty"><p className="meta">Sem meta de {groupTitles[grouping].toLowerCase()} neste mês. {groupHints[grouping]}</p>
+                <button type="button" onClick={() => setForm({ preset: grouping })}>Definir limite</button></div>}
+          </section>
+        })}
+        <CategoryGroup workspaceId={workspaceId} budget={budget} execution={execution} targets={byGroup('Category')} runOf={runOf} openTarget={openTarget} version={reloadKey + externalRefreshKey}
+          onToggle={(id) => setOpenTarget(openTarget === id ? null : id)} onChanged={refresh} onNotice={setNotice} onAdd={() => setForm({ preset: 'Category' })} />
+        <p className="meta budget-overlap-note">Despesas fixas, cartões e categorias olham os mesmos gastos por ângulos diferentes: uma assinatura fixa paga no cartão aparece nas três, mas é uma única despesa. Por isso estes valores não são somados entre si.</p>
+        <div className="budget-footer"><button type="button" onClick={() => {
+          if (window.confirm('Arquivar este orçamento? O histórico será preservado e ele não poderá ser recriado automaticamente nesta competência.')) {
+            void archiveBudget(workspaceId, budget.id).then((result) => result.ok ? refresh() : setNotice(result.message))
+          }
+        }}>Arquivar orçamento</button></div>
+      </>}
     </div>
   )
 }
 
-function BudgetCreateForm({ workspaceId, competence, onDone, onCancel }: { workspaceId: string; competence: string; onDone: () => void; onCancel: () => void }) {
-  const [description, setDescription] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const submit = async (event: FormEvent) => {
-    event.preventDefault(); setBusy(true); setError(null)
-    try {
-      const result = await createBudget(workspaceId, competence, description)
-      if (result.ok) onDone(); else setError(firstError(result.errors))
-    } catch (failure: unknown) { setError(errorMessage(failure)) } finally { setBusy(false) }
-  }
-  return <form className="form" onSubmit={submit} noValidate>
-    <label htmlFor="budget-description">Descrição (opcional)</label>
-    <input id="budget-description" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={200} />
-    {error && <p className="field-error" role="alert">{error}</p>}
-    <div className="form__actions"><button className="button--primary" type="submit" disabled={busy}>{busy ? 'Criando…' : 'Criar orçamento'}</button><button type="button" onClick={onCancel}>Cancelar</button></div>
-  </form>
-}
-
-function BudgetContent({
-  workspaceId, budget, execution, onChanged, onNotice,
-}: { workspaceId: string; budget: FinancialBudget; execution: FinancialBudgetExecution; onChanged: () => void; onNotice: (notice: string | null) => void }) {
-  const [categories, setCategories] = useState<FinancialCategory[]>([])
-  useEffect(() => {
-    const controller = new AbortController()
-    listCategories(workspaceId, true, controller.signal).then(setCategories).catch(() => undefined)
-    return () => controller.abort()
-  }, [workspaceId])
-  const activeTargets = useMemo(() => budget.targets.filter((target) => !target.isArchived), [budget.targets])
-  const availableCategories = categories.filter((category) => category.type === 'Expense' && !budget.targets.some((target) => target.category.id === category.id))
-  const archived = budget.isArchived
-  return <>
-    <div className="budget-heading">
-      <div><h4>{budget.description || `Orçamento de ${formatMonthYear(`${budget.competence}-01`)}`}</h4><span className="meta">Competência {budget.competence}</span></div>
-      {!archived && <button type="button" onClick={() => {
-        if (window.confirm('Arquivar este orçamento? O histórico será preservado e ele não poderá ser recriado automaticamente nesta competência.')) {
-          void archiveBudget(workspaceId, budget.id).then((result) => result.ok ? onChanged() : onNotice(result.message))
-        }
-      }}>Arquivar orçamento</button>}
-    </div>
-    <BudgetSummary values={execution.total} />
-    <section className="budget-targets" aria-labelledby="budget-targets-title">
-      <div className="budgets__section-header"><h4 id="budget-targets-title">Metas por categoria</h4><span className="meta">{activeTargets.length} ativas</span></div>
-      {activeTargets.length === 0 && <p className="meta">Nenhuma meta ativa neste orçamento.</p>}
-      <div className="budget-target-grid">
-        {execution.targets.slice().sort((a, b) => {
-          const severity = (status: FinancialBudgetAlertStatus) => ({ Exceeded: 0, LimitReached: 1, ApproachingLimit: 2, WithinBudget: 3 })[status]
-          return severity(a.status) - severity(b.status)
-            || categoryName(a.categoryId, budget, categories).localeCompare(categoryName(b.categoryId, budget, categories), 'pt-BR')
-        }).map((item) => {
-          const target = budget.targets.find((candidate) => candidate.id === item.targetId)
-          if (!target) return null
-          return <BudgetTargetCard key={item.targetId} target={target} execution={item} workspaceId={workspaceId} budgetId={budget.id} onChanged={onChanged} onNotice={onNotice} />
-        })}
-      </div>
-      {!archived && <BudgetTargetForm workspaceId={workspaceId} budgetId={budget.id} categories={availableCategories} onDone={onChanged} onError={onNotice} />}
-    </section>
-  </>
-}
-
-function categoryName(categoryId: string, budget: FinancialBudget, categories: FinancialCategory[]) {
-  return budget.targets.find((target) => target.category.id === categoryId)?.category.name ?? categories.find((category) => category.id === categoryId)?.name ?? 'Categoria'
-}
-
-function BudgetSummary({ values }: { values: FinancialBudgetExecution['total'] }) {
-  return <section className="budget-summary" aria-label="Resumo da execução">
-    <div className={`budget-alert budget-alert--${values.status}`} role="status">
-      <span aria-hidden="true">{statusIcon(values.status)}</span>
-      <div><strong>{statusLabel(values.status)}</strong><span>{values.alertMessage}</span></div>
-    </div>
-    {(['planned', 'realized', 'committed', 'projectedConsumption', 'available', 'exceededAmount'] as const).map((key) => <div className={key === 'exceededAmount' && values[key] !== '0.00' ? 'budget-summary__item budget-summary__item--danger' : 'budget-summary__item'} key={key}><span>{summaryLabel(key)}</span><strong>{formatBrlDecimal(values[key])}</strong></div>)}
-    <div className="budget-summary__item"><span>Consumo</span><strong>{values.consumptionPercentage === null ? 'Sem referência' : `${values.consumptionPercentage}%`}</strong></div>
-    <div className="budget-alert-counts" aria-label="Contagem de alertas"><span>Atenção: <strong>{values.approachingCount}</strong></span><span>No limite: <strong>{values.reachedCount}</strong></span><span>Excedidas: <strong>{values.exceededCount}</strong></span></div>
+function CategoryGroup({ workspaceId, budget, execution, targets, runOf, openTarget, version, onToggle, onChanged, onNotice, onAdd }: {
+  workspaceId: string; budget: FinancialBudget; execution: FinancialBudgetExecution; targets: FinancialBudgetTarget[]
+  runOf: (target: FinancialBudgetTarget) => FinancialBudgetTargetExecution | null; openTarget: string | null; version: number
+  onToggle: (id: string) => void; onChanged: () => void; onNotice: (notice: string | null) => void; onAdd: () => void
+}) {
+  const ordered = targets.map((target) => ({ target, run: runOf(target) })).filter((item): item is { target: FinancialBudgetTarget; run: FinancialBudgetTargetExecution } => item.run !== null)
+    .sort((a, b) => severity(a.run.status) - severity(b.run.status) || (a.target.category?.path ?? a.target.name).localeCompare(b.target.category?.path ?? b.target.name, 'pt-BR'))
+  const summary = execution.categories
+  return <section className="budget-group" aria-labelledby="budget-group-Category">
+    <div className="budgets__section-header"><h4 id="budget-group-Category">{groupTitles.Category}</h4><span className="meta">{targets.length} meta(s) ativa(s)</span></div>
+    {targets.length === 0
+      ? <div className="budget-group__empty"><p className="meta">Sem metas por categoria neste mês. {groupHints.Category}</p><button type="button" onClick={onAdd}>Definir limite</button></div>
+      : <>
+        <p className="budget-group__summary meta">
+          Metas por categoria somadas (não se sobrepõem): limite {formatBrlDecimal(summary.planned)} · consumido {formatBrlDecimal(summary.consumed)}
+          {summary.exceededCount > 0 ? ` · ${summary.exceededCount} excedida(s)` : ''}{summary.approachingCount + summary.reachedCount > 0 ? ` · ${summary.approachingCount + summary.reachedCount} perto do limite ou no limite` : ''}
+        </p>
+        <div className="budget-target-grid">
+          {ordered.map(({ target, run }) => <BudgetTargetCard key={target.id} workspaceId={workspaceId} budgetId={budget.id} target={target} run={run}
+            title={target.category?.path ?? target.name} canEdit open={openTarget === target.id} version={version} onToggle={() => onToggle(target.id)} onChanged={onChanged} onNotice={onNotice} />)}
+        </div>
+        <button type="button" onClick={onAdd}>Adicionar meta de categoria</button>
+      </>}
   </section>
-}
-
-function statusLabel(status: FinancialBudgetAlertStatus) {
-  return ({ WithinBudget: 'Dentro do orçamento', ApproachingLimit: 'Atenção', LimitReached: 'Limite atingido', Exceeded: 'Orçamento excedido' } as Record<FinancialBudgetAlertStatus, string>)[status]
-}
-
-function statusIcon(status: FinancialBudgetAlertStatus) {
-  return ({ WithinBudget: '✓', ApproachingLimit: '!', LimitReached: '●', Exceeded: '×' } as Record<FinancialBudgetAlertStatus, string>)[status]
-}
-
-function summaryLabel(key: string) {
-  return ({ planned: 'Planejado', realized: 'Realizado', committed: 'Comprometido', projectedConsumption: 'Consumo projetado', available: 'Disponível', exceededAmount: 'Excedente' } as Record<string, string>)[key]
-}
-
-function BudgetTargetCard({ target, execution, workspaceId, budgetId, onChanged, onNotice }: { target: FinancialBudgetTarget; execution: FinancialBudgetExecution['targets'][number]; workspaceId: string; budgetId: string; onChanged: () => void; onNotice: (notice: string | null) => void }) {
-  const [editing, setEditing] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const percentage = execution.consumptionPercentage === null ? null : Number.parseFloat(execution.consumptionPercentage)
-  return <article className={execution.status === 'Exceeded' ? 'budget-target budget-target--exceeded' : 'budget-target'}>
-    <div className="budget-target__header"><div><h5>{target.category.name} {!target.category.isActive && <span className="meta">(inativa)</span>}</h5><span className="meta">Meta {formatBrlDecimal(execution.planned)}</span></div><span className={`budget-badge budget-badge--${execution.status}`}><span aria-hidden="true">{statusIcon(execution.status)}</span> {statusLabel(execution.status)}</span></div>
-    <div className="budget-target__values"><span>Realizado <strong>{formatBrlDecimal(execution.realized)}</strong></span><span>Comprometido <strong>{formatBrlDecimal(execution.committed)}</strong></span><span>Projetado <strong>{formatBrlDecimal(execution.projectedConsumption)}</strong></span><span>Disponível <strong>{formatBrlDecimal(execution.available)}</strong></span></div>
-    <div className="budget-progress" aria-label={percentage === null ? 'Consumo sem referência percentual' : `Consumo de ${execution.consumptionPercentage}%`}><div className="budget-progress__bar" style={{ width: percentage === null ? '0%' : `${Math.min(100, Math.max(0, percentage))}%` }} /><span>{execution.consumptionPercentage === null ? 'Sem referência' : `${execution.consumptionPercentage}% consumido`}</span></div>
-    <p className="budget-target__alert"><span aria-hidden="true">{statusIcon(execution.status)}</span> {execution.alertMessage}</p>
-    {editing ? <BudgetTargetEditForm workspaceId={workspaceId} budgetId={budgetId} target={target} onDone={() => { setEditing(false); onChanged() }} onCancel={() => setEditing(false)} onError={onNotice} /> : <div className="budget-target__actions"><button type="button" onClick={() => setEditing(true)}>Editar</button><button type="button" disabled={busy} onClick={() => { if (window.confirm(`Arquivar a meta de ${target.category.name} (${formatBrlDecimal(target.plannedAmount)})? Isso retira a meta dos totais, sem cancelar despesas.`)) { setBusy(true); void archiveBudgetTarget(workspaceId, budgetId, target.id).then((result) => result.ok ? onChanged() : onNotice(result.message)).finally(() => setBusy(false)) } }}>Arquivar meta</button></div>}
-  </article>
-}
-
-function BudgetTargetForm({ workspaceId, budgetId, categories, onDone, onError }: { workspaceId: string; budgetId: string; categories: FinancialCategory[]; onDone: () => void; onError: (message: string) => void }) {
-  const [categoryId, setCategoryId] = useState(''); const [amount, setAmount] = useState(''); const [busy, setBusy] = useState(false)
-  const submit = async (event: FormEvent) => { event.preventDefault(); const parsed = parseAmount(amount, 'O valor planejado'); if (!categoryId) return onError('Selecione uma categoria de despesa.'); if (parsed.kind !== 'ok') return onError(parsed.kind === 'invalid' ? parsed.message : 'Informe o valor planejado.'); setBusy(true); const category = categories.find((item) => item.id === categoryId); if (!category) return setBusy(false); const result = await addBudgetTarget(workspaceId, budgetId, categoryId, parsed.text, category.name); if (result.ok) { setAmount(''); setCategoryId(''); onDone() } else onError(firstError(result.errors)); setBusy(false) }
-  return <form className="budget-target-form" onSubmit={submit} noValidate><h5>Adicionar meta</h5><label htmlFor="budget-target-category">Categoria de despesa</label><select id="budget-target-category" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Selecione…</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}{!category.isActive ? ' (inativa)' : ''}</option>)}</select><label htmlFor="budget-target-amount">Valor planejado</label><input id="budget-target-amount" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0,00" /><button type="submit" className="button--primary" disabled={busy || categories.length === 0}>{busy ? 'Adicionando…' : 'Adicionar meta'}</button>{categories.length === 0 && <p className="meta">Não há categorias de despesa elegíveis.</p>}</form>
-}
-
-function BudgetTargetEditForm({ workspaceId, budgetId, target, onDone, onCancel, onError }: { workspaceId: string; budgetId: string; target: FinancialBudgetTarget; onDone: () => void; onCancel: () => void; onError: (message: string) => void }) {
-  const [amount, setAmount] = useState(() => decimalToInput(target.plannedAmount)); const [busy, setBusy] = useState(false)
-  const submit = async (event: FormEvent) => { event.preventDefault(); const parsed = parseAmount(amount, 'O valor planejado'); if (parsed.kind !== 'ok') return onError(parsed.kind === 'invalid' ? parsed.message : 'Informe o valor planejado.'); setBusy(true); const result = await updateBudgetTarget(workspaceId, budgetId, target.id, target.name, parsed.text); if (result.ok) onDone(); else onError(firstError(result.errors)); setBusy(false) }
-  return <form className="budget-target-edit" onSubmit={submit}><label htmlFor={`target-${target.id}`}>Valor planejado</label><input id={`target-${target.id}`} inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} /><button type="submit" className="button--primary" disabled={busy}>Salvar</button><button type="button" onClick={onCancel} disabled={busy}>Cancelar</button></form>
 }

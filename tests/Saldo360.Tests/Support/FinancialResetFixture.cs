@@ -86,7 +86,7 @@ internal static class FinancialResetFixture
         var pluggyBillPayment = PluggyCardBillPayment.Create(w, pluggyBill.Id, 0, 10m, date, "DEBIT_ACCOUNT", null);
         var balanceAnchor = FinancialAccountBalanceAnchor.Create(w, account.Id, 100m, now, DateOnly.FromDateTime(now.UtcDateTime), BalanceAnchorKind.CurrentBalance, "Pluggy", pluggyAccountLink.Id, now);
         var pluggySyncState = PluggySyncState.Create(w, pluggyLink.Id, now);
-        var cardTarget = Saldo360.Domain.Budgets.FinancialCardSpendingTarget.Create(w, account.Id, new DateOnly(date.Year, date.Month, 1), 5000m, u, now);
+        var cardTarget = Saldo360.Domain.Budgets.FinancialBudgetTarget.CreateAggregate(w, budget.Id, "Todos os cartões", 5000m, Saldo360.Domain.Budgets.BudgetTargetGroupingType.AllCards, u, now);
         var planLine = FinancialPlanLine.Create(w, new DateOnly(date.Year, date.Month, 1), new PlanLineDetails(PlanLineKind.Expense, PlanLineNature.Fixed, "Synthetic", account.Id, null, category.Id, 10m, null, null, null, null), u, now);
         var planHistory = FinancialPlanHistoryEntry.Create(w, new DateOnly(date.Year, date.Month, 1), PlanHistorySubject.Line, planLine.Id, PlanHistoryAction.Created, "Synthetic", null, 10m, null, u, now);
         var nonWorkingDay = FinancialNonWorkingDay.Create(w, date, NonWorkingDayKind.Holiday, "Synthetic", u, now);

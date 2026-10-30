@@ -20,9 +20,12 @@ internal sealed class FinancialBudgetRepository(Saldo360DbContext db) : IFinanci
         db.FinancialBudgetTargets.SingleOrDefaultAsync(item => item.BudgetId == budgetId && item.Id == targetId, cancellationToken);
 
     public Task<bool> RelatedTargetExistsAsync(Guid budgetId, Guid categoryId, CancellationToken cancellationToken) =>
-        db.FinancialBudgetTargets.AnyAsync(target => target.BudgetId == budgetId && !target.IsArchived && target.CategoryId != categoryId
+        db.FinancialBudgetTargets.AnyAsync(target => target.BudgetId == budgetId && !target.IsArchived && target.CategoryId != null && target.CategoryId != categoryId
             && (db.FinancialCategories.Any(c => c.Id == target.CategoryId && c.ParentCategoryId == categoryId)
                 || db.FinancialCategories.Any(c => c.Id == categoryId && c.ParentCategoryId == target.CategoryId)), cancellationToken);
+
+    public Task<FinancialBudgetTarget?> FindAggregateTargetAsync(Guid budgetId, BudgetTargetGroupingType groupingType, CancellationToken cancellationToken) =>
+        db.FinancialBudgetTargets.SingleOrDefaultAsync(item => item.BudgetId == budgetId && item.GroupingType == groupingType && item.CategoryId == null, cancellationToken);
 
     public Task<bool> TargetExistsAsync(Guid budgetId, Guid categoryId, CancellationToken cancellationToken) =>
         db.FinancialBudgetTargets.AnyAsync(item => item.BudgetId == budgetId && item.CategoryId == categoryId, cancellationToken);
@@ -83,21 +86,23 @@ internal sealed class FinancialBudgetRepository(Saldo360DbContext db) : IFinanci
             from target in db.FinancialBudgetTargets.AsNoTracking()
             join category in db.FinancialCategories.AsNoTracking()
                 on new { target.WorkspaceId, Id = target.CategoryId, target.CategoryType }
-                equals new { category.WorkspaceId, category.Id, CategoryType = category.Type }
+                equals new { category.WorkspaceId, Id = (Guid?)category.Id, CategoryType = (CategoryType?)category.Type } into categories
+            from category in categories.DefaultIfEmpty()
             where ids.Contains(target.BudgetId)
             orderby target.IsArchived, target.Name, target.Id
             select new
             {
                 target.BudgetId,
                 Dto = new FinancialBudgetTargetDto(target.Id, target.Name, target.PlannedAmount, target.GroupingType,
-                    new FinancialBudgetCategoryDto(category.Id, category.Name, category.IsActive, db.FinancialCategories.Where(p => p.Id == category.ParentCategoryId).Select(p => p.Name).FirstOrDefault()), target.IsArchived,
+                    category == null ? null : new FinancialBudgetCategoryDto(category.Id, category.Name, category.IsActive, db.FinancialCategories.Where(p => p.Id == category.ParentCategoryId).Select(p => p.Name).FirstOrDefault()), target.IsArchived,
                     target.CreatedAt, target.UpdatedAt, target.ArchivedAt),
             }).ToListAsync(cancellationToken);
         return entities.Select(item =>
         {
             var children = targets.Where(target => target.BudgetId == item.Id).Select(target => target.Dto).ToList();
             return new FinancialBudgetDto(item.Id, item.Competence, item.Description, item.IsArchived,
-                children.Where(target => !target.IsArchived).Sum(target => target.PlannedAmount), children,
+                // Só as metas de categoria (que não se sobrepõem) têm total; fixas e cartões são outras perspectivas dos mesmos gastos.
+                children.Where(target => !target.IsArchived && target.GroupingType == BudgetTargetGroupingType.Category).Sum(target => target.PlannedAmount), children,
                 item.CreatedAt, item.UpdatedAt, item.ArchivedAt);
         }).ToList();
     }

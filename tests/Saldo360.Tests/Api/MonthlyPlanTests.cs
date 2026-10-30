@@ -115,7 +115,7 @@ public sealed class MonthlyPlanTests(PostgresFixture postgres) : PostgresApiTest
     private async Task<(int Transactions, int Planned, int Transfers, int Targets)> FinancialCountsAsync()
     {
         await using var db = Db();
-        return (await db.FinancialTransactions.CountAsync(), await db.FinancialPlannedTransactions.CountAsync(), await db.FinancialTransfers.CountAsync(), await db.FinancialCardSpendingTargets.CountAsync());
+        return (await db.FinancialTransactions.CountAsync(), await db.FinancialPlannedTransactions.CountAsync(), await db.FinancialTransfers.CountAsync(), await db.FinancialBudgetTargets.CountAsync(t => t.GroupingType == Saldo360.Domain.Budgets.BudgetTargetGroupingType.AllCards));
     }
 
     // ---- 1, 19: mês sem planejamento, e planejamento mensal configurável ---------------------------------------------------------------
@@ -628,22 +628,25 @@ public sealed class MonthlyPlanTests(PostgresFixture postgres) : PostgresApiTest
     }
 
     [Fact]
-    public async Task TheExistingCardTargetIsPreservedAndPlanningNeverCreatesAnEquivalentTarget()
+    public async Task TheBudgetCardTargetIsTheSingleSourceAndPlanningNeverCreatesOrCopiesAnEquivalentTarget()
     {
         var s = await ArrangeAsync("mp-card-target");
         var month = Month(ThisMonth);
-        var saved = await SendWithCsrfAsync(HttpMethod.Put, $"{s.Root}/financial-dashboard/card-target", s.Session, new { accountId = s.Pf, competence = month, amount = "5000.00" });
-        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        var budget = await SendWithCsrfAsync(HttpMethod.Post, $"{s.Root}/budgets", s.Session, new { competence = month });
+        var budgetId = (await ReadAsync<IdDto>(budget)).Id;
+        var saved = await SendWithCsrfAsync(HttpMethod.Post, $"{s.Root}/budgets/{budgetId}/targets", s.Session, new { groupingType = "AllCards", plannedAmount = "5000.00" });
+        Assert.Equal(HttpStatusCode.Created, saved.StatusCode);
 
         await LineAsync(s, Expense(month, "1000.00", s.Pf));
         await LimitAsync(s, month, s.Food, "2500.00");
         Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post, s.Plan + "/copy", s.Session, new { fromCompetence = month, toCompetence = Month(ThisMonth.AddMonths(1)), confirm = true })).StatusCode);
-        var plan = await PlanAsync(s);
-        var next = await PlanAsync(s, Month(ThisMonth.AddMonths(1)));
+        var plan = await PlanAsync(s, scope: "all");
+        var next = await PlanAsync(s, Month(ThisMonth.AddMonths(1)), "all");
 
-        // A meta de cartões segue sendo a do Dashboard (R$ 5.000), independente das linhas e dos limites; a cópia não a replica nem cria outra.
-        Assert.Equal(("5000.00", "CardTarget"), (Text(plan, "execution", "cards", "target"), Text(plan, "execution", "cards", "targetSource")));
-        Assert.Equal("5000.00", Text(next, "execution", "cards", "target"));
+        // A meta "Todos os cartões" é a do orçamento do mês (R$ 5.000), independente das linhas e dos limites por categoria; a cópia do plano não a replica
+        // para o mês seguinte nem cria outra: cada mês decide o seu teto.
+        Assert.Equal(("5000.00", "BudgetTarget"), (Text(plan, "execution", "cards", "target"), Text(plan, "execution", "cards", "targetSource")));
+        Assert.Equal("NotDefined", Text(next, "execution", "cards", "plannedState"));
         Assert.Equal(1, (await FinancialCountsAsync()).Targets);
     }
 

@@ -23,9 +23,9 @@ public sealed class FinancialBudgetExecutionAlertTests
     [Fact]
     public void MessagesAreStableAndNonIntrusive()
     {
-        Assert.Equal("O consumo projetado está próximo do limite.",
+        Assert.Equal("O consumo está próximo do limite.",
             FinancialBudgetExecutionService.Message(FinancialBudgetAlertStatus.ApproachingLimit));
-        Assert.Equal("O consumo projetado ultrapassou o orçamento.",
+        Assert.Equal("O consumo ultrapassou o limite.",
             FinancialBudgetExecutionService.Message(FinancialBudgetAlertStatus.Exceeded));
     }
 }

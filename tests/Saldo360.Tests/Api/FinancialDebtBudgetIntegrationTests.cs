@@ -33,6 +33,6 @@ public sealed class FinancialDebtBudgetIntegrationTests(PostgresFixture postgres
   Assert.Equal("1000.00",amounts.GetProperty("committed").GetString());
   Assert.Equal("1000.00",amounts.GetProperty("projectedConsumption").GetString());
   Assert.Equal("0.00",amounts.GetProperty("realized").GetString());
-  Assert.Equal("1000.00",result.RootElement.GetProperty("total").GetProperty("committed").GetString());
+  Assert.Equal("1000.00",result.RootElement.GetProperty("categories").GetProperty("committed").GetString());
  }
 }

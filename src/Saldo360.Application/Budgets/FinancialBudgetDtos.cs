@@ -12,7 +12,7 @@ public sealed record FinancialBudgetTargetDto(
     string Name,
     decimal PlannedAmount,
     BudgetTargetGroupingType GroupingType,
-    FinancialBudgetCategoryDto Category,
+    FinancialBudgetCategoryDto? Category,
     bool IsArchived,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
@@ -39,6 +39,8 @@ public sealed record BudgetResult(
 {
     public const string DuplicateBudgetMessage = "Já existe um orçamento para esta família e competência.";
     public const string DuplicateTargetMessage = "Já existe uma meta para esta categoria neste orçamento.";
+    public const string DuplicateFixedTargetMessage = "Já existe uma meta de despesas fixas neste orçamento: edite o limite em vez de criar outra.";
+    public const string DuplicateCardsTargetMessage = "Já existe a meta de todos os cartões neste orçamento: edite o limite em vez de criar outra.";
     public const string OverlappingTargetMessage = "Já existe meta para a categoria principal ou para uma subcategoria desta: use um só nível para o mesmo gasto não ser contado duas vezes.";
     public const string ArchivedMessage = "Orçamento ou meta arquivada não pode ser alterada.";
     public static BudgetResult NotFound { get; } = new(BudgetAccess.NotFound, null, null);

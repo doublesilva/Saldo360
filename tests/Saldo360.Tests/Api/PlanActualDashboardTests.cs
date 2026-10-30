@@ -286,82 +286,99 @@ public sealed class PlanActualDashboardTests(PostgresFixture postgres) : Postgre
         Assert.Equal(("390.00", 3), (Text(all, "cards", "confirmed"), all.GetProperty("cards").GetProperty("cards").GetArrayLength()));
     }
 
-    // ---- 14–17: meta dos cartões ----------------------------------------------------------------------------------------------
+    // ---- 14–17: meta "Todos os cartões" do orçamento (R03): única fonte do limite de cartões ----------------------------------------
 
-    private Task<HttpResponseMessage> TargetAsync(Setup s, Guid account, string competence, string? amount) =>
-        SendWithCsrfAsync(HttpMethod.Put, $"{s.Root}/financial-dashboard/card-target", s.Session, new { accountId = account, competence, amount });
+    private string BudgetsUrl(Setup s) => $"{s.Root}/budgets";
+
+    /// <summary>Define (cria ou revisa) a meta "Todos os cartões" do orçamento da competência; cria o orçamento do mês se faltar.</summary>
+    private async Task<HttpResponseMessage> CardLimitAsync(Setup s, string competence, string amount)
+    {
+        var existing = await ReadAsync<JsonElement>(await SendAsync(HttpMethod.Get, $"{BudgetsUrl(s)}?competence={competence}", s.Session));
+        string budgetId;
+        if (existing.GetArrayLength() > 0) budgetId = existing[0].GetProperty("id").GetString()!;
+        else
+        {
+            var created = await SendWithCsrfAsync(HttpMethod.Post, BudgetsUrl(s), s.Session, new { competence });
+            if (created.StatusCode != HttpStatusCode.Created) return created;
+            budgetId = (await ReadAsync<JsonElement>(created)).GetProperty("id").GetString()!;
+        }
+        var target = existing.GetArrayLength() > 0
+            ? existing[0].GetProperty("targets").EnumerateArray().FirstOrDefault(t => t.GetProperty("groupingType").GetString() == "AllCards" && !t.GetProperty("isArchived").GetBoolean())
+            : default;
+        return target.ValueKind == JsonValueKind.Object
+            ? await SendWithCsrfAsync(HttpMethod.Put, $"{BudgetsUrl(s)}/{budgetId}/targets/{target.GetProperty("id").GetString()}", s.Session, new { plannedAmount = amount })
+            : await SendWithCsrfAsync(HttpMethod.Post, $"{BudgetsUrl(s)}/{budgetId}/targets", s.Session, new { groupingType = "AllCards", plannedAmount = amount });
+    }
 
     [Fact]
-    public async Task TheCardTargetIsPersistedComparedWithTheConsumptionAndNeverGrowsWithTheSpending()
+    public async Task TheConsolidatedCardLimitIsComparedWithTheConsumptionOfAllCardsAndNeverGrowsWithTheSpending()
     {
         var s = await ArrangeAsync("pa-target");
         var (_, _, competence) = await CardWithPurchaseAsync(s, s.Pf, "Cartão PF", "4300.00");
         var month = FirstDay(competence);
 
-        Assert.Equal(HttpStatusCode.OK, (await TargetAsync(s, s.Pf, competence, "5000.00")).StatusCode);
-        var within = (await DashboardAsync(s, month: month)).GetProperty("cards");
+        Assert.True((await CardLimitAsync(s, competence, "5000.00")).IsSuccessStatusCode);
+        var within = (await DashboardAsync(s, "all", month: month)).GetProperty("cards");
         await CardWithPurchaseAsync(s, s.Pf, "Outro cartão PF", "1400.00");
-        var over = (await DashboardAsync(s, month: month)).GetProperty("cards");
+        var over = (await DashboardAsync(s, "all", month: month)).GetProperty("cards");
 
-        Assert.Equal(("Defined", "5000.00", "CardTarget", "4300.00", "700.00", "86.0"), (Text(within, "plannedState"), Text(within, "target"), Text(within, "targetSource"), Text(within, "confirmed"), Text(within, "remaining"), Text(within, "confirmedPercent")));
-        // 5.700 de consumo contra a meta de 5.000: excesso de 700 e a meta continua 5.000.
+        Assert.Equal(("Defined", "5000.00", "BudgetTarget", "4300.00", "700.00", "86.0"), (Text(within, "plannedState"), Text(within, "target"), Text(within, "targetSource"), Text(within, "confirmed"), Text(within, "remaining"), Text(within, "confirmedPercent")));
+        // 5.700 de consumo contra o limite de 5.000: excesso de 700 e o limite continua 5.000.
         Assert.Equal(("5000.00", "5700.00", "0.00", "700.00", "700.00", "114.0"), (Text(over, "target"), Text(over, "projected"), Text(over, "remaining"), Text(over, "excessProjected"), Text(over, "excessConfirmed"), Text(over, "projectedPercent")));
     }
 
     [Fact]
-    public async Task ARevisedTargetOnlyAppliesFromItsCompetenceAndClearingItReturnsToNotDefined()
+    public async Task TheCardLimitBelongsToItsMonthlyBudgetAndRevisingItReplacesTheSingleTarget()
     {
         var s = await ArrangeAsync("pa-target-history");
-        var thisMonth = Month(ThisMonth); var next = Month(ThisMonth.AddMonths(1)); var later = Month(ThisMonth.AddMonths(2));
-        await TargetAsync(s, s.Pf, thisMonth, "5000.00");
-        await TargetAsync(s, s.Pf, next, "4000.00");
-        await TargetAsync(s, s.Pf, later, null);
+        var thisMonth = Month(ThisMonth); var next = Month(ThisMonth.AddMonths(1));
+        await CardLimitAsync(s, thisMonth, "5000.00");
+        await CardLimitAsync(s, next, "4000.00");
 
-        async Task<JsonElement> CardsAt(DateOnly month) => (await DashboardAsync(s, month: month)).GetProperty("cards");
-        var current = await CardsAt(ThisMonth); var following = await CardsAt(ThisMonth.AddMonths(1)); var cleared = await CardsAt(ThisMonth.AddMonths(2)); var before = await CardsAt(ThisMonth.AddMonths(-1));
+        async Task<JsonElement> CardsAt(DateOnly month) => (await DashboardAsync(s, "all", month: month)).GetProperty("cards");
+        var current = await CardsAt(ThisMonth); var following = await CardsAt(ThisMonth.AddMonths(1)); var later = await CardsAt(ThisMonth.AddMonths(2)); var before = await CardsAt(ThisMonth.AddMonths(-1));
 
-        // O mês passado e o corrente seguem a meta original; só a partir da nova competência vale a revisão; encerrada, volta a "não definido".
-        Assert.Equal(("5000.00", "4000.00", "NotDefined", "NotDefined"), (Text(current, "target"), Text(following, "target"), Text(cleared, "plannedState"), Text(before, "plannedState")));
-        // Corrigir a mesma vigência substitui a linha, sem duplicá-la.
-        await TargetAsync(s, s.Pf, thisMonth, "5200.00");
+        // Cada mês tem o seu orçamento: sem meta no mês, "não definido" (nada é herdado em silêncio).
+        Assert.Equal(("5000.00", "4000.00", "NotDefined", "NotDefined"), (Text(current, "target"), Text(following, "target"), Text(later, "plannedState"), Text(before, "plannedState")));
+        // Revisar o limite do mesmo mês atualiza a meta única, sem duplicá-la.
+        await CardLimitAsync(s, thisMonth, "5200.00");
         await using var db = Db();
-        Assert.Equal(1, await db.FinancialCardSpendingTargets.CountAsync(t => t.WorkspaceId == s.Workspace.Id && t.EffectiveFrom == ThisMonth));
+        Assert.Equal(1, await db.FinancialBudgetTargets.CountAsync(t => t.WorkspaceId == s.Workspace.Id && t.GroupingType == Saldo360.Domain.Budgets.BudgetTargetGroupingType.AllCards && !t.IsArchived
+            && db.FinancialBudgets.Any(b => b.Id == t.BudgetId && b.Competence == ThisMonth)));
         Assert.Equal("5200.00", Text(await CardsAt(ThisMonth), "target"));
     }
 
     [Fact]
-    public async Task TheCardTargetValidatesTheAccountTheAmountAndTheWorkspace()
+    public async Task TheCardLimitValidatesTheAmountTheTargetShapeAndTheWorkspace()
     {
         var s = await ArrangeAsync("pa-target-invalid");
         var other = await ArrangeAsync("pa-target-invalid-other");
-        var cash = (await ReadAsync<IdDto>(await PostAsync(s, "accounts", new { name = "Carteira", type = "Cash", financialScope = "PF" }))).Id;
         var thisMonth = Month(ThisMonth);
+        Assert.True((await CardLimitAsync(s, thisMonth, "100.00")).IsSuccessStatusCode);
+        var budgetId = (await ReadAsync<JsonElement>(await SendAsync(HttpMethod.Get, $"{BudgetsUrl(s)}?competence={thisMonth}", s.Session)))[0].GetProperty("id").GetString();
 
-        Assert.Equal(HttpStatusCode.BadRequest, (await TargetAsync(s, s.Pf, thisMonth, "1.234")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await TargetAsync(s, s.Pf, thisMonth, "-5.00")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await TargetAsync(s, s.Pf, "2026-13", "5.00")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await TargetAsync(s, cash, thisMonth, "5.00")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await TargetAsync(s, other.Pf, thisMonth, "5.00")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await TargetAsync(other, s.Pf, thisMonth, "5.00")).StatusCode);
-        await using var db = Db();
-        Assert.Equal(0, await db.FinancialCardSpendingTargets.CountAsync());
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendWithCsrfAsync(HttpMethod.Post, $"{BudgetsUrl(s)}/{budgetId}/targets", s.Session, new { groupingType = "AllCards", plannedAmount = "-5.00" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await SendWithCsrfAsync(HttpMethod.Post, $"{BudgetsUrl(s)}/{budgetId}/targets", s.Session, new { groupingType = "AllCards", plannedAmount = "5.00" })).StatusCode); // só uma por orçamento
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendWithCsrfAsync(HttpMethod.Post, $"{BudgetsUrl(s)}/{budgetId}/targets", s.Session, new { groupingType = "AllCards", plannedAmount = "5.00", categoryId = Guid.NewGuid() })).StatusCode); // sem categoria nem cartão individual
+        Assert.Equal(HttpStatusCode.NotFound, (await SendWithCsrfAsync(HttpMethod.Post, $"{BudgetsUrl(other)}/{budgetId}/targets", other.Session, new { groupingType = "AllCards", plannedAmount = "5.00" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await SendWithCsrfAsync(HttpMethod.Put, $"{s.Root}/financial-dashboard/card-target", s.Session, new { amount = "1.00" })).StatusCode); // a meta por conta pagadora deixou de existir
     }
 
     [Fact]
-    public async Task InAllAccountsTheTargetsOfThePayersAreSummedAndAPartialPlanIsSignalled()
+    public async Task TheConsolidatedLimitSumsAllPayersAndDoesNotApplyToASingleAccountScope()
     {
         var s = await ArrangeAsync("pa-target-all");
         var (_, _, competence) = await CardWithPurchaseAsync(s, s.Pf, "Cartão PF", "100.00");
         await CardWithPurchaseAsync(s, s.Pj, "Cartão PJ", "50.00");
         var month = FirstDay(competence);
-        await TargetAsync(s, s.Pf, competence, "5000.00");
+        await CardLimitAsync(s, competence, "5000.00");
 
-        var partial = (await DashboardAsync(s, "all", month: month)).GetProperty("cards");
-        await TargetAsync(s, s.Pj, competence, "800.00");
-        var complete = (await DashboardAsync(s, "all", month: month)).GetProperty("cards");
+        var all = (await DashboardAsync(s, "all", month: month)).GetProperty("cards");
+        var pf = (await DashboardAsync(s, "account", s.Pf, month: month)).GetProperty("cards");
 
-        Assert.Equal(("5000.00", true), (Text(partial, "target"), partial.GetProperty("targetPartial").GetBoolean()));
-        Assert.Equal(("5800.00", false, "CardTarget"), (Text(complete, "target"), complete.GetProperty("targetPartial").GetBoolean(), Text(complete, "targetSource")));
+        // Um limite só para todos os cartões (PF + PJ): 150 consumidos de 5.000. Numa conta específica não existe teto individual.
+        Assert.Equal(("5000.00", "150.00", false), (Text(all, "target"), Text(all, "confirmed"), all.GetProperty("targetPartial").GetBoolean()));
+        Assert.Equal("NotDefined", Text(pf, "plannedState"));
     }
 
     // ---- 18–19: orçamento e consumo planejado ----------------------------------------------------------------------------------
@@ -441,7 +458,7 @@ public sealed class PlanActualDashboardTests(PostgresFixture postgres) : Postgre
         async Task<string> Snapshot()
         {
             await using var db = Db();
-            return $"{await db.FinancialTransactions.CountAsync()}|{await db.FinancialPlannedTransactions.CountAsync()}|{await db.FinancialTransfers.CountAsync()}|{await db.FinancialCardSpendingTargets.CountAsync()}|{await db.FinancialAccounts.SumAsync(a => a.OpeningBalance)}";
+            return $"{await db.FinancialTransactions.CountAsync()}|{await db.FinancialPlannedTransactions.CountAsync()}|{await db.FinancialTransfers.CountAsync()}|{await db.FinancialBudgetTargets.CountAsync()}|{await db.FinancialAccounts.SumAsync(a => a.OpeningBalance)}";
         }
         var before = await Snapshot();
 

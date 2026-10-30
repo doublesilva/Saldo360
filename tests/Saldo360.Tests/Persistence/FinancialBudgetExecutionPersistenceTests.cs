@@ -71,12 +71,21 @@ public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture pos
 
         Assert.Equal(IsolationLevel.RepeatableRead, Assert.Single(capture.IsolationLevels));
         Assert.Contains(capture.Commands, command => command.Contains("SET TRANSACTION READ ONLY", StringComparison.OrdinalIgnoreCase));
-        // Além das quatro consultas-base, a execução agrega pagamentos e compromissos
-        // de parcelas de dívidas em lote, sem introduzir N+1.
-        // 6 consultas anteriores + 1 das subcategorias das categorias-alvo (R02): constante, não cresce com o número de lançamentos.
-        Assert.Equal(7, capture.Commands.Count(command => command.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)));
-        Assert.Equal(2, capture.Commands.Count(command => command.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase)));
+        // R03: uma leitura por origem (despesas, previsões, dívidas, cartões e ajustes) mais metas, subcategorias e cartões, todas em lote sobre a mesma lista de
+        // registros. O total de consultas é constante: não cresce com o número de lançamentos (sem N+1), e o resumo e a composição usam essa mesma lista.
+        int Selects(Capture c) => c.Commands.Count(command => command.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase));
+        var baseline = Selects(capture);
+        Assert.Equal(11, baseline);
         Assert.Empty(context.ChangeTracker.Entries());
+        await using (var db = Db())
+        {
+            for (var i = 0; i < 40; i++) db.Add(Transaction(0.20m, Competence.AddDays(i % 20)));
+            await db.SaveChangesAsync();
+        }
+        var again = new Capture();
+        await using var second = PostgresFixture.CreateDbContext(_connection, again);
+        await new FinancialBudgetExecutionRepository(second).GetAsync(_family.Id, _budget.Id, CancellationToken.None);
+        Assert.Equal(baseline, Selects(again));
         var target = Assert.Single(result!.Targets);
         Assert.Equal((1.60m, 1.20m), (target.Realized, target.Committed));
     }
@@ -171,8 +180,7 @@ public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture pos
         {
             if (!_done
                 && command.CommandText.Contains("financial_transactions", StringComparison.Ordinal)
-                && !command.CommandText.Contains("financial_planned_transactions", StringComparison.Ordinal)
-                && command.CommandText.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase))
+                && !command.CommandText.Contains("financial_planned_transactions", StringComparison.Ordinal))
             {
                 _done = true;
                 await realize();

@@ -52,7 +52,9 @@ public sealed record ReadOnlyBudgetDestinationSnapshot(int SchemaVersion, Guid W
         if (AppliedMigrations.Contains("20261029000121_AddPluggyInvoiceClosureCreditsAndBalanceAnchors", StringComparer.Ordinal))
             foreach (var table in new[] { "pluggy_card_bill_payments", "financial_account_balance_anchors" }) expected.Add(table);
         if (AppliedMigrations.Contains("20261029153002_AddPluggySyncStateAndRunTrigger", StringComparer.Ordinal)) expected.Add("pluggy_sync_states");
-        if (AppliedMigrations.Contains("20261029165819_AddCardSpendingTargets", StringComparer.Ordinal)) expected.Add("financial_card_spending_targets");
+        // A meta de cartões da T10.1 (por conta pagadora) foi substituída pela meta "Todos os cartões" do orçamento (R03): a tabela deixa de existir.
+        if (AppliedMigrations.Contains("20261029165819_AddCardSpendingTargets", StringComparer.Ordinal) && !AppliedMigrations.Contains("20261030172644_AddSimplifiedBudgetTargets", StringComparer.Ordinal))
+            expected.Add("financial_card_spending_targets");
         if (AppliedMigrations.Contains("20261029214648_AddMonthlyPlanning", StringComparer.Ordinal))
             foreach (var table in new[] { "financial_plan_lines", "financial_plan_history", "financial_non_working_days" }) expected.Add(table);
         if (Baseline.Split(' ').Any(t => !Counts.ContainsKey(t)) || Counts.Keys.Any(t => !expected.Contains(t)) || Counts.Values.Any(n => n < 0)) Invalid("IncompleteDestinationInventoryRequiresDirectPreflight");

@@ -88,8 +88,8 @@ public sealed partial class MonthlyPlanService(
             return new CategoryLimitDto(l.TargetId, l.CategoryId, l.CategoryName, MonthlyPlanCalculator.Cents(l.Amount), l.OriginalAmount is { } o ? MonthlyPlanCalculator.Cents(o) : null,
                 l.OriginalAmount is { } original && original != l.Amount, MonthlyPlanCalculator.Cents(itemized), itemized > l.Amount,
                 run is null ? null : new LimitExecutionDto(MonthlyPlanCalculator.Cents(run.Amounts.Realized), MonthlyPlanCalculator.Cents(run.Amounts.Committed),
-                    MonthlyPlanCalculator.Cents(run.Amounts.CreditCardCommitted), MonthlyPlanCalculator.Cents(run.Amounts.ProjectedConsumption), MonthlyPlanCalculator.Cents(run.Amounts.Available),
-                    MonthlyPlanCalculator.Cents(run.Amounts.ExceededAmount), run.Amounts.ConsumptionPercentage is { } p ? p.ToString("0.00", CultureInfo.InvariantCulture) : null, run.Status.ToString()));
+                    MonthlyPlanCalculator.Cents(run.Amounts.CreditCardCommitted), MonthlyPlanCalculator.Cents(run.Amounts.ProjectedConsumption), MonthlyPlanCalculator.Cents(run.Amounts.AvailableProjected),
+                    MonthlyPlanCalculator.Cents(run.Amounts.ExceededProjected), run.Amounts.ProjectedPercentage is { } p ? p.ToString("0.00", CultureInfo.InvariantCulture) : null, run.ProjectedStatus.ToString()));
         }).ToList();
 
         var pendencies = new List<PendencyDto>();

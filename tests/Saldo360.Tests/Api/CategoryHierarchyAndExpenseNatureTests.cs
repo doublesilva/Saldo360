@@ -267,7 +267,7 @@ public sealed class CategoryHierarchyAndExpenseNatureTests(PostgresFixture postg
         var targets = execution.RootElement.GetProperty("targets").EnumerateArray().ToList();
         var housing = targets.Single(t => t.GetProperty("categoryId").GetGuid() == _housing);
         Assert.Equal(("1000.00", "300.00"), (housing.GetProperty("planned").GetString(), housing.GetProperty("realized").GetString())); // 100 + 200, e não 500
-        Assert.Equal("300.00", execution.RootElement.GetProperty("total").GetProperty("realized").GetString());
+        Assert.Equal("300.00", execution.RootElement.GetProperty("categories").GetProperty("consumed").GetString());
     }
 
     // ---- Integridade no banco (ninguém contorna a regra falando direto com o PostgreSQL) ------------------------------------

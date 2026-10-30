@@ -13,7 +13,10 @@ const budget = (targets: FinancialBudget['targets']): FinancialBudget => ({
 
 const execution = (targets: FinancialBudgetExecution['targets']): FinancialBudgetExecution => ({
   budgetId: 'budget-1', competence: '2026-10',
-  total: { planned: '300.00', realized: '280.00', committed: '40.00', projectedConsumption: '320.00', available: '-20.00', exceededAmount: '20.00', consumptionPercentage: '106.67', status: 'Exceeded', alertMessage: 'O consumo projetado ultrapassou o orçamento.', approachingCount: 1, reachedCount: 1, exceededCount: 1 },
+  categories: {
+    planned: '300.00', consumed: '280.00', realized: '280.00', committed: '40.00', projectedConsumption: '320.00', available: '20.00', availableProjected: '-20.00', exceededAmount: '0.00', exceededProjected: '20.00',
+    consumptionPercentage: '93.33', projectedPercentage: '106.67', status: 'ApproachingLimit', projectedStatus: 'Exceeded', alertMessage: 'O consumo ultrapassou o limite.', approachingCount: 1, reachedCount: 1, exceededCount: 1, targetCount: 3,
+  },
   targets,
 })
 
@@ -22,7 +25,10 @@ const target = (id: string, name: string): FinancialBudget['targets'][number] =>
 })
 
 const targetExecution = (targetId: string, categoryId: string, status: FinancialBudgetExecution['targets'][number]['status'], projectedConsumption: string): FinancialBudgetExecution['targets'][number] => ({
-  targetId, categoryId, planned: '100.00', realized: projectedConsumption, committed: '0.00', projectedConsumption, available: status === 'Exceeded' ? '0.00' : '20.00', exceededAmount: status === 'Exceeded' ? '10.00' : '0.00', consumptionPercentage: '80.00', status, alertMessage: status === 'Exceeded' ? 'O consumo projetado ultrapassou o orçamento.' : 'O consumo projetado está próximo do limite.',
+  targetId, categoryId, groupingType: 'Category', planned: '100.00', consumed: projectedConsumption, realized: projectedConsumption, creditCardCommitted: '0.00', committed: '0.00', projectedConsumption,
+  available: status === 'Exceeded' ? '0.00' : '20.00', availableProjected: status === 'Exceeded' ? '0.00' : '20.00', exceededAmount: status === 'Exceeded' ? '10.00' : '0.00', exceededProjected: status === 'Exceeded' ? '10.00' : '0.00',
+  consumptionPercentage: '80.00', projectedPercentage: '80.00', status, projectedStatus: status, coverage: { estimatedCompetenceCount: 0, undefinedNatureCount: 0, undefinedNatureAmount: '0.00', noCards: false },
+  alertMessage: status === 'Exceeded' ? 'O consumo ultrapassou o limite.' : 'O consumo está próximo do limite.',
 })
 
 afterEach(() => { cleanup(); vi.clearAllMocks() })

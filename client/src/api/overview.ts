@@ -22,13 +22,19 @@ export interface OverviewGoal { goalId: string; name: string; priority: string; 
 export interface OverviewGoals { state: BlockState; activeCount: number; completedCount: number; items: OverviewGoal[] }
 
 export type BudgetStatus = 'WithinBudget' | 'ApproachingLimit' | 'LimitReached' | 'Exceeded'
+/**
+ * Uma meta do mês (R03). `group` = Category, FixedExpenses ou AllCards. Consumido = efetivo + cartão lançado; `pending` = previsto adicional. As perspectivas
+ * contam os mesmos gastos e nunca são somadas num total global. `reasons` explica dados incompletos (EstimatedCompetence, UndefinedNature, NoCards).
+ */
 export interface OverviewBudgetTarget {
-  targetId: string; categoryId: string; categoryName: string; planned: string; realized: string; committed: string; projected: string; available: string; exceeded: string
-  percent: string | null; status: BudgetStatus
+  targetId: string; group: 'Category' | 'FixedExpenses' | 'AllCards'; categoryId: string | null; name: string; planned: string; consumed: string; pending: string; projected: string
+  available: string; availableProjected: string; exceeded: string; percent: string | null; status: BudgetStatus; projectedStatus: BudgetStatus; state: BlockState; reasons: string[]
 }
+/** Resumo só das metas de categoria (não se sobrepõem, então a soma é válida). */
+export interface OverviewBudgetCategories { count: number; planned: string | null; consumed: string | null; exceededCount: number; approachingCount: number; targets: OverviewBudgetTarget[] }
 export interface OverviewBudget {
-  state: BlockState; hasBudget: boolean; budgetId: string | null; planned: string | null; projected: string | null; realized: string | null
-  exceededCount: number; approachingCount: number; targets: OverviewBudgetTarget[]
+  state: BlockState; hasBudget: boolean; budgetId: string | null; competence: string
+  fixed: OverviewBudgetTarget | null; cards: OverviewBudgetTarget | null; categories: OverviewBudgetCategories
 }
 
 export interface OverviewRecentItem { id: string; type: 'Income' | 'Expense'; amount: string; date: string; description: string; categoryName: string | null; accountName: string; awaitingClassification: boolean }

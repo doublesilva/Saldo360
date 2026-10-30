@@ -21,7 +21,7 @@ export const planActual: PlanActualDashboard = {
   },
   overdraft: { eligible: false, state: 'Unavailable', usedAtStart: null, usedLatest: null, effectiveRecovery: null, projectedUsedAtEnd: null, projectedRecovery: null, projectedRecoveryFromNow: null, contractedLimit: null, periodKind: 'Current', accounts: [], reasons: [] },
   cards: {
-    applicable: true, state: 'Complete', plannedState: 'Defined', target: '5000.00', targetSource: 'CardTarget', targetPartial: false, confirmed: '4300.00', pendingKnown: '500.00', estimated: '0.00', projected: '4800.00',
+    applicable: true, state: 'Complete', plannedState: 'Defined', target: '5000.00', targetSource: 'BudgetTarget', targetPartial: false, confirmed: '4300.00', pendingKnown: '500.00', estimated: '0.00', projected: '4800.00',
     remaining: '200.00', excessProjected: '0.00', excessConfirmed: '0.00', confirmedPercent: '86.0', projectedPercent: '96.0', financeCharges: '0.00',
     cards: [{ cardId: 'c1', name: 'Cartão Itaú', scope: 'PF', payerAccountId: 'pf', confirmed: '4300.00', pendingKnown: '500.00', estimated: '0.00', projected: '4800.00' }], payerAccountIds: ['pf'], reasons: [],
   },
