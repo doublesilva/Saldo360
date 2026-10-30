@@ -59,6 +59,18 @@ public sealed class FinancialBudgetTarget : Entity
         UpdatedByUserId = userId;
     }
 
+    /// <summary>Reativa uma meta arquivada com um novo valor (a categoria só pode ter uma meta por orçamento).</summary>
+    public void Restore(string name, decimal amount, Guid userId, DateTimeOffset now)
+    {
+        Name = name;
+        PlannedAmount = amount;
+        IsArchived = false;
+        ArchivedAt = null;
+        ArchivedByUserId = null;
+        UpdatedAt = now;
+        UpdatedByUserId = userId;
+    }
+
     public static bool TryNormalizeName(string? value, out string normalized, out string? error)
     {
         normalized = value?.Trim() ?? string.Empty;

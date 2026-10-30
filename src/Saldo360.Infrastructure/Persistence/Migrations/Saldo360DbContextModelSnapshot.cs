@@ -2653,6 +2653,263 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialNonWorkingDay", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_non_working_days");
+
+                    b.HasIndex("WorkspaceId", "Date")
+                        .IsUnique()
+                        .HasDatabaseName("ux_non_working_days_workspace_date");
+
+                    b.ToTable("financial_non_working_days", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_non_working_day_kind", "kind IN ('Holiday','NonWorking')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlanHistoryEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("action");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<DateOnly>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("label");
+
+                    b.Property<decimal?>("NewAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("new_amount");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("note");
+
+                    b.Property<decimal?>("PreviousAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("previous_amount");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("subject");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subject_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_plan_history");
+
+                    b.HasIndex("WorkspaceId", "SubjectId")
+                        .HasDatabaseName("ix_plan_history_workspace_subject");
+
+                    b.HasIndex("WorkspaceId", "Competence", "At")
+                        .HasDatabaseName("ix_plan_history_workspace_competence_at");
+
+                    b.ToTable("financial_plan_history", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_plan_history_action", "action IN ('Created','Revised','Removed','Restored','Copied')");
+
+                            t.HasCheckConstraint("ck_plan_history_competence", "EXTRACT(DAY FROM competence) = 1");
+
+                            t.HasCheckConstraint("ck_plan_history_subject", "subject IN ('Line','CategoryLimit')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlanLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<Guid?>("ArchivedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("archived_by_user_id");
+
+                    b.Property<int?>("BillableDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("billable_days");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.Property<DateOnly>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<Guid?>("CopiedFromLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("copied_from_line_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid?>("DestinationAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("destination_account_id");
+
+                    b.Property<DateOnly?>("ExpectedDate")
+                        .HasColumnType("date")
+                        .HasColumnName("expected_date");
+
+                    b.Property<decimal?>("HourlyRate")
+                        .HasColumnType("numeric")
+                        .HasColumnName("hourly_rate");
+
+                    b.Property<decimal?>("HoursPerDay")
+                        .HasColumnType("numeric")
+                        .HasColumnName("hours_per_day");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_archived");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Nature")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("nature");
+
+                    b.Property<decimal>("OriginalAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("original_amount");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_plan_lines");
+
+                    b.HasIndex("AccountId")
+                        .HasDatabaseName("ix_financial_plan_lines_account_id");
+
+                    b.HasIndex("CategoryId")
+                        .HasDatabaseName("ix_financial_plan_lines_category_id");
+
+                    b.HasIndex("DestinationAccountId")
+                        .HasDatabaseName("ix_financial_plan_lines_destination_account_id");
+
+                    b.HasIndex("WorkspaceId", "Competence")
+                        .HasDatabaseName("ix_plan_lines_workspace_competence");
+
+                    b.ToTable("financial_plan_lines", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_plan_line_amounts", "amount > 0 AND scale(amount) <= 2 AND original_amount > 0 AND scale(original_amount) <= 2");
+
+                            t.HasCheckConstraint("ck_plan_line_competence", "EXTRACT(DAY FROM competence) = 1");
+
+                            t.HasCheckConstraint("ck_plan_line_expected_date", "expected_date IS NULL OR date_trunc('month', expected_date)::date = competence");
+
+                            t.HasCheckConstraint("ck_plan_line_hourly", "(hourly_rate IS NULL AND hours_per_day IS NULL AND billable_days IS NULL) OR (kind = 'Income' AND hourly_rate > 0 AND hours_per_day > 0 AND hours_per_day <= 24 AND billable_days > 0)");
+
+                            t.HasCheckConstraint("ck_plan_line_kind", "kind IN ('Income','Expense','Transfer')");
+
+                            t.HasCheckConstraint("ck_plan_line_nature", "nature IS NULL OR nature IN ('Recurring','Fixed','Variable','Extraordinary','Reserve')");
+
+                            t.HasCheckConstraint("ck_plan_line_reserve", "nature IS DISTINCT FROM 'Reserve' OR kind = 'Expense'");
+
+                            t.HasCheckConstraint("ck_plan_line_transfer", "(kind = 'Transfer' AND account_id IS NOT NULL AND destination_account_id IS NOT NULL AND account_id <> destination_account_id AND nature IS NULL AND category_id IS NULL) OR (kind <> 'Transfer' AND destination_account_id IS NULL AND nature IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlannedTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5428,6 +5685,54 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_goal_allocations_financial_goals_workspace_id_goa");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialNonWorkingDay", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_non_working_days_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlanHistoryEntry", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_plan_history_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlanLine", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_plan_lines_financial_accounts_account_id");
+
+                    b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_plan_lines_financial_categories_category_id");
+
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("DestinationAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_plan_lines_financial_accounts_destination_account");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_plan_lines_financial_workspaces_workspace_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlannedTransaction", b =>

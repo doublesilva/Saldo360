@@ -14,7 +14,7 @@ import { FinancialBudgetsPage } from './FinancialBudgets'
 import { FinancialCreditCardsPage } from './FinancialCreditCards'
 import { FinancialDocumentInbox } from './FinancialDocumentInbox'
 import { FinancialRecurrences } from './FinancialRecurrences'
-import { FinancialPlanning } from './FinancialPlanning'
+import { PlanningHub } from './PlanningHub'
 import { FinancialDebts } from './FinancialDebts'
 import { FinancialGoals } from './FinancialGoals'
 import { WorkspaceSettings } from './WorkspaceSettings'
@@ -68,7 +68,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     {section === 'cards' && <FinancialCreditCardsPage workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'documents' && <FinancialDocumentInbox workspaceId={workspaceId} onChanged={changed} />}
     {section === 'recurrences' && <FinancialRecurrences workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToAgenda={agenda} />}
-    {section === 'planning' && <FinancialPlanning workspaceId={workspaceId} refreshKey={version} />}
+    {section === 'planning' && <PlanningHub workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'debts' && <FinancialDebts workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToAgenda={agenda} onNavigateToBudgets={budgets} onNavigateToPlanning={() => setSection('planning')} />}
     {section === 'goals' && <FinancialGoals workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToPlanning={() => setSection('planning')} />}
     {section === 'accounts' && <Accounts workspaceId={workspaceId} members={[{ userId: workspace.ownerUserId, displayName: 'Você', isCurrentUser: true }]} balanceVersion={version} />}

@@ -16,6 +16,7 @@ using Saldo360.Api.Recurrences;
 using Saldo360.Api.Debts;
 using Saldo360.Api.Goals;
 using Saldo360.Api.Dashboard;
+using Saldo360.Api.MonthlyPlan;
 using Saldo360.Api.Pluggy;
 using Saldo360.Api.Errors;
 using Saldo360.Api.Observability;
@@ -108,6 +109,7 @@ app.MapFinancialGoalEndpoints();
 app.MapFinancialGoalAllocationEndpoints();
 app.MapFinancialDashboardEndpoints();
 app.MapPlanActualEndpoints();
+app.MapMonthlyPlanEndpoints();
 app.MapPluggyPocEndpoints();
 app.MapPluggyFinancialEndpoints();
 

@@ -1,0 +1,53 @@
+/* T10.2: Planejamento mensal. Layout fluido: nenhum valor monetário é truncado e a página não rola na horizontal de 360 px a 1920 px;
+   tabelas largas rolam apenas dentro do próprio contêiner, e em telas estreitas as linhas viram cartões. */
+.planning-hub { display: grid; gap: 1rem; min-width: 0; }
+.planning-hub > * { min-width: 0; }
+.planning-hub__tabs { display: flex; flex-wrap: wrap; gap: .4rem; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+.planning-hub__tabs button { min-height: 2.5rem; border-radius: .5rem; }
+.planning-hub__tabs button[aria-selected="true"] { background: var(--accent); color: var(--on-accent); }
+.planning-hub__filters { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: flex-end; }
+.planning-hub__filters label { display: grid; gap: .25rem; font-size: .85rem; color: var(--muted); min-width: min(100%, 14rem); }
+.planning-hub__filters input, .planning-hub__filters select { min-height: 2.5rem; width: 100%; }
+.monthly-plan { display: grid; gap: 1rem; min-width: 0; }
+.monthly-plan > * { min-width: 0; margin: 0; }
+.monthly-plan__actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.monthly-plan__actions button { min-height: 2.5rem; }
+.monthly-plan__form { max-width: 40rem; }
+.monthly-plan__form label { display: grid; gap: .25rem; font-size: .9rem; }
+.monthly-plan__form input:not([type="radio"]), .monthly-plan__form select { width: 100%; min-height: 2.5rem; box-sizing: border-box; }
+.monthly-plan__mode { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; border: 1px solid var(--border); border-radius: .5rem; padding: .5rem .75rem; }
+.monthly-plan__mode label { display: flex; align-items: center; gap: .4rem; }
+.monthly-plan__hourly { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .6rem; }
+.monthly-plan__hourly .meta { grid-column: 1 / -1; }
+.monthly-plan__section { display: grid; gap: .6rem; min-width: 0; }
+.monthly-plan__section h5, .monthly-plan__pendencies h5 { margin: 0; }
+.monthly-plan__pendencies { border: 1px solid var(--warning, var(--border)); border-radius: .6rem; padding: .75rem 1rem; }
+.monthly-plan__pendencies ul { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .9rem; }
+.monthly-plan__summary { display: grid; gap: .25rem; }
+.monthly-plan__summary p { margin: 0; }
+.monthly-plan__table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: .6rem; }
+.monthly-plan__table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.monthly-plan__table th, .monthly-plan__table td { padding: .5rem .65rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); overflow-wrap: break-word; }
+.monthly-plan__table td { font-variant-numeric: tabular-nums; }
+.monthly-plan__table:not(.monthly-plan__table--months) th[scope="col"] { white-space: nowrap; }
+.monthly-plan__table th small, .monthly-plan__table td small { display: block; color: var(--muted); font-weight: 400; }
+.monthly-plan__table--months th[scope="row"] { position: sticky; left: 0; background: var(--surface, #fff); min-width: 11rem; }
+.monthly-plan__table--months td { min-width: 8.5rem; }
+.monthly-plan__row-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.monthly-plan__row-actions button { min-height: 2.25rem; }
+.monthly-plan__warn { color: var(--fail); }
+.monthly-plan__risk { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-weight: 600; font-size: .8rem; border: 1px solid var(--border); }
+.monthly-plan__risk--High { color: var(--fail); border-color: var(--fail); }
+.monthly-plan__risk--Medium { color: var(--warning-text, var(--fail)); border-color: var(--warning, var(--border)); }
+.monthly-plan__history { margin: 0; padding-left: 1.1rem; display: grid; gap: .4rem; font-size: .9rem; overflow-wrap: anywhere; }
+.monthly-plan__days { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); column-gap: 1.5rem; }
+.monthly-plan__days-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.monthly-plan__days-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem .75rem; overflow-wrap: anywhere; }
+@media (max-width: 40rem) {
+  .monthly-plan__table:not(.monthly-plan__table--months) thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .monthly-plan__table:not(.monthly-plan__table--months), .monthly-plan__table:not(.monthly-plan__table--months) tbody, .monthly-plan__table:not(.monthly-plan__table--months) tr { display: block; }
+  .monthly-plan__table:not(.monthly-plan__table--months) tr { padding: .6rem .75rem; border-bottom: 1px solid var(--border); }
+  .monthly-plan__table:not(.monthly-plan__table--months) th, .monthly-plan__table:not(.monthly-plan__table--months) td { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .1rem .75rem; border: 0; padding: .2rem 0; }
+  .monthly-plan__table:not(.monthly-plan__table--months) [data-label]::before { content: attr(data-label); color: var(--muted); font-size: .8rem; font-weight: 400; }
+  .planning-hub__filters label { width: 100%; }
+}

@@ -27,6 +27,16 @@ public sealed record CardSlice(Guid CardId, string Name, string? Scope, Guid? Pa
 }
 
 /// <summary>
+/// Base de consumo de uma competência (despesa por competência, não por caixa): despesas bancárias sem o pagamento de faturas + consumo dos cartões na
+/// competência da fatura. Usada pelo Dashboard e pela visão de seis meses para que ambos devolvam os mesmos números.
+/// </summary>
+public sealed record ConsumptionBase(decimal BankExpenses, decimal CardPayments, decimal CardConfirmed, decimal CardPendingKnown, decimal CardEstimated, decimal PendingNonCard, decimal PendingBank, decimal CardOutstanding)
+{
+    public decimal Realized => BankExpenses + CardConfirmed;
+    public decimal Pending => PendingNonCard + PendingBank + CardPendingKnown + CardEstimated;
+}
+
+/// <summary>
 /// Fórmulas do Dashboard Planejado × Projetado × Realizado (T10.1). Tudo é puro (sem banco, rede ou relógio). Os totais de caixa, saldos, obrigações
 /// de cartão e conciliação já vêm dos serviços existentes; aqui só se comparam e se combinam esses números.
 /// </summary>
@@ -57,6 +67,17 @@ public static class PlanActualCalculator
     public static string Cents(decimal value) => Money.Format(decimal.Round(value, Money.MaxScale, MidpointRounding.AwayFromZero));
     public static string? Cents(decimal? value) => value is { } v ? Cents(v) : null;
     public static string Percent(decimal value) => decimal.Round(value, 1, MidpointRounding.AwayFromZero).ToString("0.0", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Consumo da competência a partir da projeção mensal da Agenda e das fatias de cartão: o pagamento de fatura sai do realizado bancário (o consumo do
+    /// cartão entra pela fatura, uma única vez) e a obrigação de cartão pendente sai dos pendentes (entra pelas compras e parcelas).
+    /// </summary>
+    public static ConsumptionBase Consumption(decimal realizedExpense, decimal cardPayments, decimal pendingExpense, decimal? cardOutstanding, IReadOnlyList<CardSlice> slices, decimal pendingBankExpense)
+    {
+        var outstanding = cardOutstanding ?? 0m;
+        return new(realizedExpense - cardPayments, cardPayments, slices.Sum(s => s.Confirmed), slices.Sum(s => s.PendingKnown), slices.Sum(s => s.Estimated),
+            pendingExpense - outstanding, pendingBankExpense, outstanding);
+    }
 
     public static string PeriodKind(DateOnly month, DateOnly today) =>
         month.Year == today.Year && month.Month == today.Month ? "Current" : month < today ? "Past" : "Future";

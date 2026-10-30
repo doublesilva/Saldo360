@@ -13,7 +13,11 @@ namespace Saldo360.Infrastructure.Dashboard;
 /// </summary>
 internal sealed class PlanActualRepository(Saldo360DbContext db) : IPlanActualRepository
 {
-    public async Task<PlanActualFacts> LoadAsync(Guid workspaceId, DateOnly month, IReadOnlyList<Guid>? scopeAccountIds, CancellationToken ct)
+    /// <summary>
+    /// A base de planejado/projetado de uma competência: previsões do período, movimentações PENDING da Pluggy e metas agregadas. É a mesma para o painel e para a
+    /// visão de seis meses (T10.2), de modo que ambos usem as mesmas regras.
+    /// </summary>
+    public async Task<PlanBasisFacts> LoadBasisAsync(Guid workspaceId, DateOnly month, IReadOnlyList<Guid>? scopeAccountIds, CancellationToken ct)
     {
         var start = month; var end = month.AddMonths(1).AddDays(-1);
         var scope = scopeAccountIds?.ToList();
@@ -42,10 +46,20 @@ internal sealed class PlanActualRepository(Saldo360DbContext db) : IPlanActualRe
         var pendingBank = new PendingBankFacts(pending.Where(p => string.Equals(p.Type, "CREDIT", StringComparison.OrdinalIgnoreCase)).Sum(p => p.Amount),
             pending.Where(p => string.Equals(p.Type, "DEBIT", StringComparison.OrdinalIgnoreCase)).Sum(p => p.Amount));
 
-        var targets = await db.FinancialCardSpendingTargets.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && t.EffectiveFrom <= start)
-            .Select(t => new CardTargetRow(t.PayerAccountId, t.EffectiveFrom, t.Amount)).ToListAsync(ct);
         var aggregates = await db.FinancialMonthlyAggregateTargets.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && t.Competence == start)
             .Select(t => new { t.TargetType, t.Amount }).ToListAsync(ct);
+        return new(new(income?.Total ?? 0m, income?.Count ?? 0, expense?.Total ?? 0m, expense?.Count ?? 0), pendingBank,
+            aggregates.FirstOrDefault(a => a.TargetType == MonthlyAggregateTargetType.CreditCards)?.Amount, aggregates.FirstOrDefault(a => a.TargetType == MonthlyAggregateTargetType.TotalExpenses)?.Amount);
+    }
+
+    public async Task<PlanActualFacts> LoadAsync(Guid workspaceId, DateOnly month, IReadOnlyList<Guid>? scopeAccountIds, CancellationToken ct)
+    {
+        var start = month; var end = month.AddMonths(1).AddDays(-1);
+        var startUtc = new DateTimeOffset(start.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); var endUtc = startUtc.AddMonths(1);
+        var basis = await LoadBasisAsync(workspaceId, month, scopeAccountIds, ct);
+
+        var targets = await db.FinancialCardSpendingTargets.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && t.EffectiveFrom <= start)
+            .Select(t => new CardTargetRow(t.PayerAccountId, t.EffectiveFrom, t.Amount)).ToListAsync(ct);
 
         // Revisões: o mesmo critério da conciliação de saldo (T09.5) — pendente de decisão ou ignorada depois de entrar no histórico.
         var review = await (from p in db.PluggyPostings.AsNoTracking()
@@ -74,8 +88,7 @@ internal sealed class PlanActualRepository(Saldo360DbContext db) : IPlanActualRe
             .Select(t => t.SourceAccountId).Concat(db.FinancialTransfers.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.TransferDate >= start && t.TransferDate <= end).Select(t => t.DestinationAccountId))
             .Distinct().ToListAsync(ct);
 
-        return new(new(income?.Total ?? 0m, income?.Count ?? 0, expense?.Total ?? 0m, expense?.Count ?? 0), pendingBank, targets,
-            aggregates.FirstOrDefault(a => a.TargetType == MonthlyAggregateTargetType.CreditCards)?.Amount, aggregates.FirstOrDefault(a => a.TargetType == MonthlyAggregateTargetType.TotalExpenses)?.Amount,
+        return new(basis.Planned, basis.PendingBank, targets, basis.AggregateCardTarget, basis.AggregateTotalExpenses,
             reviewFacts, connections, activeIds.Concat(transferIds).ToHashSet());
     }
 
@@ -88,7 +101,10 @@ internal sealed class PlanActualRepository(Saldo360DbContext db) : IPlanActualRe
             await db.PluggyImportedTransactions.AsNoTracking().LongCountAsync(t => t.WorkspaceId == workspaceId, ct),
             await db.FinancialCreditCardPurchases.AsNoTracking().LongCountAsync(p => p.WorkspaceId == workspaceId, ct),
             await db.FinancialAccountBalanceAnchors.AsNoTracking().LongCountAsync(a => a.WorkspaceId == workspaceId, ct),
-            await db.PluggySyncRuns.AsNoTracking().Where(r => r.WorkspaceId == workspaceId).MaxAsync(r => (DateTimeOffset?)r.FinishedAt, ct));
+            await db.PluggySyncRuns.AsNoTracking().Where(r => r.WorkspaceId == workspaceId).MaxAsync(r => (DateTimeOffset?)r.FinishedAt, ct),
+            await db.FinancialPlanLines.AsNoTracking().LongCountAsync(l => l.WorkspaceId == workspaceId, ct),
+            await db.FinancialPlanLines.AsNoTracking().Where(l => l.WorkspaceId == workspaceId && !l.IsArchived).SumAsync(l => (decimal?)l.Amount, ct) ?? 0m,
+            await db.FinancialPlanLines.AsNoTracking().Where(l => l.WorkspaceId == workspaceId).MaxAsync(l => (DateTimeOffset?)l.UpdatedAt, ct));
     }
 
     public async Task SaveCardTargetAsync(Guid workspaceId, Guid userId, Guid accountId, DateOnly effectiveFrom, decimal? amount, DateTimeOffset now, CancellationToken ct)

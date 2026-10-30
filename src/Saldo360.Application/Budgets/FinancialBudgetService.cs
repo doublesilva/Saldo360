@@ -1,13 +1,16 @@
 using System.Globalization;
+using Saldo360.Application.MonthlyPlan;
 using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Budgets;
 using Saldo360.Domain.Common;
+using Saldo360.Domain.Planning;
 
 namespace Saldo360.Application.Budgets;
 
 public sealed class FinancialBudgetService(
     IFinancialWorkspaceRepository workspaces,
     IFinancialBudgetRepository budgets,
+    IPlanHistoryWriter history,
     TimeProvider timeProvider)
 {
     public async Task<BudgetResult> CreateAsync(
@@ -70,7 +73,7 @@ public sealed class FinancialBudgetService(
 
     public async Task<BudgetResult> AddTargetAsync(
         Guid workspaceId, Guid budgetId, Guid userId, string? name, decimal? amount,
-        string? groupingType, Guid? categoryId, CancellationToken cancellationToken)
+        string? groupingType, Guid? categoryId, CancellationToken cancellationToken, string? note = null)
     {
         if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
             || await budgets.FindBudgetAsync(workspaceId, budgetId, cancellationToken) is not { } budget)
@@ -84,8 +87,12 @@ public sealed class FinancialBudgetService(
             return BudgetResult.Invalid(new Dictionary<string, string[]> { ["categoryId"] = ["A meta deve referenciar uma categoria de despesa."] });
         if (await budgets.TargetExistsAsync(budgetId, categoryId.Value, cancellationToken))
             return BudgetResult.Conflict(BudgetResult.DuplicateTargetMessage);
+        var now = timeProvider.GetUtcNow();
         var target = FinancialBudgetTarget.Create(
-            workspaceId, budgetId, normalized, amount!.Value, categoryId.Value, userId, timeProvider.GetUtcNow());
+            workspaceId, budgetId, normalized, amount!.Value, categoryId.Value, userId, now);
+        // O histórico (T10.2) é gravado junto com a meta; se a gravação falhar por duplicidade, nada é mantido.
+        history.Stage(FinancialPlanHistoryEntry.Create(workspaceId, budget.Competence, PlanHistorySubject.CategoryLimit, target.Id, PlanHistoryAction.Created,
+            normalized, null, amount.Value, note, userId, now));
         return await budgets.TryAddTargetAsync(target, cancellationToken)
             ? BudgetResult.Ok((await budgets.GetAsync(workspaceId, budgetId, cancellationToken))!)
             : BudgetResult.Conflict(BudgetResult.DuplicateTargetMessage);
@@ -93,7 +100,7 @@ public sealed class FinancialBudgetService(
 
     public async Task<BudgetResult> UpdateTargetAsync(
         Guid workspaceId, Guid budgetId, Guid targetId, Guid userId, string? name, decimal? amount,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? note = null)
     {
         if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
             || await budgets.FindBudgetAsync(workspaceId, budgetId, cancellationToken) is not { } budget
@@ -102,20 +109,48 @@ public sealed class FinancialBudgetService(
         if (budget.IsArchived || target.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
         var errors = ValidateTarget(name, amount, nameof(BudgetTargetGroupingType.Category), target.CategoryId, out var normalized);
         if (errors.Count > 0) return BudgetResult.Invalid(errors);
-        target.Update(normalized, amount!.Value, userId, timeProvider.GetUtcNow());
+        var now = timeProvider.GetUtcNow();
+        var previous = target.PlannedAmount;
+        target.Update(normalized, amount!.Value, userId, now);
+        if (previous != amount.Value)
+            history.Stage(FinancialPlanHistoryEntry.Create(workspaceId, budget.Competence, PlanHistorySubject.CategoryLimit, target.Id, PlanHistoryAction.Revised,
+                normalized, previous, amount.Value, note, userId, now));
         await budgets.TrySaveChangesAsync(cancellationToken);
         return BudgetResult.Ok((await budgets.GetAsync(workspaceId, budgetId, cancellationToken))!);
     }
 
     public async Task<BudgetResult> ArchiveTargetAsync(
-        Guid workspaceId, Guid budgetId, Guid targetId, Guid userId, CancellationToken cancellationToken)
+        Guid workspaceId, Guid budgetId, Guid targetId, Guid userId, CancellationToken cancellationToken, string? note = null)
     {
         if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
             || await budgets.FindBudgetAsync(workspaceId, budgetId, cancellationToken) is not { } budget
             || await budgets.FindTargetAsync(budgetId, targetId, cancellationToken) is not { } target)
             return BudgetResult.NotFound;
         if (budget.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
-        target.Archive(userId, timeProvider.GetUtcNow());
+        var now = timeProvider.GetUtcNow();
+        if (!target.IsArchived)
+            history.Stage(FinancialPlanHistoryEntry.Create(workspaceId, budget.Competence, PlanHistorySubject.CategoryLimit, target.Id, PlanHistoryAction.Removed,
+                target.Name, target.PlannedAmount, null, note, userId, now));
+        target.Archive(userId, now);
+        await budgets.TrySaveChangesAsync(cancellationToken);
+        return BudgetResult.Ok((await budgets.GetAsync(workspaceId, budgetId, cancellationToken))!);
+    }
+
+    /// <summary>Reativa o limite arquivado de uma categoria com um novo valor (T10.2). A categoria só tem uma meta por orçamento, então o limite removido volta no mesmo registro.</summary>
+    public async Task<BudgetResult> RestoreTargetAsync(
+        Guid workspaceId, Guid budgetId, Guid targetId, Guid userId, decimal? amount, CancellationToken cancellationToken, string? note = null)
+    {
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            || await budgets.FindBudgetAsync(workspaceId, budgetId, cancellationToken) is not { } budget
+            || await budgets.FindTargetAsync(budgetId, targetId, cancellationToken) is not { } target)
+            return BudgetResult.NotFound;
+        if (budget.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
+        var errors = ValidateTarget(target.Name, amount, nameof(BudgetTargetGroupingType.Category), target.CategoryId, out var normalized);
+        if (errors.Count > 0) return BudgetResult.Invalid(errors);
+        var now = timeProvider.GetUtcNow();
+        target.Restore(normalized, amount!.Value, userId, now);
+        history.Stage(FinancialPlanHistoryEntry.Create(workspaceId, budget.Competence, PlanHistorySubject.CategoryLimit, target.Id, PlanHistoryAction.Restored,
+            normalized, null, amount.Value, note, userId, now));
         await budgets.TrySaveChangesAsync(cancellationToken);
         return BudgetResult.Ok((await budgets.GetAsync(workspaceId, budgetId, cancellationToken))!);
     }

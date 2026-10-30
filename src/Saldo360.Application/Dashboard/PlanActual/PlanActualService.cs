@@ -3,6 +3,7 @@ using Saldo360.Application.Accounts;
 using Saldo360.Application.Accounts.Reconciliation;
 using Saldo360.Application.Calendar;
 using Saldo360.Application.CreditCards.Projection;
+using Saldo360.Application.MonthlyPlan;
 using Saldo360.Application.Pluggy;
 using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Accounts;
@@ -21,12 +22,15 @@ public sealed record CardTargetRow(Guid PayerAccountId, DateOnly EffectiveFrom, 
 /// <summary>Conexão Pluggy que alimenta uma conta bancária ou os cartões pagos por uma conta.</summary>
 public sealed record ConnectionLink(Guid ConnectionId, Guid? AccountId, Guid? CardPayerAccountId);
 
+/// <summary>Fatos de uma competência que alimentam o planejado e o projetado de despesas: previsões, movimentações PENDING da Pluggy e metas agregadas.</summary>
+public sealed record PlanBasisFacts(PlannedFacts Planned, PendingBankFacts PendingBank, decimal? AggregateCardTarget, decimal? AggregateTotalExpenses);
+
 public sealed record PlanActualFacts(
     PlannedFacts Planned, PendingBankFacts PendingBank, IReadOnlyList<CardTargetRow> CardTargets, decimal? AggregateCardTarget, decimal? AggregateTotalExpenses,
     ReviewFacts Review, IReadOnlyList<ConnectionLink> Connections, IReadOnlySet<Guid> AccountsWithActivity);
 
 /// <summary>Impressão digital barata dos dados que alimentam o painel: se mudar durante a montagem, a montagem é refeita.</summary>
-public sealed record DataFingerprint(long Transactions, decimal TransactionTotal, long Planned, decimal PlannedTotal, long Imported, long Purchases, long Anchors, DateTimeOffset? LastRun);
+public sealed record DataFingerprint(long Transactions, decimal TransactionTotal, long Planned, decimal PlannedTotal, long Imported, long Purchases, long Anchors, DateTimeOffset? LastRun, long PlanLines = 0, decimal PlanTotal = 0m, DateTimeOffset? PlanLastChange = null);
 
 public enum CardTargetSaveOutcome { Saved, AccountNotFound, AccountNotEligible }
 
@@ -34,6 +38,8 @@ public interface IPlanActualRepository
 {
     /// <summary>Fatos próprios do painel, restritos ao orçamento. <paramref name="scopeAccountIds"/> nulo = todas as contas. Somente leitura.</summary>
     Task<PlanActualFacts> LoadAsync(Guid workspaceId, DateOnly month, IReadOnlyList<Guid>? scopeAccountIds, CancellationToken cancellationToken);
+    /// <summary>Somente a base de planejado/projetado de uma competência (sem revisões nem conexões): usada pela visão de seis meses. Mesmas regras do <see cref="LoadAsync"/>.</summary>
+    Task<PlanBasisFacts> LoadBasisAsync(Guid workspaceId, DateOnly month, IReadOnlyList<Guid>? scopeAccountIds, CancellationToken cancellationToken);
     Task<DataFingerprint> FingerprintAsync(Guid workspaceId, CancellationToken cancellationToken);
     /// <summary>Grava a meta de cartões de uma conta pagadora a partir da competência (substitui a linha da mesma vigência, se houver). Nunca altera outras vigências.</summary>
     Task SaveCardTargetAsync(Guid workspaceId, Guid userId, Guid accountId, DateOnly effectiveFrom, decimal? amount, DateTimeOffset now, CancellationToken cancellationToken);
@@ -46,7 +52,7 @@ public interface IPlanActualRepository
 public sealed class PlanActualService(
     IFinancialWorkspaceRepository workspaces, IFinancialAccountRepository accounts, FinancialCalendarMonthlyProjectionService monthlyProjection,
     FinancialCalendarBalanceService calendar, CardProjectionService cardProjection, AccountBalanceReconciliationService reconciliation,
-    IAccountBalanceReconciliationRepository reconciliationFacts, IFinancialCalendarBalanceRepository calendarSource, PluggySyncMonitorService syncMonitor, IPlanActualRepository repository, TimeProvider time)
+    IAccountBalanceReconciliationRepository reconciliationFacts, IFinancialCalendarBalanceRepository calendarSource, PluggySyncMonitorService syncMonitor, IMonthlyPlanRepository monthlyPlan, IPlanActualRepository repository, TimeProvider time)
 {
     private const int MaxAttempts = 3;
 
@@ -133,6 +139,9 @@ public sealed class PlanActualService(
         }
 
         var facts = await repository.LoadAsync(workspaceId, month, scopeIds, ct);
+        // T10.2: o planejamento mensal (receitas, despesas e limites por categoria) é a fonte do planejado quando existe; as previsões e metas anteriores são o reserva.
+        var plan = MonthlyPlanCalculator.Planned(await monthlyPlan.LoadAsync(workspaceId, month, month, ct), selected?.Id);
+        var planAccounts = await monthlyPlan.AccountsWithPlanAsync(workspaceId, month, month, ct);
         var overview = (await reconciliation.BuildOverviewAsync(workspaceId, ct)).Accounts.ToDictionary(a => a.AccountId);
         var history = (await reconciliationFacts.LoadAsync(workspaceId, null, ct)).ToDictionary(f => f.AccountId);
         var cards = (await cardProjection.ComputeWithBillsAsync(workspaceId, today, ct))
@@ -164,16 +173,17 @@ public sealed class PlanActualService(
 
         // ---- Receitas -------------------------------------------------------------------------------------------------------
         var incomeReasons = new List<string>(caveats);
-        decimal? plannedIncome = facts.Planned.IncomeCount > 0 ? facts.Planned.Income : null;
+        var (plannedIncome, incomeSource) = MonthlyPlanCalculator.PlannedIncome(plan, facts.Planned);
         if (plannedIncome is null) incomeReasons.Add(PlanActualCalculator.Reasons.PlanNotDefined);
-        var income = PlanActualCalculator.Indicator(plannedIncome, "PlannedTransactions", m.RealizedIncome, m.PendingIncome,
+        var income = PlanActualCalculator.Indicator(plannedIncome, incomeSource, m.RealizedIncome, m.PendingIncome,
             [new("PendingPlanned", PlanActualCalculator.Cents(m.PendingIncome))], incomeReasons);
 
         // ---- Despesas (consumo e fluxo de caixa) ----------------------------------------------------------------------------
-        var bankExpenses = m.RealizedExpense - m.CardPayments;
-        var cardOutstanding = m.CreditCardOutstanding ?? 0m;
-        var pendingNonCard = m.PendingExpense - cardOutstanding;
         var slices = cards.Select(c => PlanActualCalculator.Slice(c.Projection, c.Bills, competence)).ToList();
+        var basis = PlanActualCalculator.Consumption(m.RealizedExpense, m.CardPayments, m.PendingExpense, m.CreditCardOutstanding, slices, facts.PendingBank.Expense);
+        var bankExpenses = basis.BankExpenses;
+        var cardOutstanding = basis.CardOutstanding;
+        var pendingNonCard = basis.PendingNonCard;
         var expenseReasons = new List<string>(caveats);
         if (cardsIncomplete) expenseReasons.Add(PlanActualCalculator.Reasons.CardCoverageIncomplete);
         if (!m.DebtProjectionComplete) expenseReasons.Add(PlanActualCalculator.Reasons.DebtCoverageIncomplete);
@@ -186,17 +196,12 @@ public sealed class PlanActualService(
              new("PendingCardInvoices", PlanActualCalculator.Cents(cardOutstanding)), new("PendingBank", PlanActualCalculator.Cents(facts.PendingBank.Expense))], cashReasons);
 
         var consumptionReasons = new List<string>(expenseReasons);
-        decimal? plannedConsumption = null; string? consumptionSource = null;
-        if (selected is null)
-        {
-            if (m.BudgetTarget is { } budget && budget > 0m) { plannedConsumption = budget; consumptionSource = "Budget"; }
-            else if (facts.AggregateTotalExpenses is { } aggregate) { plannedConsumption = aggregate; consumptionSource = "AggregateTarget"; }
-        }
-        else consumptionReasons.Add(PlanActualCalculator.Reasons.PlanNotAttributable);
-        if (plannedConsumption is null && selected is null) consumptionReasons.Add(PlanActualCalculator.Reasons.PlanNotDefined);
-        var cardConfirmed = slices.Sum(s => s.Confirmed);
-        var cardPending = slices.Sum(s => s.PendingKnown + s.Estimated);
-        var consumption = PlanActualCalculator.Indicator(plannedConsumption, consumptionSource, bankExpenses + cardConfirmed, pendingNonCard + facts.PendingBank.Expense + cardPending,
+        var (plannedConsumption, consumptionSource) = MonthlyPlanCalculator.PlannedConsumption(plan, m.BudgetTarget, facts.AggregateTotalExpenses, selected is null);
+        // Numa conta específica, sem linhas de despesa dela, o planejado por categoria (consolidado) não é atribuível a ela.
+        if (plannedConsumption is null) consumptionReasons.Add(selected is null ? PlanActualCalculator.Reasons.PlanNotDefined : PlanActualCalculator.Reasons.PlanNotAttributable);
+        var cardConfirmed = basis.CardConfirmed;
+        var cardPending = basis.CardPendingKnown + basis.CardEstimated;
+        var consumption = PlanActualCalculator.Indicator(plannedConsumption, consumptionSource, basis.Realized, basis.Pending,
             [new("BankExpenses", PlanActualCalculator.Cents(bankExpenses)), new("CardPurchases", PlanActualCalculator.Cents(cardConfirmed)), new("PendingPlanned", PlanActualCalculator.Cents(pendingNonCard)),
              new("PendingBank", PlanActualCalculator.Cents(facts.PendingBank.Expense)), new("PendingCardPurchases", PlanActualCalculator.Cents(slices.Sum(s => s.PendingKnown))),
              new("EstimatedCardInstallments", PlanActualCalculator.Cents(slices.Sum(s => s.Estimated)))], consumptionReasons);
@@ -243,11 +248,11 @@ public sealed class PlanActualService(
         var sync = await BuildSyncAsync(workspaceId, userId, selected, facts, ct);
 
         var scopeDto = new PlanActualScopeDto(requested, kind, selected?.Id, selected?.Name, selected?.FinancialScope.ToString(), primary?.Id, primary?.Name,
-            requested == PlanActualScopes.Primary && primary is null, ScopeOptions(all, facts.AccountsWithActivity, selected));
+            requested == PlanActualScopes.Primary && primary is null, ScopeOptions(all, facts.AccountsWithActivity.Concat(planAccounts).ToHashSet(), selected));
         return new(competence, today, periodKind, scopeDto, income, expenses, overdraft, cardsDto, situation, coverage, sync, true);
     }
 
-    private static IReadOnlyList<ScopeAccountDto> ScopeOptions(IReadOnlyList<FinancialAccountDto> all, IReadOnlySet<Guid> withActivity, FinancialAccountDto? selected) =>
+    internal static IReadOnlyList<ScopeAccountDto> ScopeOptions(IReadOnlyList<FinancialAccountDto> all, IReadOnlySet<Guid> withActivity, FinancialAccountDto? selected) =>
         all.Where(a => a.IsActive || withActivity.Contains(a.Id) || a.Id == selected?.Id)
             .OrderByDescending(a => a.IsPrimary).ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(a => new ScopeAccountDto(a.Id, a.Name, a.FinancialScope.ToString(), a.IsPrimary, a.IsActive)).ToList();
