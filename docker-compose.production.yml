@@ -38,6 +38,13 @@ services:
       AiAgent__Provider: OpenAI
       AiAgent__Model: ${AI_AGENT_MODEL:-gpt-4o-mini}
       AiAgent__ApiKeyFile: /run/secrets/openai-api-key
+      # Pluggy: tudo desligado/vazio por padrão. Credenciais só no .env do servidor (0600), nunca no Git ou na imagem.
+      Pluggy__Enabled: ${PLUGGY_ENABLED:-false}
+      Pluggy__ImportEnabled: ${PLUGGY_IMPORT_ENABLED:-false}
+      Pluggy__ClientId: ${PLUGGY_CLIENT_ID:-}
+      Pluggy__ClientSecret: ${PLUGGY_CLIENT_SECRET:-}
+      Pluggy__AutoSync__Enabled: ${PLUGGY_AUTOSYNC_ENABLED:-false}
+      Pluggy__AutoSync__IntervalHours: ${PLUGGY_AUTOSYNC_INTERVAL_HOURS:-24}
 
 
       ReverseProxy__KnownNetworks__0: 172.16.0.0/12

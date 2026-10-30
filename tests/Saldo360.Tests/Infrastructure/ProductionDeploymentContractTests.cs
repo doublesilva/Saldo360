@@ -47,6 +47,26 @@ public sealed class ProductionDeploymentContractTests
     }
 
     [Fact]
+    public void PluggyConfigurationReachesTheApiDisabledByDefaultWithoutAnyCredentialInTheRepository()
+    {
+        var compose = File.ReadAllText(Path.Combine(RepositoryRoot, "docker-compose.production.yml"));
+        var environment = File.ReadAllText(Path.Combine(RepositoryRoot, ".env.production.example"));
+        var api = compose[compose.IndexOf("  api:", StringComparison.Ordinal)..compose.IndexOf("  web:", StringComparison.Ordinal)];
+
+        Assert.Contains("Pluggy__Enabled: ${PLUGGY_ENABLED:-false}", api, StringComparison.Ordinal);
+        Assert.Contains("Pluggy__ImportEnabled: ${PLUGGY_IMPORT_ENABLED:-false}", api, StringComparison.Ordinal);
+        Assert.Contains("Pluggy__ClientId: ${PLUGGY_CLIENT_ID:-}", api, StringComparison.Ordinal);
+        Assert.Contains("Pluggy__ClientSecret: ${PLUGGY_CLIENT_SECRET:-}", api, StringComparison.Ordinal);
+        Assert.Contains("Pluggy__AutoSync__Enabled: ${PLUGGY_AUTOSYNC_ENABLED:-false}", api, StringComparison.Ordinal);
+        Assert.Contains("Pluggy__AutoSync__IntervalHours: ${PLUGGY_AUTOSYNC_INTERVAL_HOURS:-24}", api, StringComparison.Ordinal);
+        // O exemplo versionado nunca carrega valores reais e mantém a sincronização automática desligada.
+        Assert.Contains("PLUGGY_CLIENT_ID=\n", environment.Replace("\r\n", "\n"), StringComparison.Ordinal);
+        Assert.Contains("PLUGGY_CLIENT_SECRET=\n", environment.Replace("\r\n", "\n"), StringComparison.Ordinal);
+        Assert.Contains("PLUGGY_AUTOSYNC_ENABLED=false", environment, StringComparison.Ordinal);
+        Assert.DoesNotContain("Pluggy__", compose[compose.IndexOf("  migrate:", StringComparison.Ordinal)..], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CutoverPlanIsOptionalForCleanInstallation_NotAnUnconditionalDeployGate()
     {
         var compose = File.ReadAllText(Path.Combine(RepositoryRoot, "docker-compose.production.yml"));

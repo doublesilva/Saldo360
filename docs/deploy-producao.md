@@ -267,6 +267,25 @@ SERVICE_BILL_BINDING_ENABLED=true
 Classificação, extração e matching continuam sem efeito financeiro. Confirmação e binding exigem autenticação,
 CSRF e ação explícita. Concluir a validação manual não autoriza ligar o coletor periódico.
 
+## Pluggy em produção
+
+O compose repassa à API somente chaves do `.env` do servidor (`0600`, dono `deploy`). Padrão: tudo desligado e
+sem credenciais; habilitar não cria conexões bancárias nem dispara sincronização.
+
+```dotenv
+PLUGGY_ENABLED=true
+PLUGGY_IMPORT_ENABLED=true
+PLUGGY_CLIENT_ID=<preencher somente no servidor>
+PLUGGY_CLIENT_SECRET=<preencher somente no servidor>
+PLUGGY_AUTOSYNC_ENABLED=false
+PLUGGY_AUTOSYNC_INTERVAL_HOURS=24
+```
+
+Editar o `.env` não altera containers em execução: aplique pelo workflow **Deploy Saldo360**. Não grave
+credenciais no Git, na imagem, em logs ou em chat. Confirme o estado efetivo listando apenas os **nomes**
+e flags booleanas, nunca `Pluggy__ClientSecret`. As variáveis antigas `CREDIT_CARD_STATEMENT_AGENT_*` não são
+lidas e podem ser removidas do `.env`; a IA usa `AI_AGENT_ENABLED` e `AI_AGENT_MODEL`.
+
 ## Primeiro deploy
 
 ### Agente de faturas OpenAI: configuração não é ativação

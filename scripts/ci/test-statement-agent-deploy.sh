@@ -21,6 +21,10 @@ assert len(mounts)==1 and mounts[0]["source"] == "/etc/jarvis/secrets/openai-api
 assert "1654" in api["group_add"]
 assert not any(v.get("target") == "/run/secrets/openai-api-key" for name,s in c["services"].items() if name != "api" for v in s.get("volumes",[]))
 print("PASS: disabled defaults, exact individual read-only mount, no inline credential")
+assert e["Pluggy__Enabled"] == "false" and e["Pluggy__ImportEnabled"] == "false"
+assert e["Pluggy__AutoSync__Enabled"] == "false" and e["Pluggy__AutoSync__IntervalHours"] == "24"
+assert e["Pluggy__ClientId"] == "" and e["Pluggy__ClientSecret"] == ""
+print("PASS: Pluggy reaches the API disabled and without credentials by default")
 '
 export AI_AGENT_ENABLED=true AI_AGENT_MODEL=synthetic-model
 "${compose[@]}" config --format json | python3 -c '
