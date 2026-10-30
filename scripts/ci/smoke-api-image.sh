@@ -45,12 +45,10 @@ for _ in $(seq 1 60); do
 done
 [ "$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")" = healthy ]
 docker run --rm --network "$NETWORK" -e ASPNETCORE_ENVIRONMENT=Production \
-  -e ServiceAccounts__IdentifierHmacKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
   -e "ConnectionStrings__Saldo360=$CONNECTION" -e Authentication__Oidc__Authority=https://example.invalid \
   -e Authentication__Oidc__ClientId=saldo360 -e Authentication__Oidc__ClientSecret=ci-only \
   --entrypoint /app/efbundle "$IMAGE" --connection "$CONNECTION"
 docker create --name "$CONTAINER" --network "$NETWORK" -p 127.0.0.1::8080 \
-  -e ServiceAccounts__IdentifierHmacKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
   -e ASPNETCORE_ENVIRONMENT=Production -e "ConnectionStrings__Saldo360=$CONNECTION" \
   -e Authentication__Oidc__Authority=https://example.invalid -e Authentication__Oidc__ClientId=saldo360 \
   -e Authentication__Oidc__ClientSecret=ci-only "$IMAGE" >/dev/null

@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using Saldo360.Application.CreditCards;
 using Saldo360.Application.Workspaces;
 
 namespace Saldo360.Api.Workspaces;
@@ -18,8 +17,6 @@ public sealed class FinancialWriteMiddleware(RequestDelegate next)
         if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
         {
             if (Guid.TryParse(context.Request.RouteValues["workspaceId"]?.ToString(), out var w)) target = w;
-            else if (context.Request.Path.StartsWithSegments("/api/financial-email-import"))
-                target = context.RequestServices.GetService<FinancialEmailImportOptions>()?.Sources.SingleOrDefault(x => string.Equals(x.Name, context.Request.RouteValues["profile"]?.ToString(), StringComparison.OrdinalIgnoreCase))?.WorkspaceId;
         }
         using var scope = FinancialWriteScope.Enter(target);
         try { await next(context); }

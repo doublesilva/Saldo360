@@ -116,7 +116,6 @@ public sealed class FinancialCreditCardPurchaseService(IFinancialWorkspaceReposi
     private async Task<bool> CancelCoreAsync(Guid workspaceId, Guid cardId, Guid purchaseId, Guid userId, CancellationToken cancellationToken)
     {
         if (!await IsParticipant(workspaceId, userId, cancellationToken) || await purchases.FindAsync(workspaceId, cardId, purchaseId, cancellationToken) is not { } purchase) return false;
-        if (await purchases.HasActiveReconciliationAsync(workspaceId, cardId, purchaseId, cancellationToken)) return false;
         if (!await purchases.CanCancelAsync(workspaceId, cardId, purchaseId, cancellationToken)) return false;
         purchase.Cancel(userId, timeProvider.GetUtcNow());
         await purchases.SaveChangesAsync(cancellationToken);

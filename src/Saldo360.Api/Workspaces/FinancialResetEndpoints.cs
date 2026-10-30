@@ -28,12 +28,9 @@ public static class FinancialResetEndpoints
             return await Run(context, user, async actor =>
             {
                 var result = await service.ResetAsync(workspaceId, actor, body?.Confirmation ?? "", context.TraceIdentifier, ct);
-                return Results.Ok(new { result.WorkspaceId, result.Status, deleted = result.Counts, result.PendingFileCleanup });
+                return Results.Ok(new { result.WorkspaceId, result.Status, deleted = result.Counts });
             }, ct);
         }).AddEndpointFilter<ValidateCsrfTokenFilter>();
-        group.MapPost("/cleanup", async (Guid workspaceId, CurrentUser user, IFinancialWorkspaceResetService service, HttpContext context, CancellationToken ct) =>
-            await Run(context, user, async actor => Results.Ok(new { pendingFileCleanup = await service.RetryCleanupAsync(workspaceId, actor, ct) }), ct))
-            .AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
     private static async Task<IResult> Run(HttpContext context, CurrentUser user, Func<Guid, Task<IResult>> action, CancellationToken ct)

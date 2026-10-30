@@ -54,3 +54,9 @@ it('closes the drawer after navigation and when returning to a desktop viewport'
   await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'))
   expect(document.body.style.overflow).toBe('')
 })
+
+it('does not offer the retired document, e-mail import, review or reconciliation flows in the navigation (R00)', () => {
+  render(<AppShell section="overview" onNavigate={vi.fn()} workspaceName="Personal">Body</AppShell>)
+  const labels = within(screen.getByRole('navigation', { name: 'Navegação do orçamento pessoal' })).getAllByRole('button').map(button => button.textContent ?? '')
+  for (const retired of [/Documentos/i, /Inbox/i, /E-?mail/i, /Importa/i, /Concilia/i, /Confer/i]) expect(labels.filter(label => retired.test(label))).toEqual([])
+})

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { previewFinancialReset, resetFinancialWorkspace, retryResetCleanup, type ResetPreview, type ResetResult } from '../api/financialReset'
+import { previewFinancialReset, resetFinancialWorkspace, type ResetPreview, type ResetResult } from '../api/financialReset'
 
 const labels: Record<string, string> = {
   accounts: 'Contas', categories: 'Categorias', transactions: 'Lançamentos', transfers: 'Transferências',
@@ -53,10 +53,6 @@ export function FinancialReset({ workspaceId, onReset }: { workspaceId: string; 
       {error && <p role="alert">{error}</p>}
       {error && !preview && <button type="button" disabled={busy} onClick={() => { setError(null); setLoading(true); setRevision(value => value + 1) }}>Recarregar prévia</button>}
       {preview && <><p>Este reset removerá:</p><dl>{Object.entries(preview.counts).map(([key, value]) => <div key={key}><dt>{labels[key] ?? key}</dt><dd>{value}</dd></div>)}</dl>
-        {preview.pendingFileCleanup > 0 && <><p>Arquivos de reset anterior aguardando remoção: {preview.pendingFileCleanup}.</p><button type="button" disabled={busy} onClick={() => {
-          setBusy(true); void retryResetCleanup(workspaceId).then(value => setPreview(old => old ? { ...old, ...value } : old))
-            .catch(() => setError('Cleanup não concluído. A intenção permanece registrada.')).finally(() => setBusy(false))
-        }}>Repetir cleanup pendente</button></>}
         <label>Digite APAGAR ORÇAMENTO<input ref={input} value={confirmation} onChange={event => setConfirmation(event.target.value)} disabled={busy} autoComplete="off" /></label></>}
       <button type="submit" disabled={!preview || busy || confirmation !== 'APAGAR ORÇAMENTO'}>{busy ? 'Reiniciando…' : 'Apagar dados financeiros'}</button>
       <button type="button" disabled={busy} onClick={() => { setOpen(false); setPreview(null); setConfirmation(''); setError(null) }}>Cancelar</button>

@@ -4,7 +4,7 @@ import '../InternalPages.css'
 const navigationGroups = [
   { label: 'Principal', items: [['overview', 'Visão Geral'], ['calendar', 'Agenda'], ['budgets', 'Orçamentos'], ['cards', 'Cartões'], ['transactions', 'Lançamentos'], ['planning', 'Planejamento']] },
   { label: 'Ferramentas', items: [['reports', 'Relatórios'], ['goals', 'Metas'], ['recurrences', 'Recorrências']] },
-  { label: 'Mais', items: [['settings', 'Configurações'], ['accounts', 'Contas'], ['categories', 'Categorias'], ['documents', 'Documentos'], ['debts', 'Dívidas'], ['transfers', 'Transferências'], ['planned', 'Previsões']] },
+  { label: 'Mais', items: [['settings', 'Configurações'], ['accounts', 'Contas'], ['categories', 'Categorias'], ['debts', 'Dívidas'], ['transfers', 'Transferências'], ['planned', 'Previsões']] },
 ] as const
 
 export function AppShell({ section, onNavigate, workspaceName, subtitle, controls, actions, userArea, labItems, children }: {

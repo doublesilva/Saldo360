@@ -1,6 +1,5 @@
 import { CSRF_HEADER, getCsrfToken } from './csrf'
 import { ApiRequestError, requestJson } from './apiErrors'
-import type { StatementProcessingResult } from './financialDocuments'
 
 export type CreditCardStatus = 'Active' | 'Archived'
 export type PurchaseStatus = 'Active' | 'Cancelled'
@@ -10,20 +9,13 @@ export type InvoicePaymentStatus = 'Unpaid' | 'PartiallyPaid' | 'Paid'
 export type PaymentStatus = 'Active' | 'Cancelled'
 
 export interface FinancialCreditCard {
-  gmailQuery?: string | null
   id: string; name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string
   closingDay: number; dueDay: number; defaultPaymentAccountId: string | null; isArchived: boolean
   createdAt: string; updatedAt: string; archivedAt: string | null
   /** 'Pluggy' quando o cartão nasceu de uma conexão; o escopo (PF/PJ) é o das contas bancárias da mesma conexão e nunca muda com a conta pagadora. */
   origin?: 'Manual' | 'Pluggy'; scope?: 'PF' | 'PJ' | null
 }
-export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null; gmailQuery?: string | null }
-export interface CardLatestEmailResult { status: string; cardId: string; documentId: string | null; receivedAt: string | null; fileName: string | null; inboxStatus: string | null; alreadyExisted: boolean; failureCode: string | null; processing?: StatementProcessingResult | null }
-export async function searchLatestCardEmail(workspaceId: string, cardId: string): Promise<SaveResult<CardLatestEmailResult> & { status?: number }> {
-  const response = await fetch(`${base(workspaceId, cardId)}/imports/email/latest`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', [CSRF_HEADER]: await getCsrfToken() }, body: '{}' })
-  if (response.ok) return { ok: true, value: await response.json() as CardLatestEmailResult }
-  return { ok: false, errors: await readError(response), status: response.status }
-}
+export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null }
 export interface Installment { id: string; number: number; amount: string; status: InstallmentStatus }
 export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[]; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }
 export interface PurchaseInput { description: string; purchaseDate: string; totalAmount: string; installmentCount: number; categoryId: string; amountMode?: 'Total' | 'Installment'; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }

@@ -37,8 +37,7 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
     {
         var ids = await db.FinancialCreditCardInstallments.Where(i => i.WorkspaceId == workspaceId && i.PurchaseId == purchaseId && i.Status == CreditCardInstallmentStatus.Active && i.InvoiceId != null).Select(i => i.InvoiceId!.Value).ToListAsync(ct);
         return !await db.FinancialCreditCardInvoices.AnyAsync(i => ids.Contains(i.Id) && i.WorkspaceId == workspaceId && i.OfficialVersion > 0, ct)
-            && !await db.FinancialCreditCardInvoicePayments.AnyAsync(p => ids.Contains(p.InvoiceId) && p.WorkspaceId == workspaceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active, ct)
-            && !await HasActiveReconciliationAsync(workspaceId, cardId, purchaseId, ct);
+            && !await db.FinancialCreditCardInvoicePayments.AnyAsync(p => ids.Contains(p.InvoiceId) && p.WorkspaceId == workspaceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active, ct);
     }
     public Task AddAsync(FinancialCreditCardPurchase purchase, CancellationToken cancellationToken) { db.FinancialCreditCardPurchases.Add(purchase); return Task.CompletedTask; }
     public Task<FinancialCreditCardPurchase?> FindAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => db.FinancialCreditCardPurchases.Include(p => p.Installments).SingleOrDefaultAsync(p => p.WorkspaceId == workspaceId && p.CreditCardId == cardId && p.Id == purchaseId, cancellationToken);
@@ -81,15 +80,6 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
         }
         return true;
     }
-
-    public Task<bool> HasActiveReconciliationAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) =>
-        (from reconciliation in db.FinancialPlannedInvoiceReconciliations
-         join installment in db.FinancialCreditCardInstallments on new { reconciliation.WorkspaceId, InvoiceId = reconciliation.CreditCardInvoiceId }
-             equals new { installment.WorkspaceId, InvoiceId = installment.InvoiceId!.Value }
-         where reconciliation.WorkspaceId == workspaceId
-             && reconciliation.RemovedAt == null
-             && installment.PurchaseId == purchaseId
-         select reconciliation.Id).AnyAsync(cancellationToken);
 
     public async Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ProjectInvoicesAsync(Guid workspaceId, Guid cardId, string from, int months, DateOnly today, CancellationToken cancellationToken)
     {

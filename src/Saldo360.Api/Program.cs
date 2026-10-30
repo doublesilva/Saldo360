@@ -42,10 +42,6 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var app = builder.Build();
 
-((Saldo360.Infrastructure.ServiceAccounts.ServiceAccountIdentifierProtection)app.Services
-    .GetRequiredService<Saldo360.Application.ServiceAccounts.IServiceAccountIdentifierProtection>())
-    .ValidateEnvironment(app.Environment.EnvironmentName);
-
 // Antes da autenticação: o callback OIDC é montado com o esquema e o host públicos do proxy confiável.
 app.UseForwardedHeaders();
 
@@ -76,7 +72,6 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 });
 
 app.MapAuthEndpoints();
-Saldo360.Api.ServiceAccounts.ServiceAccountEndpoints.MapServiceAccountEndpoints(app);
 app.MapFamilyEndpoints();
 app.MapFamilyInvitationEndpoints();
 app.MapFinancialAccountEndpoints();
@@ -92,19 +87,10 @@ app.MapFinancialCreditCardEndpoints();
 app.MapFinancialCreditCardPurchaseEndpoints();
 app.MapFinancialCreditCardInvoiceEndpoints();
 app.MapCardProjectionEndpoints();
-app.MapAccountBalanceReconciliationEndpoints();
-app.MapFinancialPlannedInvoiceReconciliationEndpoints();
-app.MapCreditCardCsvPreviewEndpoints();
-app.MapCreditCardPdfPreviewEndpoints();
-app.MapFinancialDocumentInboxEndpoints();
-app.MapFinancialEmailCollectorEndpoints();
-app.MapFinancialCreditCardImportEndpoints();
-app.MapFinancialCreditCardImportedInstallmentEndpoints();
 app.MapFinancialRecurrenceEndpoints();
 app.MapFinancialPlanningScenarioEndpoints();
 app.MapFinancialDebtEndpoints();
 app.MapFinancialDebtInstallmentEndpoints();
-app.MapFinancialDebtInstallmentReconciliationEndpoints();
 app.MapFinancialGoalEndpoints();
 app.MapFinancialGoalAllocationEndpoints();
 app.MapFinancialDashboardEndpoints();

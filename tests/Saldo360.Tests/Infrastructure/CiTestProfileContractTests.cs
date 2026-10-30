@@ -1,6 +1,7 @@
 using System.Reflection;
 using Saldo360.Tests.Api;
 using Saldo360.Tests.Persistence;
+using Saldo360.Tests.Pluggy;
 
 namespace Saldo360.Tests.Infrastructure;
 
@@ -51,7 +52,7 @@ public sealed class CiTestProfileContractTests
             (typeof(PlannedRealizationEndpointsTests), nameof(PlannedRealizationEndpointsTests.ConcurrentRealizations_CreateExactlyOneTransaction)),
             (typeof(FinancialBudgetExecutionPersistenceTests), nameof(FinancialBudgetExecutionPersistenceTests.ConcurrentRealizationCannotDisappearBetweenRealizedAndCommittedAggregates)),
             (typeof(AccountProjectionPersistenceTests), nameof(AccountProjectionPersistenceTests.ConsistentRead_SeesOneSnapshot_EvenIfARealizationCommitsInTheMiddle)),
-            (typeof(KnownStatementImportTests), nameof(KnownStatementImportTests.FinalSaveFailureRollsBackAllRowsAndConfirmationJournal))
+            (typeof(PluggyFinancialIntegrationTests), nameof(PluggyFinancialIntegrationTests.RepeatedSyncsAndReprocessingNeverDuplicateMovements))
         ];
         foreach (var (type, name) in sentinels)
             Assert.Contains(new KeyValuePair<string, string>("Profile", "FAST"), Traits(type, type.GetMethod(name)!));

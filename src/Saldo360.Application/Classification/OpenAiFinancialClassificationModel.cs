@@ -1,14 +1,13 @@
 using System.Text.Json;
-using Saldo360.Application.CreditCards;
+using Saldo360.Application.Ai;
 
 namespace Saldo360.Application.Classification;
 
 /// <summary>
-/// Fallback de IA para classificação de movimentações. Não é um agente novo nem um novo cliente OpenAI: reaproveita o
-/// <see cref="ICreditCardStatementAgentProvider"/> já usado pelas demais rotinas (mesma credencial, mesmo cliente HTTP, Responses API com
-/// <c>store:false</c> e saída estruturada estrita), com prompt, schema e modelo próprios. O texto enviado já vem saneado pelo chamador.
+/// Fallback de IA para classificação de movimentações. Usa o único cliente de IA do Saldo360 (<see cref="IAiCompletionProvider"/>: mesma credencial,
+/// Responses API com <c>store:false</c> e saída estruturada estrita), com prompt, schema e modelo próprios. O texto enviado já vem saneado pelo chamador.
 /// </summary>
-public sealed class OpenAiFinancialClassificationModel(ICreditCardStatementAgentProvider provider, FinancialClassificationOptions options, CreditCardStatementAgentOptions agent) : IFinancialClassificationModel
+public sealed class OpenAiFinancialClassificationModel(IAiCompletionProvider provider, FinancialClassificationOptions options, AiAgentOptions agent) : IFinancialClassificationModel
 {
     public const string SchemaName = "financial_movement_classification";
 
@@ -33,7 +32,7 @@ public sealed class OpenAiFinancialClassificationModel(ICreditCardStatementAgent
                          "needsReview":{"type":"boolean"},"reason":{"type":"string"}}}}}}
         """).RootElement.Clone();
 
-    public bool IsAvailable => options.AiEnabled && agent.Enabled && agent.Mode != CreditCardStatementAgentMode.Disabled
+    public bool IsAvailable => options.AiEnabled && agent.Enabled && agent.Mode != AiAgentMode.Disabled
         && string.Equals(agent.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase)
         && (!string.IsNullOrWhiteSpace(agent.ApiKey) || !string.IsNullOrWhiteSpace(agent.ApiKeyFile));
 
@@ -51,12 +50,12 @@ public sealed class OpenAiFinancialClassificationModel(ICreditCardStatementAgent
         string text;
         try
         {
-            text = await provider.CompleteAsync(new(SystemPrompt, payload)
+            text = await provider.CompleteAsync(new(SystemPrompt, payload, SchemaName, Schema)
             {
-                SchemaName = SchemaName, OutputSchema = Schema, Model = options.Model, OnUsage = (i, o) => { input = i; output = o; },
+                Model = options.Model, OnUsage = (i, o) => { input = i; output = o; },
             }, cancellationToken);
         }
-        catch (CreditCardStatementAgentUnavailableException exception)
+        catch (AiProviderUnavailableException exception)
         {
             var code = exception.FailureCode ?? "AgentUnavailable";
             throw new FinancialClassificationModelException(code, Retryable(code));

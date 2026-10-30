@@ -10,8 +10,8 @@ function api(status = 200) {
     const url = String(input); calls.push({ url, init })
     if (url === '/auth/csrf') return new Response(JSON.stringify({ token: 'csrf' }))
     if (url === '/api/me/financial-workspace') return new Response(JSON.stringify({ id: 'w', ownerUserId: 'a', name: 'Personal', type: 'Personal', isActive: true }))
-    if (url.endsWith('/financial-reset/preview')) return new Response(JSON.stringify({ workspaceId: 'w', status: 'Ready', counts: { accounts: 2, transactions: 4, documentInboxItems: 1 }, pendingFileCleanup: 0 }))
-    if (url.endsWith('/financial-reset')) return new Response(JSON.stringify({ workspaceId: 'w', status: 'ResetCompleted', deleted: { accounts: 2 }, pendingFileCleanup: 0 }), { status })
+    if (url.endsWith('/financial-reset/preview')) return new Response(JSON.stringify({ workspaceId: 'w', status: 'Ready', counts: { accounts: 2, transactions: 4, documentInboxItems: 1 } }))
+    if (url.endsWith('/financial-reset')) return new Response(JSON.stringify({ workspaceId: 'w', status: 'ResetCompleted', deleted: { accounts: 2 } }), { status })
     if (url.endsWith('/accounts')) return new Response('[]')
     return new Response('{}', { status: 503 })
   }))
@@ -58,7 +58,7 @@ it('waits for the server, blocks repeat submission and supports semantic keyboar
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url === '/auth/csrf') return new Response(JSON.stringify({ token: 'csrf' }))
-    if (url.endsWith('/preview')) return new Response(JSON.stringify({ workspaceId: 'w', status: 'Ready', counts: { accounts: 1 }, pendingFileCleanup: 0 }))
+    if (url.endsWith('/preview')) return new Response(JSON.stringify({ workspaceId: 'w', status: 'Ready', counts: { accounts: 1 } }))
     writes++; return pending
   }))
   const done = vi.fn(); render(<FinancialReset workspaceId="w" onReset={done} />)
@@ -69,14 +69,14 @@ it('waits for the server, blocks repeat submission and supports semantic keyboar
   expect((screen.getByRole('button', { name: 'Reiniciando…' }) as HTMLButtonElement).disabled).toBe(true)
   expect((screen.getByRole('button', { name: 'Cancelar' }) as HTMLButtonElement).disabled).toBe(true)
   fireEvent.submit(input.closest('form')!); expect(writes).toBe(1)
-  complete(new Response(JSON.stringify({ workspaceId: 'w', status: 'ResetCompleted', deleted: { accounts: 1 }, pendingFileCleanup: 1 })))
-  await waitFor(() => expect(done).toHaveBeenCalledWith(expect.objectContaining({ pendingFileCleanup: 1 })))
+  complete(new Response(JSON.stringify({ workspaceId: 'w', status: 'ResetCompleted', deleted: { accounts: 1 } })))
+  await waitFor(() => expect(done).toHaveBeenCalledWith(expect.objectContaining({ status: 'ResetCompleted' })))
 })
 
 it('keeps reset disabled when preview fails and permits an explicit read-only retry', async () => {
   let previews = 0
   vi.stubGlobal('fetch', vi.fn(async () => ++previews === 1 ? new Response('{}', { status: 500 })
-    : new Response(JSON.stringify({ workspaceId: 'w', status: 'Ready', counts: { accounts: 0 }, pendingFileCleanup: 0 }))))
+    : new Response(JSON.stringify({ workspaceId: 'w', status: 'Ready', counts: { accounts: 0 } }))))
   render(<FinancialReset workspaceId="w" onReset={vi.fn()} />)
   fireEvent.click(screen.getByRole('button', { name: 'Resetar orçamento' }))
   await screen.findByRole('alert')
@@ -84,21 +84,4 @@ it('keeps reset disabled when preview fails and permits an explicit read-only re
   fireEvent.click(screen.getByRole('button', { name: 'Recarregar prévia' }))
   await screen.findByRole('textbox', { name: 'Digite APAGAR ORÇAMENTO' })
   expect(previews).toBe(2)
-})
-
-it('retries durable file cleanup without submitting another financial reset', async () => {
-  const calls: string[] = []
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input); calls.push(url)
-    if (url === '/auth/csrf') return new Response(JSON.stringify({ token: 'csrf' }))
-    if (url.endsWith('/preview')) return new Response(JSON.stringify({ workspaceId: 'w', status: 'Ready', counts: { accounts: 0 }, pendingFileCleanup: 1 }))
-    return new Response(JSON.stringify({ pendingFileCleanup: 0 }))
-  }))
-  const done = vi.fn(); render(<FinancialReset workspaceId="w" onReset={done} />)
-  await open()
-  fireEvent.click(screen.getByRole('button', { name: 'Repetir cleanup pendente' }))
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Repetir cleanup pendente' })).toBeNull())
-  expect(calls.filter(url => url.endsWith('/cleanup'))).toHaveLength(1)
-  expect(calls.some(url => url.endsWith('/financial-reset'))).toBe(false)
-  expect(done).not.toHaveBeenCalled()
 })

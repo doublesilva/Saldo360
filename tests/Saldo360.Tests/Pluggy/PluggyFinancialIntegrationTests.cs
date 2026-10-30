@@ -341,6 +341,7 @@ public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture post
     }
 
     [Fact]
+    [Trait("Profile", "FAST")]
     public async Task RepeatedSyncsAndReprocessingNeverDuplicateMovements()
     {
         var c = await ArrangeAsync("t93-idempotent");

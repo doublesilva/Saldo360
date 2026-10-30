@@ -1,15 +1,13 @@
 import { CSRF_HEADER, getCsrfToken } from './csrf'
 
-export interface ResetPreview { workspaceId: string; status: string; counts: Record<string, number>; pendingFileCleanup: number }
-export interface ResetResult { workspaceId: string; status: 'ResetCompleted' | 'AlreadyEmpty'; deleted: Record<string, number>; pendingFileCleanup: number }
+export interface ResetPreview { workspaceId: string; status: string; counts: Record<string, number> }
+export interface ResetResult { workspaceId: string; status: 'ResetCompleted' | 'AlreadyEmpty'; deleted: Record<string, number> }
 const path = (id: string) => `/api/financial-workspaces/${encodeURIComponent(id)}/financial-reset`
 async function result<T>(response: Response): Promise<T> {
   if (!response.ok) {
     if (response.status === 409) {
       const body = await response.json().catch(() => null) as { code?: unknown } | null
       switch (body?.code) {
-        case 'DocumentCutoverRequired':
-          throw new Error('Reset bloqueado (DocumentCutoverRequired): há documentos fora do layout de armazenamento do workspace. É necessário concluir o cutover dos arquivos antes do reset. Nenhum dado financeiro foi removido por esta rejeição.')
         case 'PersonalOnly':
           throw new Error('Reset disponível somente para orçamento pessoal (PersonalOnly).')
         case 'WorkspaceInactive':
@@ -27,7 +25,4 @@ export async function previewFinancialReset(id: string, signal?: AbortSignal): P
 }
 export async function resetFinancialWorkspace(id: string, confirmation: string): Promise<ResetResult> {
   return result(await fetch(path(id), { method: 'POST', cache: 'no-store', headers: { [CSRF_HEADER]: await getCsrfToken(), 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmation }) }))
-}
-export async function retryResetCleanup(id: string): Promise<{ pendingFileCleanup: number }> {
-  return result(await fetch(`${path(id)}/cleanup`, { method: 'POST', cache: 'no-store', headers: { [CSRF_HEADER]: await getCsrfToken() } }))
 }

@@ -14,9 +14,7 @@ Após qualquer alteração, a tela recarrega cartões, limite, compras, faturas,
 
 O fluxo integrado foi validado em PostgreSQL real com compra parcelada, orçamento, pagamento integral, cancelamento e cartão sem conta preferencial. Compra, fatura e pagamento permanecem entidades distintas; o pagamento altera o saldo uma única vez e não duplica o consumo do orçamento. Consulte o [relatório da auditoria](T09.7-auditoria-integracao.md).
 
-Previsões de pagamento podem ser conciliadas explicitamente com uma fatura pela API de [conciliação](conciliacao-faturas.md). O vínculo não cancela a previsão, mas impede sua duplicação nas projeções. Na interface, acesse **Cartões > Conciliações** para selecionar, revisar, confirmar ou desfazer um vínculo; não há correspondência automática.
 
-Arquivos CSV pré-visualizados podem ser confirmados pela API somente com seleção explícita, lote atômico e `importId` idempotente. Compras importadas usam o mesmo parcelamento e calendário das compras manuais; consulte [importacao-cartoes.md](importacao-cartoes.md).
 
 Parcelas intermediárias de extratos são tratadas pela T10.3.3 somente por vínculo explícito a uma parcela normal existente ou como obrigação histórica unitária. Obrigações históricas exigem fatura/competência existente, não criam lançamentos bancários nem parcelas adicionais e são incluídas no total da fatura, limite utilizado, pagamentos e projeções.
 

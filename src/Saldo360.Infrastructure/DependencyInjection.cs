@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Saldo360.Application.Accounts;
+using Saldo360.Application.Ai;
+using Saldo360.Infrastructure.Ai;
 using Saldo360.Application.Categories;
 using Saldo360.Application.Transactions;
 using Saldo360.Application.Transfers;
@@ -95,28 +97,6 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.Bootstrap.IBootstrapProvenanceRepository, Saldo360.Infrastructure.Bootstrap.BootstrapProvenanceRepository>();
         services.AddScoped<IFinancialBudgetExecutionRepository, FinancialBudgetExecutionRepository>();
         services.AddScoped<IFinancialCreditCardRepository, FinancialCreditCardRepository>();
-        services.AddScoped<ICreditCardPdfContextRepository, FinancialCreditCardRepository>();
-        services.AddScoped<ICreditCardStatementResolutionRepository, FinancialCreditCardRepository>();
-        services.AddScoped<ICreditCardPdfPreReconciliationRepository, CreditCardPdfPreReconciliationRepository>();
-        services.AddScoped<ICreditCardPdfConfirmationRepository, CreditCardPdfConfirmationRepository>();
-        services.AddScoped<IFinancialDocumentInboxRepository, FinancialDocumentInboxRepository>();
-        services.AddScoped<IStatementCategoryContextRepository, StatementCategoryContextRepository>();
-        services.AddScoped<IFinancialEmailCollectorCheckpointRepository, FinancialEmailCollectorCheckpointRepository>();
-        services.AddSingleton<IFinancialDocumentStorage, FileSystemFinancialDocumentStorage>();
-        var emailImport = configuration.GetSection("FinancialEmailImport").Get<FinancialEmailImportOptions>() ?? new FinancialEmailImportOptions();
-        services.AddSingleton(emailImport);
-        services.AddSingleton<FinancialEmailSchedule>();
-        services.AddSingleton<IFinancialEmailCollectorLock>(_ => new PostgresFinancialEmailCollectorLock(connectionString));
-        services.AddHostedService<FinancialEmailCollectorHostedService>();
-        // Queries and Gmail identifiers live in request URLs. Do not emit default URL logs.
-        services.AddHttpClient("GmailFinancialEmail", client => client.BaseAddress = new Uri("https://gmail.googleapis.com/")).RemoveAllLoggers();
-        services.AddHttpClient("GmailFinancialEmailToken", client => client.BaseAddress = new Uri("https://oauth2.googleapis.com/")).RemoveAllLoggers();
-        services.AddHttpClient("FinancialLinkedDocument", client => client.Timeout = TimeSpan.FromSeconds(20))
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
-        services.AddSingleton<IFinancialEmailSource, GmailFinancialEmailSource>();
-        services.AddSingleton<IFinancialEmailLinkExtractor, FinancialEmailLinkExtractor>();
-        services.AddSingleton<IFinancialHostAddressResolver, FinancialHostAddressResolver>();
-        services.AddSingleton<IFinancialLinkedDocumentDownloader, FinancialLinkedDocumentDownloader>();
         services.AddScoped<IFinancialCreditCardPurchaseRepository, FinancialCreditCardPurchaseRepository>();
         services.AddScoped<Saldo360.Application.CreditCards.Projection.ICardProjectionRepository, CardProjectionRepository>();
         services.AddScoped<Saldo360.Application.Accounts.Reconciliation.IAccountBalanceReconciliationRepository, Saldo360.Infrastructure.Accounts.AccountBalanceReconciliationRepository>();
@@ -126,51 +106,22 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.MonthlyPlan.IPlanHistoryWriter>(sp => sp.GetRequiredService<Saldo360.Infrastructure.MonthlyPlan.MonthlyPlanRepository>());
         services.AddScoped<IFinancialCreditCardInvoicePaymentRepository, FinancialCreditCardInvoicePaymentRepository>();
         services.AddScoped<IFinancialCreditCardInvoiceAdjustmentRepository, FinancialCreditCardInvoiceAdjustmentRepository>();
-        services.AddScoped<IFinancialPlannedInvoiceReconciliationRepository, FinancialPlannedInvoiceReconciliationRepository>();
-        services.AddScoped<IFinancialCreditCardImportRepository, FinancialCreditCardImportRepository>();
-        services.AddScoped<IFinancialCreditCardImportedInstallmentRepository, FinancialCreditCardImportedInstallmentRepository>();
         services.AddScoped<IFinancialRecurrenceRepository, FinancialRecurrenceRepository>();
         services.AddScoped<IFinancialRecurrenceMaterializationRepository, FinancialRecurrenceMaterializationRepository>();
         services.AddScoped<IFinancialPlanningScenarioRepository, FinancialPlanningScenarioRepository>();
         services.AddScoped<IFinancialDebtRepository, FinancialDebtRepository>();
         services.AddScoped<IFinancialDebtInstallmentRepository, FinancialDebtInstallmentRepository>();
-        services.AddScoped<IFinancialDebtInstallmentReconciliationRepository, FinancialDebtInstallmentReconciliationRepository>();
         services.AddScoped<IFinancialGoalRepository, FinancialGoalRepository>();
         services.AddScoped<IFinancialGoalAllocationRepository, FinancialGoalAllocationRepository>();
-        services.AddSingleton<LocalStatementPageReader>();
-        services.AddSingleton<ICreditCardPdfTextExtractor, CreditCardPdfTextExtractor>();
-        var statementAgent = configuration.GetSection("CreditCardStatementAgent").Get<CreditCardStatementAgentOptions>() ?? new CreditCardStatementAgentOptions();
-        services.AddSingleton(statementAgent);
-        services.AddHttpClient("CreditCardStatementAgent", client =>
+        // Agente de IA (único cliente OpenAI): serve à classificação de lançamentos. A seção continua sendo CreditCardStatementAgent (nome histórico, ver AiAgentOptions).
+        var aiAgent = configuration.GetSection(AiAgentOptions.SectionName).Get<AiAgentOptions>() ?? new AiAgentOptions();
+        services.AddSingleton(aiAgent);
+        services.AddHttpClient(OpenAiCompletionProvider.ClientName, client =>
         {
-            client.BaseAddress = new Uri(statementAgent.Endpoint);
-            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(statementAgent.TimeoutSeconds, 5, 180));
+            client.BaseAddress = new Uri(aiAgent.Endpoint);
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(aiAgent.TimeoutSeconds, 5, 180));
         }).RemoveAllLoggers();
-        services.AddSingleton<ICreditCardStatementAgentProvider, OpenAiCreditCardStatementAgentProvider>();
-        services.AddScoped<IStatementDocumentaryPipeline, StatementDocumentaryPipeline>();
-        services.AddHttpClient("CreditCardStatementDocumentary", client =>
-        {
-            client.BaseAddress = new Uri(statementAgent.Endpoint);
-            client.Timeout = TimeSpan.FromSeconds(180);
-        }).RemoveAllLoggers();
-        var documentClassification = configuration.GetSection("FinancialDocumentClassification").Get<FinancialDocumentClassificationOptions>() ?? new FinancialDocumentClassificationOptions();
-        services.AddSingleton(documentClassification);
-        services.AddSingleton<IFinancialDocumentClassificationAgent, FinancialDocumentClassificationAgent>();
-        var serviceBillExtraction = configuration.GetSection("ServiceBillExtraction").Get<ServiceBillExtractionOptions>() ?? new ServiceBillExtractionOptions();
-        services.AddSingleton(serviceBillExtraction);
-        services.AddSingleton<IServiceBillExtractionAgent, ServiceBillExtractionAgent>();
-        var serviceBillReconciliation = configuration.GetSection("ServiceBillReconciliation").Get<ServiceBillReconciliationOptions>() ?? new ServiceBillReconciliationOptions();
-        services.AddSingleton(serviceBillReconciliation);
-        services.AddScoped<IServiceBillRecurringCandidateRepository, ServiceBillRecurringCandidateRepository>();
-        services.AddScoped<IServiceBillConfirmationRepository, ServiceBillConfirmationRepository>();
-        services.AddScoped<IServiceAccountBindingRepository, ServiceAccountBindingRepository>();
-        services.AddScoped<Saldo360.Application.ServiceAccounts.IServiceAccountRepository, Saldo360.Infrastructure.ServiceAccounts.ServiceAccountRepository>();
-        services.AddSingleton<Saldo360.Application.ServiceAccounts.IServiceAccountIdentifierProtection, Saldo360.Infrastructure.ServiceAccounts.ServiceAccountIdentifierProtection>();
-        services.AddSingleton<LlmCreditCardStatementExtractorAgent>();
-        services.AddSingleton<ParserBackedCreditCardStatementExtractorAgent>();
-        services.AddSingleton<IParserBackedCreditCardStatementExtractorAgent>(provider => provider.GetRequiredService<ParserBackedCreditCardStatementExtractorAgent>());
-        services.AddSingleton<ICreditCardPdfPasswordProvider>(serviceProvider =>
-            new LocalCreditCardPdfPasswordProvider(configuration, serviceProvider.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>()));
+        services.AddSingleton<IAiCompletionProvider, OpenAiCompletionProvider>();
 
         AddPluggyPoc(services, configuration);
 
@@ -199,7 +150,7 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyFinancialRepository, Saldo360.Infrastructure.Pluggy.PluggyFinancialRepository>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyPostingEngine, Saldo360.Infrastructure.Pluggy.PluggyPostingEngine>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyCategorizationRepository, Saldo360.Infrastructure.Pluggy.PluggyCategorizationRepository>();
-        // Classificação financeira: o fallback de IA reaproveita o provider OpenAI já registrado (mesma credencial e cliente HTTP); só é "disponível" com AiEnabled.
+        // Classificação financeira: o fallback de IA usa o provider de IA registrado acima (mesma credencial e cliente HTTP); só é "disponível" com AiEnabled.
         var classification = configuration.GetSection(Saldo360.Application.Classification.FinancialClassificationOptions.SectionName).Get<Saldo360.Application.Classification.FinancialClassificationOptions>() ?? new();
         services.AddSingleton(classification);
         services.AddSingleton<Saldo360.Application.Classification.IFinancialClassificationModel, Saldo360.Application.Classification.OpenAiFinancialClassificationModel>();

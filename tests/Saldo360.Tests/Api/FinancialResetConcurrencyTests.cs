@@ -2,7 +2,6 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Saldo360.Application.CreditCards;
 using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Planning;
@@ -29,7 +28,7 @@ public sealed class FinancialResetConcurrencyTests(PostgresFixture postgres) : P
     private async Task AssertEmpty(Guid w)
     {
         await using var db = Db();
-        var preview = await new FinancialWorkspaceResetService(db, new Storage()).PreviewAsync(w, (await db.FinancialWorkspaces.SingleAsync(x => x.Id == w)).OwnerUserId, default);
+        var preview = await new FinancialWorkspaceResetService(db).PreviewAsync(w, (await db.FinancialWorkspaces.SingleAsync(x => x.Id == w)).OwnerUserId, default);
         Assert.All(preview.Counts, item => Assert.Equal(0, item.Value));
     }
     [Fact]
@@ -45,7 +44,7 @@ public sealed class FinancialResetConcurrencyTests(PostgresFixture postgres) : P
     }
     [Fact]
     [Trait("Profile", "FAST")]
-    public async Task FailureAfterDeletes_RollsBackAllContentAuditCleanupAndResetVersion()
+    public async Task FailureAfterDeletes_RollsBackAllContentAuditAndResetVersion()
     {
         var (session, w) = await Arrange();
         string before;
@@ -62,10 +61,9 @@ public sealed class FinancialResetConcurrencyTests(PostgresFixture postgres) : P
         Assert.DoesNotContain("SyntheticResetFailure", await response.Content.ReadAsStringAsync());
         await using var db = Db();
         Assert.Equal(before, await FinancialResetFixture.FingerprintAsync(db, w.Id));
-        var preview = await new FinancialWorkspaceResetService(db, new Storage()).PreviewAsync(w.Id, w.OwnerUserId, default);
+        var preview = await new FinancialWorkspaceResetService(db).PreviewAsync(w.Id, w.OwnerUserId, default);
         Assert.All(preview.Counts, item => Assert.True(item.Value > 0, item.Key));
         Assert.Empty(await db.Set<FinancialResetAudit>().ToListAsync());
-        Assert.Empty(await db.Set<FinancialResetFileCleanup>().ToListAsync());
         Assert.Null((await db.FinancialWorkspaces.SingleAsync()).LastFinancialResetAt);
     }
     [Theory]
@@ -84,7 +82,7 @@ public sealed class FinancialResetConcurrencyTests(PostgresFixture postgres) : P
         using (FinancialWriteScope.Enter(w.Id))
         {
             await using var resetDb = Db();
-            await new FinancialWorkspaceResetService(resetDb, new Storage()).ResetAsync(w.Id, w.OwnerUserId, "APAGAR ORÇAMENTO", "synthetic", default);
+            await new FinancialWorkspaceResetService(resetDb).ResetAsync(w.Id, w.OwnerUserId, "APAGAR ORÇAMENTO", "synthetic", default);
         }
         var date = new DateOnly(2026,10,1);
         if (materialize)
@@ -98,28 +96,6 @@ public sealed class FinancialResetConcurrencyTests(PostgresFixture postgres) : P
         Assert.Equal("FINANCIAL_WORKSPACE_RESET_CONFLICT", Assert.IsType<Npgsql.PostgresException>(error.InnerException).MessageText);
         await AssertEmpty(w.Id);
     }
-    [Fact]
-    public async Task CleanupDeletesOnlyAuthorizedSyntheticWorkspaceFiles()
-    {
-        var (_, w) = await Arrange();
-        var bSession=await SignInAsync("files-b"); var b=await CreateWorkspaceAsync(bSession);
-        var root=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"saldo360-reset-"+Guid.NewGuid().ToString("N"));
-        var config=new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["FinancialDocuments:StoragePath"]=root }).Build();
-        var storage=new Saldo360.Infrastructure.CreditCards.FileSystemFinancialDocumentStorage(config);
-        try
-        {
-            await using var db=Db(); await FinancialResetFixture.SeedAsync(db,b.Id,b.OwnerUserId);
-            var documents=await db.FinancialDocumentInboxItems.AsNoTracking().ToListAsync();
-            foreach(var document in documents) await storage.SaveAsync(document.WorkspaceId,document.Id,new MemoryStream("%PDF-synthetic"u8.ToArray()),default);
-            var result=await new FinancialWorkspaceResetService(db,storage).ResetAsync(w.Id,w.OwnerUserId,"APAGAR ORÇAMENTO","synthetic",default);
-            Assert.Equal(0,result.PendingFileCleanup);
-            Assert.Null(await storage.OpenReadAsync(documents.Single(d=>d.WorkspaceId==w.Id).StorageReference,default));
-            await using var preserved=await storage.OpenReadAsync(documents.Single(d=>d.WorkspaceId==b.Id).StorageReference,default);
-            Assert.NotNull(preserved);
-        }
-        finally { Directory.Delete(root,recursive:true); } // Only this test's GUID directory.
-    }
-
     [Theory]
     [InlineData("transactions","transactionDate")]
     [InlineData("planned-transactions","dueDate")]
@@ -150,33 +126,5 @@ public sealed class FinancialResetConcurrencyTests(PostgresFixture postgres) : P
         Assert.Equal(HttpStatusCode.OK,resetResponse.StatusCode);
         Assert.Contains(writerResponse.StatusCode,new[] { HttpStatusCode.Created,HttpStatusCode.Conflict,HttpStatusCode.BadRequest,HttpStatusCode.NotFound });
         await AssertEmpty(w.Id);
-    }
-
-    [Fact]
-    public async Task FileCleanupFailure_RemainsDurable_AndRetryDoesNotResetAgain()
-    {
-        var (_, w) = await Arrange(); var storage = new Storage { Fail = true };
-        await using (var db = Db())
-        {
-            var result = await new FinancialWorkspaceResetService(db,storage).ResetAsync(w.Id,w.OwnerUserId,"APAGAR ORÇAMENTO","synthetic",default);
-            Assert.Equal("ResetCompleted",result.Status); Assert.Equal(1,result.PendingFileCleanup);
-            Assert.Single(await db.Set<FinancialResetFileCleanup>().ToListAsync());
-        }
-        storage.Fail = false;
-        await using (var retry = Db())
-        {
-            var service = new FinancialWorkspaceResetService(retry,storage);
-            Assert.Equal(0,await service.RetryCleanupAsync(w.Id,w.OwnerUserId,default));
-            Assert.Equal(0,await service.RetryCleanupAsync(w.Id,w.OwnerUserId,default));
-            Assert.Single(await retry.Set<FinancialResetAudit>().ToListAsync());
-        }
-        await AssertEmpty(w.Id);
-    }
-    private sealed class Storage : IFinancialDocumentStorage
-    {
-        public bool Fail { get; set; }
-        public Task<string> SaveAsync(Guid w,Guid id,Stream stream,CancellationToken ct) => Task.FromResult($"workspaces/{w:N}/{id:N}.pdf");
-        public Task<Stream?> OpenReadAsync(string reference,CancellationToken ct) => Task.FromResult<Stream?>(null);
-        public Task DeleteAsync(string reference,CancellationToken ct) { if(Fail) throw new IOException("Synthetic failure"); return Task.CompletedTask; }
     }
 }

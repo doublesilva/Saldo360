@@ -219,7 +219,6 @@ O saldo projetado considera faturas devidas somente quando há conta de pagament
 
 O componente de cartão é aplicado após o saldo realizado e as previsões existentes, preservando a fórmula: `projectedBalance = existingProjectedBalance - outstandingCreditCardObligations`.
 
-Quando uma previsão está explicitamente conciliada a uma fatura, ela é removida apenas do componente de previsões pendentes; a obrigação da fatura continua sendo descontada. Consulte [conciliação de faturas](conciliacao-faturas.md).
 Obrigações de parcelas de dívidas seguem a conta preferencial da dívida quando válida. Sem conta atribuída, a projeção é marcada como incompleta e nenhum saldo de conta é reduzido arbitrariamente.
 
 # Referência bancária e conciliação de saldo (integração Pluggy, T09.5)

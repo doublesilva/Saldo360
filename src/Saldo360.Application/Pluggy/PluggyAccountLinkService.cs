@@ -199,7 +199,7 @@ public sealed class PluggyAccountLinkService(
             return new(PluggyAccess.Conflict, Message: "O histórico de faturas do banco não é consistente o bastante para sugerir o fechamento e o vencimento.");
         if (closing == card.ClosingDay && due == card.DueDay) return await GetDetailAsync(workspaceId, userId, linkId, ct);
         var result = await cardService.UpdateAsync(workspaceId, cardId, userId, new Saldo360.Application.CreditCards.CreditCardInput(card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId,
-            decimal.Parse(card.CreditLimit, CultureInfo.InvariantCulture), closing, due, card.DefaultPaymentAccountId, card.GmailQuery), ct);
+            decimal.Parse(card.CreditLimit, CultureInfo.InvariantCulture), closing, due, card.DefaultPaymentAccountId), ct);
         if (result.Access != Saldo360.Application.CreditCards.CreditCardAccess.Allowed) return PluggyResult<PluggyAccountLinkDetailView>.Invalid("Não foi possível atualizar o cartão.");
         return await GetDetailAsync(workspaceId, userId, linkId, ct);
     }

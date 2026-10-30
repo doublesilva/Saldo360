@@ -6,35 +6,16 @@ export POSTGRES_DB=saldo360_ci POSTGRES_USER=saldo360 POSTGRES_PASSWORD=ci-only-
 export SALDO360_IMAGE_TAG=1111111111111111111111111111111111111111
 export SALDO360_PUBLIC_HOST=saldo360.example.invalid
 export FINANCIAL_WORKSPACE_ID='' FINANCIAL_WORKSPACE_CUTOVER_PLAN=''
-export FINANCIAL_DOCUMENT_CLASSIFICATION_ENABLED=false FINANCIAL_DOCUMENT_CLASSIFICATION_AGENT_ENABLED=false
-export SERVICE_BILL_EXTRACTION_ENABLED=false SERVICE_BILL_EXTRACTION_AGENT_ENABLED=false
-export SERVICE_BILL_RECONCILIATION_ENABLED=false SERVICE_BILL_CONFIRMATION_ENABLED=false SERVICE_BILL_BINDING_ENABLED=false
 compose=(docker compose --env-file .env.production.example --profile migration -f docker-compose.production.yml)
 
 "${compose[@]}" config --format json | python3 -c '
 import json, sys
 c = json.load(sys.stdin); api = c["services"]["api"]["environment"]; m = c["services"]["migrate"]
-assert not any(k.startswith("FinancialEmailImport__Sources__") for k in api)
-assert api["FinancialEmailImport__Enabled"] == "false"
+assert not any(k.startswith(("FinancialEmailImport__","FinancialDocuments__","ServiceBill")) for k in api)
 assert not m["environment"].get("FINANCIAL_WORKSPACE_CUTOVER_PLAN")
 assert "workspace_cutover_plan" not in m["environment"]["ConnectionStrings__Saldo360"]
 print("Clean install: no workspace destination or cutover plan required")
 '
-if "${compose[@]}" -f docker-compose.collectors.yml config --quiet 2>/dev/null; then
-  echo 'Collector overlay accepted missing destination' >&2; exit 1
-fi
-export FINANCIAL_WORKSPACE_ID=11111111-1111-4111-8111-111111111111
-"${compose[@]}" -f docker-compose.collectors.yml config --format json | python3 -c '
-import json, sys
-e = json.load(sys.stdin)["services"]["api"]["environment"]
-assert e["FinancialEmailImport__Enabled"] == "false"
-for i in range(6):
- p = "FinancialEmailImport__Sources__%d__" % i
- assert e[p+"WorkspaceId"] == "11111111-1111-4111-8111-111111111111"
- assert e[p+"Enabled"] == "false"
-print("Configured destination: all six manual profiles and scheduler remain disabled")
-'
-
 # Exercise the EXACT resolved shell entrypoint with a stub bundle, not a database.
 tmp="$(mktemp -d)"
 trap 'rm -rf -- "$tmp"' EXIT

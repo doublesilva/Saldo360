@@ -21,7 +21,6 @@ import {
 } from '../api/accounts'
 import { isPluggyIntegrationAvailable } from '../api/pluggyIntegration'
 import { PluggyAccountLinkForm } from './PluggyAccountLinkForm'
-import { AccountBalanceReconciliation } from './AccountBalanceReconciliation'
 import { PluggyAccountPanel, PluggyIntegrationSection } from './PluggyIntegration'
 type ResponsibleUserOption = { userId: string; displayName: string; isCurrentUser: boolean }
 import { endOfMonth, todayInSaoPaulo } from '../dates'
@@ -195,7 +194,6 @@ export function Accounts({
         </p>
       )}
 
-      {integrationAvailable && <AccountBalanceReconciliation workspaceId={workspaceId} refreshKey={`${reloadKey}:${balanceVersion}`} />}
       {list.kind === 'loaded' && list.accounts.length > 0 && (
         <ul className="account-list">
           {list.accounts.map((account) => (

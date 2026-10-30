@@ -16,15 +16,7 @@ public static class FinancialCreditCardEndpoints
         cards.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         cards.MapPut("/{cardId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
         cards.MapDelete("/{cardId:guid}", Archive).AddEndpointFilter<ValidateCsrfTokenFilter>();
-        cards.MapPost("/{cardId:guid}/imports/email/latest", LatestEmail).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
-    }
-
-    private static async Task<IResult> LatestEmail(Guid workspaceId, Guid cardId, CurrentUser user, CardLatestEmailService service, CancellationToken ct)
-    {
-        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
-        var result = await service.SearchAsync(workspaceId, cardId, userId, ct);
-        return result.Status == "NotFound" ? Results.NotFound() : Results.Ok(result);
     }
 
     private static async Task<IResult> Summary(Guid workspaceId, string? competence, CurrentUser user, FinancialCreditCardPurchaseService service, TimeProvider timeProvider, CancellationToken ct)
@@ -64,12 +56,12 @@ public static class FinancialCreditCardEndpoints
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record CreditCardRequest(string? Name, string? Issuer, string? LastFourDigits, Guid? HolderUserId, decimal? CreditLimit, int? ClosingDay, int? DueDay, Guid? DefaultPaymentAccountId, string? GmailQuery = null)
+public sealed record CreditCardRequest(string? Name, string? Issuer, string? LastFourDigits, Guid? HolderUserId, decimal? CreditLimit, int? ClosingDay, int? DueDay, Guid? DefaultPaymentAccountId)
 {
-    public CreditCardInput ToInput() => new(Name, Issuer, LastFourDigits, HolderUserId, CreditLimit, ClosingDay, DueDay, DefaultPaymentAccountId, GmailQuery);
+    public CreditCardInput ToInput() => new(Name, Issuer, LastFourDigits, HolderUserId, CreditLimit, ClosingDay, DueDay, DefaultPaymentAccountId);
 }
 
-public sealed record CreditCardResponse(Guid Id, string Name, string Issuer, string? LastFourDigits, Guid? HolderUserId, string CreditLimit, int ClosingDay, int DueDay, Guid? DefaultPaymentAccountId, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt, string? GmailQuery = null, string Origin = "Manual", string? Scope = null)
+public sealed record CreditCardResponse(Guid Id, string Name, string Issuer, string? LastFourDigits, Guid? HolderUserId, string CreditLimit, int ClosingDay, int DueDay, Guid? DefaultPaymentAccountId, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt, string Origin = "Manual", string? Scope = null)
 {
-    public static CreditCardResponse From(FinancialCreditCardDto card) => new(card.Id, card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId, card.CreditLimit, card.ClosingDay, card.DueDay, card.DefaultPaymentAccountId, card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt, card.GmailQuery, card.Origin, card.Scope);
+    public static CreditCardResponse From(FinancialCreditCardDto card) => new(card.Id, card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId, card.CreditLimit, card.ClosingDay, card.DueDay, card.DefaultPaymentAccountId, card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt, card.Origin, card.Scope);
 }

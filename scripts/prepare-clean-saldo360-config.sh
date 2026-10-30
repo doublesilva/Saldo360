@@ -25,13 +25,6 @@ trap 'rm -f -- "$prepared"' EXIT
 awk -v workspace="$workspace" '
 BEGIN {
  v["FINANCIAL_WORKSPACE_ID"]=workspace;
- v["FINANCIAL_DOCUMENT_CLASSIFICATION_ENABLED"]="false";
- v["FINANCIAL_DOCUMENT_CLASSIFICATION_AGENT_ENABLED"]="false";
- v["SERVICE_BILL_EXTRACTION_ENABLED"]="false";
- v["SERVICE_BILL_EXTRACTION_AGENT_ENABLED"]="false";
- v["SERVICE_BILL_RECONCILIATION_ENABLED"]="false";
- v["SERVICE_BILL_CONFIRMATION_ENABLED"]="false";
- v["SERVICE_BILL_BINDING_ENABLED"]="false";
 }
 {
  k=$0; sub(/=.*/, "", k);
@@ -44,6 +37,6 @@ END { for (k in v) if (!(k in seen)) print k "=" v[k]; }
 chown deploy:deploy "$prepared"
 chmod 0600 "$prepared"
 mv -T -- "$prepared" "$target"
-printf 'Configuração preparada: destino=%s, plano temporário removido e sete flags false.\n' "${workspace:-não configurado}"
+printf 'Configuração preparada: destino=%s, plano temporário removido.\n' "${workspace:-não configurado}"
 printf 'Backup APENAS de configuração (root-only): %s\n' "$backup"
-printf 'Nenhum container, banco ou documento alterado. Reload/reset ainda NÃO executados.\n'
+printf 'Nenhum container ou banco alterado. Reload/reset ainda NÃO executados.\n'

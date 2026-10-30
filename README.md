@@ -232,33 +232,13 @@ O smoke test não substitui a validação no navegador: abra <http://localhost:5
 
 Cartões de crédito estão disponíveis na navegação de cada família. A interface consome os endpoints existentes para cadastro/arquivamento, compras, faturas, pagamentos, limite e projeção de seis meses; valores monetários são exibidos a partir de strings decimais retornadas pela API, sem cálculos financeiros no React. Consulte [docs/cartoes-credito.md](docs/cartoes-credito.md).
 
-O cadastro pode armazenar somente os quatro últimos dígitos do cartão. Faturas PDF usam emissor e esses dígitos para resolução determinística, com ambiguidade explícita e bloqueio quando o cartão selecionado diverge do documento.
-
-A importação CSV possui pré-visualização, confirmação atômica e tratamento explícito de parcelas intermediárias/históricas, documentados em [docs/importacao-cartoes.md](docs/importacao-cartoes.md).
-
-A pré-visualização e a pré-conciliação de faturas PDF textuais possuem parsers especializados para os layouts Itaú Mastercard e Nubank observados, além de fallback genérico conservador, sem OCR; consulte a documentação de importação de cartões.
+O cadastro pode armazenar somente os quatro últimos dígitos do cartão.
 
 Encargos, créditos e reembolsos de faturas possuem representação própria como ajustes, distinta de compras e pagamentos, com impacto em total, limite e projeções sem criar movimentação bancária.
 
-Faturas PDF reconciliadas podem ser confirmadas por um fluxo atômico e idempotente que reprocessa o arquivo no backend, exige decisões por `componentId` e valida novamente a composição persistida antes do commit.
-
-Em **Cartões > Importações**, a interface React permite revisar CSV, confirmar compras elegíveis, associar parcelas ou registrar obrigações históricas. Para PDFs especializados e reconciliados, a tela também conduz prévia, pré-conciliação, revisão por componente, escolha explícita de categorias e confirmação atômica/idempotente.
-
-Documentos financeiros também podem ser recebidos em uma Inbox persistente antes da confirmação. A área **Documentos** permite filtrar, revisar, reanalisar, associar cartão, confirmar ou ignorar cada PDF; os metadados ficam no PostgreSQL, o arquivo em storage privado abstrato e a análise reutiliza os parsers e a confirmação existentes; veja [docs/inbox-documentos-financeiros.md](docs/inbox-documentos-financeiros.md).
-
-O preview de contas de serviço pode resolver emissor por identificador exato cadastrado pelo usuário, com proteção criptográfica, isolamento individual e proveniência explícita, sem binding ou escrita financeira. Consulte [T15.6.11](docs/T15.6.11-resolucao-emissor-conta-servico.md).
-
-Um coletor Gmail somente leitura pode alimentar essa Inbox por execução manual, `dry-run` ou agenda diária às 09h, 13h, 18h e 23h em São Paulo, com OAuth oficial, lock PostgreSQL, status operacional, perfis por família, checkpoint incremental e identidade estável de mensagem/anexo. A configuração operacional está em [docs/coleta-email-financeiro.md](docs/coleta-email-financeiro.md); o estado do provisionamento real e seus critérios de ativação estão em [docs/T15.3.13-provisionamento-gmail.md](docs/T15.3.13-provisionamento-gmail.md).
+**R00 (reconstrução):** importação de documentos (e-mail/Inbox/CSV/PDF), conferências e conciliações foram retiradas do produto; permanecem o Pluggy e o agente de IA de classificação. Veja [docs/R00-limpeza-de-escopo.md](docs/R00-limpeza-de-escopo.md).
 
 A integração ponta a ponta de cartões com contas, Agenda e Orçamentos é auditada pelos cenários PostgreSQL da T09.7; o relatório está em [docs/T09.7-auditoria-integracao.md](docs/T09.7-auditoria-integracao.md).
-
-A T10.1 adiciona conciliação explícita entre previsões e faturas, com histórico, unicidade ativa e exclusão da previsão conciliada dos agregados projetados. Consulte [docs/conciliacao-faturas.md](docs/conciliacao-faturas.md).
-
-A interface T10.2 está disponível em **Cartões > Conciliações**. Ela exige revisão e confirmação explícitas e preserva os valores monetários como strings.
-
-A T10.3.1 adiciona a pré-visualização segura de CSV em [docs/importacao-cartoes.md](docs/importacao-cartoes.md). O endpoint apenas interpreta e normaliza o arquivo; nenhuma movimentação é persistida.
-
-A T10.3.2 adiciona a confirmação explícita e transacional das linhas selecionadas, com idempotência por `importId`, rastreabilidade e rejeição de parcelas intermediárias.
 
 Compras no cartão e parcelas são cadastradas separadamente pela API `/api/families/{familyId}/credit-cards/{cardId}/purchases`; elas representam obrigações de crédito e não movimentam o saldo bancário.
 Os alertas de orçamento da execução são calculados no backend a partir do consumo projetado bruto; o resumo informa o pior estado das metas e as contagens de aproximação, limite atingido e excedência.

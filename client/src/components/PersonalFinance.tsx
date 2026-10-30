@@ -12,7 +12,6 @@ import { FinancialDashboard } from './FinancialDashboard'
 import { FinancialCalendarPage } from './FinancialCalendar'
 import { FinancialBudgetsPage } from './FinancialBudgets'
 import { FinancialCreditCardsPage } from './FinancialCreditCards'
-import { FinancialDocumentInbox } from './FinancialDocumentInbox'
 import { FinancialRecurrences } from './FinancialRecurrences'
 import { PlanningHub } from './PlanningHub'
 import { FinancialDebts } from './FinancialDebts'
@@ -20,7 +19,7 @@ import { FinancialGoals } from './FinancialGoals'
 import { WorkspaceSettings } from './WorkspaceSettings'
 import { PluggyLab } from './PluggyLab'
 import { isPluggyLabAvailable } from '../api/pluggyPoc'
-import { retryResetCleanup, type ResetResult } from '../api/financialReset'
+import type { ResetResult } from '../api/financialReset'
 
 export function PersonalFinance({ userArea }: { userArea?: ReactNode }) {
   const [workspace, setWorkspace] = useState<PersonalWorkspace | null>(null)
@@ -35,7 +34,7 @@ export function PersonalFinance({ userArea }: { userArea?: ReactNode }) {
     return () => controller.abort()
   }, [retry])
   if (workspace) return <>{resetResult && <div role="status" className="workspace-reset-result"><p>Orçamento reiniciado. Todos os dados financeiros deste orçamento foram removidos. Sua conta continua ativa.</p>
-    {resetResult.pendingFileCleanup > 0 && <><p>Remoção física de arquivos pendente: {resetResult.pendingFileCleanup}. Os dados financeiros já foram removidos.</p><button type="button" onClick={() => { void retryResetCleanup(workspace.id).then(value => setResetResult(old => old ? { ...old, ...value } : old)).catch(() => setError('Não foi possível repetir o cleanup. A intenção permanece registrada.')) }}>Repetir cleanup de arquivos</button></>}{error && <p role="alert">{error}</p>}</div>}
+    {error && <p role="alert">{error}</p>}</div>}
     <WorkspaceArea key={`${workspace.id}:${generation}`} workspace={workspace} userArea={userArea} onReset={value => { setResetResult(value); setGeneration(old => old + 1) }} /></>
   return <div className="bootstrap-state"><div className="bootstrap-state__user">{userArea}</div><section className="card">{error ? <><p role="alert">{error}</p><button type="button" onClick={() => { setError(null); setRetry(value => value + 1) }}>Tentar novamente</button></> : <p role="status">Abrindo seu orçamento pessoal…</p>}</section></div>
 }
@@ -66,10 +65,9 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     {section === 'calendar' && <FinancialCalendarPage key={month} workspaceId={workspaceId} initialMonth={month} onChanged={changed} onNavigateToBudgets={budgets} />}
     {section === 'budgets' && <FinancialBudgetsPage key={competence} workspaceId={workspaceId} initialCompetence={competence} refreshKey={version} onNavigateToAgenda={agenda} />}
     {section === 'cards' && <FinancialCreditCardsPage workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
-    {section === 'documents' && <FinancialDocumentInbox workspaceId={workspaceId} onChanged={changed} />}
     {section === 'recurrences' && <FinancialRecurrences workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToAgenda={agenda} />}
     {section === 'planning' && <PlanningHub workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
-    {section === 'debts' && <FinancialDebts workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToAgenda={agenda} onNavigateToBudgets={budgets} onNavigateToPlanning={() => setSection('planning')} />}
+    {section === 'debts' && <FinancialDebts workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'goals' && <FinancialGoals workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToPlanning={() => setSection('planning')} />}
     {section === 'accounts' && <Accounts workspaceId={workspaceId} members={[{ userId: workspace.ownerUserId, displayName: 'Você', isCurrentUser: true }]} balanceVersion={version} />}
     {section === 'categories' && <Categories workspaceId={workspaceId} />}

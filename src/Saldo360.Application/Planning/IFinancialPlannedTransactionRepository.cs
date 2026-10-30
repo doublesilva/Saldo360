@@ -22,9 +22,6 @@ public interface IFinancialPlannedTransactionRepository : IReferenceLookup
     Task<T> RunLockedAsync<T>(
         Guid workspaceId, Guid plannedId, Func<IPlannedTransactionLock?, Task<T>> work, CancellationToken cancellationToken);
 
-    Task<bool> HasActiveReconciliationAsync(Guid workspaceId, Guid plannedId, CancellationToken cancellationToken);
-
-    Task<bool> HasServiceBillConfirmationAsync(Guid workspaceId, Guid plannedId, CancellationToken cancellationToken) => Task.FromResult(false);
 }
 
 /// <summary>Previsão bloqueada e seu lançamento efetivo ativo, ambos carregados depois do bloqueio (dados atuais).</summary>

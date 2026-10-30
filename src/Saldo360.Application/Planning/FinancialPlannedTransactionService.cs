@@ -126,16 +126,6 @@ public sealed class FinancialPlannedTransactionService(
                 return PlannedTransactionResult.Conflict(PlannedTransactionResult.RealizedMessage);
             }
 
-            if (await planned.HasActiveReconciliationAsync(workspaceId, plannedId, cancellationToken))
-            {
-                return PlannedTransactionResult.Conflict(PlannedTransactionResult.ReconciledMessage);
-            }
-
-            if (await planned.HasServiceBillConfirmationAsync(workspaceId, plannedId, cancellationToken))
-            {
-                return PlannedTransactionResult.Conflict("A previsão possui valor confirmado por documento e não pode ser editada.");
-            }
-
             var (details, errors) = await ValidateAsync(workspaceId, input, locked.Planned, cancellationToken);
             if (details is null)
             {
@@ -171,11 +161,6 @@ public sealed class FinancialPlannedTransactionService(
             if (locked.ActiveRealization is not null)
             {
                 return PlannedTransactionResult.Conflict(PlannedTransactionResult.RealizedMessage);
-            }
-
-            if (await planned.HasActiveReconciliationAsync(workspaceId, plannedId, cancellationToken))
-            {
-                return PlannedTransactionResult.Conflict(PlannedTransactionResult.ReconciledMessage);
             }
 
             locked.Planned.Cancel(userId, timeProvider.GetUtcNow());
@@ -227,11 +212,6 @@ public sealed class FinancialPlannedTransactionService(
             if (locked.Planned.IsCancelled)
             {
                 return (RealizeAccess.Conflict, null, null, RealizeResult.CancelledMessage);
-            }
-
-            if (await planned.HasActiveReconciliationAsync(workspaceId, plannedId, cancellationToken))
-            {
-                return (RealizeAccess.Conflict, null, null, RealizeResult.ReconciledMessage);
             }
 
             if (locked.ActiveRealization is { } existing)

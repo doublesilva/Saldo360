@@ -5,8 +5,6 @@ set -euo pipefail
 export POSTGRES_DB=saldo360_ci POSTGRES_USER=saldo360 POSTGRES_PASSWORD=ci-only-not-a-secret
 export SALDO360_IMAGE_TAG=1111111111111111111111111111111111111111 SALDO360_PUBLIC_HOST=saldo360.example.invalid
 unset CREDIT_CARD_STATEMENT_AGENT_ENABLED CREDIT_CARD_STATEMENT_AGENT_MODE CREDIT_CARD_STATEMENT_AGENT_MODEL
-export FINANCIAL_DOCUMENT_CLASSIFICATION_ENABLED=false FINANCIAL_DOCUMENT_CLASSIFICATION_AGENT_ENABLED=false
-export SERVICE_BILL_EXTRACTION_ENABLED=false SERVICE_BILL_EXTRACTION_AGENT_ENABLED=false
 compose=(docker compose --env-file /dev/null --profile migration -f docker-compose.production.yml)
 
 "${compose[@]}" config --format json | python3 -c '
@@ -30,8 +28,8 @@ import json,sys
 e=json.load(sys.stdin)["services"]["api"]["environment"]
 assert e["CreditCardStatementAgent__Enabled"] == "true" and e["CreditCardStatementAgent__Mode"] == "AgentPrimary"
 assert e["CreditCardStatementAgent__Model"] == "synthetic-model"
-for key in ["FinancialDocumentClassification__Enabled", "FinancialDocumentClassification__AgentEnabled", "ServiceBillExtraction__Enabled", "ServiceBillExtraction__AgentEnabled"]: assert e[key] == "false"
-print("PASS: explicit future activation independent of classification/service-bill flags")
+assert not any(k.startswith(("FinancialDocumentClassification__","ServiceBill","CreditCardStatementAgent__DocumentaryImport__")) for k in e)
+print("PASS: explicit activation of the AI agent; no document/service-bill flags remain")
 '
 
 tmp="$(mktemp -d)"

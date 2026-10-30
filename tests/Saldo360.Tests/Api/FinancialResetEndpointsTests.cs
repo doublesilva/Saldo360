@@ -66,7 +66,7 @@ public sealed class FinancialResetEndpointsTests(PostgresFixture postgres) : Pos
         Assert.Equal(beforeB, await Fingerprint(wb.Id));
     }
     [Fact]
-    public async Task OnlyActivePersonalOwner_CanReset_AndLegacyDocumentPathsRequireCutover()
+    public async Task OnlyActivePersonalOwner_CanReset()
     {
         var session = await SignInAsync("restricted-owner"); var w = await CreateWorkspaceAsync(session);
         await using (var db = Db()) await FinancialResetFixture.SeedAsync(db,w.Id,w.OwnerUserId);
@@ -75,15 +75,10 @@ public sealed class FinancialResetEndpointsTests(PostgresFixture postgres) : Pos
         Assert.Equal(HttpStatusCode.Conflict,(await SendWithCsrfAsync(HttpMethod.Post,Path(w.Id),session,new { confirmation="APAGAR ORÇAMENTO" })).StatusCode);
         await using (var db = Db()) await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE financial_workspaces SET type='Personal', is_active=false WHERE id={w.Id}");
         Assert.Equal(HttpStatusCode.Conflict,(await SendWithCsrfAsync(HttpMethod.Post,Path(w.Id),session,new { confirmation="APAGAR ORÇAMENTO" })).StatusCode);
-        await using (var db = Db())
-        {
-            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE financial_workspaces SET is_active=true WHERE id={w.Id}");
-            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE financial_document_inbox_items SET storage_reference='legacy/synthetic.pdf' WHERE workspace_id={w.Id}");
-        }
+        await using (var db = Db()) await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE financial_workspaces SET is_active=true WHERE id={w.Id}");
         var response = await SendWithCsrfAsync(HttpMethod.Post,Path(w.Id),session,new { confirmation="APAGAR ORÇAMENTO" });
-        Assert.Equal(HttpStatusCode.Conflict,response.StatusCode);
-        Assert.Contains("DocumentCutoverRequired",await response.Content.ReadAsStringAsync());
-        await using var verify=Db(); Assert.Equal(2,await verify.FinancialAccounts.CountAsync()); Assert.Empty(await verify.Set<FinancialResetAudit>().ToListAsync());
+        Assert.Equal(HttpStatusCode.OK,response.StatusCode);
+        await using var verify=Db(); Assert.Equal(0,await verify.FinancialAccounts.CountAsync()); Assert.Single(await verify.Set<FinancialResetAudit>().ToListAsync());
     }
 
     [Fact]

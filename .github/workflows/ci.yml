@@ -11,7 +11,7 @@ on:
         description: 'none = FULL; other choices benchmark declared dependencies and never authorize a release'
         type: choice
         default: none
-        options: [none, goals, documents, cards, security]
+        options: [none, goals, cards, security]
   schedule:
     - cron: '23 5 * * 1' # FULL weekly, UTC. Manual default is FULL; explicit benchmarks cannot authorize releases.
 
@@ -34,7 +34,6 @@ jobs:
       full: ${{ steps.detect.outputs.full }}
       release_full: ${{ steps.detect.outputs.release_full }}
       affected_filter: ${{ steps.detect.outputs.affected_filter }}
-      ocr: ${{ steps.detect.outputs.ocr }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -66,7 +65,6 @@ jobs:
             base='declared-benchmark-path'
             case "$BENCHMARK_AREA" in
               goals) path=src/Saldo360.Application/Goals/FinancialGoalService.cs ;;
-              documents) path=src/Saldo360.Infrastructure/CreditCards/LocalStatementPageReader.cs ;;
               cards) path=src/Saldo360.Domain/CreditCards/FinancialCreditCardPurchase.cs ;;
               security) path=src/Saldo360.Api/Authentication/AuthenticationSetup.cs ;;
               *) echo '::error::Unknown benchmark area'; exit 1 ;;
@@ -87,7 +85,7 @@ jobs:
             fi
           fi
           if [ "$all" = true ]; then
-            backend=true; frontend=true; infra=true; full=true; ocr=true; affected_filter=''
+            backend=true; frontend=true; infra=true; full=true; affected_filter=''
           else
             cat "$changed"
             eval "$(bash scripts/ci/classify-changes.sh < "$changed")"
@@ -97,7 +95,7 @@ jobs:
             # Include every non-backend stage in timing; declared paths cannot mint a release check.
             frontend=true; infra=true; release_full=false
           fi
-          printf 'backend=%s\nfrontend=%s\ninfra=%s\nfull=%s\nrelease_full=%s\nocr=%s\naffected_filter=%s\n' "$backend" "$frontend" "$infra" "$full" "$release_full" "$ocr" "$affected_filter" >> "$GITHUB_OUTPUT"
+          printf 'backend=%s\nfrontend=%s\ninfra=%s\nfull=%s\nrelease_full=%s\naffected_filter=%s\n' "$backend" "$frontend" "$infra" "$full" "$release_full" "$affected_filter" >> "$GITHUB_OUTPUT"
           {
             echo '### Incremental CI'; echo
             echo "- event: \`$EVENT_NAME\`"
@@ -111,7 +109,6 @@ jobs:
             echo "| release-eligible FULL | $release_full |"
             echo "| declared benchmark | $manual_benchmark |"
             echo "| additional AFFECTED | ${affected_filter:+selected} |"
-            echo "| native OCR | $ocr |"
             if [ -s "$changed" ]; then
               echo; echo '<details><summary>Changed files</summary>'; echo
               sed 's/^/- `/' "$changed" | sed 's/$/`/'
@@ -147,20 +144,10 @@ jobs:
         run: dotnet restore Saldo360.slnx
       - name: Build backend (Release)
         run: dotnet build Saldo360.slnx --configuration Release --no-restore
-      - name: Install native OCR tools for integration tests
-        if: needs.changes.outputs.full == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-por
-          command -v pdftoppm
-          command -v tesseract
-          tesseract --list-langs | grep -Fxq por
       - name: Test FAST (critical contracts and real PostgreSQL sentinels)
         if: needs.changes.outputs.full != 'true'
         run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "Profile=FAST" --logger "trx;LogFileName=fast.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
-      - name: Test FULL (all legitimate tests, PostgreSQL, migrations and native OCR)
+      - name: Test FULL (all legitimate tests, PostgreSQL and migrations)
         if: needs.changes.outputs.full == 'true'
         run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --logger "trx;LogFileName=full.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
       - name: Preserve test results
@@ -199,16 +186,6 @@ jobs:
         run: dotnet restore Saldo360.slnx
       - name: Build backend (Release)
         run: dotnet build Saldo360.slnx --configuration Release --no-restore
-      - name: Install native OCR tools for integration tests
-        if: needs.changes.outputs.ocr == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-por
-          command -v pdftoppm
-          command -v tesseract
-          tesseract --list-langs | grep -Fxq por
       - name: Test AFFECTED (non-FAST reverse dependencies)
         env:
           AFFECTED_FILTER: ${{ needs.changes.outputs.affected_filter }}

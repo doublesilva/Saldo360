@@ -1,4 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
-  <ItemGroup><ProjectReference Include="../Saldo360.Infrastructure/Saldo360.Infrastructure.csproj" /></ItemGroup>
-</Project>

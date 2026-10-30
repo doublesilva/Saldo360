@@ -68,7 +68,6 @@ public static class AuthenticationSetup
             })
             .RemoveAllLoggers();
         services.AddScoped<ICurrentUserCpf, CurrentUserCpf>();
-        services.AddScoped<Saldo360.Application.CreditCards.ICreditCardPdfPasswordProvider, AuthenticatedDocumentPasswordProvider>();
 
         // Em desenvolvimento o frontend e a API rodam em HTTP local; fora dele os cookies só trafegam em HTTPS.
         var securePolicy = environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;

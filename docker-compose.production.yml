@@ -33,46 +33,20 @@ services:
       Authentication__Oidc__Authority: https://auth.home.doublesilva.com
       Authentication__Oidc__ClientId: saldo360
       Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret
-      ServiceAccounts__IdentifierHmacKeyFile: /run/secrets/service-account-identifier-hmac-key
       Authentication__Oidc__BackchannelCaCertificatePath: /usr/local/share/ca-certificates/caddy-local-root.crt
-      FinancialEmailImport__Gmail__ClientIdFile: /etc/saldo360/secrets/gmail/client-id
-      FinancialEmailImport__Gmail__ClientSecretFile: /etc/saldo360/secrets/gmail/client-secret
-      FinancialEmailImport__Gmail__RefreshTokenFile: /etc/saldo360/secrets/gmail/refresh-token
-      FinancialEmailImport__Enabled: "false"
-      FinancialEmailImport__Provider: Gmail
-      FinancialEmailImport__TimeZone: America/Sao_Paulo
-      FinancialEmailImport__Gmail__Mailbox: silva.pucrs@gmail.com
-      FinancialDocumentClassification__Enabled: ${FINANCIAL_DOCUMENT_CLASSIFICATION_ENABLED:-false}
-      FinancialDocumentClassification__AgentEnabled: ${FINANCIAL_DOCUMENT_CLASSIFICATION_AGENT_ENABLED:-false}
-      ServiceBillExtraction__Enabled: ${SERVICE_BILL_EXTRACTION_ENABLED:-false}
-      ServiceBillExtraction__AgentEnabled: ${SERVICE_BILL_EXTRACTION_AGENT_ENABLED:-false}
-      ServiceBillReconciliation__Enabled: ${SERVICE_BILL_RECONCILIATION_ENABLED:-false}
-      ServiceBillReconciliation__ConfirmationEnabled: ${SERVICE_BILL_CONFIRMATION_ENABLED:-false}
-      ServiceBillReconciliation__BindingEnabled: ${SERVICE_BILL_BINDING_ENABLED:-false}
       CreditCardStatementAgent__Enabled: ${CREDIT_CARD_STATEMENT_AGENT_ENABLED:-false}
       CreditCardStatementAgent__Mode: ${CREDIT_CARD_STATEMENT_AGENT_MODE:-Disabled}
       CreditCardStatementAgent__Provider: OpenAI
       CreditCardStatementAgent__Model: ${CREDIT_CARD_STATEMENT_AGENT_MODEL:-gpt-4o-mini}
       CreditCardStatementAgent__ApiKeyFile: /run/secrets/openai-api-key
-      # Independent documentary/known-installment workflow; never enabled by CI/deploy.
-      CreditCardStatementAgent__DocumentaryImport__Enabled: ${CREDIT_CARD_STATEMENT_DOCUMENTARY_IMPORT_ENABLED:-false}
-      CreditCardStatementAgent__DocumentaryImport__Model: ${CREDIT_CARD_STATEMENT_DOCUMENTARY_IMPORT_MODEL:-gpt-6.1-sol}
-      CreditCardStatementAgent__DocumentaryImport__ReasoningEffort: ${CREDIT_CARD_STATEMENT_DOCUMENTARY_IMPORT_REASONING:-medium}
-      CreditCardStatementAgent__DocumentaryImport__MaxOutputTokens: ${CREDIT_CARD_STATEMENT_DOCUMENTARY_IMPORT_MAX_OUTPUT_TOKENS:-32768}
 
-      # Collector profiles are optional: the first Personal is provisioned only after login.
-      # deploy-saldo360 adds docker-compose.collectors.yml only with a real configured ID.
 
-      FinancialDocuments__StoragePath: /var/lib/saldo360/financial-documents
       ReverseProxy__KnownNetworks__0: 172.16.0.0/12
       ReverseProxy__AllowedHosts__0: ${SALDO360_PUBLIC_HOST:?Defina SALDO360_PUBLIC_HOST no .env}
     volumes:
       - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
       - /etc/jarvis/secrets/openai-api-key:/run/secrets/openai-api-key:ro
-      - /etc/saldo360/secrets/service-account-identifier-hmac-key:/run/secrets/service-account-identifier-hmac-key:ro
-      - /etc/saldo360/secrets/gmail:/etc/saldo360/secrets/gmail:ro
       - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro
-      - /var/lib/saldo360/financial-documents:/var/lib/saldo360/financial-documents:rw
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,11 +93,9 @@ services:
       Authentication__Oidc__Authority: https://auth.home.doublesilva.com
       Authentication__Oidc__ClientId: saldo360
       Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret
-      ServiceAccounts__IdentifierHmacKeyFile: /run/secrets/service-account-identifier-hmac-key
       Authentication__Oidc__BackchannelCaCertificatePath: /usr/local/share/ca-certificates/caddy-local-root.crt
     volumes:
       - /etc/saldo360/secrets/oidc-client-secret:/run/secrets/oidc-client-secret:ro
-      - /etc/saldo360/secrets/service-account-identifier-hmac-key:/run/secrets/service-account-identifier-hmac-key:ro
       - /etc/homeautomation/certs/caddy-local-root.crt:/usr/local/share/ca-certificates/caddy-local-root.crt:ro
     depends_on:
       postgres:

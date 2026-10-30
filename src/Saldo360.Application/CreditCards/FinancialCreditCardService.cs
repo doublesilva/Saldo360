@@ -7,7 +7,6 @@ namespace Saldo360.Application.CreditCards;
 public sealed class FinancialCreditCardService(
     IFinancialWorkspaceRepository workspaces,
     IFinancialCreditCardRepository cards,
-    IFinancialPlannedInvoiceReconciliationRepository reconciliations,
     TimeProvider timeProvider)
 {
     public async Task<CreditCardResult> CreateAsync(Guid workspaceId, Guid userId, CreditCardInput input, CancellationToken cancellationToken)
@@ -33,11 +32,6 @@ public sealed class FinancialCreditCardService(
         if (card.IsArchived) return CreditCardResult.Invalid(new Dictionary<string, string[]> { ["general"] = ["Cartão arquivado não pode ser alterado."] });
         var (details, errors) = await ValidateAsync(workspaceId, input, cancellationToken);
         if (details is null) return CreditCardResult.Invalid(errors);
-        if (card.DefaultPaymentAccountId != details.DefaultPaymentAccountId
-            && await reconciliations.HasActiveForCardAsync(workspaceId, cardId, cancellationToken))
-        {
-            return CreditCardResult.Invalid(new Dictionary<string, string[]> { ["defaultPaymentAccountId"] = ["A conta preferencial não pode ser alterada enquanto houver conciliações ativas; desfaça os vínculos primeiro."] });
-        }
         card.Update(details, userId, timeProvider.GetUtcNow());
         await cards.SaveChangesAsync(cancellationToken);
         return CreditCardResult.Ok((await cards.GetAsync(workspaceId, card.Id, cancellationToken))!);
@@ -53,7 +47,7 @@ public sealed class FinancialCreditCardService(
 
     private async Task<(CreditCardDetails? Details, Dictionary<string, string[]> Errors)> ValidateAsync(Guid workspaceId, CreditCardInput input, CancellationToken cancellationToken)
     {
-        var details = CreditCardDetails.TryCreate(input.Name, input.Issuer, input.LastFourDigits, input.HolderUserId, input.CreditLimit, input.ClosingDay, input.DueDay, input.DefaultPaymentAccountId, out var errors, input.GmailQuery);
+        var details = CreditCardDetails.TryCreate(input.Name, input.Issuer, input.LastFourDigits, input.HolderUserId, input.CreditLimit, input.ClosingDay, input.DueDay, input.DefaultPaymentAccountId, out var errors);
         if (input.HolderUserId is { } holder && !await cards.IsHolderOfWorkspaceAsync(workspaceId, holder, cancellationToken)) errors["holderUserId"] = ["O titular não pertence à família."];
         if (input.DefaultPaymentAccountId is { } account && !await cards.IsActiveAccountOfWorkspaceAsync(workspaceId, account, cancellationToken)) errors["defaultPaymentAccountId"] = ["A conta de pagamento precisa ser uma conta bancária ativa do orçamento."];
         return (errors.Count == 0 ? details : null, errors);

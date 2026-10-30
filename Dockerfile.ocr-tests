@@ -1,7 +1,0 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0
-RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-por && rm -rf /var/lib/apt/lists/*
-WORKDIR /work
-COPY Directory.Build.props ./
-COPY src ./src
-COPY tests ./tests
-RUN dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj -c Release --filter FullyQualifiedName~RealOcrToolTests

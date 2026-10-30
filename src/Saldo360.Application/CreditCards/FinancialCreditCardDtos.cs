@@ -3,12 +3,12 @@ namespace Saldo360.Application.CreditCards;
 public sealed record FinancialCreditCardDto(
     Guid Id, Guid WorkspaceId, string Name, string Issuer, string? LastFourDigits, Guid? HolderUserId, string CreditLimit,
     int ClosingDay, int DueDay, Guid? DefaultPaymentAccountId, bool IsArchived,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt, string? GmailQuery = null,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ArchivedAt,
     string Origin = "Manual", string? Scope = null);
 
 public sealed record CreditCardInput(
     string? Name, string? Issuer, string? LastFourDigits, Guid? HolderUserId, decimal? CreditLimit,
-    int? ClosingDay, int? DueDay, Guid? DefaultPaymentAccountId, string? GmailQuery = null);
+    int? ClosingDay, int? DueDay, Guid? DefaultPaymentAccountId);
 
 public enum CreditCardAccess { Allowed, NotFound, Invalid }
 

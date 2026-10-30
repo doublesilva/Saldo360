@@ -5,7 +5,7 @@ using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.CreditCards;
 
-internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFinancialCreditCardRepository, ICreditCardPdfContextRepository, ICreditCardStatementResolutionRepository
+internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFinancialCreditCardRepository
 {
     public async Task AddAsync(FinancialCreditCard card, CancellationToken cancellationToken)
     {
@@ -57,22 +57,8 @@ internal sealed class FinancialCreditCardRepository(Saldo360DbContext db) : IFin
         db.FinancialAccounts.AnyAsync(account => account.WorkspaceId == workspaceId && account.Id == accountId && account.IsActive
             && (account.Type == Saldo360.Domain.Accounts.AccountType.Checking || account.Type == Saldo360.Domain.Accounts.AccountType.Savings), cancellationToken);
 
-    public Task<CreditCardPdfContext?> GetAsync(Guid workspaceId, Guid cardId, Guid userId, CancellationToken cancellationToken) =>
-        (from card in db.FinancialCreditCards
-         where card.WorkspaceId == workspaceId && card.Id == cardId && !card.IsArchived
-             && db.FinancialWorkspaces.Any(member => member.Id == workspaceId && member.OwnerUserId == userId && member.IsActive && member.Type == Saldo360.Domain.Workspaces.FinancialWorkspaceType.Personal)
-         select new CreditCardPdfContext(card.Issuer, card.HolderUserId, card.LastFourDigits))
-        .SingleOrDefaultAsync(cancellationToken);
-
-    public async Task<IReadOnlyList<CreditCardStatementCandidate>> ListActiveAsync(Guid workspaceId, CancellationToken cancellationToken) =>
-        await db.FinancialCreditCards.AsNoTracking()
-            .Where(card => card.WorkspaceId == workspaceId && !card.IsArchived && card.LastFourDigits != null)
-            .Select(card => new CreditCardStatementCandidate(card.Id, card.Issuer, card.LastFourDigits!, card.HolderUserId,
-                db.Users.Where(user => user.Id == card.HolderUserId).Select(user => user.DisplayName).FirstOrDefault()))
-            .ToListAsync(cancellationToken);
-
     private static FinancialCreditCardDto ToDto(FinancialCreditCard card) => new(
         card.Id, card.WorkspaceId, card.Name, card.Issuer, card.LastFourDigits, card.HolderUserId,
         Domain.Common.Money.Format(card.CreditLimit), card.ClosingDay, card.DueDay, card.DefaultPaymentAccountId,
-        card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt, card.GmailQuery);
+        card.IsArchived, card.CreatedAt, card.UpdatedAt, card.ArchivedAt);
 }

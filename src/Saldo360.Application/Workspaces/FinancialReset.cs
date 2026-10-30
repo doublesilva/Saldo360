@@ -1,11 +1,10 @@
 namespace Saldo360.Application.Workspaces;
 
-public sealed record FinancialResetReport(Guid WorkspaceId, string Status, IReadOnlyDictionary<string, long> Counts, long PendingFileCleanup = 0);
+public sealed record FinancialResetReport(Guid WorkspaceId, string Status, IReadOnlyDictionary<string, long> Counts);
 public interface IFinancialWorkspaceResetService
 {
     Task<FinancialResetReport> PreviewAsync(Guid workspaceId, Guid actorUserId, CancellationToken ct);
     Task<FinancialResetReport> ResetAsync(Guid workspaceId, Guid actorUserId, string confirmation, string traceId, CancellationToken ct);
-    Task<long> RetryCleanupAsync(Guid workspaceId, Guid actorUserId, CancellationToken ct);
 }
 public sealed class FinancialResetRejected(string code) : Exception(code) { public string Code { get; } = code; }
 

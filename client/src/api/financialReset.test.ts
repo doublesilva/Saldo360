@@ -5,7 +5,6 @@ afterEach(() => vi.unstubAllGlobals())
 
 // Exercise the shared response reader through a simulated GET only: no real reset or database.
 it.each([
-  ['DocumentCutoverRequired', 'cutover dos arquivos'],
   ['PersonalOnly', 'somente para orçamento pessoal'],
   ['WorkspaceInactive', 'orçamento está inativo'],
 ])('preserves the explicit rejection reason %s', async (code, expected) => {

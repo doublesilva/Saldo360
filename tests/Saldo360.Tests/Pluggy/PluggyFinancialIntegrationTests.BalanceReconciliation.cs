@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Saldo360.Application.Accounts.Reconciliation;
 using Saldo360.Application.Pluggy;
 using Saldo360.Domain.Accounts;
 
@@ -33,7 +35,34 @@ public sealed partial class PluggyFinancialIntegrationTests
         return (c, accountId);
     }
 
-    private Task<JsonElement> ReconciliationAsync(Ctx c) => JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/balance-reconciliation");
+    // R00: as rotas públicas de conciliação de saldos foram aposentadas; o cálculo continua sendo coberto pelo próprio serviço (que alimenta o Dashboard).
+    private static readonly System.Text.Json.JsonSerializerOptions ServiceJson = new(System.Text.Json.JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+
+    private async Task<(ReconciliationAccess Access, JsonElement Body)> ServiceCallAsync(Guid workspace, Guid actor, Func<AccountBalanceReconciliationService, Guid, Guid, Task<(ReconciliationAccess, object?)>> call)
+    {
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var (access, value) = await call(scope.ServiceProvider.GetRequiredService<AccountBalanceReconciliationService>(), workspace, actor);
+        return (access, value is null ? default : JsonSerializer.SerializeToElement(value, ServiceJson));
+    }
+
+    private async Task<Guid> OwnerOfAsync(Guid workspace) { await using var db = Db(); return await db.FinancialWorkspaces.Where(w => w.Id == workspace).Select(w => w.OwnerUserId).SingleAsync(); }
+
+    private async Task<JsonElement> ReconciliationAsync(Ctx c)
+    {
+        var result = await ServiceCallAsync(c.Workspace, await OwnerOfAsync(c.Workspace), async (service, workspace, actor) => { var r = await service.OverviewAsync(workspace, actor, default); return (r.Access, r.Value); });
+        Assert.Equal(ReconciliationAccess.Allowed, result.Access);
+        return result.Body;
+    }
+
+    private async Task<(ReconciliationAccess Access, JsonElement Body)> PeriodCallAsync(Guid workspace, Guid actor, Guid account, string? from = null, string? through = null) =>
+        await ServiceCallAsync(workspace, actor, async (service, w, a) => { var r = await service.PeriodAsync(w, a, account, from, through, default); return (r.Access, r.Value); });
+
+    private async Task<JsonElement> PeriodAsync(Ctx c, Guid account, string? from = null, string? through = null)
+    {
+        var result = await PeriodCallAsync(c.Workspace, await OwnerOfAsync(c.Workspace), account, from, through);
+        Assert.Equal(ReconciliationAccess.Allowed, result.Access);
+        return result.Body;
+    }
 
     private static JsonElement AccountOf(JsonElement overview, Guid id) => overview.GetProperty("accounts").EnumerateArray().Single(a => a.GetProperty("accountId").GetGuid() == id);
 
@@ -59,7 +88,7 @@ public sealed partial class PluggyFinancialIntegrationTests
         Assert.Equal(PreviousMonthStart.AddDays(3).ToString("yyyy-MM-dd"), Text(account, "calculated", "calculableFrom"));
 
         // Abertura do mês atual: 5.000 − 100 (movimento de hoje em diante) = 4.900 pelos dois lados. O mês anterior começa antes do histórico: indisponível, nunca zero.
-        var period = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}/balance-reconciliation?from={PreviousMonthStart:yyyy-MM}&through={MonthStart:yyyy-MM}");
+        var period = await PeriodAsync(c, accountId, $"{PreviousMonthStart:yyyy-MM}", $"{MonthStart:yyyy-MM}");
         var months = period.GetProperty("months").EnumerateArray().ToList();
         Assert.Equal(2, months.Count);
         Assert.Equal((JsonValueKind.Null, "BeforeBankHistory", "BeforeCalculableStart"), (months[0].GetProperty("bankOpening").ValueKind, Text(months[0], "bankReason"), Text(months[0], "ledgerReason")));
@@ -76,7 +105,7 @@ public sealed partial class PluggyFinancialIntegrationTests
 
         var first = (await ReconciliationAsync(c)).GetRawText();
         var second = (await ReconciliationAsync(c)).GetRawText();
-        await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}/balance-reconciliation");
+        await PeriodAsync(c, accountId);
         Assert.Equal(first, second);
         Assert.Equal(before, (await db.FinancialTransactions.CountAsync(), await db.FinancialTransfers.CountAsync(), await db.FinancialAccountBalanceAnchors.CountAsync(),
             (await db.FinancialAccounts.AsNoTracking().SingleAsync(a => a.Id == accountId)).OpeningBalance));
@@ -108,7 +137,7 @@ public sealed partial class PluggyFinancialIntegrationTests
         Assert.Equal(D(8), Text(account, "coverage", "bankSideFrom"));
 
         // O mês atual só tem abertura calculada se a revisão (D-6) não for datada dele em diante; senão ela é a movimentação que bloqueia.
-        var month = (await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}/balance-reconciliation?from={MonthStart:yyyy-MM}&through={MonthStart:yyyy-MM}")).GetProperty("months")[0];
+        var month = (await PeriodAsync(c, accountId, $"{MonthStart:yyyy-MM}", $"{MonthStart:yyyy-MM}")).GetProperty("months")[0];
         Assert.Equal(Today.AddDays(-5) > MonthStart ? 1 : 0, month.GetProperty("blockingReview").GetInt32());
 
         // Resolvido o item, o histórico calculável se amplia e a conta deixa de ter ressalva.
@@ -210,7 +239,7 @@ public sealed partial class PluggyFinancialIntegrationTests
         var scopes = overview.GetProperty("byScope").EnumerateArray().ToDictionary(s => Text(s, "scope"));
         Assert.Equal(("2270.00", "800.00"), (Text(scopes["PF"], "bank"), Text(scopes["PJ"], "bank")));
         Assert.Equal(("3070.00", "3070.00", "0.00", true), (Text(overview, "consolidated", "bank"), Text(overview, "consolidated", "calculated"), Text(overview, "consolidated", "difference"), overview.GetProperty("consolidated").GetProperty("complete").GetBoolean()));
-        var period = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts/{a}/balance-reconciliation?from={MonthStart:yyyy-MM}&through={MonthStart:yyyy-MM}");
+        var period = await PeriodAsync(c, a, $"{MonthStart:yyyy-MM}", $"{MonthStart:yyyy-MM}");
         var month = period.GetProperty("months")[0];
         Assert.Equal(Text(month, "bankOpening"), Text(month, "ledgerOpening")); // os dois lados concordam após transferência e pagamento de fatura
     }
@@ -225,16 +254,17 @@ public sealed partial class PluggyFinancialIntegrationTests
         var strangerWorkspace = await CreateWorkspaceAsync(stranger);
         var strangerCtx = new Ctx(stranger, strangerWorkspace.Id, c.Client, Guid.Empty);
 
-        var own = await JsonGetAsync(strangerCtx, $"/api/financial-workspaces/{strangerWorkspace.Id}/accounts/balance-reconciliation");
-        var foreign = await Send(c.Client, HttpMethod.Get, $"/api/financial-workspaces/{c.Workspace}/accounts/balance-reconciliation", stranger);
-        var foreignAccount = await Send(c.Client, HttpMethod.Get, $"/api/financial-workspaces/{strangerWorkspace.Id}/accounts/{accountId}/balance-reconciliation", stranger);
+        var strangerActor = await OwnerOfAsync(strangerWorkspace.Id);
+        var own = await ServiceCallAsync(strangerWorkspace.Id, strangerActor, async (service, w, a) => { var r = await service.OverviewAsync(w, a, default); return (r.Access, r.Value); });
+        var foreign = await ServiceCallAsync(c.Workspace, strangerActor, async (service, w, a) => { var r = await service.OverviewAsync(w, a, default); return (r.Access, r.Value); });
+        var foreignAccount = await PeriodCallAsync(strangerWorkspace.Id, strangerActor, accountId);
 
-        Assert.Equal(0, own.GetProperty("accounts").GetArrayLength());
-        Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, foreignAccount.StatusCode);
-        var url = $"/api/financial-workspaces/{c.Workspace}/accounts/{accountId}/balance-reconciliation";
-        Assert.Equal(HttpStatusCode.BadRequest, (await GetAsync(c, url + "?from=2026-13")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await GetAsync(c, url + "?from=2020-01&through=2026-10")).StatusCode);
+        Assert.Equal(0, own.Body.GetProperty("accounts").GetArrayLength());
+        Assert.Equal(ReconciliationAccess.NotFound, foreign.Access);
+        Assert.Equal(ReconciliationAccess.NotFound, foreignAccount.Access);
+        var owner = await OwnerOfAsync(c.Workspace);
+        Assert.Equal(ReconciliationAccess.Invalid, (await PeriodCallAsync(c.Workspace, owner, accountId, "2026-13")).Access);
+        Assert.Equal(ReconciliationAccess.Invalid, (await PeriodCallAsync(c.Workspace, owner, accountId, "2020-01", "2026-10")).Access);
     }
 
     // ---- 7, 14: Dashboard e Agenda -------------------------------------------------------------------------------------------------
