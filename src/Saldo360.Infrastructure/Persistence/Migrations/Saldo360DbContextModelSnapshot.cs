@@ -3316,6 +3316,55 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyAutomationSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("CategorizeAfterSync")
+                        .HasColumnType("boolean")
+                        .HasColumnName("categorize_after_sync");
+
+                    b.Property<DateTimeOffset?>("CategorizeConsentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("categorize_consent_at");
+
+                    b.Property<int?>("SyncIntervalHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("sync_interval_hours");
+
+                    b.Property<bool>("SyncPaused")
+                        .HasColumnType("boolean")
+                        .HasColumnName("sync_paused");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_automation_settings");
+
+                    b.HasIndex("WorkspaceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_automation_settings_workspace");
+
+                    b.ToTable("pluggy_automation_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pluggy_automation_settings_consent", "(categorize_after_sync = FALSE) OR (categorize_consent_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_pluggy_automation_settings_interval", "sync_interval_hours IS NULL OR sync_interval_hours IN (6, 12, 24)");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyCardBill", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3461,6 +3510,118 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("pluggy_card_bill_payments", null, t =>
                         {
                             t.HasCheckConstraint("ck_pluggy_card_bill_payments_amount", "amount > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyCategorizationRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AiCalls")
+                        .HasColumnType("integer")
+                        .HasColumnName("ai_calls");
+
+                    b.Property<int>("AiItemsSent")
+                        .HasColumnType("integer")
+                        .HasColumnName("ai_items_sent");
+
+                    b.Property<string>("AiStoppedBecause")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("ai_stopped_because");
+
+                    b.Property<int>("ClassifiedAi")
+                        .HasColumnType("integer")
+                        .HasColumnName("classified_ai");
+
+                    b.Property<int>("ClassifiedLocal")
+                        .HasColumnType("integer")
+                        .HasColumnName("classified_local");
+
+                    b.Property<Guid?>("ConnectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("connection_id");
+
+                    b.Property<int>("Considered")
+                        .HasColumnType("integer")
+                        .HasColumnName("considered");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("model");
+
+                    b.Property<int>("Pending")
+                        .HasColumnType("integer")
+                        .HasColumnName("pending");
+
+                    b.Property<int>("SkippedChanged")
+                        .HasColumnType("integer")
+                        .HasColumnName("skipped_changed");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("state");
+
+                    b.Property<Guid?>("SyncRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sync_run_id");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("trigger");
+
+                    b.Property<bool>("UsedAi")
+                        .HasColumnType("boolean")
+                        .HasColumnName("used_ai");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_categorization_runs");
+
+                    b.HasIndex("WorkspaceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_categorization_runs_running")
+                        .HasFilter("state = 'Running'");
+
+                    b.HasIndex("WorkspaceId", "StartedAt")
+                        .HasDatabaseName("ix_pluggy_categorization_runs_workspace_id_started_at");
+
+                    b.ToTable("pluggy_categorization_runs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pluggy_categorization_runs_counts", "considered >= 0 AND classified_local >= 0 AND classified_ai >= 0 AND pending >= 0 AND skipped_changed >= 0 AND ai_items_sent >= 0 AND ai_calls >= 0");
+
+                            t.HasCheckConstraint("ck_pluggy_categorization_runs_finished", "(state = 'Running') = (finished_at IS NULL)");
+
+                            t.HasCheckConstraint("ck_pluggy_categorization_runs_state", "state IN ('Running','Completed','CompletedWithPending','Failed')");
+
+                            t.HasCheckConstraint("ck_pluggy_categorization_runs_trigger", "trigger IN ('Manual','AfterSync')");
                         });
                 });
 
@@ -5858,6 +6019,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_pluggy_account_links_accounts_same_workspace");
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyAutomationSettings", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_automation_settings_financial_workspaces_workspace_id");
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyCardBill", b =>
                 {
                     b.HasOne("Saldo360.Domain.Pluggy.PluggyAccountLink", null)
@@ -5890,6 +6061,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pluggy_card_bill_payments_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyCategorizationRun", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_categorization_runs_financial_workspaces_workspace_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyImportedTransaction", b =>

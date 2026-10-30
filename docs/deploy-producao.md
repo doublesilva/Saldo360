@@ -276,8 +276,8 @@ O serviço `api` monta somente `/etc/jarvis/secrets/openai-api-key` em
 O segredo compartilhado permanece sob administração do Jarvis, sem `chmod`/`chown` pelo deploy.
 O provisionamento informado é `root:1654`, modo `0440`, com API `1654:1654` e grupo adicional `1654`.
 
-As configurações iniciais são `CREDIT_CARD_STATEMENT_AGENT_ENABLED=false`,
-`CREDIT_CARD_STATEMENT_AGENT_MODE=Disabled` e modelo `gpt-4o-mini`.
+As configurações iniciais são `AI_AGENT_ENABLED=false` e modelo `gpt-4o-mini` (R04: a seção `CreditCardStatementAgent`
+virou `AiAgent` e o modo foi removido; renomeie as variáveis já provisionadas antes de implantar).
 O provider é `OpenAI` e `ApiKeyFile` é fixo no caminho montado. O provider existente falha se esse
 arquivo faltar ou estiver vazio; não recorre à credencial inline quando `ApiKeyFile` está configurado.
 
@@ -292,9 +292,8 @@ Somente em janela futura explicitamente autorizada, alterar **apenas configuraç
 em `/srv/saldo360-deploy/.env`:
 
 ```dotenv
-CREDIT_CARD_STATEMENT_AGENT_ENABLED=true
-CREDIT_CARD_STATEMENT_AGENT_MODE=AgentPrimary
-CREDIT_CARD_STATEMENT_AGENT_MODEL=gpt-4o-mini
+AI_AGENT_ENABLED=true
+AI_AGENT_MODEL=gpt-4o-mini
 ```
 
 Aplicar pela arquitetura existente de release assinada/deploy autorizado, com CI do SHA aprovado,

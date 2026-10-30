@@ -34,11 +34,10 @@ services:
       Authentication__Oidc__ClientId: saldo360
       Authentication__Oidc__ClientSecretFile: /run/secrets/oidc-client-secret
       Authentication__Oidc__BackchannelCaCertificatePath: /usr/local/share/ca-certificates/caddy-local-root.crt
-      CreditCardStatementAgent__Enabled: ${CREDIT_CARD_STATEMENT_AGENT_ENABLED:-false}
-      CreditCardStatementAgent__Mode: ${CREDIT_CARD_STATEMENT_AGENT_MODE:-Disabled}
-      CreditCardStatementAgent__Provider: OpenAI
-      CreditCardStatementAgent__Model: ${CREDIT_CARD_STATEMENT_AGENT_MODEL:-gpt-4o-mini}
-      CreditCardStatementAgent__ApiKeyFile: /run/secrets/openai-api-key
+      AiAgent__Enabled: ${AI_AGENT_ENABLED:-false}
+      AiAgent__Provider: OpenAI
+      AiAgent__Model: ${AI_AGENT_MODEL:-gpt-4o-mini}
+      AiAgent__ApiKeyFile: /run/secrets/openai-api-key
 
 
       ReverseProxy__KnownNetworks__0: 172.16.0.0/12

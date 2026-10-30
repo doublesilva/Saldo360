@@ -113,3 +113,43 @@ internal sealed class PluggyTransactionChangeConfiguration : IEntityTypeConfigur
         b.HasOne<PluggySyncRun>().WithMany().HasForeignKey(x => x.SyncRunId).OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+internal sealed class PluggyAutomationSettingsConfiguration : IEntityTypeConfiguration<PluggyAutomationSettings>
+{
+    public void Configure(EntityTypeBuilder<PluggyAutomationSettings> b)
+    {
+        b.ToTable("pluggy_automation_settings", t =>
+        {
+            t.HasCheckConstraint("ck_pluggy_automation_settings_interval", "sync_interval_hours IS NULL OR sync_interval_hours IN (6, 12, 24)");
+            // Categorizar após a sincronização só existe com o consentimento registrado.
+            t.HasCheckConstraint("ck_pluggy_automation_settings_consent", "(categorize_after_sync = FALSE) OR (categorize_consent_at IS NOT NULL)");
+        });
+        b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
+        b.HasIndex(x => x.WorkspaceId).IsUnique().HasDatabaseName("ux_pluggy_automation_settings_workspace");
+        b.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class PluggyCategorizationRunConfiguration : IEntityTypeConfiguration<PluggyCategorizationRun>
+{
+    public void Configure(EntityTypeBuilder<PluggyCategorizationRun> b)
+    {
+        b.ToTable("pluggy_categorization_runs", t =>
+        {
+            t.HasCheckConstraint("ck_pluggy_categorization_runs_state", "state IN ('Running','Completed','CompletedWithPending','Failed')");
+            t.HasCheckConstraint("ck_pluggy_categorization_runs_trigger", "trigger IN ('Manual','AfterSync')");
+            t.HasCheckConstraint("ck_pluggy_categorization_runs_counts", "considered >= 0 AND classified_local >= 0 AND classified_ai >= 0 AND pending >= 0 AND skipped_changed >= 0 AND ai_items_sent >= 0 AND ai_calls >= 0");
+            t.HasCheckConstraint("ck_pluggy_categorization_runs_finished", "(state = 'Running') = (finished_at IS NULL)");
+        });
+        b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
+        b.Property(x => x.Trigger).HasConversion<string>().HasMaxLength(12);
+        b.Property(x => x.State).HasConversion<string>().HasMaxLength(24);
+        b.Property(x => x.AiStoppedBecause).HasMaxLength(PluggyCategorizationRun.CodeMaxLength);
+        b.Property(x => x.FailureCode).HasMaxLength(PluggyCategorizationRun.CodeMaxLength);
+        b.Property(x => x.Model).HasMaxLength(PluggyCategorizationRun.CodeMaxLength);
+        // No máximo uma execução em andamento por orçamento: clique repetido e manual × após-sincronização nunca processam o mesmo conjunto duas vezes.
+        b.HasIndex(x => x.WorkspaceId).IsUnique().HasFilter("state = 'Running'").HasDatabaseName("ux_pluggy_categorization_runs_running");
+        b.HasIndex(x => new { x.WorkspaceId, x.StartedAt });
+        b.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+    }
+}

@@ -53,6 +53,9 @@ export function BudgetTargetCard({ workspaceId, budgetId, target, run, title, ca
       {run.coverage.undefinedNatureCount} despesa(s) do mês sem tipo definido ({formatBrlDecimal(run.coverage.undefinedNatureAmount)}) não entram nas fixas.{' '}
       {onReviewClassification && <button type="button" className="button--link" onClick={onReviewClassification}>Revisar classificação</button>}
     </p>}
+    {(run.coverage.unclassifiableCount ?? 0) > 0 && <p className="notice" role="status">
+      {run.coverage.unclassifiableCount} despesa(s) do mês (encargos ou estornos de fatura, parcelas históricas ou dívidas) também estão sem tipo, mas não têm onde ser classificadas: continuam sem tipo e fora das fixas.
+    </p>}
     <p className="meta budget-target__hint">{groupHints[target.groupingType]}</p>
     {editing && canEdit
       ? <TargetEditForm workspaceId={workspaceId} budgetId={budgetId} target={target} title={title} onDone={() => { setEditing(false); onChanged() }} onCancel={() => setEditing(false)} onError={onNotice} />

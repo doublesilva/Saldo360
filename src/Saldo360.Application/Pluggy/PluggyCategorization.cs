@@ -17,6 +17,10 @@ public sealed class PluggyCategorizationCandidate
     public string? OperationType { get; init; }
     /// <summary>Categoria atual no núcleo financeiro (lançamento ou compra). Se diferir do rastro, alguém a alterou pelas telas.</summary>
     public Guid? CurrentCategoryId { get; init; }
+    /// <summary>Lançamento (banco) ou compra (cartão) gerado: é nele que a classificação é corrigida.</summary>
+    public Guid? RecordId { get; init; }
+    public Guid? CardId { get; init; }
+    public Domain.Categories.ExpenseNature Nature { get; init; }
     /// <summary>A categoria atual é o marcador "Outros" que a compra de cartão recebe por não poder ficar sem categoria.</summary>
     public bool CurrentIsFallback { get; init; }
     public Guid? PostingCategoryId { get; init; }
@@ -75,12 +79,12 @@ public sealed record PluggyCategorizationResult(int Considered, int Manual, int 
 
 public enum PluggyCategorizationOutcome { Ok, ConfirmationRequired, AiUnavailable }
 
-public sealed record PluggyCategorizationRun(PluggyCategorizationOutcome Outcome, PluggyCategorizationResult? Result);
+public sealed record PluggyCategorizationOutcomeResult(PluggyCategorizationOutcome Outcome, PluggyCategorizationResult? Result);
 
 public interface IPluggyCategorizationService
 {
     Task<PluggyCategorizationOverview> GetOverviewAsync(Guid workspaceId, CancellationToken ct);
-    Task<PluggyCategorizationRun> RunAsync(Guid workspaceId, Guid userId, PluggyCategorizationRequest request, DateTimeOffset now, CancellationToken ct);
+    Task<PluggyCategorizationOutcomeResult> RunAsync(Guid workspaceId, Guid userId, PluggyCategorizationRequest request, DateTimeOffset now, CancellationToken ct);
 }
 
 /// <summary>
@@ -93,7 +97,7 @@ public sealed class PluggyCategorizationService(IPluggyCategorizationRepository 
     public async Task<PluggyCategorizationOverview> GetOverviewAsync(Guid workspaceId, CancellationToken ct) =>
         new(await repository.CountAsync(workspaceId, ct), new(model.IsAvailable, model.IsAvailable ? model.ModelName : null, model.IsAvailable ? null : "AiNotConfigured"));
 
-    public async Task<PluggyCategorizationRun> RunAsync(Guid workspaceId, Guid userId, PluggyCategorizationRequest request, DateTimeOffset now, CancellationToken ct)
+    public async Task<PluggyCategorizationOutcomeResult> RunAsync(Guid workspaceId, Guid userId, PluggyCategorizationRequest request, DateTimeOffset now, CancellationToken ct)
     {
         if (request.UseAi && !request.ConfirmExternal) return new(PluggyCategorizationOutcome.ConfirmationRequired, null);
 

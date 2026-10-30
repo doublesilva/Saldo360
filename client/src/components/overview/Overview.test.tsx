@@ -94,8 +94,8 @@ describe('Visão Geral — avisos', () => {
     const notice = await screen.findByText(/3 lançamento\(s\) pendentes de classificação/)
     expect(notice.closest('p')?.className).toContain('ov-notice--info')
     expect(screen.queryByText(/sincroniza/i)).toBeNull()
-    fireEvent.click(within(notice.closest('p')!).getByRole('button', { name: 'Ver lançamentos' }))
-    expect(navigations.at(-1)).toMatchObject({ section: 'transactions' })
+    fireEvent.click(within(notice.closest('p')!).getByRole('button', { name: 'Revisar classificação' }))
+    expect(navigations.at(-1)).toMatchObject({ section: 'automation', context: { review: { kind: 'category' } } })
   })
 
   it('problemas de sincronização e de revisão aparecem em linguagem direta, com a explicação em detalhe expansível', async () => {
@@ -262,6 +262,13 @@ describe('Visão Geral — blocos', () => {
     expect(within(table).getAllByRole('row', { hidden: true })).toHaveLength(7) // cabeçalho + 6 meses
     expect(within(table).getByText('Mês corrente')).toBeTruthy()
     expect(within(table).getAllByText('Mês futuro').length).toBe(5)
+  })
+
+  it('evolução com período desconhecido ou "Historical" não derruba o painel (regressão da publicação)', async () => {
+    const odd = { ...sixMonths, months: sixMonths.months.map((month, index) => ({ ...month, periodKind: (index === 0 ? 'Historical' : index === 1 ? 'Inesperado' : month.periodKind) as typeof month.periodKind })) }
+    mockApi({ evolution: odd }); renderPage()
+    expect(await screen.findByRole('heading', { name: 'Evolução financeira' })).toBeTruthy()
+    expect(screen.getByRole('article', { name: 'Saldo atual' })).toBeTruthy()
   })
 
   it('evolução sem movimento diz isso em vez de desenhar barras vazias', async () => {

@@ -113,7 +113,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialDebtInstallmentRepository, FinancialDebtInstallmentRepository>();
         services.AddScoped<IFinancialGoalRepository, FinancialGoalRepository>();
         services.AddScoped<IFinancialGoalAllocationRepository, FinancialGoalAllocationRepository>();
-        // Agente de IA (único cliente OpenAI): serve à classificação de lançamentos. A seção continua sendo CreditCardStatementAgent (nome histórico, ver AiAgentOptions).
+        // Agente de IA (único cliente OpenAI): serve à classificação de lançamentos. A seção é AiAgent (ver AiAgentOptions).
         var aiAgent = configuration.GetSection(AiAgentOptions.SectionName).Get<AiAgentOptions>() ?? new AiAgentOptions();
         services.AddSingleton(aiAgent);
         services.AddHttpClient(OpenAiCompletionProvider.ClientName, client =>
@@ -146,6 +146,7 @@ public static class DependencyInjection
         // T09.6: sincronização automática (desligada por padrão). Mesmo padrão de execução periódica do coletor de e-mail; sem infraestrutura nova de jobs.
         services.AddSingleton(configuration.GetSection(Saldo360.Application.Pluggy.PluggyAutoSyncOptions.SectionName).Get<Saldo360.Application.Pluggy.PluggyAutoSyncOptions>() ?? new());
         services.AddScoped<Saldo360.Application.Pluggy.IPluggySyncStateRepository, Saldo360.Infrastructure.Pluggy.PluggySyncStateRepository>();
+        services.AddScoped<Saldo360.Application.Pluggy.IPluggyAutomationRepository, Saldo360.Infrastructure.Pluggy.PluggyAutomationRepository>();
         services.AddHostedService<Saldo360.Infrastructure.Pluggy.PluggyAutoSyncHostedService>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyFinancialRepository, Saldo360.Infrastructure.Pluggy.PluggyFinancialRepository>();
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyPostingEngine, Saldo360.Infrastructure.Pluggy.PluggyPostingEngine>();

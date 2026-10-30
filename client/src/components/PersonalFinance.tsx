@@ -17,7 +17,7 @@ import { PlanningHub } from './PlanningHub'
 import { FinancialDebts } from './FinancialDebts'
 import { FinancialGoals } from './FinancialGoals'
 import { WorkspaceSettings } from './WorkspaceSettings'
-import { PluggyLab } from './PluggyLab'
+import { AutomationCenter, type AutomationEntry } from './AutomationCenter'
 import { isPluggyLabAvailable } from '../api/pluggyPoc'
 import type { ResetResult } from '../api/financialReset'
 
@@ -51,8 +51,9 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
   const changed = () => setVersion(value => value + 1)
   const agenda = (value: string) => { setMonth(`${value}-01`); setSection('calendar') }
   const budgets = (value: string) => { setCompetence(value); setBudgetGroup(undefined); setSection('budgets') }
-  // Orçamento → lançamentos: leva ao fluxo existente de classificação, filtrado nas despesas do período que ainda não têm tipo definido.
-  const reviewClassification = (range: { from: string; to: string }) => { setTransactionContext({ key: Date.now(), filters: { ...range, accountId: null, expenseNature: 'Undefined' } }); setSection('transactions') }
+  // Orçamento → central de automação: abre a lista de revisão com as despesas do período sem tipo definido, inclusive as compras de cartão importadas.
+  const [automationEntry, setAutomationEntry] = useState<AutomationEntry | undefined>()
+  const reviewClassification = (range: { from: string; to: string }) => { setAutomationEntry({ key: Date.now(), tab: 'automations', review: { kind: 'nature', ...range } }); setSection('automation') }
   const workspaceId = workspace.id
   // Resumo → detalhe: leva a conta, a competência ou a data da Visão Geral para a página de destino.
   const openFromOverview = (target: OverviewSection, context?: OverviewNavigation) => {
@@ -60,17 +61,18 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     setCompetence(target === 'budgets' ? context?.competence : undefined)
     setBudgetGroup(target === 'budgets' ? context?.budgetGroup : undefined)
     setTransactionContext(target === 'transactions' ? { key: Date.now(), filters: context?.transactions, newTransaction: context?.newTransaction } : null)
+    if (target === 'automation') setAutomationEntry({ key: Date.now(), tab: context?.automationTab, review: context?.review })
     setSection(target)
   }
-  // Laboratório experimental: só aparece quando a API o habilita para este usuário (Pluggy:Enabled).
+  // Central de automação: só aparece quando a API habilita a Pluggy para este usuário (Pluggy:Enabled).
   const [pluggyLab, setPluggyLab] = useState(false)
   useEffect(() => {
     const controller = new AbortController()
     isPluggyLabAvailable(workspaceId, controller.signal).then(available => { if (!controller.signal.aborted) setPluggyLab(available) }).catch(() => undefined)
     return () => controller.abort()
   }, [workspaceId])
-  return <AppShell section={section} onNavigate={setSection} labItems={pluggyLab ? [['pluggy-lab', 'Laboratório Pluggy']] : undefined} workspaceName={workspace.name} userArea={userArea} subtitle={section === 'overview' ? 'Sua situação, o mês e os próximos compromissos.' : 'Seu orçamento pessoal, sem compartilhar dados com a família.'}>
-    {section === 'pluggy-lab' && pluggyLab && <PluggyLab workspaceId={workspaceId} />}
+  return <AppShell section={section} onNavigate={setSection} automation={pluggyLab} workspaceName={workspace.name} userArea={userArea} subtitle={section === 'overview' ? 'Sua situação, o mês e os próximos compromissos.' : 'Seu orçamento pessoal, sem compartilhar dados com a família.'}>
+    {section === 'automation' && pluggyLab && <AutomationCenter key={automationEntry?.key} workspaceId={workspaceId} refreshKey={String(version)} onChanged={changed} entry={automationEntry} />}
     {section === 'settings' && <WorkspaceSettings workspaceId={workspaceId} onReset={onReset} />}
     {section === 'overview' && <Overview workspaceId={workspaceId} refreshKey={version} selection={overviewSelection} onSelectionChange={setOverviewSelection} onNavigate={openFromOverview} />}
     {section === 'calendar' && <FinancialCalendarPage key={month} workspaceId={workspaceId} initialMonth={month} onChanged={changed} onNavigateToBudgets={budgets} />}

@@ -195,11 +195,11 @@ public sealed record FinancialBudgetExecutionResponse(
         dto.Targets.Select(FinancialBudgetTargetExecutionResponse.From).ToList());
 }
 
-public sealed record BudgetCoverageResponse(int EstimatedCompetenceCount, int UndefinedNatureCount, string UndefinedNatureAmount, bool NoCards)
+public sealed record BudgetCoverageResponse(int EstimatedCompetenceCount, int UndefinedNatureCount, string UndefinedNatureAmount, bool NoCards, int UnclassifiableCount)
 {
     public static BudgetCoverageResponse From(BudgetCoverage? coverage) => coverage is null
-        ? new(0, 0, Money.Format(0m), false)
-        : new(coverage.EstimatedCompetenceCount, coverage.UndefinedNatureCount, Money.Format(coverage.UndefinedNatureAmount), coverage.NoCards);
+        ? new(0, 0, Money.Format(0m), false, 0)
+        : new(coverage.EstimatedCompetenceCount, coverage.UndefinedNatureCount, Money.Format(coverage.UndefinedNatureAmount), coverage.NoCards, coverage.UnclassifiableCount);
 }
 
 public sealed record FinancialBudgetTargetExecutionResponse(

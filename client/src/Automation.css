@@ -1,0 +1,38 @@
+/* R04: central de automação. Usa as variáveis de tema existentes; sem rolagem horizontal da página em 1440/768/390/360. */
+.automation { min-width: 0; }
+.automation .card { margin-top: 1rem; min-width: 0; }
+.automation-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); gap: 1rem; align-items: start; margin-top: 1rem; }
+.automation-cards .automation-card { margin-top: 0; }
+.automation-card h4, .automation .card h4 { margin-top: 0; }
+.automation-card__controls { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin: .8rem 0; }
+.automation-card__controls label { display: grid; gap: .2rem; min-width: 0; }
+.automation-card__controls .automation-card__check { display: flex; align-items: center; gap: .5rem; flex-basis: 100%; }
+.automation-card__rules { margin: .6rem 0 0; padding-left: 1.1rem; }
+.automation-lastrun p { margin: .2rem 0; overflow-wrap: anywhere; }
+.automation-connections, .automation-history, .classification-review { list-style: none; margin: .8rem 0 0; padding: 0; display: grid; gap: .8rem; }
+.automation-connection, .automation-history__item, .classification-review__item { border: 1px solid var(--border); border-radius: .6rem; padding: .9rem; min-width: 0; }
+.automation-connection header, .automation-history__head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.automation-connection__links { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .3rem; }
+.automation-connection__links li { overflow-wrap: anywhere; }
+.automation-diagnostics { margin-top: 1rem; }
+.automation-diagnostics > summary { cursor: pointer; min-height: 2.5rem; display: flex; align-items: center; }
+.automation-history__filters { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin: .6rem 0; }
+.automation-history__filters label { display: grid; gap: .2rem; min-width: 0; }
+.automation-history__filters select, .automation-history__filters input { max-width: 100%; }
+.automation-history__pager { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; justify-content: space-between; margin-top: .8rem; }
+.classification-review__main { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; }
+.classification-review__main strong { overflow-wrap: anywhere; min-width: 0; }
+.classification-review__edit { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin-top: .5rem; }
+.classification-review__edit label { display: grid; gap: .2rem; min-width: 0; }
+.classification-review__edit select { max-width: 100%; }
+.automation .card-overview__facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
+.automation .meta, .automation dd, .automation .notice { overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .automation-card__controls > *, .classification-review__edit > *, .automation-history__filters > * { flex: 1 1 100%; }
+  .automation-card__controls button, .classification-review__edit button { min-height: 2.75rem; }
+}
+.automation-card__controls .automation-card__check { min-height: 2.75rem; }
+.automation form[aria-label="Cadastrar Item da Pluggy"] { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin-top: 1rem; }
+.automation form[aria-label="Cadastrar Item da Pluggy"] > p { flex-basis: 100%; margin: 0; }
+.automation form[aria-label="Cadastrar Item da Pluggy"] label { display: grid; gap: .2rem; min-width: 0; flex: 1 1 14rem; }
+.automation form[aria-label="Cadastrar Item da Pluggy"] input { width: 100%; box-sizing: border-box; }

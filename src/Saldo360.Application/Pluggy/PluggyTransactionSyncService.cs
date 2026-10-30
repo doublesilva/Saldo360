@@ -11,7 +11,8 @@ namespace Saldo360.Application.Pluggy;
 /// </summary>
 public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository workspaces, IPluggyItemLinkRepository links, IPluggyImportRepository imports,
     IPluggyClient client, PluggyOptions options, TimeProvider time, IPluggyFinancialRepository financial, IPluggyPostingEngine engine,
-    IPluggySyncStateRepository states, PluggyAutoSyncOptions auto)
+    IPluggySyncStateRepository states, PluggyAutoSyncOptions auto, IPluggyAutomationRepository automation, PluggyCategorizationJob categorization,
+    Saldo360.Application.Classification.IFinancialClassificationModel classificationModel)
 {
     public const int MaxPageSize = 200;
 
@@ -62,6 +63,7 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
             await imports.SaveRunAsync(run, CancellationToken.None);
             await RecordStateAsync(link, run, observed, trigger);
         }
+        if (!failed && run.Status is PluggySyncStatus.Completed or PluggySyncStatus.CompletedWithErrors) await CategorizeAfterSyncAsync(link, run, userId);
         return fatal is not null && failed
             ? new(PluggyAccess.IntegrationFailure, ToView(run), fatal.Kind, fatal.Message)
             : PluggyResult<PluggySyncRunView>.Ok(ToView(run));
@@ -83,12 +85,13 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
                 _ => PluggySyncOutcome.Failed,
             };
             var failure = outcome is PluggySyncOutcome.Failed or PluggySyncOutcome.CompletedWithErrors;
+            var intervalHours = (await automation.FindSettingsAsync(link.WorkspaceId, CancellationToken.None))?.SyncIntervalHours;
             await states.SaveAsync(link.WorkspaceId, link.Id, state =>
             {
                 if (item is not null) state.ObserveItem(item.Status, item.ConsentExpiresAt, at);
                 var next = outcome switch
                 {
-                    PluggySyncOutcome.Completed => PluggyAutoSyncPolicy.AfterSuccess(at, auto),
+                    PluggySyncOutcome.Completed => PluggyAutoSyncPolicy.AfterSuccess(at, auto, intervalHours),
                     PluggySyncOutcome.ConsentExpired => PluggyAutoSyncPolicy.AfterConsentExpired(at, auto),
                     _ => PluggyAutoSyncPolicy.AfterFailure(at, state.ConsecutiveFailures + 1, auto),
                 };
@@ -96,6 +99,22 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
             }, at, CancellationToken.None);
         }
         catch (Exception error) when (error is not OperationCanceledException) { /* o histórico da execução já foi salvo */ }
+    }
+
+    /// <summary>
+    /// Categorização depois de uma sincronização bem-sucedida (R04), só se o usuário a ligou e consentiu, e só com a IA disponível: a etapa local já rodou na própria
+    /// sincronização, e sem IA os lançamentos seguem para a classificação manual. Processa apenas o elegível (a execução comum, sem "forçar"), é uma etapa
+    /// separada no histórico e nenhuma falha dela altera o resultado da sincronização.
+    /// </summary>
+    private async Task CategorizeAfterSyncAsync(PluggyItemLink link, PluggySyncRun run, Guid userId)
+    {
+        try
+        {
+            if (await automation.FindSettingsAsync(link.WorkspaceId, CancellationToken.None) is not { CategorizeAfterSync: true, CategorizeConsentAt: not null }) return;
+            if (!classificationModel.IsAvailable) return;
+            await categorization.RunAsync(link.WorkspaceId, userId, PluggyCategorizationTrigger.AfterSync, new PluggyCategorizationRequest(true, true, false), run.Id, link.Id, CancellationToken.None);
+        }
+        catch (Exception error) when (error is not OperationCanceledException) { /* a sincronização já está concluída e salva; a categorização registra a própria falha */ }
     }
 
     public async Task<PluggyResult<PluggyImportedPage>> ListAsync(Guid workspaceId, Guid userId, PluggyImportFilter filter, CancellationToken ct)

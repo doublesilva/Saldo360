@@ -44,9 +44,19 @@ public sealed record BudgetFact(
     string? AccountName = null,
     string? InvoiceCompetence = null,
     /// <summary>False quando a competência do cartão veio só do calendário configurado do cartão (compra importada sem fatura do banco): é uma estimativa.</summary>
-    bool CompetenceReliable = true)
+    bool CompetenceReliable = true,
+    /// <summary>Compra do cartão a que a parcela pertence (somente <see cref="BudgetFactOrigin.CardInstallment"/>): é nela que a classificação é corrigida.</summary>
+    Guid? PurchaseId = null,
+    /// <summary>Veio da integração bancária (Pluggy): categoria e tipo escolhidos pelo usuário sobrevivem às sincronizações.</summary>
+    bool Imported = false)
 {
     public bool IsCard => CardId is not null;
+
+    /// <summary>
+    /// A classificação (categoria e tipo de despesa) tem onde ser corrigida: lançamento, compra de cartão ou previsão. Encargo/estorno de fatura, parcela histórica
+    /// e dívida não têm essa correção: ficam explicitamente "sem tipo" em vez de receberem um valor arbitrário.
+    /// </summary>
+    public bool IsClassifiable => Origin is BudgetFactOrigin.Transaction or BudgetFactOrigin.PlannedTransaction or BudgetFactOrigin.CardInstallment;
 }
 
 public static class BudgetTargetMatcher
@@ -70,7 +80,9 @@ public sealed record BudgetCoverage(
     int EstimatedCompetenceCount = 0,
     int UndefinedNatureCount = 0,
     decimal UndefinedNatureAmount = 0m,
-    bool NoCards = false);
+    bool NoCards = false,
+    /// <summary>Despesas sem tipo que não têm onde ser classificadas (encargo de fatura, parcela histórica, dívida): ficam fora das fixas e não entram na contagem acima.</summary>
+    int UnclassifiableCount = 0);
 
 public sealed record BudgetCompositionSource(
     Guid BudgetId,

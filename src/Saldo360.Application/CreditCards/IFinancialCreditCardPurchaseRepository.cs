@@ -23,6 +23,10 @@ public interface IFinancialCreditCardPurchaseRepository
     Task<bool> IsActiveCardAsync(Guid workspaceId, Guid cardId, CancellationToken cancellationToken);
     /// <summary>Categoria de despesa do orçamento disponível para NOVA classificação (ativa e, numa subcategoria, com a principal ativa); a atual da compra pode estar inativa.</summary>
     Task<bool> IsExpenseCategoryAsync(Guid workspaceId, Guid categoryId, Guid? currentCategoryId, CancellationToken cancellationToken);
+    /// <summary>A compra tem parcela em fatura oficial (consolidada com o total do banco): imutável, nem a categoria muda.</summary>
+    Task<bool> IsInOfficialInvoiceAsync(Guid workspaceId, Guid purchaseId, CancellationToken cancellationToken);
+    /// <summary>Registra, no vínculo da Pluggy da compra importada, que a categoria foi escolhida pelo usuário: nenhuma sincronização ou categorização a substitui.</summary>
+    Task RecordUserCategoryAsync(Guid workspaceId, Guid purchaseId, Guid categoryId, DateTimeOffset now, CancellationToken cancellationToken);
 }
 
 public sealed record CreditCardCalendarConfig(int ClosingDay, int DueDay);

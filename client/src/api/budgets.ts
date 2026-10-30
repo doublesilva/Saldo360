@@ -42,6 +42,8 @@ export interface BudgetCoverage {
   /** Despesas do mês sem tipo definido (só informado na meta de fixas): não entram nela. */
   undefinedNatureCount: number
   undefinedNatureAmount: string
+  /** Despesas do mês sem tipo que não têm onde ser classificadas (encargo/estorno de fatura, parcela histórica, dívida): ficam explicitamente sem tipo e fora das fixas. */
+  unclassifiableCount?: number
   /** Meta de cartões sem nenhum cartão cadastrado: não há consumo a medir. */
   noCards: boolean
 }

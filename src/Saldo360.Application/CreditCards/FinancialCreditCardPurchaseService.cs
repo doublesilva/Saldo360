@@ -126,6 +126,27 @@ public sealed class FinancialCreditCardPurchaseService(IFinancialWorkspaceReposi
         return CreditCardPurchaseResult.Ok((await purchases.GetAsync(workspaceId, cardId, purchaseId, cancellationToken))!);
     }
 
+    /// <summary>
+    /// Corrige só a categoria da compra (a de uma compra importada da Pluggy inclusive): valor, parcelas, fatura, data e identificador externo não mudam. A escolha é
+    /// do usuário e sobrevive às sincronizações e às categorizações automáticas. O alcance é esta compra (uma compra importada é uma cobrança do banco); compra em
+    /// fatura oficial é imutável (409) e a categoria precisa ser uma despesa disponível.
+    /// </summary>
+    public async Task<CreditCardPurchaseResult> ChangeCategoryAsync(Guid workspaceId, Guid cardId, Guid purchaseId, Guid userId, Guid? categoryId, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipant(workspaceId, userId, cancellationToken) || await purchases.FindAsync(workspaceId, cardId, purchaseId, cancellationToken) is not { } purchase) return CreditCardPurchaseResult.NotFound;
+        if (categoryId is null || !await purchases.IsExpenseCategoryAsync(workspaceId, categoryId.Value, purchase.CategoryId, cancellationToken))
+            return CreditCardPurchaseResult.Invalid(new Dictionary<string, string[]> { ["categoryId"] = ["A categoria deve ser uma despesa ativa do orçamento (e, numa subcategoria, a categoria principal também ativa)."] });
+        if (purchase.Status != CreditCardPurchaseStatus.Active)
+            return new(CreditCardPurchaseAccess.Conflict, null, new Dictionary<string, string[]> { ["purchase"] = ["Compra cancelada não pode ser editada."] });
+        if (await purchases.IsInOfficialInvoiceAsync(workspaceId, purchaseId, cancellationToken))
+            return new(CreditCardPurchaseAccess.Conflict, null, new Dictionary<string, string[]> { ["purchase"] = ["A compra pertence a uma fatura oficial fechada: a categoria não pode ser alterada."] });
+        var now = timeProvider.GetUtcNow();
+        if (purchase.CategoryId != categoryId.Value) purchase.Recategorize(categoryId.Value, userId, now);
+        await purchases.RecordUserCategoryAsync(workspaceId, purchaseId, categoryId.Value, now, cancellationToken);
+        await purchases.SaveChangesAsync(cancellationToken);
+        return CreditCardPurchaseResult.Ok((await purchases.GetAsync(workspaceId, cardId, purchaseId, cancellationToken))!);
+    }
+
     public async Task<IReadOnlyList<FinancialCreditCardPurchaseDto>?> ListAsync(Guid workspaceId, Guid cardId, Guid userId, DateOnly? from, DateOnly? through, CancellationToken cancellationToken) =>
         await IsParticipant(workspaceId, userId, cancellationToken) ? await purchases.ListAsync(workspaceId, cardId, from, through, cancellationToken) : null;
 

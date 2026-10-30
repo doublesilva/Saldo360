@@ -34,7 +34,7 @@ public sealed class OpenAiFinancialClassificationModel(IAiCompletionProvider pro
                          "needsReview":{"type":"boolean"},"reason":{"type":"string"}}}}}}
         """).RootElement.Clone();
 
-    public bool IsAvailable => options.AiEnabled && agent.Enabled && agent.Mode != AiAgentMode.Disabled
+    public bool IsAvailable => options.AiEnabled && agent.Enabled
         && string.Equals(agent.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase)
         && (!string.IsNullOrWhiteSpace(agent.ApiKey) || !string.IsNullOrWhiteSpace(agent.ApiKeyFile));
 

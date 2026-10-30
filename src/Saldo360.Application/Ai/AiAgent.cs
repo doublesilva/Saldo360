@@ -8,21 +8,18 @@ namespace Saldo360.Application.Ai;
 /// faturas nem e-mail. Há um só cliente (<c>OpenAiCompletionProvider</c>), com a mesma credencial e os mesmos limites operacionais.
 /// </summary>
 /// <remarks>
-/// Os valores de <see cref="AiAgentMode"/> diferentes de <see cref="AiAgentMode.Disabled"/> habilitam o agente; as variantes são
-/// mantidas apenas para que a configuração já existente (<c>CreditCardStatementAgent:*</c>) continue válida até a central de automação (R04).
+/// O agente só é habilitado por <see cref="AiAgentOptions.Enabled"/>; não há modos.
 /// </remarks>
-public enum AiAgentMode { Disabled, Shadow, AgentPrimary }
-
-/// <summary>
-/// Configuração do agente. A seção continua sendo <c>CreditCardStatementAgent</c> (nome histórico, preservado para não invalidar variáveis de
-/// ambiente e segredos já provisionados); a renomeação fica para a R04.
-/// </summary>
 public sealed class AiAgentOptions
 {
-    public const string SectionName = "CreditCardStatementAgent";
+    /// <summary>
+    /// Seção de configuração do agente (R04). Substitui a antiga <c>CreditCardStatementAgent</c>, que nomeava um fluxo documental retirado na R00: variáveis
+    /// de ambiente e arquivos de configuração provisionados com o nome antigo precisam ser renomeados (<c>AiAgent__*</c>) antes de uma implantação; não há
+    /// leitura do nome antigo.
+    /// </summary>
+    public const string SectionName = "AiAgent";
 
     public bool Enabled { get; set; }
-    public AiAgentMode Mode { get; set; } = AiAgentMode.Disabled;
     public string Provider { get; set; } = "OpenAI";
     public string Model { get; set; } = "gpt-4o-mini";
     public string Endpoint { get; set; } = "https://api.openai.com/v1/";

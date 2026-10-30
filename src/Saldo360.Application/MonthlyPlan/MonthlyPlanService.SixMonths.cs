@@ -71,7 +71,7 @@ public sealed partial class MonthlyPlanService
             var (risk, riskReasons) = MonthlyPlanCalculator.Risk(m.Status, m.PeriodKind, plannedExpense, projectedExpense, plannedResult, projectedResult, complete);
             minimums[key] = m.MinimumProjectedBalance;
 
-            months.Add(new(key, m.PeriodKind, MonthlyPlanCalculator.CentsOrNull(plannedIncome), incomeSource, MonthlyPlanCalculator.Cents(projectedIncome), MonthlyPlanCalculator.Cents(m.RealizedIncome),
+            months.Add(new(key, PlanPeriodKind(m.PeriodKind), MonthlyPlanCalculator.CentsOrNull(plannedIncome), incomeSource, MonthlyPlanCalculator.Cents(projectedIncome), MonthlyPlanCalculator.Cents(m.RealizedIncome),
                 MonthlyPlanCalculator.CentsOrNull(plannedExpense), expenseSource, MonthlyPlanCalculator.Cents(projectedExpense), MonthlyPlanCalculator.Cents(consumption.Realized),
                 totals.ReserveLines > 0 ? MonthlyPlanCalculator.Cents(totals.Reserve) : null, MonthlyPlanCalculator.CentsOrNull(plannedResult), MonthlyPlanCalculator.Cents(projectedResult),
                 MonthlyPlanCalculator.Cents(realizedResult), MonthlyPlanCalculator.Cents(m.PendingExpense), MonthlyPlanCalculator.CentsOrNull(m.ClosingBalance), MonthlyPlanCalculator.CentsOrNull(m.MinimumProjectedBalance),
@@ -88,4 +88,6 @@ public sealed partial class MonthlyPlanService
             requested == PlanActualScopes.Primary && primary is null, PlanActualService.ScopeOptions(all, planAccounts, selected));
         return MonthlyPlanResult<SixMonthPlanDto>.Ok(new(Key(first), Key(last), today, scopeDto, months, summary));
     }
+    /// <summary>A projeção da Agenda chama o mês passado de "Historical"; o contrato do plano (e o cliente) usa Past, Current e Future, como o resto do módulo.</summary>
+    private static string PlanPeriodKind(string kind) => kind == "Historical" ? "Past" : kind;
 }

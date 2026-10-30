@@ -36,9 +36,9 @@ internal sealed class PluggyCategorizationRepository(Saldo360DbContext db) : IPl
         var txIds = rows.Where(r => r.FinancialTransactionId != null).Select(r => r.FinancialTransactionId!.Value).ToList();
         var purchaseIds = rows.Where(r => r.CreditCardPurchaseId != null).Select(r => r.CreditCardPurchaseId!.Value).ToList();
         var txCategories = await db.FinancialTransactions.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && txIds.Contains(t.Id) && !t.IsCancelled)
-            .Select(t => new { t.Id, t.CategoryId }).ToDictionaryAsync(t => t.Id, t => t.CategoryId, ct);
+            .Select(t => new { t.Id, t.CategoryId, t.Nature }).ToDictionaryAsync(t => t.Id, t => (t.CategoryId, t.Nature), ct);
         var purchaseCategories = await db.FinancialCreditCardPurchases.AsNoTracking().Where(p => p.WorkspaceId == workspaceId && purchaseIds.Contains(p.Id) && p.Status == CreditCardPurchaseStatus.Active)
-            .Select(p => new { p.Id, p.CategoryId }).ToDictionaryAsync(p => p.Id, p => p.CategoryId, ct);
+            .Select(p => new { p.Id, p.CategoryId, p.Nature, p.CreditCardId }).ToDictionaryAsync(p => p.Id, p => (p.CategoryId, p.Nature, p.CreditCardId), ct);
         var fallbackIds = (await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId && c.Type == CategoryType.Expense).Select(c => new { c.Id, c.Name }).ToListAsync(ct))
             .Where(c => FinancialCategoryMatching.Key(c.Name) == FallbackKey).Select(c => c.Id).ToHashSet();
 
@@ -46,22 +46,22 @@ internal sealed class PluggyCategorizationRepository(Saldo360DbContext db) : IPl
         var list = new List<PluggyCategorizationCandidate>(rows.Count);
         foreach (var r in rows)
         {
-            Guid? current;
+            Guid? current; Guid? recordId; Guid? cardId = null; var nature = Saldo360.Domain.Categories.ExpenseNature.Undefined;
             if (r.Kind == PluggyPostingKind.CardPurchase)
             {
                 if (r.CreditCardPurchaseId is not { } pid || !purchaseCategories.TryGetValue(pid, out var pc) || locked.Contains(pid)) continue; // cancelada ou em fatura oficial (imutável): fora
-                current = pc;
+                current = pc.CategoryId; recordId = pid; cardId = pc.CreditCardId; nature = pc.Nature;
             }
             else
             {
                 if (r.FinancialTransactionId is not { } tid || !txCategories.TryGetValue(tid, out var tc)) continue; // lançamento cancelado: fora
-                current = tc;
+                current = tc.CategoryId; recordId = tid; nature = tc.Nature;
             }
             list.Add(new PluggyCategorizationCandidate
             {
                 PostingId = r.Id, Kind = r.Kind, IsIncome = r.AppliedType == CategoryType.Income, Description = r.Description ?? r.DescriptionRaw ?? string.Empty,
                 Amount = r.AppliedAmount ?? 0m, Date = r.AppliedDate ?? default, ExternalCategory = r.Category, OperationType = r.OperationType,
-                CurrentCategoryId = current, CurrentIsFallback = current is { } c && fallbackIds.Contains(c), PostingCategoryId = r.CategoryId, Source = r.CategorySource,
+                CurrentCategoryId = current, RecordId = recordId, CardId = cardId, Nature = nature, CurrentIsFallback = current is { } c && fallbackIds.Contains(c), PostingCategoryId = r.CategoryId, Source = r.CategorySource,
                 NeedsReview = r.CategoryNeedsReview, ClassifiedAt = r.CategoryClassifiedAt, MethodVersion = r.CategoryMethodVersion, Reason = r.CategoryReason,
             });
         }

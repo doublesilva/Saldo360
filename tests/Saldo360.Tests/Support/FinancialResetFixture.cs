@@ -86,6 +86,8 @@ internal static class FinancialResetFixture
         var pluggyBillPayment = PluggyCardBillPayment.Create(w, pluggyBill.Id, 0, 10m, date, "DEBIT_ACCOUNT", null);
         var balanceAnchor = FinancialAccountBalanceAnchor.Create(w, account.Id, 100m, now, DateOnly.FromDateTime(now.UtcDateTime), BalanceAnchorKind.CurrentBalance, "Pluggy", pluggyAccountLink.Id, now);
         var pluggySyncState = PluggySyncState.Create(w, pluggyLink.Id, now);
+        var automationSettings = PluggyAutomationSettings.Create(w, u, now);
+        var categorizationRun = PluggyCategorizationRun.Start(w, u, PluggyCategorizationTrigger.Manual, null, null, false, now);
         var cardTarget = Saldo360.Domain.Budgets.FinancialBudgetTarget.CreateAggregate(w, budget.Id, "Todos os cartões", 5000m, Saldo360.Domain.Budgets.BudgetTargetGroupingType.AllCards, u, now);
         var planLine = FinancialPlanLine.Create(w, new DateOnly(date.Year, date.Month, 1), new PlanLineDetails(PlanLineKind.Expense, PlanLineNature.Fixed, "Synthetic", account.Id, null, category.Id, 10m, null, null, null, null), u, now);
         var planHistory = FinancialPlanHistoryEntry.Create(w, new DateOnly(date.Year, date.Month, 1), PlanHistorySubject.Line, planLine.Id, PlanHistoryAction.Created, "Synthetic", null, 10m, null, u, now);
@@ -94,7 +96,7 @@ internal static class FinancialResetFixture
         db.AddRange(account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, transfer,
             recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
-            scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState, cardTarget, planLine, planHistory, nonWorkingDay);
+            scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState, automationSettings, categorizationRun, cardTarget, planLine, planHistory, nonWorkingDay);
         await db.SaveChangesAsync();
         await OfficialInvoiceFixture.CloseAsync(db, invoice.Id);
         db.AddRange(cardTx, payment); await db.SaveChangesAsync();

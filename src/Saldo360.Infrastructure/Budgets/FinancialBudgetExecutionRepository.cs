@@ -52,6 +52,18 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
             categories.ToDictionary(c => c.Id, c => c.ParentName is null ? c.Name : $"{c.ParentName} / {c.Name}"));
     }
 
+    public async Task<(IReadOnlyList<BudgetFact> Facts, IReadOnlyDictionary<Guid, string> CategoryPaths)> ReadFactsAsync(Guid workspaceId, DateOnly first, DateOnly through, CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+        await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
+        var facts = await BudgetFactReader.ReadAsync(db, workspaceId, first, through, cancellationToken);
+        var ids = facts.Where(fact => fact.CategoryId != null).Select(fact => fact.CategoryId!.Value).Distinct().ToList();
+        var categories = await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId && ids.Contains(c.Id))
+            .Select(c => new { c.Id, c.Name, ParentName = db.FinancialCategories.Where(p => p.Id == c.ParentCategoryId).Select(p => p.Name).FirstOrDefault() }).ToListAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return (facts, categories.ToDictionary(c => c.Id, c => c.ParentName is null ? c.Name : $"{c.ParentName} / {c.Name}"));
+    }
+
     private static Task<bool> HasCardsAsync(Saldo360DbContext db, Guid workspaceId, CancellationToken cancellationToken) =>
         db.FinancialCreditCards.AsNoTracking().AnyAsync(card => card.WorkspaceId == workspaceId && !card.IsArchived, cancellationToken);
 
@@ -65,7 +77,8 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
         if (grouping != BudgetTargetGroupingType.FixedExpenses)
             return new(estimated, NoCards: grouping == BudgetTargetGroupingType.AllCards && !hasCards);
         var undefined = month.Where(fact => fact.Nature == ExpenseNature.Undefined && fact.Amount > 0m).ToList();
-        return new(estimated, undefined.Count, undefined.Sum(fact => fact.Amount));
+        var classifiable = undefined.Where(fact => fact.IsClassifiable).ToList();
+        return new(estimated, classifiable.Count, classifiable.Sum(fact => fact.Amount), UnclassifiableCount: undefined.Count - classifiable.Count);
     }
 
     internal static async Task<IReadOnlyList<FinancialBudgetExecutionSource>> ReadRangeAsync(

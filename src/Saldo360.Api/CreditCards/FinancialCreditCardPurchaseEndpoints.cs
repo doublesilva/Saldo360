@@ -17,6 +17,7 @@ public static class FinancialCreditCardPurchaseEndpoints
         group.MapGet("/{purchaseId:guid}", Get);
         group.MapPost("/{purchaseId:guid}/cancel", Cancel).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPut("/{purchaseId:guid}/expense-nature", ChangeNature).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPut("/{purchaseId:guid}/category", ChangeCategory).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
@@ -66,6 +67,20 @@ public static class FinancialCreditCardPurchaseEndpoints
         return result.Access switch { CreditCardPurchaseAccess.NotFound => Results.NotFound(), CreditCardPurchaseAccess.Invalid => Results.ValidationProblem(result.Errors!), CreditCardPurchaseAccess.Conflict => Results.Conflict(new { title = result.Errors?.Values.FirstOrDefault()?.FirstOrDefault() }), _ => Results.Ok(PurchaseResponse.From(result.Purchase!)) };
     }
 
+    /// <summary>Corrige só a categoria da compra (inclusive a importada da Pluggy), sem tocar valor, parcelas ou fatura; a escolha sobrevive às sincronizações.</summary>
+    private static async Task<IResult> ChangeCategory(Guid workspaceId, Guid cardId, Guid purchaseId, PurchaseCategoryRequest? request, CurrentUser user, FinancialCreditCardPurchaseService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var result = await service.ChangeCategoryAsync(workspaceId, cardId, purchaseId, userId, request?.CategoryId, ct);
+        return result.Access switch
+        {
+            CreditCardPurchaseAccess.NotFound => Results.NotFound(),
+            CreditCardPurchaseAccess.Invalid => Results.ValidationProblem(result.Errors!),
+            CreditCardPurchaseAccess.Conflict => Results.Conflict(new { title = result.Errors?.Values.SelectMany(v => v).FirstOrDefault() }),
+            _ => Results.Ok(PurchaseResponse.From(result.Purchase!)),
+        };
+    }
+
     private static async Task<IResult> Cancel(Guid workspaceId, Guid cardId, Guid purchaseId, CurrentUser user, FinancialCreditCardPurchaseService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : await service.CancelAsync(workspaceId, cardId, purchaseId, userId, ct) ? Results.NoContent() : Results.NotFound();
 
@@ -82,6 +97,10 @@ public sealed record PurchaseRequest(string? Description, DateOnly? PurchaseDate
 /// <summary>Novo tipo de despesa da compra (<c>Fixed</c>, <c>Variable</c> ou <c>Undefined</c>); qualquer outro campo é recusado.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record PurchaseNatureRequest(string? ExpenseNature);
+
+/// <summary>Nova categoria da compra; qualquer outro campo é recusado.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record PurchaseCategoryRequest(Guid? CategoryId);
 
 public sealed record InstallmentResponse(Guid Id, int Number, string Amount, CreditCardInstallmentStatus Status);
 public sealed record PurchaseResponse(Guid Id, Guid CreditCardId, Guid CategoryId, string Description, DateOnly PurchaseDate, string TotalAmount, int InstallmentCount, CreditCardPurchaseStatus Status, IReadOnlyList<InstallmentResponse> Installments, int PreviouslyPaidInstallments, DateOnly? FirstPendingCompetence, string ExpenseNature = "Undefined")

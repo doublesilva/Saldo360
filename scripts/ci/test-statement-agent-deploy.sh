@@ -4,17 +4,17 @@ set -euo pipefail
 # Synthetic Compose config only; no production files, containers or provider calls.
 export POSTGRES_DB=saldo360_ci POSTGRES_USER=saldo360 POSTGRES_PASSWORD=ci-only-not-a-secret
 export SALDO360_IMAGE_TAG=1111111111111111111111111111111111111111 SALDO360_PUBLIC_HOST=saldo360.example.invalid
-unset CREDIT_CARD_STATEMENT_AGENT_ENABLED CREDIT_CARD_STATEMENT_AGENT_MODE CREDIT_CARD_STATEMENT_AGENT_MODEL
+unset AI_AGENT_ENABLED AI_AGENT_MODEL
 compose=(docker compose --env-file /dev/null --profile migration -f docker-compose.production.yml)
 
 "${compose[@]}" config --format json | python3 -c '
 import json,sys
 c=json.load(sys.stdin); api=c["services"]["api"]; e=api["environment"]
-assert e["CreditCardStatementAgent__Enabled"] == "false"
-assert e["CreditCardStatementAgent__Mode"] == "Disabled"
-assert e["CreditCardStatementAgent__Model"] == "gpt-4o-mini"
-assert e["CreditCardStatementAgent__Provider"] == "OpenAI"
-assert e["CreditCardStatementAgent__ApiKeyFile"] == "/run/secrets/openai-api-key"
+assert e["AiAgent__Enabled"] == "false"
+assert e["AiAgent__Model"] == "gpt-4o-mini"
+assert e["AiAgent__Provider"] == "OpenAI"
+assert e["AiAgent__ApiKeyFile"] == "/run/secrets/openai-api-key"
+assert not any(k.startswith("CreditCardStatementAgent__") for k in e)
 assert not any(k.lower().endswith("__apikey") or k == "OPENAI_API_KEY" for k in e)
 mounts=[v for v in api["volumes"] if v["target"] == "/run/secrets/openai-api-key"]
 assert len(mounts)==1 and mounts[0]["source"] == "/etc/jarvis/secrets/openai-api-key" and mounts[0]["read_only"]
@@ -22,13 +22,13 @@ assert "1654" in api["group_add"]
 assert not any(v.get("target") == "/run/secrets/openai-api-key" for name,s in c["services"].items() if name != "api" for v in s.get("volumes",[]))
 print("PASS: disabled defaults, exact individual read-only mount, no inline credential")
 '
-export CREDIT_CARD_STATEMENT_AGENT_ENABLED=true CREDIT_CARD_STATEMENT_AGENT_MODE=AgentPrimary CREDIT_CARD_STATEMENT_AGENT_MODEL=synthetic-model
+export AI_AGENT_ENABLED=true AI_AGENT_MODEL=synthetic-model
 "${compose[@]}" config --format json | python3 -c '
 import json,sys
 e=json.load(sys.stdin)["services"]["api"]["environment"]
-assert e["CreditCardStatementAgent__Enabled"] == "true" and e["CreditCardStatementAgent__Mode"] == "AgentPrimary"
-assert e["CreditCardStatementAgent__Model"] == "synthetic-model"
-assert not any(k.startswith(("FinancialDocumentClassification__","ServiceBill","CreditCardStatementAgent__DocumentaryImport__")) for k in e)
+assert e["AiAgent__Enabled"] == "true"
+assert e["AiAgent__Model"] == "synthetic-model"
+assert not any(k.startswith(("FinancialDocumentClassification__","ServiceBill","CreditCardStatementAgent__")) for k in e)
 print("PASS: explicit activation of the AI agent; no document/service-bill flags remain")
 '
 

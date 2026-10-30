@@ -42,8 +42,8 @@ public sealed class ProductionDeploymentContractTests
         Assert.DoesNotContain("SERVICE_BILL_", environment, StringComparison.Ordinal);
         Assert.DoesNotContain("FINANCIAL_DOCUMENT_CLASSIFICATION", environment, StringComparison.Ordinal);
         // O agente de IA continua configurável e desligado por padrão.
-        Assert.Contains("CREDIT_CARD_STATEMENT_AGENT_ENABLED=false", environment, StringComparison.Ordinal);
-        Assert.Contains("CreditCardStatementAgent__ApiKeyFile", compose, StringComparison.Ordinal);
+        Assert.Contains("AI_AGENT_ENABLED=false", environment, StringComparison.Ordinal);
+        Assert.Contains("AiAgent__ApiKeyFile", compose, StringComparison.Ordinal);
     }
 
     [Fact]

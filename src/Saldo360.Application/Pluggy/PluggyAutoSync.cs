@@ -62,6 +62,9 @@ public static class PluggyAutoSyncPolicy
 
     public static DateTimeOffset AfterSuccess(DateTimeOffset now, PluggyAutoSyncOptions options) => now.AddHours(Math.Max(1, options.IntervalHours));
 
+    /// <summary>Intervalo escolhido pelo usuário para o seu orçamento (R04); sem escolha, o padrão do servidor.</summary>
+    public static DateTimeOffset AfterSuccess(DateTimeOffset now, PluggyAutoSyncOptions options, int? workspaceIntervalHours) => now.AddHours(Math.Max(1, workspaceIntervalHours ?? options.IntervalHours));
+
     /// <summary>Após uma falha: espera crescente (dobra a cada tentativa, com teto); esgotadas as tentativas, só no próximo intervalo regular.</summary>
     public static DateTimeOffset AfterFailure(DateTimeOffset now, int consecutiveFailures, PluggyAutoSyncOptions options)
     {
@@ -115,7 +118,7 @@ public sealed record PluggyAutoSyncSummary(bool Enabled, bool InWindow, int Cons
 /// confirmação explícita do usuário.
 /// </summary>
 public sealed class PluggyAutoSyncRunner(PluggyOptions pluggy, PluggyAutoSyncOptions options, IPluggySyncStateRepository states,
-    PluggyTransactionSyncService sync, IPluggyClient client, IPluggyFinancialRepository financial, TimeProvider time)
+    PluggyTransactionSyncService sync, IPluggyClient client, IPluggyFinancialRepository financial, IPluggyAutomationRepository automation, TimeProvider time)
 {
     public async Task<PluggyAutoSyncSummary> RunDueAsync(CancellationToken ct)
     {
@@ -123,6 +126,7 @@ public sealed class PluggyAutoSyncRunner(PluggyOptions pluggy, PluggyAutoSyncOpt
         if (!options.Enabled || !pluggy.Enabled || !pluggy.ImportEnabled || !pluggy.IsConfigured) return new(false, false, 0, 0, 0, 0, 0, 0);
         // A recuperação não depende da janela: execução abandonada não pode ficar "em andamento" para sempre.
         await states.RecoverAbandonedAsync(now, TimeSpan.FromMinutes(Math.Max(1, pluggy.SyncStaleMinutes)), ct);
+        await automation.RecoverAbandonedCategorizationsAsync(now, TimeSpan.FromMinutes(Math.Max(1, pluggy.SyncStaleMinutes)), ct);
         if (!PluggyAutoSyncPolicy.IsInWindow(now, options)) return new(true, false, 0, 0, 0, 0, 0, 0);
 
         int synced = 0, nothingNew = 0, failed = 0, expired = 0, busy = 0;

@@ -31,9 +31,9 @@ internal static class BudgetFactReader
                                   where t.WorkspaceId == workspaceId && t.Type == CategoryType.Expense && !t.IsCancelled
                                       && t.TransactionDate >= first && t.TransactionDate < through
                                       && t.Origin != FinancialTransactionOrigin.CreditCardInvoicePayment && t.Origin != FinancialTransactionOrigin.DebtInstallmentPayment
-                                  select new { t.Id, t.TransactionDate, t.Amount, t.CategoryId, t.Nature, t.Description, t.AccountId, AccountName = a.Name }).ToListAsync(ct);
+                                  select new { t.Id, t.TransactionDate, t.Amount, t.CategoryId, t.Nature, t.Description, t.AccountId, AccountName = a.Name, Imported = t.Origin == FinancialTransactionOrigin.PluggyImport }).ToListAsync(ct);
         facts.AddRange(transactions.Select(t => new BudgetFact(BudgetFactOrigin.Transaction, t.Id, t.TransactionDate, t.Amount, BudgetFactState.Realized, t.CategoryId, t.Nature,
-            t.Description, AccountId: t.AccountId, AccountName: t.AccountName)));
+            t.Description, AccountId: t.AccountId, AccountName: t.AccountName, Imported: t.Imported)));
 
         // 2. Previsões pendentes (previsto adicional).
         var planned = await (from p in db.FinancialPlannedTransactions.AsNoTracking()
@@ -87,7 +87,7 @@ internal static class BudgetFactReader
         var hasBill = imported.GroupBy(i => i.PurchaseId).ToDictionary(g => g.Key, g => g.Any(i => i.HasBill));
         facts.AddRange(cardRows.Select(c => new BudgetFact(BudgetFactOrigin.CardInstallment, c.Id, c.DueDate, c.Amount, BudgetFactState.CardLaunched, c.CategoryId, c.Nature,
             c.InstallmentCount > 1 ? $"{c.Description} ({c.InstallmentNumber}/{c.InstallmentCount})" : c.Description, c.CardId, c.CardName, InvoiceCompetence: c.Competence,
-            CompetenceReliable: c.Closed || !hasBill.TryGetValue(c.PurchaseId, out var bill) || bill)));
+            CompetenceReliable: c.Closed || !hasBill.TryGetValue(c.PurchaseId, out var bill) || bill, PurchaseId: c.PurchaseId, Imported: hasBill.ContainsKey(c.PurchaseId))));
 
         var knownRows = await (from item in db.FinancialCreditCardImportedInstallments.AsNoTracking()
                                join card in db.FinancialCreditCards.AsNoTracking() on item.CreditCardId equals card.Id

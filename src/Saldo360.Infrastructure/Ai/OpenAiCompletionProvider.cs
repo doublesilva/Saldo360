@@ -22,7 +22,7 @@ internal sealed class OpenAiCompletionProvider(
 
     public async Task<string> CompleteAsync(AiCompletionRequest request, CancellationToken cancellationToken)
     {
-        if (!options.Enabled || options.Mode == AiAgentMode.Disabled || !string.Equals(options.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase))
+        if (!options.Enabled || !string.Equals(options.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase))
             throw new AiProviderUnavailableException("Provider desabilitado.", failureCode: "AgentUnavailable");
         var key = ReadSecret(options.ApiKeyFile, options.ApiKey);
         var client = clients.CreateClient(clientName);

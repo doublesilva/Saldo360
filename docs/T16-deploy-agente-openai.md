@@ -11,14 +11,16 @@ foram preservados. A chave não é valor de variável, argumento de build, arqui
 
 | Configuração da API | Valor inicial |
 | --- | --- |
-| CreditCardStatementAgent__Enabled | false |
-| CreditCardStatementAgent__Mode | Disabled |
-| CreditCardStatementAgent__Provider | OpenAI |
-| CreditCardStatementAgent__Model | gpt-4o-mini |
-| CreditCardStatementAgent__ApiKeyFile | /run/secrets/openai-api-key |
+| AiAgent__Enabled | false |
+| AiAgent__Provider | OpenAI |
+| AiAgent__Model | gpt-4o-mini |
+| AiAgent__ApiKeyFile | /run/secrets/openai-api-key |
 
-Enabled/Mode/Model podem ser alterados pelas variáveis não secretas `CREDIT_CARD_STATEMENT_AGENT_*`.
-Ativação futura exige `ENABLED=true` **e** `MODE=AgentPrimary`; nada no CI ou script habilita essas flags.
+> **R04:** a seção foi renomeada de `CreditCardStatementAgent` para `AiAgent` e o modo (`Mode`) deixou de existir; antes de uma implantação, renomeie as variáveis provisionadas
+> (`CREDIT_CARD_STATEMENT_AGENT_ENABLED/MODE/MODEL` → `AI_AGENT_ENABLED/MODEL`). Não há leitura do nome antigo.
+
+Enabled/Model podem ser alterados pelas variáveis não secretas `AI_AGENT_*`.
+Ativação futura exige `AI_AGENT_ENABLED=true`; nada no CI ou script habilita essa flag.
 O exemplo `.env.production.example` declara explicitamente os valores desabilitados e não contém chave.
 As flags de classificação documental e extração de contas de serviço são independentes.
 
@@ -74,8 +76,7 @@ foi feita. A verificação efetiva da imagem real será obrigatória num deploy 
 ## Operação futura e limites
 
 Seguir o [procedimento controlado](deploy-producao.md#agente-de-faturas-openai-configuração-não-é-ativação):
-somente após autorização, configurar `CREDIT_CARD_STATEMENT_AGENT_ENABLED=true` e
-`CREDIT_CARD_STATEMENT_AGENT_MODE=AgentPrimary`, publicar/aplicar pelo fluxo assinado e conferir saúde.
+somente após autorização, configurar `AI_AGENT_ENABLED=true`, publicar/aplicar pelo fluxo assinado e conferir saúde.
 Não mostrar o segredo, executar `printenv` completo, copiar credencial ou alterar permissões do Jarvis.
 Desativar restaurando `false`/`Disabled` e aplicar apenas em operação autorizada.
 

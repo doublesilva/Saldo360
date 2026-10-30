@@ -39,6 +39,18 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
         return !await db.FinancialCreditCardInvoices.AnyAsync(i => ids.Contains(i.Id) && i.WorkspaceId == workspaceId && i.OfficialVersion > 0, ct)
             && !await db.FinancialCreditCardInvoicePayments.AnyAsync(p => ids.Contains(p.InvoiceId) && p.WorkspaceId == workspaceId && p.Status == FinancialCreditCardInvoicePaymentStatus.Active, ct);
     }
+    public async Task<bool> IsInOfficialInvoiceAsync(Guid workspaceId, Guid purchaseId, CancellationToken cancellationToken) =>
+        await (from i in db.FinancialCreditCardInstallments.AsNoTracking()
+               join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on i.InvoiceId equals invoice.Id
+               where i.WorkspaceId == workspaceId && i.PurchaseId == purchaseId && invoice.OfficialVersion > 0
+               select i.Id).AnyAsync(cancellationToken);
+
+    public async Task RecordUserCategoryAsync(Guid workspaceId, Guid purchaseId, Guid categoryId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var posting = await db.PluggyPostings.SingleOrDefaultAsync(p => p.WorkspaceId == workspaceId && p.CreditCardPurchaseId == purchaseId, cancellationToken);
+        posting?.SetCategory(categoryId, Saldo360.Domain.Pluggy.PluggyCategorySource.User, now);
+    }
+
     public Task AddAsync(FinancialCreditCardPurchase purchase, CancellationToken cancellationToken) { db.FinancialCreditCardPurchases.Add(purchase); return Task.CompletedTask; }
     public Task<FinancialCreditCardPurchase?> FindAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => db.FinancialCreditCardPurchases.Include(p => p.Installments).SingleOrDefaultAsync(p => p.WorkspaceId == workspaceId && p.CreditCardId == cardId && p.Id == purchaseId, cancellationToken);
     public async Task<FinancialCreditCardPurchaseDto?> GetAsync(Guid workspaceId, Guid cardId, Guid purchaseId, CancellationToken cancellationToken) => ToDto(await FindAsync(workspaceId, cardId, purchaseId, cancellationToken));

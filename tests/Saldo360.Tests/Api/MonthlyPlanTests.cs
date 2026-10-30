@@ -732,6 +732,15 @@ public sealed class MonthlyPlanTests(PostgresFixture postgres) : PostgresApiTest
         await GetAsync(s, $"/six-months?scope=account&accountId={Guid.NewGuid()}", HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task SixMonthsReportsPastCurrentAndFutureNeverTheCalendarHistoricalLabel()
+    {
+        var s = await ArrangeAsync("mp-period-kind");
+        var plan = await SixMonthsAsync(s, Month(ThisMonth.AddMonths(-2)));
+        var kinds = plan.GetProperty("months").EnumerateArray().Select(m => Text(m, "periodKind")).ToArray();
+        Assert.Equal(new[] { "Past", "Past", "Current", "Future", "Future", "Future" }, kinds); // o painel da Visão Geral só conhece estes três valores
+    }
+
     // ---- 20: conta inativa com histórico ----------------------------------------------------------------------------------------------------
 
     [Fact]

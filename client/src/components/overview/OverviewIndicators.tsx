@@ -4,9 +4,10 @@ import type { OverviewClassification } from '../../api/overview'
 import { syncConnection } from '../../api/pluggyPoc'
 import { toUserMessage } from '../../api/apiErrors'
 import { formatDate } from '../../money'
+import type { OverviewNavigation } from './Overview'
 import { dateTime, explain, isNegative, money, monthTitle, periodLabels } from './overviewText'
 
-type Target = 'accounts' | 'transactions'
+type Target = 'accounts' | 'transactions' | 'automation'
 
 /**
  * Os quatro indicadores principais, e só eles (R01). Fonte única: `plan-actual`, no escopo e na competência escolhidos.
@@ -50,7 +51,7 @@ function Indicator({ title, value, negative = false, tone, note, reference, tag 
  * próprio e nunca é apresentada como falha de sincronização.
  */
 export function OverviewNotices({ workspaceId, data, classification, onNavigate, onSynced }: {
-  workspaceId: string; data: PlanActualDashboard; classification: OverviewClassification | null; onNavigate: (target: Target) => void; onSynced: () => void
+  workspaceId: string; data: PlanActualDashboard; classification: OverviewClassification | null; onNavigate: (target: Target, context?: OverviewNavigation) => void; onSynced: () => void
 }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -66,9 +67,9 @@ export function OverviewNotices({ workspaceId, data, classification, onNavigate,
   const notices: { key: string; tone: 'warning' | 'info'; content: React.ReactNode }[] = []
   if (data.scope.primaryMissing) notices.push({ key: 'primary', tone: 'info', content: <>Nenhuma conta principal definida: mostrando todas as contas. <button type="button" onClick={() => onNavigate('accounts')}>Definir em Contas</button></> })
   if (!data.snapshotConsistent) notices.push({ key: 'snapshot', tone: 'warning', content: 'Os dados mudaram durante a leitura. Atualize para ver um retrato consistente.' })
-  if (syncProblem) notices.push({ key: 'sync', tone: 'warning', content: <>{sync?.state === 'ConsentExpired' ? 'A autorização do banco expirou.' : sync?.state === 'Failed' ? 'A última sincronização com o banco falhou.' : 'Os dados do banco podem estar desatualizados.'} <button type="button" onClick={() => onNavigate('accounts')}>Ver conexões</button></> })
+  if (syncProblem) notices.push({ key: 'sync', tone: 'warning', content: <>{sync?.state === 'ConsentExpired' ? 'A autorização do banco expirou.' : sync?.state === 'Failed' ? 'A última sincronização com o banco falhou.' : 'Os dados do banco podem estar desatualizados.'} <button type="button" onClick={() => onNavigate('automation', { automationTab: 'connections' })}>Ver conexões</button></> })
   if (data.coverage.reviewAffectsConfidence) notices.push({ key: 'review', tone: 'warning', content: <>{data.coverage.reviewCount} movimentação(ões) do banco aguardam revisão e ainda não entram nos totais. <button type="button" onClick={() => onNavigate('accounts')}>Revisar em Contas</button></> })
-  if (pending > 0) notices.push({ key: 'classification', tone: 'info', content: <>Há {pending} lançamento(s) pendentes de classificação. <button type="button" onClick={() => onNavigate('transactions')}>Ver lançamentos</button></> })
+  if (pending > 0) notices.push({ key: 'classification', tone: 'info', content: <>Há {pending} lançamento(s) pendentes de classificação (todos os importados do banco, não só deste mês). <button type="button" onClick={() => onNavigate('automation', { automationTab: 'automations', review: { kind: 'category' } })}>Revisar classificação</button></> })
   if (!data.coverage.complete || data.situation.state !== 'Complete') notices.push({ key: 'coverage', tone: 'warning', content: 'Projeção incompleta: parte dos dados ainda não pode ser calculada.' })
 
   return <section className="ov-notices" aria-label="Avisos">

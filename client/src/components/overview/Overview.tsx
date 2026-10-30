@@ -14,9 +14,9 @@ import { monthTitle, periodLabels, scopeLabel } from './overviewText'
 import { useLoad } from './useLoad'
 import '../../Overview.css'
 
-export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions'
+export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions' | 'automation'
 /** Contexto levado ao detalhe: o mês da Agenda, a competência do orçamento ou o recorte da lista de lançamentos. */
-export interface OverviewNavigation { month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature }; newTransaction?: boolean }
+export interface OverviewNavigation { month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature }; newTransaction?: boolean; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
 
 export interface OverviewSelection { competence: string; scope: PlanActualScopeChoice }
 
@@ -76,7 +76,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
       {plan.load.state === 'loading' && !planData && <OperationalLoading>Carregando indicadores…</OperationalLoading>}
       {plan.load.state === 'error' && <OperationalError error={plan.load.error} onRetry={plan.retry} retryLabel="Recarregar indicadores" />}
       {(planData ?? (plan.load.state === 'loading' ? plan.previous : null)) && <Indicators data={(planData ?? plan.previous) as PlanActualDashboard} stale={!planData}
-        workspaceId={workspaceId} classification={overviewData?.classification ?? null} onNavigate={target => onNavigate(target)} onSynced={reloadAll} />}
+        workspaceId={workspaceId} classification={overviewData?.classification ?? null} onNavigate={(target, context) => onNavigate(target, context)} onSynced={reloadAll} />}
     </div>
 
     <div className="ov-layout">
@@ -105,7 +105,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
 
 function Indicators({ data, stale, workspaceId, classification, onNavigate, onSynced }: {
   data: PlanActualDashboard; stale: boolean; workspaceId: string; classification: import('../../api/overview').OverviewClassification | null
-  onNavigate: (target: 'accounts' | 'transactions') => void; onSynced: () => void
+  onNavigate: (target: 'accounts' | 'transactions' | 'automation', context?: OverviewNavigation) => void; onSynced: () => void
 }) {
   return <div className={stale ? 'ov-stale' : undefined} aria-busy={stale || undefined}>
     <OverviewIndicators data={data} />

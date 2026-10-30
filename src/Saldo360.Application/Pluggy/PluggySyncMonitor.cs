@@ -18,7 +18,7 @@ public sealed record PluggySyncMonitorView(DateTimeOffset Now, PluggyAutoSyncSet
 
 /// <summary>Leitura do monitoramento da sincronização (banco apenas: não consulta a Pluggy).</summary>
 public sealed class PluggySyncMonitorService(IFinancialWorkspaceRepository workspaces, IPluggyItemLinkRepository links, IPluggySyncStateRepository states,
-    IPluggyImportRepository imports, PluggyOptions options, PluggyAutoSyncOptions auto, TimeProvider time)
+    IPluggyImportRepository imports, PluggyOptions options, PluggyAutoSyncOptions auto, IPluggyAutomationRepository automation, TimeProvider time)
 {
     public const int RecentRuns = 5;
 
@@ -29,6 +29,7 @@ public sealed class PluggySyncMonitorService(IFinancialWorkspaceRepository works
         var connections = await links.ListAsync(workspaceId, ct);
         var stateByConnection = (await states.ListAsync(workspaceId, ct)).ToDictionary(s => s.ConnectionId);
         var accounts = await states.AccountsByConnectionAsync(workspaceId, ct);
+        var paused = (await automation.FindSettingsAsync(workspaceId, ct))?.SyncPaused == true;
         var views = new List<PluggySyncConnectionView>();
         foreach (var link in connections)
         {
@@ -38,7 +39,7 @@ public sealed class PluggySyncMonitorService(IFinancialWorkspaceRepository works
             var running = last is { FinishedAt: null };
             var status = running ? "Running" : state is null || state.LastOutcome == PluggySyncOutcome.Never ? (last is null ? "NeverSynced" : last.Status) : state.LastOutcome.ToString();
             // Próxima execução: só existe com a automática ligada; fora da janela, vale a abertura da próxima janela.
-            DateTimeOffset? next = !auto.Enabled ? null : PluggyAutoSyncPolicy.NextWindowOpen(state?.NextAttemptAt is { } due && due > now ? due : now, auto);
+            DateTimeOffset? next = !auto.Enabled || paused ? null : PluggyAutoSyncPolicy.NextWindowOpen(state?.NextAttemptAt is { } due && due > now ? due : now, auto);
             var lastRun = last is { FinishedAt: not null } ? last : runs.FirstOrDefault(r => r.FinishedAt is not null);
             accounts.TryGetValue(link.Id, out var info);
             views.Add(new(link.Id, link.Label, info?.Institution, info?.Accounts ?? 0, status, state?.LastAttemptAt ?? last?.StartedAt, state?.LastSuccessAt, next, state?.LastTrigger?.ToString() ?? last?.Trigger,

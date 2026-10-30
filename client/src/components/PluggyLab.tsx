@@ -17,7 +17,7 @@ function Table({ caption, head, children }: { caption: string; head: string[]; c
 }
 
 /** Laboratório experimental da Pluggy: somente leitura, sem relação com os dados financeiros operacionais. */
-export function PluggyLab({ workspaceId }: { workspaceId: string }) {
+export function PluggyLab({ workspaceId, embedded = false }: { workspaceId: string; embedded?: boolean }) {
   const [connections, setConnections] = useState<PluggyConnection[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -54,10 +54,10 @@ export function PluggyLab({ workspaceId }: { workspaceId: string }) {
 
   return <div className="pluggy-lab">
     <section className="card" aria-labelledby="pluggy-lab-title">
-      <h3 id="pluggy-lab-title">Laboratório Pluggy</h3>
+      <h3 id="pluggy-lab-title">{embedded ? 'Diagnóstico técnico da Pluggy' : 'Laboratório Pluggy'}</h3>
       <p className="notice">Experimento somente leitura. Nada aqui altera contas, lançamentos, saldos, previsões, cartões ou faturas do Saldo360, e os dados da Pluggy não são importados.</p>
     </section>
-    <ConnectionsSection connections={connections} error={error} selected={selected} onSelect={select} workspaceId={workspaceId} onAdded={() => setVersion(value => value + 1)} />
+    <ConnectionsSection connections={connections} error={error} selected={selected} onSelect={select} workspaceId={workspaceId} onAdded={() => setVersion(value => value + 1)} showForm={!embedded} />
     {selected && <>
       <AccountsSection accounts={accounts} error={accountError} />
       {accounts && <TransactionsSection workspaceId={workspaceId} accounts={accounts} />}
@@ -68,9 +68,8 @@ export function PluggyLab({ workspaceId }: { workspaceId: string }) {
   </div>
 }
 
-function ConnectionsSection({ connections, error, selected, onSelect, workspaceId, onAdded }: {
-  connections: PluggyConnection[] | null; error: string | null; selected: string | null; onSelect: (id: string) => void; workspaceId: string; onAdded: () => void
-}) {
+/** Cadastro do Item da Pluggy (só o itemId; nenhuma credencial bancária é solicitada). Usado na central de automação e no diagnóstico. */
+export function AddConnectionForm({ workspaceId, onAdded }: { workspaceId: string; onAdded: () => void }) {
   const [itemId, setItemId] = useState('')
   const [label, setLabel] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
@@ -82,6 +81,18 @@ function ConnectionsSection({ connections, error, selected, onSelect, workspaceI
     catch (cause) { setFormError(errorText(cause)) }
     finally { setBusy(false) }
   }
+  return <form onSubmit={submit} aria-label="Cadastrar Item da Pluggy">
+    <p className="meta">O cadastro guarda apenas o itemId. Nenhuma credencial bancária é solicitada.</p>
+    <label>itemId (UUID) <input value={itemId} onChange={event => setItemId(event.target.value)} required autoComplete="off" spellCheck={false} /></label>{' '}
+    <label>Rótulo <input value={label} maxLength={120} onChange={event => setLabel(event.target.value)} placeholder="Ex.: Itaú PF" /></label>{' '}
+    <button type="submit" disabled={busy || !itemId.trim()}>Cadastrar Item</button>
+    {formError && <p role="alert" className="notice notice--error">{formError}</p>}
+  </form>
+}
+
+function ConnectionsSection({ connections, error, selected, onSelect, workspaceId, onAdded, showForm }: {
+  connections: PluggyConnection[] | null; error: string | null; selected: string | null; onSelect: (id: string) => void; workspaceId: string; onAdded: () => void; showForm: boolean
+}) {
   return <section className="card" aria-labelledby="pluggy-connections-title">
     <h4 id="pluggy-connections-title">1. Conexões cadastradas</h4>
     {error && <p role="alert" className="notice notice--error">{error}</p>}
@@ -98,13 +109,7 @@ function ConnectionsSection({ connections, error, selected, onSelect, workspaceI
         <td><button type="button" onClick={() => onSelect(c.id)} aria-pressed={selected === c.id}>Inspecionar</button></td>
       </tr>)}
     </Table>}
-    <form onSubmit={submit} aria-label="Cadastrar Item da Pluggy">
-      <p className="meta">O cadastro guarda apenas o itemId. Nenhuma credencial bancária é solicitada.</p>
-      <label>itemId (UUID) <input value={itemId} onChange={event => setItemId(event.target.value)} required autoComplete="off" spellCheck={false} /></label>{' '}
-      <label>Rótulo <input value={label} maxLength={120} onChange={event => setLabel(event.target.value)} placeholder="Ex.: Itaú PF" /></label>{' '}
-      <button type="submit" disabled={busy || !itemId.trim()}>Cadastrar Item</button>
-      {formError && <p role="alert" className="notice notice--error">{formError}</p>}
-    </form>
+    {showForm && <AddConnectionForm workspaceId={workspaceId} onAdded={onAdded} />}
   </section>
 }
 

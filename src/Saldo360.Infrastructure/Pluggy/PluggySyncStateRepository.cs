@@ -25,6 +25,8 @@ internal sealed class PluggySyncStateRepository(Saldo360DbContext db) : IPluggyS
                           where workspace.IsActive && db.PluggyAccountLinks.Any(account => account.ConnectionId == link.Id && account.WorkspaceId == link.WorkspaceId)
                           join state in db.PluggySyncStates.AsNoTracking() on link.Id equals state.ConnectionId into states
                           from state in states.DefaultIfEmpty()
+                          // Orçamento com a automação pausada pelo usuário (R04): nenhuma execução agendada nova. "Sincronizar agora" continua valendo.
+                          where !db.PluggyAutomationSettings.Any(settings => settings.WorkspaceId == link.WorkspaceId && settings.SyncPaused)
                           where state == null || ((state.NextAttemptAt == null || state.NextAttemptAt <= now) && (state.ClaimedUntil == null || state.ClaimedUntil <= now))
                           orderby state.NextAttemptAt, link.CreatedAt
                           select new { link, state }).Take(take).ToListAsync(ct);

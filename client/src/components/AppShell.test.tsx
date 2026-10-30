@@ -24,6 +24,20 @@ it('keeps primary navigation ordered and marks the current section, preserving u
   expect(within(nav).queryByRole('button', { name: /Relatórios/ })).toBeNull() // sem páginas vazias apresentadas como funcionalidade
 })
 
+it('shows "Automação" under Finanças only when the Pluggy integration is enabled, and never a "Laboratório" entry', () => {
+  const navigate = vi.fn()
+  const view = render(<AppShell section="automation" onNavigate={navigate} workspaceName="Meu orçamento" automation><p>Conteúdo</p></AppShell>)
+  const nav = screen.getByRole('navigation', { name: 'Navegação do orçamento pessoal' })
+  expect(within(nav).getAllByRole('button').map(button => button.textContent).slice(0, 5)).toEqual(['Visão Geral', 'Lançamentos', 'Contas', 'Cartões', 'Automação'])
+  expect(within(nav).getByRole('button', { name: /Automação/ }).getAttribute('aria-current')).toBe('page')
+  expect(screen.getByRole('heading', { name: 'Automação' })).toBeTruthy()
+  expect(within(nav).queryByText(/Laborat/)).toBeNull()
+  fireEvent.click(within(nav).getByRole('button', { name: /Automação/ }))
+  expect(navigate).toHaveBeenCalledWith('automation')
+  view.rerender(<AppShell section="overview" onNavigate={navigate} workspaceName="Meu orçamento"><p>Conteúdo</p></AppShell>)
+  expect(within(screen.getByRole('navigation', { name: 'Navegação do orçamento pessoal' })).queryByRole('button', { name: /Automação/ })).toBeNull()
+})
+
 it('opens a collapsible menu, confines focus, closes on Escape and restores scrolling and trigger focus', async () => {
   render(<AppShell section="overview" onNavigate={vi.fn()} workspaceName="Personal"><p>Conteúdo</p></AppShell>)
   const trigger = screen.getByRole('button', { name: 'Abrir menu lateral' })

@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Saldo360.Api.Authentication;
+using Saldo360.Application.Classification;
 using Saldo360.Application.Pluggy;
 
 namespace Saldo360.Api.Pluggy;
@@ -33,6 +34,13 @@ public static class PluggyFinancialEndpoints
         group.MapPost("/review/{postingId:guid}/resolve", Resolve).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/categorization", CategorizationOverview);
         group.MapPost("/categorization/run", RunCategorization).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        // R04: central de automação (preferências, estado e histórico). A leitura nunca dispara execução.
+        group.MapGet("/automation", AutomationOverview);
+        group.MapPut("/automation", UpdateAutomation).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapGet("/automation/runs", ListAutomationRuns);
+        group.MapGet("/automation/runs/{kind}/{runId:guid}", GetAutomationRun);
+        // R04: revisão da classificação (tipo de despesa e categoria) dos registros que originam as contagens, inclusive compras de cartão.
+        group.MapGet("/classification-review", ClassificationReview);
         return app;
     }
 
@@ -105,18 +113,69 @@ public static class PluggyFinancialEndpoints
     /// (envio de descrições saneadas à OpenAI) exige <c>confirmExternal: true</c> a cada chamada.
     /// </summary>
     private static async Task<IResult> RunCategorization(Guid workspaceId, CategorizationRequest? request, CurrentUser user, PluggyAccountLinkService access,
-        IPluggyCategorizationService service, TimeProvider clock, CancellationToken ct)
+        PluggyCategorizationJob job, CancellationToken ct)
     {
         if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
         if (!await access.CanAccessAsync(workspaceId, userId, ct)) return Results.NotFound();
-        var run = await service.RunAsync(workspaceId, userId, new(request?.UseAi ?? false, request?.ConfirmExternal ?? false, request?.Force ?? false), clock.GetUtcNow(), ct);
+        var run = await job.RunAsync(workspaceId, userId, Saldo360.Domain.Pluggy.PluggyCategorizationTrigger.Manual,
+            new(request?.UseAi ?? false, request?.ConfirmExternal ?? false, request?.Force ?? false), null, null, ct);
         return run.Outcome switch
         {
-            PluggyCategorizationOutcome.ConfirmationRequired => Results.ValidationProblem(new Dictionary<string, string[]>
+            PluggyCategorizationJobOutcome.ConfirmationRequired => Results.ValidationProblem(new Dictionary<string, string[]>
                 { ["confirmExternal"] = ["Confirme explicitamente o envio de descrições saneadas à OpenAI para usar a IA."] }),
+            PluggyCategorizationJobOutcome.Busy => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "Já existe uma categorização em andamento neste orçamento."),
+            PluggyCategorizationJobOutcome.Failed => Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "A categorização não pôde ser concluída.",
+                extensions: new Dictionary<string, object?> { ["code"] = run.FailureCode }),
             _ => Results.Ok(run.Result),
         };
     }
+
+    private static async Task<IResult> AutomationOverview(Guid workspaceId, CurrentUser user, PluggyAutomationService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Automation(await service.GetOverviewAsync(workspaceId, userId, ct));
+
+    private static async Task<IResult> UpdateAutomation(Guid workspaceId, AutomationSettingsRequest? request, CurrentUser user, PluggyAutomationService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : Automation(await service.UpdateAsync(workspaceId, userId, new(request?.SyncPaused, request?.SyncIntervalHours, request?.CategorizeAfterSync, request?.ConfirmExternal), ct));
+
+    private static async Task<IResult> ListAutomationRuns(Guid workspaceId, string? kind, string? state, string? from, string? to, int? page, int? pageSize, CurrentUser user,
+        PluggyAutomationService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var errors = new Dictionary<string, string[]>();
+        var start = IsoDateQuery.Parse(from, "from", errors);
+        var end = IsoDateQuery.Parse(to, "to", errors);
+        if (page is < 1 || pageSize is < 1 or > PluggyAutomationService.MaxPageSize) errors["page"] = ["Paginação inválida."];
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+        return Automation(await service.ListRunsAsync(workspaceId, userId, new(string.IsNullOrEmpty(kind) ? null : kind, string.IsNullOrEmpty(state) ? null : state, start, end, page ?? 1, pageSize ?? 20), ct));
+    }
+
+    private static async Task<IResult> GetAutomationRun(Guid workspaceId, string kind, Guid runId, CurrentUser user, PluggyAutomationService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Automation(await service.GetRunAsync(workspaceId, userId, kind, runId, ct));
+
+    private static async Task<IResult> ClassificationReview(Guid workspaceId, string? kind, string? from, string? to, int? page, int? pageSize, CurrentUser user,
+        ClassificationReviewService service, TimeProvider clock, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var errors = new Dictionary<string, string[]>();
+        var start = IsoDateQuery.Parse(from, "from", errors);
+        var end = IsoDateQuery.Parse(to, "to", errors);
+        if (page is < 1 || pageSize is < 1 or > ClassificationReviewService.MaxPageSize) errors["page"] = ["Paginação inválida."];
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+        var result = await service.ListAsync(workspaceId, userId, string.IsNullOrEmpty(kind) ? null : kind, start, end, page ?? 1, pageSize ?? 25, Saldo360.Domain.Common.BusinessCalendar.Today(clock.GetUtcNow()), ct);
+        return result.Access switch
+        {
+            ClassificationReviewAccess.Allowed => Results.Ok(ClassificationReviewResponse.Of(result.Page!)),
+            ClassificationReviewAccess.Invalid => Results.ValidationProblem(result.Errors!),
+            _ => Results.NotFound(),
+        };
+    }
+
+    private static IResult Automation<T>(PluggyAutomationResult<T> result) => result.Access switch
+    {
+        PluggyAutomationAccess.Allowed => Results.Ok(result.Value),
+        PluggyAutomationAccess.Invalid => Results.ValidationProblem(result.Errors!),
+        _ => Results.NotFound(),
+    };
 
     private static async Task<IResult> Resolve(Guid workspaceId, Guid postingId, ResolveRequest? request, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
@@ -139,3 +198,17 @@ public sealed record CategorizationRequest(bool? UseAi, bool? ConfirmExternal, b
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ConfirmRequest(bool? Confirm);
+
+public sealed record ClassificationReviewItemResponse(ClassificationAction Action, Guid RecordId, Guid? CardId, DateOnly Date, string Description, string Amount, Guid? CategoryId, string? CategoryPath,
+    Saldo360.Domain.Categories.ExpenseNature ExpenseNature, string? CardName, string? AccountName, bool Imported, bool CanChangeCategory, bool CanChangeNature, string Scope);
+
+public sealed record ClassificationReviewResponse(string Kind, DateOnly? From, DateOnly? To, bool WholeBudget, IReadOnlyList<ClassificationReviewItemResponse> Items, int Total, int Page, int PageSize, int UnclassifiableCount)
+{
+    public static ClassificationReviewResponse Of(ClassificationReviewPage page) => new(page.Kind, page.From, page.To, page.WholeBudget,
+        page.Items.Select(i => new ClassificationReviewItemResponse(i.Action, i.RecordId, i.CardId, i.Date, i.Description, Saldo360.Domain.Common.Money.Format(i.Amount), i.CategoryId, i.CategoryPath, i.Nature,
+            i.CardName, i.AccountName, i.Imported, i.CanChangeCategory, i.CanChangeNature, i.Scope)).ToList(), page.Total, page.Page, page.PageSize, page.UnclassifiableCount);
+}
+
+/// <summary>Preferências de automação do orçamento. Qualquer outro campo é recusado.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record AutomationSettingsRequest(bool? SyncPaused, int? SyncIntervalHours, bool? CategorizeAfterSync, bool? ConfirmExternal);

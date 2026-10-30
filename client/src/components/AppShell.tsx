@@ -8,11 +8,12 @@ const navigationGroups = [
   { label: 'Configurações e mais', items: [['categories', 'Categorias'], ['recurrences', 'Recorrências'], ['planned', 'Previsões'], ['transfers', 'Transferências'], ['debts', 'Dívidas'], ['settings', 'Configurações']] },
 ] as const
 
-export function AppShell({ section, onNavigate, workspaceName, subtitle, controls, actions, userArea, labItems, children }: {
+export function AppShell({ section, onNavigate, workspaceName, subtitle, controls, actions, userArea, automation, children }: {
   section: string; onNavigate: (section: string) => void; workspaceName: string; subtitle?: string
-  controls?: ReactNode; actions?: ReactNode; userArea?: ReactNode; labItems?: readonly (readonly [string, string])[]; children: ReactNode
+  controls?: ReactNode; actions?: ReactNode; userArea?: ReactNode; automation?: boolean; children: ReactNode
 }) {
-  const groups: readonly { label: string; items: readonly (readonly [string, string])[] }[] = labItems?.length ? [...navigationGroups, { label: 'Laboratório', items: labItems }] : navigationGroups
+  // "Automação" (central Pluggy + agente de IA) só aparece quando a integração está habilitada para este usuário.
+  const groups: readonly { label: string; items: readonly (readonly [string, string])[] }[] = navigationGroups.map(group => group.label === 'Finanças' && automation ? { label: group.label, items: [...group.items, ['automation', 'Automação'] as const] } : group)
   const [open, setOpen] = useState(false)
   const toggle = useRef<HTMLButtonElement>(null)
   const sidebar = useRef<HTMLElement>(null)
