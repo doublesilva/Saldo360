@@ -44,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.CreditCards.Projection.CardProjectionService>();
         services.AddScoped<Saldo360.Application.Accounts.Reconciliation.AccountBalanceReconciliationService>();
         services.AddScoped<Saldo360.Application.Dashboard.PlanActual.PlanActualService>();
+        services.AddScoped<Saldo360.Application.Dashboard.Overview.DashboardOverviewService>();
         services.AddScoped<Saldo360.Application.MonthlyPlan.MonthlyPlanService>();
         services.AddScoped<FinancialCreditCardPurchaseService>();
         services.AddScoped<FinancialCreditCardInvoicePaymentService>();
@@ -55,7 +56,6 @@ public static class DependencyInjection
         services.AddScoped<FinancialDebtInstallmentService>();
         services.AddScoped<FinancialGoalService>();
         services.AddScoped<FinancialGoalAllocationService>();
-        services.AddScoped<FinancialDashboardService>();
         return services;
     }
 }

@@ -93,7 +93,6 @@ app.MapFinancialDebtEndpoints();
 app.MapFinancialDebtInstallmentEndpoints();
 app.MapFinancialGoalEndpoints();
 app.MapFinancialGoalAllocationEndpoints();
-app.MapFinancialDashboardEndpoints();
 app.MapPlanActualEndpoints();
 app.MapMonthlyPlanEndpoints();
 app.MapPluggyPocEndpoints();

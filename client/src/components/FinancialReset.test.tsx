@@ -43,10 +43,10 @@ it('remounts financial state after success, keeps workspace and reconsults the e
   await screen.findByRole('heading', { name: 'Personal' })
   fireEvent.click(screen.getByRole('button', { name: 'Configurações' }))
   fireEvent.change(await open(), { target: { value: 'APAGAR ORÇAMENTO' } })
-  const before = calls.filter(c => c.url.includes('/financial-dashboard?')).length
+  const before = calls.filter(c => c.url.includes('/financial-dashboard/overview?')).length
   fireEvent.click(screen.getByRole('button', { name: 'Apagar dados financeiros' }))
   await screen.findByText(/Orçamento reiniciado/)
-  await waitFor(() => expect(calls.filter(c => c.url.includes('/financial-dashboard?')).length).toBeGreaterThan(before))
+  await waitFor(() => expect(calls.filter(c => c.url.includes('/financial-dashboard/overview?')).length).toBeGreaterThan(before))
   expect(calls.filter(c => c.url === '/api/me/financial-workspace')).toHaveLength(1)
   expect(calls.some(c => c.url.includes('/auth/logout'))).toBe(false)
   expect(calls.find(c => c.url.endsWith('/financial-reset'))?.init?.body).toBe(JSON.stringify({ confirmation: 'APAGAR ORÇAMENTO' }))

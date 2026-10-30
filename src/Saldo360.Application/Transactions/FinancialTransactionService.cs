@@ -91,7 +91,7 @@ public sealed class FinancialTransactionService(
         }
 
         var filter = new TransactionFilter(
-            query.From, query.To, query.AccountId, query.CategoryId, type, query.IncludeCancelled, page, pageSize);
+            query.From, query.To, query.AccountId, query.CategoryId, type, query.IncludeCancelled, page, pageSize, query.ExcludeInvoicePayments);
         return new TransactionListResult(await transactions.ListAsync(workspaceId, filter, cancellationToken), null, false);
     }
 

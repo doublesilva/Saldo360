@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Application.Transactions;
+using Saldo360.Domain.CreditCards;
 using Saldo360.Domain.Transactions;
 using Saldo360.Infrastructure.Persistence;
 
@@ -53,6 +54,12 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
         if (filter.Type is { } type)
         {
             query = query.Where(t => t.Type == type);
+        }
+
+        if (filter.ExcludeInvoicePayments)
+        {
+            // O pagamento da fatura (manual ou do banco) não é uma despesa a mais: o consumo já está nas compras do cartão.
+            query = query.Where(t => !db.FinancialCreditCardInvoicePayments.Any(p => p.WorkspaceId == workspaceId && p.TransactionId == t.Id && p.Status == FinancialCreditCardInvoicePaymentStatus.Active));
         }
 
         var total = await query.CountAsync(cancellationToken);

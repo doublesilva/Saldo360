@@ -18,7 +18,7 @@ describe('Personal finance shell', () => {
     first.unmount()
     render(<PersonalFinance />)
     await screen.findByRole('heading', { name: 'Existente' })
-    await waitFor(() => expect(calls.filter(url => url.includes('personal-a/financial-dashboard?'))).toHaveLength(2))
+    await waitFor(() => expect(calls.filter(url => url.includes('personal-a/financial-dashboard/overview?'))).toHaveLength(2))
     expect(calls.filter(url => url === '/api/me/financial-workspace')).toHaveLength(2)
     expect(calls.some(url => url === '/api/families')).toBe(false)
     expect(screen.getByText('Orçamento pessoal')).toBeTruthy()
@@ -42,7 +42,7 @@ describe('Personal finance shell', () => {
     current = 'b'; view.rerender(<PersonalFinance key="issuer|b" />)
     await screen.findByRole('heading', { name: 'Orçamento B' })
     old(Response.json({ id: 'personal-a', ownerUserId: 'a', name: 'Orçamento A', type: 'Personal', isActive: true }))
-    await waitFor(() => expect(calls.some(url => url.includes('personal-b/financial-dashboard'))).toBe(true))
+    await waitFor(() => expect(calls.some(url => url.includes('personal-b/financial-dashboard/overview'))).toBe(true))
     expect(screen.queryByRole('heading', { name: 'Orçamento A' })).toBeNull()
     expect(calls.some(url => url.includes('/personal-a/'))).toBe(false)
   })
@@ -54,7 +54,7 @@ describe('Personal finance shell', () => {
     expect(screen.getByRole('button', { name: 'Sair' })).toBeTruthy()
   })
 
-  it('moves dashboard filters to the page header and preserves them across module navigation', async () => {
+  it('keeps the Visão Geral filters (competência e conta) across module navigation', async () => {
     const calls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input); calls.push(url)
@@ -63,16 +63,15 @@ describe('Personal finance shell', () => {
       return new Response('{}', { status: 503 })
     }))
     render(<PersonalFinance />)
-    const competence = await screen.findByLabelText('Competência do dashboard')
-    expect(competence.closest('header')).not.toBeNull()
+    const competence = await screen.findByLabelText('Competência')
     fireEvent.change(competence, { target: { value: '2026-11' } })
-    fireEvent.change(screen.getByLabelText('Horizonte da projeção'), { target: { value: '12' } })
-    await waitFor(() => expect(calls.some(url => url.includes('competence=2026-11') && url.includes('months=12'))).toBe(true))
+    fireEvent.change(screen.getByLabelText('Conta ou consolidado'), { target: { value: 'all' } })
+    await waitFor(() => expect(calls.some(url => url.includes('/financial-dashboard/overview') && url.includes('competence=2026-11') && url.includes('scope=all'))).toBe(true))
     fireEvent.click(screen.getByRole('button', { name: 'Configurações' }))
     fireEvent.click(screen.getByRole('button', { name: 'Visão Geral' }))
-    expect((await screen.findByLabelText('Competência do dashboard') as HTMLInputElement).value).toBe('2026-11')
-    expect((screen.getByLabelText('Horizonte da projeção') as HTMLSelectElement).value).toBe('12')
-    expect(screen.getAllByLabelText('Competência do dashboard')).toHaveLength(1)
+    expect((await screen.findByLabelText('Competência') as HTMLInputElement).value).toBe('2026-11')
+    expect((screen.getByLabelText('Conta ou consolidado') as HTMLSelectElement).value).toBe('all')
+    expect(screen.getAllByLabelText('Competência')).toHaveLength(1)
   })
 
   it('opens the personal workspace without consulting a family and keeps social UI separate', async () => {

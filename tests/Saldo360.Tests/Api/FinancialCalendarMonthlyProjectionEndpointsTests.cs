@@ -21,6 +21,8 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
 
     private static DateOnly Today => BusinessCalendar.Today(DateTimeOffset.UtcNow);
     private static DateOnly ThisMonth => new(Today.Year, Today.Month, 1);
+    // Datas futuras do cenário ficam dentro do mês corrente mesmo nos últimos dias do mês (o teste não pode depender do dia em que roda).
+    private static DateOnly WithinThisMonth(DateOnly date) => date < ThisMonth.AddMonths(1) ? date : ThisMonth.AddMonths(1).AddDays(-1);
 
     [Fact]
     public async Task SixMonthEndpointDefaultsToBusinessMonth_ValidatesRangeAndMembership()
@@ -121,8 +123,8 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
         await CreateTransactionAsync(account, _income, "Income", "100.10", Today, "Receita");
         await CreateTransactionAsync(account, _expense, "Expense", "20.05", Today, "Despesa");
         await CreatePlannedAsync(account, _income, "Income", "10.00", Today.AddDays(-1), "Vencida");
-        await CreatePlannedAsync(account, _expense, "Expense", "30.00", Today.AddDays(1), "Futura");
-        var planned = await CreatePlannedAsync(account, _expense, "Expense", "999.99", Today.AddDays(2), "Realizada");
+        await CreatePlannedAsync(account, _expense, "Expense", "30.00", WithinThisMonth(Today.AddDays(1)), "Futura");
+        var planned = await CreatePlannedAsync(account, _expense, "Expense", "999.99", WithinThisMonth(Today.AddDays(2)), "Realizada");
         var realization = await RealizeAsync(planned, "40.00", Today);
 
         var current = (await ProjectionAsync(account, ThisMonth, 1)).Months.Single();

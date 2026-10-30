@@ -1,3 +1,5 @@
+> **Substituído na R01.** O endpoint `financial-dashboard` descrito abaixo foi removido; a Visão Geral atual está em [R01-dashboard-navegacao.md](R01-dashboard-navegacao.md). Este texto fica como registro histórico da T15.
+
 # Painel financeiro consolidado (T15.1)
 
 O endpoint `GET /api/families/{familyId}/financial-dashboard` reúne dados já existentes da família para uma leitura de painel. Ele não cria entidade, previsão, lançamento, orçamento ou cache.

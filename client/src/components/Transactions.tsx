@@ -36,18 +36,24 @@ export function Transactions({
   workspaceId,
   onChanged,
   refreshKey = 0,
+  initialFilters,
+  startWithForm = false,
 }: {
   workspaceId: string
+  /** Recorte inicial vindo da Visão Geral (período e conta). */
+  initialFilters?: Partial<TransactionFilters>
+  /** Abre o formulário de novo lançamento ao entrar (atalho da Visão Geral). */
+  startWithForm?: boolean
   onChanged?: () => void
   /** Muda quando outra seção altera lançamentos (ex.: realizar previsão): a lista é recarregada. */
   refreshKey?: number
 }) {
   const [refs, setRefs] = useState<Load<TransactionReferences>>({ kind: 'loading' })
   const [page, setPage] = useState<Load<TransactionPage>>({ kind: 'loading' })
-  const [filters, setFilters] = useState<TransactionFilters>(emptyFilters)
+  const [filters, setFilters] = useState<TransactionFilters>({ ...emptyFilters, ...initialFilters })
   const [pageNumber, setPageNumber] = useState(1)
   const [reloadKey, setReloadKey] = useState(0)
-  const [editing, setEditing] = useState<FinancialTransaction | 'new' | null>(null)
+  const [editing, setEditing] = useState<FinancialTransaction | 'new' | null>(startWithForm ? 'new' : null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [recategorizingId, setRecategorizingId] = useState<string | null>(null)

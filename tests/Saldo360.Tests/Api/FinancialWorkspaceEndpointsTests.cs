@@ -25,7 +25,7 @@ public sealed class FinancialWorkspaceEndpointsTests(PostgresFixture postgres) :
         var nextSession = await SignInAsync("returning-owner");
         Assert.Equal(workspace.Id, (await CreateWorkspaceAsync(nextSession)).Id);
         Assert.Equal(workspace.Id, (await CreateWorkspaceAsync(nextSession)).Id);
-        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{workspace.Id}/financial-dashboard", nextSession)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{workspace.Id}/financial-dashboard/overview", nextSession)).StatusCode);
 
         using var verify = Db();
         var preserved = Assert.Single(await verify.FinancialAccounts.ToListAsync());

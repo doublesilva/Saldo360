@@ -103,6 +103,8 @@ public sealed class RetiredFlowsUnavailableTests : ApiTestBase
         string[] retired = ["EmailCollector", "GmailFinancialEmail", "DocumentInbox", "StatementDocumentary", "CreditCardPdf", "CreditCardCsv", "ServiceBill", "ServiceAccountBinding", "PlannedInvoiceReconciliation", "DebtInstallmentReconciliation", "ImportedInstallment"];
         var assemblies = new[] { typeof(Saldo360.Application.DependencyInjection).Assembly, typeof(Saldo360.Infrastructure.DependencyInjection).Assembly, typeof(Saldo360.Api.Authentication.CurrentUser).Assembly };
         var leftovers = assemblies.SelectMany(assembly => assembly.GetTypes()).Select(type => type.FullName ?? type.Name)
+            // Migrações (histórico) e o mapeamento EF das tabelas dormentes (docs/R00, seção 4) não contam.
+            .Where(name => !name.Contains(".Persistence.Migrations.", StringComparison.Ordinal) && !name.Contains(".Persistence.Configurations.", StringComparison.Ordinal))
             .Where(name => retired.Any(marker => name.Contains(marker, StringComparison.OrdinalIgnoreCase))).ToList();
         Assert.Empty(leftovers);
     }

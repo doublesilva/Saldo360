@@ -1,4 +1,3 @@
-import { CSRF_HEADER, getCsrfToken } from './csrf'
 import { requestJson } from './apiErrors'
 
 /**
@@ -70,12 +69,4 @@ export function getPlanActual(workspaceId: string, competence: string, scope: Pl
     if (!data?.scope || !data.income || !data.expenses || !data.cards || !data.situation || !data.coverage) throw new Error('Resposta inesperada do planejado × realizado.')
     return data
   })
-}
-
-/** Define (ou, com valor nulo, encerra) a meta mensal de cartões da conta pagadora a partir da competência. */
-export async function saveCardTarget(workspaceId: string, accountId: string, competence: string, amount: string | null) {
-  return requestJson<{ accountId: string; effectiveFrom: string; amount: string | null }>(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-dashboard/card-target`, {
-    method: 'PUT', headers: { Accept: 'application/json', 'Content-Type': 'application/json', [CSRF_HEADER]: await getCsrfToken() },
-    body: JSON.stringify({ accountId, competence, amount }),
-  }, { fallback: 'Falha ao salvar a meta dos cartões.' })
 }

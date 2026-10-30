@@ -136,9 +136,6 @@ public sealed class BudgetBootstrapExtensionsTests(PostgresFixture postgres) : P
         Assert.Equal("111.78", (await ReadAsync<JsonElement>(projection)).GetProperty("creditCardOutstanding").GetString());
         var limit = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{w.Id}/credit-cards/{card}/limit", session);
         Assert.Equal(HttpStatusCode.OK, limit.StatusCode); Assert.Equal("111.78", (await ReadAsync<JsonElement>(limit)).GetProperty("usedLimit").GetString());
-        var list = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{w.Id}/credit-cards/{card}/imports/installments", session);
-        Assert.Equal(HttpStatusCode.OK, list.StatusCode); var item = (await ReadAsync<JsonElement>(list))[0];
-        Assert.Equal("2026-11", item.GetProperty("competence").GetString()); Assert.Equal(JsonValueKind.Null, item.GetProperty("transactionDate").ValueKind);
         var budgetResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{w.Id}/budgets", session, new { competence = "2026-11" });
         Assert.Equal(HttpStatusCode.Created, budgetResponse.StatusCode);
         var budgetId = (await ReadAsync<JsonElement>(budgetResponse)).GetProperty("id").GetGuid();

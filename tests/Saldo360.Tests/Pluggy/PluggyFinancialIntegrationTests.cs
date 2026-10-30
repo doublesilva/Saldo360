@@ -987,10 +987,11 @@ public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture post
         Assert.All(items, i => Assert.Equal(("Realized", "PluggyImport"), (i.GetProperty("status").GetString(), i.GetProperty("origin").GetString())));
 
         var start = Today.AddDays(-9);
-        var dashboard = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-dashboard?competence={start:yyyy-MM}&months=2");
-        var position = dashboard.GetProperty("position");
-        Assert.Equal(("1500.75", 1), (position.GetProperty("realizedBalance").GetString(), position.GetProperty("consideredAccounts").GetInt32()));
-        var months = dashboard.GetProperty("monthlyProjection").EnumerateArray().ToList();
+        var plan = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-dashboard/plan-actual?competence={start:yyyy-MM}&scope=all");
+        var situation = plan.GetProperty("situation");
+        Assert.Equal(("1500.75", 1), (situation.GetProperty("realizedBalance").GetString(), situation.GetProperty("consideredAccounts").GetInt32()));
+        var projection = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-calendar/monthly-projection?from={start:yyyy-MM}&months=2");
+        var months = projection.GetProperty("months").EnumerateArray().ToList();
         Assert.Equal(99.90m, months.Sum(m => decimal.Parse(m.GetProperty("realizedIncome").GetString()!, System.Globalization.CultureInfo.InvariantCulture)));
         Assert.Equal(17.25m, months.Sum(m => decimal.Parse(m.GetProperty("realizedExpense").GetString()!, System.Globalization.CultureInfo.InvariantCulture)));
     }
@@ -1464,8 +1465,8 @@ public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture post
         Assert.Equal(("1200.00", "190.00"), (summary.GetProperty("realizedIncome").GetString(), summary.GetProperty("realizedExpense").GetString()));
         var items = calendar.GetProperty("items").EnumerateArray().ToList();
         Assert.Equal(2, items.Count);
-        var dashboard = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-dashboard?month={Today:yyyy-MM}");
-        Assert.Equal("1000.00", dashboard.GetProperty("position").GetProperty("realizedBalance").GetString()); // o saldo da conta vem da referência bancária
+        var dashboard = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-dashboard/plan-actual?competence={Today:yyyy-MM}&scope=all");
+        Assert.Equal("1000.00", dashboard.GetProperty("situation").GetProperty("realizedBalance").GetString()); // o saldo da conta vem da referência bancária
         Assert.Equal(1000m, (await Db().FinancialAccountBalanceAnchors.AsNoTracking().SingleAsync(a => a.IsCurrent)).Amount);
     }
 }

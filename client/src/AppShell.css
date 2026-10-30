@@ -54,9 +54,6 @@
 .app-topbar__user, .app-topbar__actions { display: flex; align-items: center; gap: .75rem; }
 .app-topbar__controls { grid-column: 1 / -1; }
 .app-topbar__controls:empty { display: none; }
-.app-topbar .dashboard-filters { justify-content: flex-end; }
-.app-topbar .dashboard-filters label { font-size: .7rem; color: var(--muted); font-weight: 500; }
-.app-topbar .dashboard-filters input, .app-topbar .dashboard-filters select { color: var(--text); font-size: .85rem; background: var(--surface); }
 .app-content { max-width: 100rem; margin: 0 auto; padding: 1.75rem clamp(1rem, 3vw, 3rem) 2.5rem; min-width: 0; }
 .app-content > .family-section:not(.dashboard-page) { padding: 1.5rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--surface); }
 .app-menu-toggle, .app-sidebar__close, .app-shell__scrim { display: none; }
@@ -110,9 +107,6 @@
   .app-topbar { padding: 1rem; }
   .app-topbar__title p { display: none; }
   .app-topbar__user .user-menu__name { max-width: 8rem; overflow-wrap: anywhere; }
-  .app-topbar .dashboard-filters { width: 100%; flex-wrap: nowrap; }
-  .app-topbar .dashboard-filters label { min-width: 0; flex: 1; }
-  .app-topbar .dashboard-filters input, .app-topbar .dashboard-filters select { min-width: 0; }
 }
 @media (max-width: 30rem) {
   .app-shell .dashboard-summary { grid-template-columns: 1fr; }

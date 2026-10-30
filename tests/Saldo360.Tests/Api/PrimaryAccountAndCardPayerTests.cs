@@ -317,19 +317,23 @@ public sealed class PrimaryAccountAndCardPayerTests(PostgresFixture postgres) : 
         await ArrangeAsync();
         var a = (await CreateAccountAsync("Itaú PF", opening: 1000m)).GetProperty("id").GetGuid();
         await CreateAccountAsync("Itaú PJ", scope: "PJ", opening: 300m);
-        var url = $"/api/financial-workspaces/{_w.Id}/financial-dashboard?competence=2026-09&months=3";
-        var before = await ReadAsync<JsonElement>(await SendAsync(HttpMethod.Get, url, _owner));
-        Assert.All(before.GetProperty("position").GetProperty("accounts").EnumerateArray(), x => Assert.False(x.GetProperty("isPrimary").GetBoolean()));
+        var overview = $"/api/financial-workspaces/{_w.Id}/financial-dashboard/overview?competence=2026-09&scope=all";
+        var planActual = $"/api/financial-workspaces/{_w.Id}/financial-dashboard/plan-actual?competence=2026-09&scope=all";
+        var before = await ReadAsync<JsonElement>(await SendAsync(HttpMethod.Get, overview, _owner));
+        var beforePlan = await ReadAsync<JsonElement>(await SendAsync(HttpMethod.Get, planActual, _owner));
+        Assert.All(before.GetProperty("accounts").GetProperty("items").EnumerateArray(), x => Assert.False(x.GetProperty("isPrimary").GetBoolean()));
 
         Assert.Equal(HttpStatusCode.OK, (await SetPrimaryAsync(a)).StatusCode);
 
-        var after = await ReadAsync<JsonElement>(await SendAsync(HttpMethod.Get, url, _owner));
-        var flags = after.GetProperty("position").GetProperty("accounts").EnumerateArray().ToDictionary(x => x.GetProperty("name").GetString()!, x => x.GetProperty("isPrimary").GetBoolean());
+        var after = await ReadAsync<JsonElement>(await SendAsync(HttpMethod.Get, overview, _owner));
+        var afterPlan = await ReadAsync<JsonElement>(await SendAsync(HttpMethod.Get, planActual, _owner));
+        var flags = after.GetProperty("accounts").GetProperty("items").EnumerateArray().ToDictionary(x => x.GetProperty("name").GetString()!, x => x.GetProperty("isPrimary").GetBoolean());
         Assert.Equal((true, false), (flags["Itaú PF"], flags["Itaú PJ"]));
-        // O consolidado (saldo, fluxo, indicadores e cobertura) é idêntico: só o indicador de principal muda.
-        foreach (var section in new[] { "cashFlow", "indicators", "coverage" })
-            Assert.Equal(before.GetProperty(section).GetRawText(), after.GetProperty(section).GetRawText());
-        Assert.Equal(before.GetProperty("position").GetProperty("realizedBalance").GetString(), after.GetProperty("position").GetProperty("realizedBalance").GetString());
+        // O consolidado (saldos por conta, receitas, despesas, situação e cobertura) é idêntico: só o indicador de principal muda.
+        string Balances(JsonElement e) => string.Join("|", e.GetProperty("accounts").GetProperty("items").EnumerateArray().OrderBy(x => x.GetProperty("name").GetString()).Select(x => x.GetProperty("name").GetString() + "=" + x.GetProperty("balance").GetString()));
+        Assert.Equal(Balances(before), Balances(after));
+        foreach (var section in new[] { "income", "expenses", "situation", "coverage" })
+            Assert.Equal(beforePlan.GetProperty(section).GetRawText(), afterPlan.GetProperty(section).GetRawText());
     }
 
     // ---- 6, 8 e 9: conta pagadora dos cartões ----------------------------------------------------------------------------

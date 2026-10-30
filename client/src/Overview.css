@@ -1,0 +1,135 @@
+/* R01: Visão Geral. Usa as variáveis do shell autenticado (tema escuro). Layout fluido, sem rolagem horizontal da página de 360 a 1920 px; nenhum valor
+   monetário é truncado (quebra de linha em vez de reticências). Estado nunca depende só da cor: sempre há texto (tags, "negativo", "Excedido"). */
+.ov { display: grid; gap: 1.1rem; min-width: 0; }
+.ov > *, .ov-layout > *, .ov-main > *, .ov-aside > * { min-width: 0; }
+.ov h3, .ov h4 { margin: 0; }
+.ov button { min-height: 2.25rem; }
+
+.ov-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .75rem 1.25rem; }
+.ov-eyebrow { margin: 0; font-size: 1.05rem; font-weight: 650; }
+.ov-scope { margin: .15rem 0 0; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+.ov-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .6rem .9rem; }
+.ov-filters label { display: grid; gap: .25rem; font-size: .75rem; color: var(--muted); min-width: min(100%, 11rem); }
+.ov-filters input, .ov-filters select { min-height: 2.5rem; width: 100%; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: .5rem; padding: 0 .6rem; font-size: .9rem; }
+
+.ov-card { background: var(--surface); border: 1px solid var(--border); border-radius: .85rem; padding: 1.05rem 1.15rem; display: grid; gap: .8rem; align-content: start; }
+.ov-card > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .5rem .9rem; }
+.ov-card > header h3 { font-size: 1rem; font-weight: 650; }
+.ov-card > header > button { min-height: 2rem; padding: .25rem .75rem; font-size: .8rem; }
+.ov-meta { margin: .2rem 0 0; color: var(--muted); font-size: .78rem; line-height: 1.4; overflow-wrap: anywhere; }
+.ov-meta--note { margin-top: 0; font-size: .74rem; }
+.ov-empty { margin: 0; color: var(--muted); font-size: .88rem; display: grid; gap: .5rem; justify-items: start; }
+.ov-empty[role='alert'] { color: var(--fail); }
+.ov-stale { opacity: .6; transition: opacity .15s; }
+
+.ov-indicators { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .85rem; }
+.ov-indicator { padding: 1rem 1.1rem; gap: .35rem; }
+.ov-indicator h3 { font-size: .8rem; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+.ov-indicator__value { margin: 0; font-size: clamp(1.35rem, 2.4vw, 1.85rem); font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; line-height: 1.15; }
+.ov-indicator__value[data-unavailable] { font-size: 1.1rem; color: var(--muted); font-weight: 600; }
+.ov-indicator--income .ov-indicator__value { color: var(--ok); }
+.ov-indicator--expense .ov-indicator__value { color: var(--warning); }
+.ov-indicator--negative .ov-indicator__value { color: var(--fail); }
+.ov-indicator__note { margin: 0; font-size: .8rem; color: var(--text); overflow-wrap: anywhere; }
+.ov-indicator__reference { margin: 0; font-size: .72rem; color: var(--muted); overflow-wrap: anywhere; }
+.ov-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0; }
+
+.ov-tag { display: inline-block; padding: .08rem .5rem; border: 1px solid var(--border); border-radius: 999px; font-size: .7rem; font-weight: 600; color: var(--muted); white-space: normal; }
+.ov-tag--danger { color: var(--fail); border-color: var(--fail); }
+.ov-tag--warning { color: var(--warning); border-color: var(--warning); }
+.ov-tag--ok { color: var(--ok); border-color: var(--ok); }
+
+.ov-notices { display: grid; gap: .5rem; margin-top: .85rem; }
+.ov-notice, .ov-bank { margin: 0; padding: .55rem .8rem; border: 1px solid var(--border); border-radius: .6rem; font-size: .85rem; overflow-wrap: anywhere; }
+.ov-bank { border-style: dashed; color: var(--muted); }
+.ov-notice--warning { border-color: var(--warning); }
+.ov-notice--info { border-color: var(--accent); }
+.ov-notice button, .ov-bank button { margin-left: .35rem; }
+.ov-details { font-size: .82rem; color: var(--muted); }
+.ov-details summary { cursor: pointer; padding: .2rem 0; }
+.ov-details ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+
+.ov-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 1.1rem; align-items: start; }
+.ov-main, .ov-aside { display: grid; gap: 1.1rem; align-content: start; }
+
+.ov-evolution header { align-items: center; }
+.ov-legend { display: flex; flex-wrap: wrap; gap: .3rem .9rem; margin: 0; padding: 0; list-style: none; font-size: .75rem; color: var(--muted); }
+.ov-legend li { display: flex; align-items: center; gap: .35rem; }
+.ov-swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: .2rem; border: 1px solid transparent; }
+.ov-swatch--income { background: var(--ok); }
+.ov-swatch--expense { background: var(--warning); }
+.ov-swatch--projected { background: repeating-linear-gradient(45deg, var(--muted) 0 2px, transparent 2px 5px); border-color: var(--muted); }
+.ov-bars { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .5rem; align-items: end; }
+.ov-bars__plot { height: 10.5rem; display: flex; align-items: flex-end; justify-content: center; gap: .3rem; border-bottom: 1px solid var(--border); }
+.ov-bar { width: min(1.5rem, 42%); height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+.ov-bar span { display: block; width: 100%; }
+.ov-bar--income .ov-bar__done { background: var(--ok); }
+.ov-bar--expense .ov-bar__done { background: var(--warning); }
+.ov-bar--income .ov-bar__rest { background: repeating-linear-gradient(45deg, var(--ok) 0 2px, transparent 2px 5px); border: 1px solid var(--ok); border-bottom: 0; }
+.ov-bar--expense .ov-bar__rest { background: repeating-linear-gradient(45deg, var(--warning) 0 2px, transparent 2px 5px); border: 1px solid var(--warning); border-bottom: 0; }
+.ov-bars__label { margin: .35rem 0 0; display: grid; text-align: center; font-size: .78rem; }
+.ov-bars__label small { color: var(--muted); font-size: .66rem; }
+.ov-bars__month--current .ov-bars__label strong { color: var(--accent); }
+
+.ov-budget__list, .ov-list, .ov-goals { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
+.ov-limit { display: grid; gap: .3rem; }
+.ov-limit__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .3rem .6rem; }
+.ov-limit__head strong { overflow-wrap: anywhere; }
+.ov-limit__values { margin: 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .1rem .8rem; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.ov-limit__detail { margin: 0; font-size: .72rem; color: var(--muted); }
+.ov-bar-track { height: .55rem; border-radius: 999px; background: var(--surface-muted); overflow: hidden; border: 1px solid var(--border); }
+.ov-bar-track span { display: block; height: 100%; background: var(--accent); }
+.ov-limit--ApproachingLimit .ov-bar-track span, .ov-limit--LimitReached .ov-bar-track span { background: var(--warning); }
+.ov-limit--Exceeded .ov-bar-track span { background: var(--fail); }
+.ov-limit--cards { padding-top: .7rem; border-top: 1px dashed var(--border); }
+.ov-bar-track--goal span { background: var(--ok); }
+
+.ov-group { display: grid; gap: .45rem; }
+.ov-group h4 { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; font-size: .85rem; font-weight: 650; }
+.ov-list { gap: .35rem; }
+.ov-row { display: flex; align-items: flex-start; justify-content: space-between; gap: .3rem .8rem; width: 100%; text-align: left; padding: .5rem .6rem; border-radius: .55rem; border: 1px solid transparent; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.ov-row:hover { background: var(--surface-muted); border-color: var(--border); }
+.ov-row--static { cursor: default; }
+.ov-row--static:hover { background: transparent; border-color: transparent; }
+.ov-row__main { display: grid; gap: .1rem; min-width: 0; flex: 1 1 8rem; }
+.ov-row__main strong { overflow-wrap: anywhere; font-weight: 600; font-size: .88rem; }
+.ov-row__main small { color: var(--muted); font-size: .72rem; overflow-wrap: anywhere; }
+.ov-amount { font-variant-numeric: tabular-nums; font-weight: 650; font-size: .88rem; text-align: right; overflow-wrap: anywhere; flex: 0 1 auto; max-width: 100%; }
+.ov-amount small { display: block; color: var(--muted); font-weight: 400; font-size: .7rem; }
+.ov-amount--negative { color: var(--fail); }
+.ov-amount--unavailable { color: var(--muted); font-weight: 600; }
+.ov-amount--income { color: var(--ok); }
+.ov-amount--expense { color: var(--text); }
+.ov-list__item--selected > .ov-row { border-color: var(--accent); }
+.ov-group--overdue .ov-row { border-left: 3px solid var(--fail); }
+
+.ov-table-wrap { max-width: 100%; overflow-x: auto; margin-top: .5rem; border: 1px solid var(--border); border-radius: .6rem; }
+.ov-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.ov-table th, .ov-table td { padding: .4rem .55rem; text-align: left; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.ov-table thead th { color: var(--muted); font-weight: 600; }
+
+@media (max-width: 75rem) { .ov-indicators { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Abaixo de ~1024 px as duas colunas viram uma e a ordem prioriza o que pede atenção: indicadores, compromissos, contas, evolução, orçamento. */
+@media (max-width: 64rem) {
+  .ov-layout { grid-template-columns: minmax(0, 1fr); }
+  .ov-main, .ov-aside { display: contents; }
+  .ov-slot--commitments { order: 1; }
+  .ov-slot--accounts { order: 2; }
+  .ov-slot--evolution { order: 3; }
+  .ov-slot--budget { order: 4; }
+  .ov-slot--recent { order: 5; }
+  .ov-slot--goals { order: 6; }
+  .ov-layout { display: grid; gap: 1.1rem; }
+}
+@media (max-width: 40rem) {
+  .ov-indicators { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+  .ov-indicator { padding: .8rem; }
+  .ov-indicator__value { font-size: 1.15rem; }
+  .ov-filters { width: 100%; }
+  .ov-filters label, .ov-filters button { flex: 1 1 100%; }
+  .ov-card { padding: .9rem; }
+  .ov-bars { gap: .25rem; }
+  .ov-bars__plot { height: 8.5rem; gap: .15rem; }
+  .ov-bars__label { font-size: .7rem; }
+  .ov-bars__label small { font-size: .58rem; }
+}

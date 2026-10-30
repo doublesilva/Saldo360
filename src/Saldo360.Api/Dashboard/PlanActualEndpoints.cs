@@ -1,4 +1,5 @@
 using Saldo360.Api.Authentication;
+using Saldo360.Application.Dashboard.Overview;
 using Saldo360.Application.Dashboard.PlanActual;
 
 namespace Saldo360.Api.Dashboard;
@@ -8,6 +9,7 @@ namespace Saldo360.Api.Dashboard;
 /// única escrita (configuração, nunca movimentação) e exige o token CSRF como as demais.
 /// <list type="bullet">
 /// <item><c>financial-dashboard/plan-actual?competence=yyyy-MM&amp;scope=primary|all|account&amp;accountId=</c></item>
+/// <item><c>financial-dashboard/overview?competence=yyyy-MM&amp;scope=primary|all|account&amp;accountId=</c> (R01): contas com saldo, compromissos da Agenda e metas.</item>
 /// <item><c>financial-dashboard/card-target</c> (PUT): meta mensal de cartões da conta pagadora, a partir de uma competência.</item>
 /// </list>
 /// </summary>
@@ -22,11 +24,15 @@ public static class PlanActualEndpoints
             return await next(context);
         });
         group.MapGet("/plan-actual", Get);
+        group.MapGet("/overview", Overview);
         group.MapPut("/card-target", SaveCardTarget).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
     private static async Task<IResult> Get(Guid workspaceId, string? competence, string? scope, Guid? accountId, CurrentUser user, PlanActualService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.GetAsync(workspaceId, userId, competence, scope, accountId, ct));
+
+    private static async Task<IResult> Overview(Guid workspaceId, string? competence, string? scope, Guid? accountId, CurrentUser user, DashboardOverviewService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.GetAsync(workspaceId, userId, competence, scope, accountId, ct));
 
     private static async Task<IResult> SaveCardTarget(Guid workspaceId, CardTargetRequest request, CurrentUser user, PlanActualService service, CancellationToken ct) =>

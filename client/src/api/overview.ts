@@ -1,0 +1,52 @@
+import { requestJson } from './apiErrors'
+import type { PlanActualScopeChoice } from './planActual'
+
+/**
+ * R01: blocos da Visão Geral que o servidor compõe (contas com saldo, compromissos da Agenda, metas, orçamento do mês, últimos lançamentos e fila de
+ * classificação). Todo valor monetário chega como texto decimal exato e nada é somado ou arredondado no navegador. Cada bloco tem o seu estado: "Unavailable"
+ * significa que aquele bloco falhou (nunca zero) e os demais continuam válidos.
+ */
+export type BlockState = 'Complete' | 'Partial' | 'Unavailable'
+
+export interface OverviewAccount {
+  accountId: string; name: string; scope: 'PF' | 'PJ'; type: string; isPrimary: boolean; inScope: boolean
+  balanceAvailable: boolean; balance: string | null; unavailableReason: string | null
+}
+export interface OverviewAccounts { state: BlockState; asOf: string; items: OverviewAccount[] }
+
+export interface OverviewCommitment { id: string; source: string; description: string; date: string; amount: string; accountName: string | null; daysFromToday: number }
+export interface OverviewCommitmentGroup { count: number; total: string; items: OverviewCommitment[] }
+export interface OverviewCommitments { state: BlockState; asOf: string; horizonThrough: string; horizonDays: number; overdue: OverviewCommitmentGroup; upcoming: OverviewCommitmentGroup }
+
+export interface OverviewGoal { goalId: string; name: string; priority: string; target: string; allocated: string; progressPercent: string; targetDate: string | null; funded: boolean }
+export interface OverviewGoals { state: BlockState; activeCount: number; completedCount: number; items: OverviewGoal[] }
+
+export type BudgetStatus = 'WithinBudget' | 'ApproachingLimit' | 'LimitReached' | 'Exceeded'
+export interface OverviewBudgetTarget {
+  targetId: string; categoryId: string; categoryName: string; planned: string; realized: string; committed: string; projected: string; available: string; exceeded: string
+  percent: string | null; status: BudgetStatus
+}
+export interface OverviewBudget {
+  state: BlockState; hasBudget: boolean; budgetId: string | null; planned: string | null; projected: string | null; realized: string | null
+  exceededCount: number; approachingCount: number; targets: OverviewBudgetTarget[]
+}
+
+export interface OverviewRecentItem { id: string; type: 'Income' | 'Expense'; amount: string; date: string; description: string; categoryName: string | null; accountName: string; awaitingClassification: boolean }
+export interface OverviewRecent { state: BlockState; from: string; through: string; totalCount: number; items: OverviewRecentItem[] }
+
+export interface OverviewClassification { state: BlockState; needsReview: number; notEvaluated: number }
+
+export interface DashboardOverview {
+  competence: string; asOf: string; scopeKind: 'primary' | 'all' | 'account'; scopeAccountId: string | null
+  accounts: OverviewAccounts; commitments: OverviewCommitments; goals: OverviewGoals; budget: OverviewBudget; recent: OverviewRecent; classification: OverviewClassification
+}
+
+export function getDashboardOverview(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<DashboardOverview> {
+  const query = new URLSearchParams({ competence, scope: scope.kind })
+  if (scope.kind === 'account' && scope.accountId) query.set('accountId', scope.accountId)
+  return requestJson<DashboardOverview>(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-dashboard/overview?${query}`,
+    { signal, headers: { Accept: 'application/json' } }, { fallback: 'Falha ao carregar a Visão Geral.' }).then(data => {
+    if (!data?.accounts || !data.commitments || !data.goals || !data.budget || !data.recent || !data.classification) throw new Error('Resposta inesperada da Visão Geral.')
+    return data
+  })
+}

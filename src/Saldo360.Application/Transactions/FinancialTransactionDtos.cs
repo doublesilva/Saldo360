@@ -46,7 +46,8 @@ public sealed record TransactionQuery(
     string? Type,
     bool IncludeCancelled,
     int? Page,
-    int? PageSize);
+    int? PageSize,
+    bool ExcludeInvoicePayments = false);
 
 /// <summary>Filtros já validados.</summary>
 public sealed record TransactionFilter(
@@ -57,7 +58,8 @@ public sealed record TransactionFilter(
     CategoryType? Type,
     bool IncludeCancelled,
     int Page,
-    int PageSize);
+    int PageSize,
+    bool ExcludeInvoicePayments = false);
 
 /// <summary>Uma página, ordenada por data decrescente e Id decrescente.</summary>
 public sealed record TransactionPage(IReadOnlyList<FinancialTransactionDto> Items, int Page, int PageSize, int TotalCount);

@@ -280,18 +280,21 @@ public sealed partial class PluggyFinancialIntegrationTests
         var manual = await Send(c.Client, HttpMethod.Post, $"/api/financial-workspaces/{c.Workspace}/accounts", c.Session, new { name = "Reserva PJ", type = "Savings", financialScope = "PJ" });
         Assert.Equal(HttpStatusCode.Created, manual.StatusCode);
 
-        var dashboard = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-dashboard?competence={Today:yyyy-MM}&months=3");
-        var position = dashboard.GetProperty("position");
+        var overview = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-dashboard/overview?competence={Today:yyyy-MM}&scope=all");
+        var items = overview.GetProperty("accounts").GetProperty("items").EnumerateArray().ToList();
 
-        var pf = position.GetProperty("accounts").EnumerateArray().Single(a => a.GetProperty("accountId").GetGuid() == accountId);
-        Assert.Equal(("PF", "BalanceAnchor", "Provisional", "MovementsInReview", 1), (Text(pf, "scope"), Text(pf, "referenceSource"), Text(pf, "referenceReliability"), Text(pf, "reconciliationStatus"), pf.GetProperty("reviewCount").GetInt32()));
-        Assert.Equal("1500.75", Text(pf, "realizedBalance"));
-        Assert.True(position.GetProperty("hasReferenceCaveats").GetBoolean());
-        // PF completo e PJ incompleto: o consolidado não é apresentado (nulo) e cada escopo diz o seu estado.
-        var scopes = position.GetProperty("byScope").EnumerateArray().ToDictionary(s => Text(s, "scope"));
-        Assert.Equal(("1500.75", true), (Text(scopes["PF"], "realizedBalance"), scopes["PF"].GetProperty("complete").GetBoolean()));
-        Assert.Equal((JsonValueKind.Null, false), (scopes["PJ"].GetProperty("realizedBalance").ValueKind, scopes["PJ"].GetProperty("complete").GetBoolean()));
-        Assert.Equal(JsonValueKind.Null, position.GetProperty("realizedBalance").ValueKind);
+        // Saldo por conta: a conta com histórico mostra o saldo; a cadastrada à mão, sem saldo inicial, é "indisponível" (nunca zero).
+        var pf = items.Single(a => a.GetProperty("accountId").GetGuid() == accountId);
+        Assert.Equal(("PF", true, "1500.75"), (Text(pf, "scope"), pf.GetProperty("balanceAvailable").GetBoolean(), Text(pf, "balance")));
+        var reserve = items.Single(a => Text(a, "name") == "Reserva PJ");
+        Assert.Equal((false, JsonValueKind.Null, "OpeningBalanceNotConfigured"), (reserve.GetProperty("balanceAvailable").GetBoolean(), reserve.GetProperty("balance").ValueKind, Text(reserve, "unavailableReason")));
+
+        // PF completo e PJ incompleto: o consolidado não é apresentado como completo e a cobertura aponta a revisão do banco.
+        var plan = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-dashboard/plan-actual?competence={Today:yyyy-MM}&scope=all");
+        var coverage = plan.GetProperty("coverage").GetProperty("accounts").EnumerateArray().Single(a => a.GetProperty("accountId").GetGuid() == accountId);
+        Assert.Equal(("Provisional", "MovementsInReview", 1), (Text(coverage, "referenceReliability"), Text(coverage, "reconciliationStatus"), coverage.GetProperty("reviewCount").GetInt32()));
+        Assert.NotEqual("Complete", Text(plan.GetProperty("situation"), "state"));
+        Assert.Equal(JsonValueKind.Null, plan.GetProperty("situation").GetProperty("realizedBalance").ValueKind);
     }
 
     [Fact]

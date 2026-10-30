@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import '../InternalPages.css'
 
 const navigationGroups = [
-  { label: 'Principal', items: [['overview', 'Visão Geral'], ['calendar', 'Agenda'], ['budgets', 'Orçamentos'], ['cards', 'Cartões'], ['transactions', 'Lançamentos'], ['planning', 'Planejamento']] },
-  { label: 'Ferramentas', items: [['reports', 'Relatórios'], ['goals', 'Metas'], ['recurrences', 'Recorrências']] },
-  { label: 'Mais', items: [['settings', 'Configurações'], ['accounts', 'Contas'], ['categories', 'Categorias'], ['debts', 'Dívidas'], ['transfers', 'Transferências'], ['planned', 'Previsões']] },
+  { label: 'Visão geral', items: [['overview', 'Visão Geral']] },
+  { label: 'Finanças', items: [['transactions', 'Lançamentos'], ['accounts', 'Contas'], ['cards', 'Cartões']] },
+  { label: 'Planejamento', items: [['budgets', 'Orçamento'], ['calendar', 'Agenda'], ['goals', 'Metas'], ['planning', 'Planejamento']] },
+  { label: 'Configurações e mais', items: [['categories', 'Categorias'], ['recurrences', 'Recorrências'], ['planned', 'Previsões'], ['transfers', 'Transferências'], ['debts', 'Dívidas'], ['settings', 'Configurações']] },
 ] as const
 
 export function AppShell({ section, onNavigate, workspaceName, subtitle, controls, actions, userArea, labItems, children }: {
@@ -48,8 +49,8 @@ export function AppShell({ section, onNavigate, workspaceName, subtitle, control
     }}>
       <div className="app-sidebar__brand"><span className="brand-mark" aria-hidden="true">S</span><strong>Saldo360</strong><button className="app-sidebar__close" type="button" onClick={close} aria-label="Fechar navegação">×</button></div>
       <nav aria-label="Navegação do orçamento pessoal">{groups.map(group => <div className="app-sidebar__group" key={group.label}>
-        <p>{group.label}</p>{group.items.map(([id, label]) => <button key={id} type="button" disabled={id === 'reports'} title={id === 'reports' ? 'Relatórios dedicados ainda não disponíveis' : undefined} aria-current={section === id ? 'page' : undefined} onClick={() => { onNavigate(id); setOpen(false); requestAnimationFrame(() => heading.current?.focus()) }}>
-          <span className="nav-marker" aria-hidden="true" />{label}{id === 'reports' && <small>Em breve</small>}
+        <p>{group.label}</p>{group.items.map(([id, label]) => <button key={id} type="button" aria-current={section === id ? 'page' : undefined} onClick={() => { onNavigate(id); setOpen(false); requestAnimationFrame(() => heading.current?.focus()) }}>
+          <span className="nav-marker" aria-hidden="true" />{label}
         </button>)}
       </div>)}</nav>
       <div className="app-sidebar__workspace"><span className="meta">Orçamento pessoal</span><h2>{workspaceName}</h2><small>Privado · somente você</small></div>

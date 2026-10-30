@@ -8,7 +8,11 @@ it('keeps primary navigation ordered and marks the current section, preserving u
   const navigate = vi.fn()
   render(<AppShell section="cards" onNavigate={navigate} workspaceName="Meu orçamento" userArea={<button>Sair</button>} controls={<label>Competência<input type="month" /></label>}><p>Conteúdo atual</p></AppShell>)
   const nav = screen.getByRole('navigation', { name: 'Navegação do orçamento pessoal' })
-  expect(within(nav).getAllByRole('button').slice(0, 6).map(button => button.textContent)).toEqual(['Visão Geral', 'Agenda', 'Orçamentos', 'Cartões', 'Lançamentos', 'Planejamento'])
+  expect(within(nav).getAllByRole('button').map(button => button.textContent)).toEqual([
+    'Visão Geral', 'Lançamentos', 'Contas', 'Cartões', 'Orçamento', 'Agenda', 'Metas', 'Planejamento',
+    'Categorias', 'Recorrências', 'Previsões', 'Transferências', 'Dívidas', 'Configurações',
+  ])
+  expect(within(nav).getAllByText(/^(Visão geral|Finanças|Planejamento|Configurações e mais)$/, { selector: 'p' }).map(group => group.textContent)).toEqual(['Visão geral', 'Finanças', 'Planejamento', 'Configurações e mais'])
   expect(within(nav).getByRole('button', { name: /Cartões/ }).getAttribute('aria-current')).toBe('page')
   expect(screen.getByRole('heading', { name: 'Cartões' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Sair' })).toBeTruthy()
@@ -17,7 +21,7 @@ it('keeps primary navigation ordered and marks the current section, preserving u
   expect(screen.getByText('Conteúdo atual').closest('#finance-content')?.classList.contains('internal-page')).toBe(true)
   fireEvent.click(within(nav).getByRole('button', { name: /Lançamentos/ }))
   expect(navigate).toHaveBeenCalledWith('transactions')
-  expect((within(nav).getByRole('button', { name: /Relatórios/ }) as HTMLButtonElement).disabled).toBe(true)
+  expect(within(nav).queryByRole('button', { name: /Relatórios/ })).toBeNull() // sem páginas vazias apresentadas como funcionalidade
 })
 
 it('opens a collapsible menu, confines focus, closes on Escape and restores scrolling and trigger focus', async () => {
@@ -31,7 +35,7 @@ it('opens a collapsible menu, confines focus, closes on Escape and restores scro
   await waitFor(() => expect(document.activeElement).toBe(within(nav).getByRole('button', { name: /Visão Geral/ })))
   const close = screen.getByRole('button', { name: 'Fechar navegação' })
   close.focus(); fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
-  expect(document.activeElement).toBe(within(nav).getByRole('button', { name: 'Previsões' }))
+  expect(document.activeElement).toBe(within(nav).getByRole('button', { name: 'Configurações' }))
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
   await waitFor(() => expect(document.activeElement).toBe(trigger))

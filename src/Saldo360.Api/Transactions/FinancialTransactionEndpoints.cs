@@ -36,11 +36,11 @@ public static class FinancialTransactionEndpoints
 
     /// <summary>
     /// Página de lançamentos (data decrescente, Id decrescente). Filtros opcionais: from/to (yyyy-MM-dd, inclusivos),
-    /// accountId, categoryId, type (Income/Expense). Cancelados só com includeCancelled=true. pageSize até 100.
+    /// accountId, categoryId, type (Income/Expense). Cancelados só com includeCancelled=true. excludeInvoicePayments=true omite os pagamentos de fatura. pageSize até 100.
     /// </summary>
     private static async Task<IResult> List(
         Guid workspaceId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
-        bool? includeCancelled, int? page, int? pageSize, CurrentUser currentUser,
+        bool? includeCancelled, int? page, int? pageSize, bool? excludeInvoicePayments, CurrentUser currentUser,
         FinancialTransactionService transactions, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -56,7 +56,7 @@ public static class FinancialTransactionEndpoints
             return Results.ValidationProblem(dateErrors);
         }
 
-        var query = new TransactionQuery(fromDate, toDate, accountId, categoryId, type, includeCancelled ?? false, page, pageSize);
+        var query = new TransactionQuery(fromDate, toDate, accountId, categoryId, type, includeCancelled ?? false, page, pageSize, excludeInvoicePayments ?? false);
         var result = await transactions.ListAsync(workspaceId, userId, query, cancellationToken);
         return result switch
         {
