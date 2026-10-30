@@ -44,7 +44,8 @@ internal sealed class FinancialBootstrapExtensions(Saldo360DbContext db, TimePro
         Save(w, actorId, input.Source, nameof(FinancialCreditCardImportedInstallment), input, async () => {
             var card = await db.FinancialCreditCards.AsNoTracking().SingleOrDefaultAsync(x => x.WorkspaceId == w && x.Id == input.CreditCardId && !x.IsArchived, ct);
             if (card is null) return (null, "CardNotFound");
-            if (input.CategoryId is { } category && !await db.FinancialCategories.AnyAsync(x => x.WorkspaceId == w && x.Id == category && x.Type == CategoryType.Expense && x.IsActive, ct)) return (null, "CategoryNotFound");
+            if (input.CategoryId is { } category && !await db.FinancialCategories.AnyAsync(x => x.WorkspaceId == w && x.Id == category && x.Type == CategoryType.Expense && x.IsActive
+                && (x.ParentCategoryId == null || db.FinancialCategories.Any(p => p.Id == x.ParentCategoryId && p.IsActive)), ct)) return (null, "CategoryNotFound");
             // Competence means the known invoice due month, not a guessed purchase/closing date.
             var due = input.DueDate ?? new DateOnly(input.Competence.Year, input.Competence.Month, Math.Min(card.DueDay, DateTime.DaysInMonth(input.Competence.Year, input.Competence.Month)));
             if (due.Year != input.Competence.Year || due.Month != input.Competence.Month) return (null, "DueDateOutsideCompetence");

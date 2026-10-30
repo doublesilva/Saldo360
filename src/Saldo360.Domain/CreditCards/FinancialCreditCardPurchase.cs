@@ -15,6 +15,8 @@ public sealed class FinancialCreditCardPurchase : Entity
     public Guid WorkspaceId { get; private init; }
     public Guid CreditCardId { get; private init; }
     public Guid CategoryId { get; private set; }
+    /// <summary>Natureza da despesa da compra; as parcelas a herdam (não têm natureza própria). Compra de cartão é sempre despesa.</summary>
+    public ExpenseNature Nature { get; private set; }
     public string Description { get; private set; }
     public DateOnly PurchaseDate { get; private set; }
     public decimal TotalAmount { get; private set; }
@@ -30,9 +32,9 @@ public sealed class FinancialCreditCardPurchase : Entity
     public Guid? CancelledByUserId { get; private set; }
     public IReadOnlyCollection<FinancialCreditCardInstallment> Installments => installments;
 
-    public static FinancialCreditCardPurchase Create(Guid workspaceId, Guid cardId, Guid categoryId, string description, DateOnly date, decimal total, int count, Guid userId, DateTimeOffset now)
+    public static FinancialCreditCardPurchase Create(Guid workspaceId, Guid cardId, Guid categoryId, string description, DateOnly date, decimal total, int count, Guid userId, DateTimeOffset now, ExpenseNature nature = ExpenseNature.Undefined)
     {
-        var purchase = new FinancialCreditCardPurchase { WorkspaceId = workspaceId, CreditCardId = cardId, CategoryId = categoryId, Description = description, PurchaseDate = date, TotalAmount = total, InstallmentCount = count, Status = CreditCardPurchaseStatus.Active, CreatedAt = now, UpdatedAt = now, CreatedByUserId = userId, UpdatedByUserId = userId };
+        var purchase = new FinancialCreditCardPurchase { WorkspaceId = workspaceId, CreditCardId = cardId, CategoryId = categoryId, Nature = nature, Description = description, PurchaseDate = date, TotalAmount = total, InstallmentCount = count, Status = CreditCardPurchaseStatus.Active, CreatedAt = now, UpdatedAt = now, CreatedByUserId = userId, UpdatedByUserId = userId };
         var totalCents = decimal.ToInt64(total * 100m);
         var baseCents = totalCents / count;
         var remainder = totalCents % count;
@@ -62,10 +64,10 @@ public sealed class FinancialCreditCardPurchase : Entity
     }
 
     public static FinancialCreditCardPurchase CreateOngoing(Guid workspaceId, Guid cardId, Guid categoryId, string description,
-        DateOnly date, decimal total, int count, int paid, DateOnly? firstPending, Guid userId, DateTimeOffset now)
+        DateOnly date, decimal total, int count, int paid, DateOnly? firstPending, Guid userId, DateTimeOffset now, ExpenseNature nature = ExpenseNature.Undefined)
     {
         ValidateSchedule(description, total, count, paid, firstPending);
-        var purchase = Create(workspaceId, cardId, categoryId, description.Trim(), date, total, count, userId, now);
+        var purchase = Create(workspaceId, cardId, categoryId, description.Trim(), date, total, count, userId, now, nature);
         purchase.PreviouslyPaidInstallments = paid;
         purchase.FirstPendingCompetence = firstPending;
         // Historical payments are metadata, never invoice payments or bank transactions.
@@ -73,8 +75,16 @@ public sealed class FinancialCreditCardPurchase : Entity
         return purchase;
     }
 
+    /// <summary>Corrige só a natureza (fixa/variável/não definida): não toca valor, parcelas, fatura ou categoria. Cancelada não é editável.</summary>
+    public void ChangeNature(ExpenseNature nature, Guid userId, DateTimeOffset now)
+    {
+        if (Status != CreditCardPurchaseStatus.Active) throw new InvalidOperationException("Compra cancelada não pode ser editada.");
+        if (Nature == nature) return;
+        Nature = nature; UpdatedAt = now; UpdatedByUserId = userId;
+    }
+
     public void UpdateSchedule(Guid categoryId, string description, DateOnly date, decimal total, int count, int paid,
-        DateOnly? firstPending, Guid userId, DateTimeOffset now)
+        DateOnly? firstPending, Guid userId, DateTimeOffset now, ExpenseNature? nature = null)
     {
         ValidateSchedule(description, total, count, paid, firstPending);
         if (Status != CreditCardPurchaseStatus.Active) throw new InvalidOperationException("Compra cancelada não pode ser editada.");
@@ -89,7 +99,7 @@ public sealed class FinancialCreditCardPurchase : Entity
             if (old is null) installments.Add(FinancialCreditCardInstallment.Create(WorkspaceId, Id, next.InstallmentNumber, decimal.ToInt64(next.Amount * 100m), now));
             else old.Revise(next.Amount);
         }
-        CategoryId = categoryId; Description = description.Trim(); PurchaseDate = date; TotalAmount = total;
+        CategoryId = categoryId; Description = description.Trim(); PurchaseDate = date; TotalAmount = total; if (nature is { } chosen) Nature = chosen;
         InstallmentCount = count; FirstPendingCompetence = firstPending; UpdatedAt = now; UpdatedByUserId = userId;
     }
 

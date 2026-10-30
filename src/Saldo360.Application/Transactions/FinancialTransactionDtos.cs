@@ -24,9 +24,14 @@ public sealed record FinancialTransactionDto(
     Guid? PlannedTransactionId,
     FinancialTransactionOrigin Origin,
     Saldo360.Domain.Pluggy.PluggyCategorySource? CategorySource = null,
-    bool CategoryNeedsReview = false);
+    bool CategoryNeedsReview = false,
+    ExpenseNature Nature = ExpenseNature.Undefined);
 
-public sealed record TransactionReferenceDto(Guid Id, string Name, bool IsActive);
+/// <summary>Conta ou categoria referenciada. Para uma subcategoria, <c>ParentName</c> é a categoria principal e <c>Path</c> é "Principal / Sub".</summary>
+public sealed record TransactionReferenceDto(Guid Id, string Name, bool IsActive, string? ParentName = null)
+{
+    public string Path => ParentName is null ? Name : $"{ParentName} / {Name}";
+}
 
 /// <summary>Dados enviados pelo cliente (brutos, validados pelo serviço).</summary>
 public sealed record TransactionInput(
@@ -35,7 +40,8 @@ public sealed record TransactionInput(
     string? Type,
     string? Description,
     decimal? Amount,
-    DateOnly? TransactionDate);
+    DateOnly? TransactionDate,
+    string? ExpenseNature = null);
 
 /// <summary>Filtros brutos da listagem (validados pelo serviço).</summary>
 public sealed record TransactionQuery(
@@ -47,7 +53,8 @@ public sealed record TransactionQuery(
     bool IncludeCancelled,
     int? Page,
     int? PageSize,
-    bool ExcludeInvoicePayments = false);
+    bool ExcludeInvoicePayments = false,
+    string? ExpenseNature = null);
 
 /// <summary>Filtros já validados.</summary>
 public sealed record TransactionFilter(
@@ -59,7 +66,8 @@ public sealed record TransactionFilter(
     bool IncludeCancelled,
     int Page,
     int PageSize,
-    bool ExcludeInvoicePayments = false);
+    bool ExcludeInvoicePayments = false,
+    ExpenseNature? Nature = null);
 
 /// <summary>Uma página, ordenada por data decrescente e Id decrescente.</summary>
 public sealed record TransactionPage(IReadOnlyList<FinancialTransactionDto> Items, int Page, int PageSize, int TotalCount);

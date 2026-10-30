@@ -204,6 +204,72 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     }
 
     [Fact]
+    public async Task ManualSubcategoryAndExpenseNatureSurviveRepeatedSyncsForcedRunsAndTheAi_AndNothingIsInferredAutomatically()
+    {
+        var c = await ArrangeAsync("r02-manual-nature");
+        await SyncAsync(c);
+        var housing = await CreateCategoryAsync(c, "Moradia", "Expense");
+        var response = await Send(c.Client, HttpMethod.Post, $"/api/financial-workspaces/{c.Workspace}/categories", c.Session, new { name = "Condomínio", parentCategoryId = housing });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var sub = (await JsonOf(response)).GetProperty("id").GetGuid();
+        Guid transactionId;
+        await using (var db = Db())
+        {
+            transactionId = await (from p in db.PluggyPostings join i in db.PluggyImportedTransactions on p.ImportedTransactionId equals i.Id
+                                   where i.PluggyTransactionId == "g1" select p.FinancialTransactionId!.Value).SingleAsync();
+            // Antes de qualquer decisão do usuário, nada é inferido: tudo que veio do banco nasce "Não definida".
+            Assert.All(await db.FinancialTransactions.AsNoTracking().Where(t => t.WorkspaceId == c.Workspace).ToListAsync(), t => Assert.Equal(ExpenseNature.Undefined, t.Nature));
+        }
+        var url = $"/api/financial-workspaces/{c.Workspace}/transactions/{transactionId}";
+        Assert.Equal(HttpStatusCode.OK, (await Send(c.Client, HttpMethod.Put, $"{url}/category", c.Session, new { categoryId = sub })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Send(c.Client, HttpMethod.Put, $"{url}/expense-nature", c.Session, new { expenseNature = "Fixed" })).StatusCode);
+        Ai.Available = true;
+        Ai.Responder = FakeFinancialClassificationModel.Always("Moradia");
+
+        await RunAsync(c);
+        await SyncAsync(c);
+        await RunAsync(c, new { force = true });
+        await RunAsync(c, new { useAi = true, confirmExternal = true, force = true });
+
+        await using var verify = Db();
+        var stored = await verify.FinancialTransactions.AsNoTracking().SingleAsync(t => t.Id == transactionId);
+        Assert.Equal((sub, ExpenseNature.Fixed), (stored.CategoryId, stored.Nature));
+        Assert.Equal(PluggyCategorySource.User, (await CategoriesByImportedAsync(c.Workspace))["g1"].Source);
+        var unmapped = await (from p in verify.PluggyPostings join i in verify.PluggyImportedTransactions on p.ImportedTransactionId equals i.Id
+                              where i.PluggyTransactionId == "unk" select p.FinancialTransactionId!.Value).SingleAsync();
+        var unmappedTransaction = await verify.FinancialTransactions.AsNoTracking().SingleAsync(t => t.Id == unmapped);
+        Assert.Equal(ExpenseNature.Undefined, unmappedTransaction.Nature); // categoria externa desconhecida: continua sem natureza inferida
+    }
+
+    [Fact]
+    public async Task ThePluggyCategoryMapsToAnExistingSubcategory_AndASubcategoryWhoseMainIsInactiveIsNeverApplied()
+    {
+        var c = await ArrangeAsync("r02-sub-mapping");
+        await SyncAsync(c);
+        var general = await CreateCategoryAsync(c, "Despesas gerais", "Expense");
+        var response = await Send(c.Client, HttpMethod.Post, $"/api/financial-workspaces/{c.Workspace}/categories", c.Session, new { name = "Alimentação", parentCategoryId = general });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var sub = (await JsonOf(response)).GetProperty("id").GetGuid();
+
+        var run = await RunAsync(c);
+
+        var categories = await CategoriesByImportedAsync(c.Workspace);
+        Assert.Equal(("Alimentação", PluggyCategorySource.Pluggy), categories["g1"]);
+        await using var db = Db();
+        Assert.Equal(1, await db.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace && x.Name == "Alimentação")); // nenhuma principal homônima foi criada
+        Assert.Equal(sub, await db.FinancialTransactions.AsNoTracking().Where(t => t.WorkspaceId == c.Workspace && t.Description.Contains("Mercado Central")).Select(t => t.CategoryId!.Value).SingleAsync());
+
+        Assert.Equal(HttpStatusCode.OK, (await Send(c.Client, HttpMethod.Put, $"/api/financial-workspaces/{c.Workspace}/categories/{general}", c.Session, new { name = "Despesas gerais", isActive = false })).StatusCode);
+        var posting = await (from p in db.PluggyPostings join i in db.PluggyImportedTransactions on p.ImportedTransactionId equals i.Id
+                             where p.WorkspaceId == c.Workspace && i.PluggyTransactionId == "g2" select p).AsNoTracking().SingleAsync();
+        var current = await db.FinancialTransactions.AsNoTracking().Where(t => t.Id == posting.FinancialTransactionId).Select(t => t.CategoryId).SingleAsync();
+        var ownerId = await db.FinancialWorkspaces.AsNoTracking().Where(w => w.Id == c.Workspace).Select(w => w.OwnerUserId).SingleAsync();
+        var applied = await new PluggyCategorizationRepository(db).ApplyAsync(c.Workspace, ownerId, [new(posting.Id, sub, null, null, PluggyCategorySource.AI, "ai:test", "x", false, current)], DateTimeOffset.UtcNow, default);
+        Assert.Equal((0, 1), (applied.Applied, applied.SkippedChanged)); // subcategoria de principal inativa: indisponível para nova classificação
+        Assert.True(run.GetProperty("pluggy").GetInt32() >= 1);
+    }
+
+    [Fact]
     public async Task NewImportedMovementsAreClassifiedLocallyDuringSyncWithoutTheModel()
     {
         var c = await ArrangeAsync("t931-sync");
@@ -327,27 +393,34 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     }
 
     [Fact]
-    public async Task TheAiCanSuggestANewCategoryWhichTheBackendCreatesOnceAndAppliesWithoutDuplicating()
+    public async Task AnAiSuggestionOfANewCategoryIsNotARegistrationAndTheMovementStaysInReviewWithoutCreatingAnything()
     {
         var c = await ArrangeAsync("t931-ai-suggest");
         await SyncAsync(c);
         Ai.Available = true;
         Ai.Responder = FakeFinancialClassificationModel.Suggest("Entretenimento");
+        await using var before = Db();
+        var categoriesBefore = await before.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace);
 
         var run = await RunAsync(c, new { useAi = true, confirmExternal = true });
 
         var categories = await CategoriesByImportedAsync(c.Workspace);
-        Assert.Equal(("Entretenimento", PluggyCategorySource.AI), categories["unk"]);
-        Assert.Equal((1, 1), (run.GetProperty("ai").GetInt32(), run.GetProperty("aiItemsSent").GetInt32()));
+        Assert.Equal((null, PluggyCategorySource.None), categories["unk"]);
+        Assert.Equal((0, 1), (run.GetProperty("ai").GetInt32(), run.GetProperty("aiItemsSent").GetInt32()));
         await using var db = Db();
-        Assert.Equal(1, await db.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace && x.Name == "Entretenimento" && x.Type == CategoryType.Expense));
+        // Só a etapa do catálogo da Pluggy (inequívoco, determinístico) pode ter criado categorias canônicas; nenhuma nasce da sugestão da IA.
+        var categoriesAfter = await db.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace);
+        Assert.Equal(categoriesBefore + run.GetProperty("categoriesCreated").GetInt32(), categoriesAfter);
+        Assert.Equal(0, await db.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace && x.Name == "Entretenimento"));
         var posting = await (from p in db.PluggyPostings join i in db.PluggyImportedTransactions on p.ImportedTransactionId equals i.Id where i.PluggyTransactionId == "unk" select p).AsNoTracking().SingleAsync();
         Assert.StartsWith("ai:", posting.CategoryMethodVersion);
+        Assert.True(posting.CategoryNeedsReview);
+        Assert.Contains("Entretenimento", posting.CategoryReason);
 
         var calls = Ai.Calls;
         await RunAsync(c, new { useAi = true, confirmExternal = true });
-        Assert.Equal(calls, Ai.Calls); // idempotente: nada reenviado e nenhuma categoria duplicada
-        Assert.Equal(1, await db.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace && x.Name == "Entretenimento"));
+        Assert.Equal(calls, Ai.Calls); // idempotente: nada reenviado
+        Assert.Equal(categoriesAfter, await db.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace));
     }
 
     [Fact]

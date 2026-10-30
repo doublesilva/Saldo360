@@ -29,6 +29,23 @@ describe('CreditCardPurchaseForm', () => {
     expect(createPurchase).toHaveBeenCalledWith('workspace', 'card-1', expect.objectContaining({ totalAmount: '1000.00', installmentCount: 4, previouslyPaidInstallments: 2, firstPendingCompetence: '2026-11-01' }))
   })
 
+  it('o tipo de despesa é explícito (padrão "Não definida", sem inferir de parcelas) e vai junto da compra', async () => {
+    show(); fill()
+    const nature = screen.getByLabelText('Tipo de despesa') as HTMLSelectElement
+    expect(nature.value).toBe('Undefined')
+    expect(screen.getByText('Fixa é um compromisso habitual, mesmo que o valor mude.')).toBeTruthy()
+    await review()
+    expect(previewPurchase).toHaveBeenLastCalledWith('workspace', 'card-1', expect.objectContaining({ installmentCount: 4, expenseNature: 'Undefined' }))
+
+    field('Tipo de despesa', 'Fixed')
+    expect(screen.queryByRole('region', { name: 'Resumo da compra' })).toBeNull() // mudar o tipo invalida o resumo revisado
+    await review()
+    vi.mocked(createPurchase).mockResolvedValue({ ok: true, value: purchase })
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
+    await waitFor(() => expect(createPurchase).toHaveBeenCalledOnce())
+    expect(createPurchase).toHaveBeenCalledWith('workspace', 'card-1', expect.objectContaining({ categoryId: 'expense', expenseNature: 'Fixed' }))
+  })
+
   it('deriva seis pagas de 7/10 e troca cartão e modo de valor sem calcular dinheiro no cliente', async () => {
     show(); fill(); field('Cartão', 'card-2'); field('Modo de entrada do valor', 'Installment'); field('Valor por parcela', '320,71'); field('Numeração', 'current'); field('Primeira parcela pendente', '7/10')
     await review()

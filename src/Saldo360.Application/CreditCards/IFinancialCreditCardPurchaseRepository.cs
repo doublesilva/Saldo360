@@ -21,7 +21,8 @@ public interface IFinancialCreditCardPurchaseRepository
     Task<IReadOnlyList<FinancialCreditCardInvoiceDto>> ProjectInvoicesAsync(Guid workspaceId, Guid cardId, string from, int months, DateOnly today, CancellationToken cancellationToken);
     Task<FinancialCreditCardLimitDto?> GetLimitAsync(Guid workspaceId, Guid cardId, CancellationToken cancellationToken);
     Task<bool> IsActiveCardAsync(Guid workspaceId, Guid cardId, CancellationToken cancellationToken);
-    Task<bool> IsExpenseCategoryAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken);
+    /// <summary>Categoria de despesa do orçamento disponível para NOVA classificação (ativa e, numa subcategoria, com a principal ativa); a atual da compra pode estar inativa.</summary>
+    Task<bool> IsExpenseCategoryAsync(Guid workspaceId, Guid categoryId, Guid? currentCategoryId, CancellationToken cancellationToken);
 }
 
 public sealed record CreditCardCalendarConfig(int ClosingDay, int DueDay);

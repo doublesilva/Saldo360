@@ -87,13 +87,26 @@ public sealed class FinancialPlannedTransactionService(
             }
         }
 
+        ExpenseNature? nature = null;
+        if (query.ExpenseNature is not null)
+        {
+            if (ExpenseNatures.TryParse(query.ExpenseNature, out var parsedNature))
+            {
+                nature = parsedNature;
+            }
+            else
+            {
+                errors["expenseNature"] = ["Tipo de despesa inválido. Use Fixed, Variable ou Undefined."];
+            }
+        }
+
         if (errors.Count > 0)
         {
             return new PlannedTransactionListResult(null, errors, false);
         }
 
         var filter = new PlannedTransactionFilter(
-            query.From, query.To, query.AccountId, query.CategoryId, type, query.IncludeRealized, query.IncludeCancelled, page, pageSize);
+            query.From, query.To, query.AccountId, query.CategoryId, type, query.IncludeRealized, query.IncludeCancelled, page, pageSize, nature);
         return new PlannedTransactionListResult(await planned.ListAsync(workspaceId, filter, cancellationToken), null, false);
     }
 
@@ -257,7 +270,7 @@ public sealed class FinancialPlannedTransactionService(
         Guid workspaceId, PlannedTransactionInput input, FinancialPlannedTransaction? current, CancellationToken cancellationToken)
     {
         var details = PlannedTransactionDetails.TryCreate(
-            input.AccountId, input.CategoryId, input.Type, input.Description, input.Amount, input.DueDate, out var errors);
+            input.AccountId, input.CategoryId, input.Type, input.Description, input.Amount, input.DueDate, out var errors, input.ExpenseNature);
 
         await ReferenceRules.ValidateAsync(
             planned, workspaceId, input.AccountId, input.CategoryId, input.Type, current?.AccountId, current?.CategoryId,

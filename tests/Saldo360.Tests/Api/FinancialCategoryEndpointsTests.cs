@@ -292,7 +292,7 @@ public sealed class FinancialCategoryEndpointsTests(PostgresFixture postgres) : 
         var body = await (await SendAsync(HttpMethod.Get, CategoriesUrl, _owner)).Content.ReadAsStringAsync();
 
         using var document = JsonDocument.Parse(body);
-        Assert.Equal(["id", "name", "type", "isActive", "createdAt"], document.RootElement[0].EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["id", "name", "type", "isActive", "createdAt", "parentCategoryId", "parentName", "isAvailable", "path"], document.RootElement[0].EnumerateObject().Select(p => p.Name));
     }
 
     [Fact]

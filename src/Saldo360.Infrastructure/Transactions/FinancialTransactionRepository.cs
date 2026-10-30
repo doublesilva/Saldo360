@@ -48,7 +48,15 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
 
         if (filter.CategoryId is { } categoryId)
         {
-            query = query.Where(t => t.CategoryId == categoryId);
+            // Categoria principal: os lançamentos diretos e os das suas subcategorias, cada registro uma só vez (a classificação é um único categoryId).
+            // Subcategoria: só os dela.
+            query = query.Where(t => t.CategoryId == categoryId
+                || db.FinancialCategories.Any(c => c.WorkspaceId == workspaceId && c.Id == t.CategoryId && c.ParentCategoryId == categoryId));
+        }
+
+        if (filter.Nature is { } nature)
+        {
+            query = query.Where(t => t.Nature == nature);
         }
 
         if (filter.Type is { } type)
@@ -92,7 +100,8 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
     public Task<CategoryState?> GetCategoryStateAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) =>
         db.FinancialCategories
             .Where(c => c.WorkspaceId == workspaceId && c.Id == categoryId)
-            .Select(c => new CategoryState(c.Type, c.IsActive))
+            .Select(c => new CategoryState(c.Type, c.IsActive && (c.ParentCategoryId == null
+                || db.FinancialCategories.Any(p => p.Id == c.ParentCategoryId && p.IsActive))))
             .SingleOrDefaultAsync(cancellationToken);
 
     // Conta e categoria pela mesma família (as FKs garantem que existem). Ordena antes de projetar: data
@@ -110,7 +119,7 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
             t.TransactionDate,
             t.Description,
             new TransactionReferenceDto(a.Id, a.Name, a.IsActive),
-            c == null ? null : new TransactionReferenceDto(c.Id, c.Name, c.IsActive),
+            c == null ? null : new TransactionReferenceDto(c.Id, c.Name, c.IsActive, db.FinancialCategories.Where(p => p.Id == c.ParentCategoryId).Select(p => p.Name).FirstOrDefault()),
             t.IsCancelled,
             t.Currency,
             t.CreatedAt,
@@ -120,5 +129,6 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
             t.Origin,
             // Origem da categoria (só lançamentos importados têm rastro): Pluggy, Rule, AI ou User.
             db.PluggyPostings.Where(p => p.FinancialTransactionId == t.Id).Select(p => (Saldo360.Domain.Pluggy.PluggyCategorySource?)p.CategorySource).FirstOrDefault(),
-            db.PluggyPostings.Where(p => p.FinancialTransactionId == t.Id).Select(p => p.CategoryNeedsReview).FirstOrDefault());
+            db.PluggyPostings.Where(p => p.FinancialTransactionId == t.Id).Select(p => p.CategoryNeedsReview).FirstOrDefault(),
+            t.Nature);
 }

@@ -187,9 +187,11 @@ internal sealed class FinancialCreditCardPurchaseRepository(Saldo360DbContext db
         }).ToList();
     }
     public Task<bool> IsActiveCardAsync(Guid workspaceId, Guid cardId, CancellationToken cancellationToken) => db.FinancialCreditCards.AnyAsync(c => c.WorkspaceId == workspaceId && c.Id == cardId && !c.IsArchived, cancellationToken);
-    public Task<bool> IsExpenseCategoryAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) => db.FinancialCategories.AnyAsync(c => c.WorkspaceId == workspaceId && c.Id == categoryId && c.Type == CategoryType.Expense, cancellationToken);
+    public Task<bool> IsExpenseCategoryAsync(Guid workspaceId, Guid categoryId, Guid? currentCategoryId, CancellationToken cancellationToken) =>
+        db.FinancialCategories.AnyAsync(c => c.WorkspaceId == workspaceId && c.Id == categoryId && c.Type == CategoryType.Expense
+            && (categoryId == currentCategoryId || c.IsActive && (c.ParentCategoryId == null || db.FinancialCategories.Any(p => p.Id == c.ParentCategoryId && p.IsActive))), cancellationToken);
 
     private static FinancialCreditCardPurchaseDto? ToDto(FinancialCreditCardPurchase? purchase) => purchase is null ? null : new(
         purchase.Id, purchase.CreditCardId, purchase.CategoryId, purchase.Description, purchase.PurchaseDate, Money.Format(purchase.TotalAmount), purchase.InstallmentCount, purchase.Status,
-        purchase.Installments.OrderBy(i => i.InstallmentNumber).Select(i => new FinancialCreditCardInstallmentDto(i.Id, i.InstallmentNumber, Money.Format(i.Amount), i.Status)).ToList(), purchase.PreviouslyPaidInstallments, purchase.FirstPendingCompetence);
+        purchase.Installments.OrderBy(i => i.InstallmentNumber).Select(i => new FinancialCreditCardInstallmentDto(i.Id, i.InstallmentNumber, Money.Format(i.Amount), i.Status)).ToList(), purchase.PreviouslyPaidInstallments, purchase.FirstPendingCompetence, purchase.Nature);
 }

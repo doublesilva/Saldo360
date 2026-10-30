@@ -319,6 +319,7 @@ describe('Planned — formulário', () => {
       description: 'Aluguel de outubro (reajustado)',
       amount: '1800.00',
       dueDate: shift(5),
+      expenseNature: 'Undefined',
     })
   })
 

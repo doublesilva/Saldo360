@@ -85,13 +85,27 @@ public sealed class FinancialTransactionService(
             }
         }
 
+        ExpenseNature? nature = null;
+        if (query.ExpenseNature is not null)
+        {
+            if (ExpenseNatures.TryParse(query.ExpenseNature, out var parsedNature))
+            {
+                nature = parsedNature;
+            }
+            else
+            {
+                errors["expenseNature"] = ["Tipo de despesa inválido. Use Fixed, Variable ou Undefined."];
+            }
+        }
+
         if (errors.Count > 0)
         {
             return new TransactionListResult(null, errors, false);
         }
 
+        // categoryId de uma categoria principal inclui as suas subcategorias; o de uma subcategoria traz só os dela (a expansão é feita pelo repositório).
         var filter = new TransactionFilter(
-            query.From, query.To, query.AccountId, query.CategoryId, type, query.IncludeCancelled, page, pageSize, query.ExcludeInvoicePayments);
+            query.From, query.To, query.AccountId, query.CategoryId, type, query.IncludeCancelled, page, pageSize, query.ExcludeInvoicePayments, nature);
         return new TransactionListResult(await transactions.ListAsync(workspaceId, filter, cancellationToken), null, false);
     }
 
@@ -183,6 +197,45 @@ public sealed class FinancialTransactionService(
         return TransactionResult.Ok((await transactions.GetAsync(workspaceId, transactionId, cancellationToken))!);
     }
 
+    /// <summary>
+    /// Corrige só a natureza da despesa (fixa, variável ou não definida) de um lançamento não cancelado, de qualquer origem (inclusive realizado a partir
+    /// de previsão ou importado da Pluggy): valor, data, conta, categoria e saldo não mudam. Receita não tem natureza (400).
+    /// </summary>
+    public async Task<TransactionResult> ChangeNatureAsync(
+        Guid workspaceId, Guid transactionId, Guid userId, string? expenseNature, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            || await transactions.FindAsync(workspaceId, transactionId, cancellationToken) is not { } transaction)
+        {
+            return TransactionResult.NotFound;
+        }
+
+        if (transaction.IsCancelled)
+        {
+            return TransactionResult.Cancelled;
+        }
+
+        // O pagamento de fatura ou de parcela de dívida só quita um compromisso que já existe como compra/parcela: classificá-lo contaria a despesa duas vezes.
+        if (transaction.Origin is FinancialTransactionOrigin.CreditCardInvoicePayment or FinancialTransactionOrigin.DebtInstallmentPayment)
+        {
+            return TransactionResult.Invalid(new Dictionary<string, string[]>
+            {
+                ["expenseNature"] = ["Pagamento de fatura ou de parcela de dívida não recebe tipo de despesa: o tipo fica na compra ou na parcela."],
+            });
+        }
+
+        var nature = ExpenseNature.Undefined;
+        string? error = null;
+        if (expenseNature is null || !ExpenseNatures.TryResolve(expenseNature, transaction.Type, out nature, out error))
+        {
+            return TransactionResult.Invalid(new Dictionary<string, string[]> { ["expenseNature"] = [error ?? "Informe o tipo de despesa."] });
+        }
+
+        transaction.ChangeNature(nature, userId, timeProvider.GetUtcNow());
+        await transactions.SaveChangesAsync(cancellationToken);
+        return TransactionResult.Ok((await transactions.GetAsync(workspaceId, transactionId, cancellationToken))!);
+    }
+
     /// <summary>Cancela preservando o registro. Idempotente: cancelar de novo devolve o mesmo estado.</summary>
     public async Task<TransactionResult> CancelAsync(
         Guid workspaceId, Guid transactionId, Guid userId, CancellationToken cancellationToken)
@@ -223,7 +276,7 @@ public sealed class FinancialTransactionService(
         var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
         var details = TransactionDetails.TryCreate(
             input.AccountId, input.CategoryId, input.Type, input.Description, input.Amount, input.TransactionDate,
-            today, out var errors);
+            today, out var errors, input.ExpenseNature);
 
         await ReferenceRules.ValidateAsync(
             transactions, workspaceId, input.AccountId, input.CategoryId, input.Type, current?.AccountId, current?.CategoryId,

@@ -35,6 +35,12 @@ public sealed class FinancialTransaction : Entity
 
     public FinancialTransactionOrigin Origin { get; private init; }
 
+    /// <summary>
+    /// Natureza da despesa (fixa, variável ou ainda não definida). Independe da categoria, do cartão e do parcelamento. Receita é sempre
+    /// <see cref="ExpenseNature.Undefined"/>. Mudar a natureza nunca altera valor, data, conta ou saldo.
+    /// </summary>
+    public ExpenseNature Nature { get; private set; }
+
     /// <summary>Receita ou despesa; precisa ser o mesmo tipo da categoria (garantido também por FK).</summary>
     public CategoryType Type { get; private set; }
 
@@ -155,6 +161,20 @@ public sealed class FinancialTransaction : Entity
         UpdatedByUserId = userId;
     }
 
+    /// <summary>
+    /// Corrige só a natureza (fixa/variável/não definida) de uma despesa não cancelada, em qualquer origem: não toca valor, data, conta, categoria nem a
+    /// vinculação com a previsão. Receita não tem natureza.
+    /// </summary>
+    public void ChangeNature(ExpenseNature nature, Guid userId, DateTimeOffset now)
+    {
+        if (IsCancelled) throw new InvalidOperationException("Lançamento cancelado não pode ser editado.");
+        if (Type == CategoryType.Income && nature != ExpenseNature.Undefined) throw new InvalidOperationException("Receita não tem tipo de despesa.");
+        if (Nature == nature) return;
+        Nature = nature;
+        UpdatedAt = now;
+        UpdatedByUserId = userId;
+    }
+
     /// <summary>Aplica a mudança de origem vinda da Pluggy (valor, data, descrição). Não toca a categoria escolhida.</summary>
     public void ApplyImportedSource(string description, decimal amount, DateOnly date, Guid userId, DateTimeOffset now)
     {
@@ -186,6 +206,7 @@ public sealed class FinancialTransaction : Entity
         AccountId = details.AccountId;
         CategoryId = details.CategoryId;
         Type = details.Type;
+        Nature = details.Type == CategoryType.Expense ? details.Nature : ExpenseNature.Undefined;
         Description = details.Description;
         Amount = details.Amount;
         TransactionDate = details.TransactionDate;
@@ -210,8 +231,9 @@ public enum FinancialTransactionOrigin
 public sealed record TransactionDetails
 {
     private TransactionDetails(
-        Guid accountId, Guid categoryId, CategoryType type, string description, decimal amount, DateOnly transactionDate)
+        Guid accountId, Guid categoryId, CategoryType type, string description, decimal amount, DateOnly transactionDate, ExpenseNature nature)
     {
+        Nature = nature;
         AccountId = accountId;
         CategoryId = categoryId;
         Type = type;
@@ -226,6 +248,8 @@ public sealed record TransactionDetails
 
     public CategoryType Type { get; }
 
+    public ExpenseNature Nature { get; }
+
     public string Description { get; }
 
     public decimal Amount { get; }
@@ -239,7 +263,7 @@ public sealed record TransactionDetails
     /// </summary>
     public static TransactionDetails? TryCreate(
         Guid? accountId, Guid? categoryId, string? type, string? description, decimal? amount, DateOnly? transactionDate,
-        DateOnly today, out Dictionary<string, string[]> errors)
+        DateOnly today, out Dictionary<string, string[]> errors, string? expenseNature = null)
     {
         errors = [];
         var trimmedDescription = description?.Trim() ?? string.Empty;
@@ -257,6 +281,12 @@ public sealed record TransactionDetails
         if (!CategoryTypes.TryParse(type, out var parsedType))
         {
             errors["type"] = ["Tipo inválido. Use Income (receita) ou Expense (despesa)."];
+        }
+
+        ExpenseNature nature = ExpenseNature.Undefined;
+        if (errors.ContainsKey("type") is false && !ExpenseNatures.TryResolve(expenseNature, parsedType, out nature, out var natureError))
+        {
+            errors["expenseNature"] = [natureError!];
         }
 
         if (trimmedDescription.Length == 0)
@@ -291,7 +321,7 @@ public sealed record TransactionDetails
         }
 
         return errors.Count == 0
-            ? new TransactionDetails(accountId!.Value, categoryId!.Value, parsedType, trimmedDescription, amount!.Value, transactionDate!.Value)
+            ? new TransactionDetails(accountId!.Value, categoryId!.Value, parsedType, trimmedDescription, amount!.Value, transactionDate!.Value, nature)
             : null;
     }
 }

@@ -97,6 +97,8 @@ public sealed class FinancialRecurrenceService(IFinancialWorkspaceRepository wor
         if(input.DayOfMonth is < 1 or > 31) errors["dayOfMonth"]=["O dia deve estar entre 1 e 31."];
         if(input.AccountId is { } account && !errors.ContainsKey("accountId")) { var s=await references.GetAccountStateAsync(workspaceId,account,ct); if(s is null) errors["accountId"]=["Conta inválida."]; else if(!s.IsActive) errors["accountId"]=["A conta está inativa. Escolha uma conta ativa."]; }
         if(input.CategoryId is { } category && !errors.ContainsKey("categoryId")) { var s=await references.GetCategoryStateAsync(workspaceId,category,ct); if(s is null) errors["categoryId"]=["Categoria inválida."]; else if(s.Type!=type) errors["categoryId"]=["A categoria não é compatível com o tipo."]; else if(!s.IsActive) errors["categoryId"]=["A categoria está inativa. Escolha uma categoria ativa."]; }
-        return errors.Count==0 ? (new RecurrenceDetails(input.AccountId,input.CategoryId!.Value,type,description,input.Amount!.Value,input.IsEstimated,frequency,input.Interval!.Value,input.StartDate!.Value,input.EndDate,input.OccurrenceCount,input.DayOfMonth,input.CreditCardId),errors) : (null,errors);
+        var nature = ExpenseNature.Undefined;
+        if(!errors.ContainsKey("type") && !ExpenseNatures.TryResolve(input.ExpenseNature,type,out nature,out var natureError)) errors["expenseNature"]=[natureError!];
+        return errors.Count==0 ? (new RecurrenceDetails(input.AccountId,input.CategoryId!.Value,type,description,input.Amount!.Value,input.IsEstimated,frequency,input.Interval!.Value,input.StartDate!.Value,input.EndDate,input.OccurrenceCount,input.DayOfMonth,input.CreditCardId,nature),errors) : (null,errors);
     }
 }

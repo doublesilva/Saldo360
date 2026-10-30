@@ -37,7 +37,8 @@ internal sealed class FinancialCreditCardInvoiceAdjustmentRepository(Saldo360DbC
         if (await db.FinancialCreditCardInvoices.AnyAsync(i => i.WorkspaceId == workspaceId && i.Id == invoiceId && i.OfficialVersion > 0, cancellationToken))
             return new(InvoiceAdjustmentAccess.Conflict, null, null, "A composição oficial só pode ser substituída por nova consolidação.");
         if (input.CategoryId is { } categoryId && !await db.FinancialCategories.AnyAsync(
-                item => item.WorkspaceId == workspaceId && item.Id == categoryId && item.IsActive, cancellationToken))
+                item => item.WorkspaceId == workspaceId && item.Id == categoryId && item.IsActive
+                    && (item.ParentCategoryId == null || db.FinancialCategories.Any(p => p.Id == item.ParentCategoryId && p.IsActive)), cancellationToken))
         {
             await transaction.RollbackAsync(cancellationToken);
             return Invalid("categoryId", "A categoria deve estar ativa e pertencer à mesma família.");

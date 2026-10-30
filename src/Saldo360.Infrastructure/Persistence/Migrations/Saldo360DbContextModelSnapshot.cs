@@ -614,6 +614,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnName("name")
                         .UseCollation("case_insensitive");
 
+                    b.Property<Guid?>("ParentCategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parent_category_id");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -636,15 +640,26 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("CreatedByUserId")
                         .HasDatabaseName("ix_financial_categories_created_by_user_id");
 
+                    b.HasIndex("ParentCategoryId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_financial_categories_parent_name")
+                        .HasFilter("parent_category_id IS NOT NULL");
+
+                    b.HasIndex("WorkspaceId", "ParentCategoryId", "Type")
+                        .HasDatabaseName("ix_financial_categories_workspace_id_parent_category_id_type");
+
                     b.HasIndex("WorkspaceId", "Type", "Name")
                         .IsUnique()
-                        .HasDatabaseName("ux_financial_categories_workspace_id_type_name");
+                        .HasDatabaseName("ux_financial_categories_workspace_id_type_name")
+                        .HasFilter("parent_category_id IS NULL");
 
                     b.ToTable("financial_categories", null, t =>
                         {
                             t.HasCheckConstraint("ck_financial_categories_name_not_blank", "btrim(name) <> ''");
 
                             t.HasCheckConstraint("ck_financial_categories_name_trimmed", "octet_length(name) = octet_length(btrim(name))");
+
+                            t.HasCheckConstraint("ck_financial_categories_not_own_parent", "parent_category_id IS NULL OR parent_category_id <> id");
 
                             t.HasCheckConstraint("ck_financial_categories_type", "type IN ('Income', 'Expense')");
                         });
@@ -1561,6 +1576,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("installment_count");
 
+                    b.Property<string>("Nature")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Undefined")
+                        .HasColumnName("expense_nature");
+
                     b.Property<int>("PreviouslyPaidInstallments")
                         .HasColumnType("integer")
                         .HasColumnName("previously_paid_installments");
@@ -1615,6 +1638,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("financial_credit_card_purchases", null, t =>
                         {
                             t.HasCheckConstraint("ck_credit_card_purchases_description_not_blank", "btrim(description) <> ''");
+
+                            t.HasCheckConstraint("ck_credit_card_purchases_expense_nature", "expense_nature IN ('Undefined', 'Fixed', 'Variable')");
 
                             t.HasCheckConstraint("ck_credit_card_purchases_installment_count", "installment_count BETWEEN 1 AND 120");
 
@@ -2194,6 +2219,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric")
                         .HasColumnName("interest_component");
 
+                    b.Property<string>("Nature")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Undefined")
+                        .HasColumnName("expense_nature");
+
                     b.Property<decimal?>("OtherChargesComponent")
                         .HasColumnType("numeric")
                         .HasColumnName("other_charges_component");
@@ -2226,6 +2259,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("financial_debt_installments", null, t =>
                         {
                             t.HasCheckConstraint("ck_debt_installment_amount_positive", "scheduled_amount > 0");
+
+                            t.HasCheckConstraint("ck_debt_installment_expense_nature", "expense_nature IN ('Undefined', 'Fixed', 'Variable')");
 
                             t.HasCheckConstraint("ck_debt_installment_number_positive", "installment_number > 0");
                         });
@@ -2965,6 +3000,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_cancelled");
 
+                    b.Property<string>("Nature")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Undefined")
+                        .HasColumnName("expense_nature");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -3024,6 +3067,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_planned_transactions_description_not_blank", "btrim(description) <> ''");
 
                             t.HasCheckConstraint("ck_financial_planned_transactions_description_trimmed", "octet_length(description) = octet_length(btrim(description))");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_expense_nature", "expense_nature IN ('Undefined', 'Fixed', 'Variable') AND (type = 'Expense' OR expense_nature = 'Undefined')");
 
                             t.HasCheckConstraint("ck_financial_planned_transactions_type", "type IN ('Income', 'Expense')");
 
@@ -4216,6 +4261,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_estimated");
 
+                    b.Property<string>("Nature")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Undefined")
+                        .HasColumnName("expense_nature");
+
                     b.Property<int?>("OccurrenceCount")
                         .HasColumnType("integer")
                         .HasColumnName("occurrence_count");
@@ -4279,6 +4332,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_recurrences_end", "end_date IS NULL OR end_date >= start_date");
 
                             t.HasCheckConstraint("ck_recurrences_end_mode", "NOT (end_date IS NOT NULL AND occurrence_count IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_recurrences_expense_nature", "expense_nature IN ('Undefined', 'Fixed', 'Variable') AND (type = 'Expense' OR expense_nature = 'Undefined')");
 
                             t.HasCheckConstraint("ck_recurrences_interval", "interval_value BETWEEN 1 AND 120");
                         });
@@ -4518,6 +4573,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_cancelled");
 
+                    b.Property<string>("Nature")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Undefined")
+                        .HasColumnName("expense_nature");
+
                     b.Property<string>("Origin")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -4600,6 +4663,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_transactions_description_not_blank", "btrim(description) <> ''");
 
                             t.HasCheckConstraint("ck_financial_transactions_description_trimmed", "octet_length(description) = octet_length(btrim(description))");
+
+                            t.HasCheckConstraint("ck_financial_transactions_expense_nature", "expense_nature IN ('Undefined', 'Fixed', 'Variable') AND (type = 'Expense' OR expense_nature = 'Undefined')");
 
                             t.HasCheckConstraint("ck_financial_transactions_type", "type IN ('Income', 'Expense')");
 
@@ -5083,6 +5148,13 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_categories_financial_workspaces_workspace_id");
+
+                    b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "ParentCategoryId", "Type")
+                        .HasPrincipalKey("WorkspaceId", "Id", "Type")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_categories_parent_same_workspace_type");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.CreditCards.FinancialCreditCard", b =>

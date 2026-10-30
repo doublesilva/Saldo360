@@ -17,6 +17,10 @@ import {
 import { getTransaction, type FinancialTransaction } from '../api/transactions'
 import { todayInSaoPaulo } from '../dates'
 import { decimalToInput, formatBrlDecimal, formatDate, isZeroDecimal, parseAmount } from '../money'
+import { expenseNatureLabels, expenseNatures, type ExpenseNature } from '../api/expenseNature'
+import { categoryPath, hasAvailableCategory } from '../categoryTree'
+import { CategoryFilterOptions, CategoryOptions } from './CategoryOptions'
+import { ExpenseNatureBadge, ExpenseNatureField } from './ExpenseNatureField'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -171,6 +175,22 @@ export function Planned({
             <option value="Expense">Despesas previstas</option>
           </select>
         </label>
+        {filters.type !== 'Income' && (
+          <label>
+            Tipo de despesa
+            <select
+              value={filters.expenseNature}
+              onChange={(event) => changeFilter('expenseNature', event.target.value as ExpenseNature | '')}
+            >
+              <option value="">Todos</option>
+              {expenseNatures.map((nature) => (
+                <option key={nature} value={nature}>
+                  {expenseNatureLabels[nature]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           Conta
           <select value={filters.accountId} onChange={(event) => changeFilter('accountId', event.target.value)}>
@@ -187,14 +207,7 @@ export function Planned({
           Categoria
           <select value={filters.categoryId} onChange={(event) => changeFilter('categoryId', event.target.value)}>
             <option value="">Todas</option>
-            {categories
-              .filter((category) => !filters.type || category.type === filters.type)
-              .map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                  {category.isActive ? '' : ' (inativa)'}
-                </option>
-              ))}
+            <CategoryFilterOptions categories={categories} type={filters.type} />
           </select>
         </label>
         <label className="checkbox">
@@ -246,9 +259,10 @@ export function Planned({
                     <span>Data prevista: {formatDate(planned.dueDate)}</span>
                     <span>{typeLabels[planned.type]}</span>
                     <span>
-                      {planned.category.name}
+                      {categoryPath(planned.category)}
                       {planned.category.isActive ? '' : ' (inativa)'}
                     </span>
+                    {planned.type === 'Expense' && <ExpenseNatureBadge nature={planned.expenseNature} />}
                     <span>
                       {planned.account.name}
                       {planned.account.isActive ? '' : ' (inativa)'}
@@ -468,6 +482,7 @@ type FormState = {
   description: string
   amount: string
   dueDate: string
+  expenseNature: ExpenseNature
 }
 
 export function PlannedForm({
@@ -492,8 +507,9 @@ export function PlannedForm({
           description: planned.description,
           amount: decimalToInput(planned.amount),
           dueDate: planned.dueDate,
+          expenseNature: planned.expenseNature ?? 'Undefined',
         }
-      : { type: 'Expense', accountId: '', categoryId: '', description: '', amount: '', dueDate: '' },
+      : { type: 'Expense', accountId: '', categoryId: '', description: '', amount: '', dueDate: '', expenseNature: 'Undefined' },
   )
   const [errors, setErrors] = useState<Record<string, string[]>>({})
   const [busy, setBusy] = useState(false)
@@ -502,17 +518,16 @@ export function PlannedForm({
 
   // Ativas, mais a conta/categoria inativa que a previsão editada já usa (pode ser mantida).
   const accountOptions = references.accounts.filter((account) => account.isActive || account.id === planned?.account.id)
-  const categoryOptions = references.categories.filter(
-    (category) => category.type === form.type && (category.isActive || category.id === planned?.category.id),
-  )
   const hasActiveAccount = references.accounts.some((account) => account.isActive)
-  const hasActiveCategory = references.categories.some((category) => category.isActive && category.type === form.type)
+  const hasActiveCategory = hasAvailableCategory(references.categories, form.type)
   const singular = form.type === 'Income' ? 'receita' : 'despesa'
 
   const changeType = (type: CategoryType) =>
     setForm((current) => ({
       ...current,
       type,
+      // Receita não tem tipo de despesa.
+      expenseNature: type === 'Income' ? 'Undefined' : current.expenseNature,
       // Categoria é de um tipo só: ao trocar o tipo, a escolha anterior deixa de valer.
       categoryId: references.categories.some((c) => c.id === current.categoryId && c.type === type) ? current.categoryId : '',
     }))
@@ -546,6 +561,7 @@ export function PlannedForm({
         description: form.description.trim(),
         amount: amount.text,
         dueDate: form.dueDate,
+        ...(form.type === 'Expense' ? { expenseNature: form.expenseNature } : {}),
       }
       const result = planned ? await updatePlanned(workspaceId, planned.id, input) : await createPlanned(workspaceId, input)
       if (result.ok) onSaved()
@@ -620,15 +636,19 @@ export function PlannedForm({
         aria-describedby={describedBy('categoryId')}
       >
         <option value="">Escolha a categoria de {singular}</option>
-        {categoryOptions.map((category) => (
-          <option key={category.id} value={category.id}>
-            {category.name}
-            {category.isActive ? '' : ' — inativa'}
-          </option>
-        ))}
+        <CategoryOptions categories={references.categories} type={form.type} keepId={planned?.category.id} />
       </select>
       {fieldError('categoryId')}
       {fieldError('type')}
+
+      {form.type === 'Expense' && (
+        <ExpenseNatureField
+          id="planned-expense-nature"
+          value={form.expenseNature}
+          onChange={(value) => set('expenseNature', value)}
+          error={errors.expenseNature?.[0]}
+        />
+      )}
 
       <label htmlFor="planned-description">Descrição</label>
       <input

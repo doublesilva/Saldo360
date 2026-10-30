@@ -23,5 +23,5 @@ internal sealed class FinancialRecurrenceRepository(Saldo360DbContext db) : IFin
         // Order mapped columns before constructing the positional DTO so EF can translate the query.
         return await Project(query.OrderBy(x => x.StartDate).ThenBy(x => x.Id)).ToListAsync(ct);
     }
-    private IQueryable<RecurrenceDto> Project(IQueryable<FinancialRecurrence> q)=>q.Select(x=>new RecurrenceDto(x.Id,x.WorkspaceId,x.FinancialAccountId,x.FinancialCategoryId,x.Type,x.Description,x.Amount,x.IsEstimated,x.Frequency,x.Interval,x.StartDate,x.EndDate,x.OccurrenceCount,x.DayOfMonth,x.Status,x.Currency,x.CreatedAt,x.UpdatedAt,x.ArchivedAt,x.FinancialCreditCardId));
+    private IQueryable<RecurrenceDto> Project(IQueryable<FinancialRecurrence> q)=>q.Select(x=>new RecurrenceDto(x.Id,x.WorkspaceId,x.FinancialAccountId,x.FinancialCategoryId,x.Type,x.Description,x.Amount,x.IsEstimated,x.Frequency,x.Interval,x.StartDate,x.EndDate,x.OccurrenceCount,x.DayOfMonth,x.Status,x.Currency,x.CreatedAt,x.UpdatedAt,x.ArchivedAt,x.FinancialCreditCardId,x.Nature));
 }

@@ -18,8 +18,7 @@ internal sealed class PluggyCategorizationRepository(Saldo360DbContext db) : IPl
     private const string FallbackKey = "outros";
 
     public async Task<IReadOnlyList<MappableCategory>> ListCategoriesAsync(Guid workspaceId, CancellationToken ct) =>
-        await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId)
-            .Select(c => new MappableCategory(c.Id, c.Name, c.Type, c.IsActive)).ToListAsync(ct);
+        await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).ToMappable(db).ToListAsync(ct);
 
     public async Task<IReadOnlyList<PluggyCategorizationCandidate>> ListCandidatesAsync(Guid workspaceId, CancellationToken ct)
     {
@@ -125,8 +124,9 @@ internal sealed class PluggyCategorizationRepository(Saldo360DbContext db) : IPl
 
                 if (decision.CategoryId is { } categoryId)
                 {
-                    // Categoria precisa existir neste orçamento, estar ativa e ter o tipo do lançamento (também garantido por FK e tipo).
-                    if (!categories.TryGetValue(categoryId, out var category) || !category.IsActive || category.Type != type) { skipped++; continue; }
+                    // Categoria precisa existir neste orçamento, estar disponível (ativa e, numa subcategoria, a principal também) e ter o tipo do lançamento.
+                    if (!categories.TryGetValue(categoryId, out var category) || !category.IsActive || category.Type != type
+                        || category.ParentCategoryId is { } parentId && !(categories.TryGetValue(parentId, out var parent) && parent.IsActive)) { skipped++; continue; }
                     if (current != categoryId)
                     {
                         if (isPurchase) purchase!.Recategorize(categoryId, userId, now); else transaction!.Recategorize(categoryId, userId, now);

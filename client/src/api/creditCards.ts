@@ -1,3 +1,4 @@
+import type { ExpenseNature } from './expenseNature'
 import { CSRF_HEADER, getCsrfToken } from './csrf'
 import { ApiRequestError, requestJson } from './apiErrors'
 
@@ -17,8 +18,8 @@ export interface FinancialCreditCard {
 }
 export interface CreditCardInput { name: string; issuer: string; lastFourDigits: string | null; holderUserId: string | null; creditLimit: string; closingDay: number; dueDay: number; defaultPaymentAccountId: string | null }
 export interface Installment { id: string; number: number; amount: string; status: InstallmentStatus }
-export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[]; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }
-export interface PurchaseInput { description: string; purchaseDate: string; totalAmount: string; installmentCount: number; categoryId: string; amountMode?: 'Total' | 'Installment'; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null }
+export interface CreditCardPurchase { id: string; creditCardId: string; categoryId: string; description: string; purchaseDate: string; totalAmount: string; installmentCount: number; status: PurchaseStatus; installments: Installment[]; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null; expenseNature?: ExpenseNature }
+export interface PurchaseInput { description: string; purchaseDate: string; totalAmount: string; installmentCount: number; categoryId: string; amountMode?: 'Total' | 'Installment'; previouslyPaidInstallments?: number; firstPendingCompetence?: string | null; expenseNature?: ExpenseNature }
 export interface PurchasePreview { totalAmount: string; installmentCount: number; previouslyPaidInstallments: number; remainingAmount: string; installments: { number: number; amount: string; competence: string; dueDate: string }[] }
 export interface InvoiceInstallment { installmentId: string; purchaseId: string; purchaseDescription: string; installmentNumber: number | null; installmentCount: number | null; amount: string }
 export interface CreditCardInvoice { id: string; creditCardId: string; competence: string; cycleStartDate: string; closingDate: string; dueDate: string; status: InvoiceStatus; totalAmount: string; paidAmount: string; remainingAmount: string; paymentStatus: InvoicePaymentStatus; installments: InvoiceInstallment[]; installmentCount: number }
@@ -48,6 +49,8 @@ const child = (workspaceId: string, cardId: string, path: string) => `${base(wor
 export async function listPurchases(workspaceId: string, cardId: string, signal?: AbortSignal) { const response = await fetch(child(workspaceId, cardId, 'purchases'), { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar compras (HTTP ${response.status}).`); return await response.json() as CreditCardPurchase[] }
 export function createPurchase(workspaceId: string, cardId: string, input: PurchaseInput) { return mutate<CreditCardPurchase>(child(workspaceId, cardId, 'purchases'), 'POST', input, 201) }
 export function updatePurchase(workspaceId: string, cardId: string, purchaseId: string, input: PurchaseInput) { return mutate<CreditCardPurchase>(`${child(workspaceId, cardId, 'purchases')}/${encodeURIComponent(purchaseId)}`, 'PUT', input, 200) }
+/** Corrige só o tipo de despesa da compra (as parcelas herdam); vale mesmo com a fatura fechada. Categoria, valor e parcelas não mudam. */
+export function changePurchaseNature(workspaceId: string, cardId: string, purchaseId: string, expenseNature: ExpenseNature) { return mutate<CreditCardPurchase>(`${child(workspaceId, cardId, 'purchases')}/${encodeURIComponent(purchaseId)}/expense-nature`, 'PUT', { expenseNature }, 200) }
 export function previewPurchase(workspaceId: string, cardId: string, input: PurchaseInput) { return mutate<PurchasePreview>(child(workspaceId, cardId, 'purchases/preview'), 'POST', input, 200) }
 export async function cancelPurchase(workspaceId: string, cardId: string, purchaseId: string) { const response = await fetch(`${child(workspaceId, cardId, 'purchases')}/${purchaseId}/cancel`, { method: 'POST', headers: { ...headers, [CSRF_HEADER]: await getCsrfToken() } }); if (response.status === 204) return { ok: true as const }; throw new Error(`Falha ao cancelar compra (HTTP ${response.status}).`) }
 export async function listInvoices(workspaceId: string, cardId: string, from: string, through: string, signal?: AbortSignal) { const query = new URLSearchParams({ from, through }); const response = await fetch(`${child(workspaceId, cardId, 'invoices')}?${query}`, { signal, headers }); if (!response.ok) throw new Error(`Falha ao carregar faturas (HTTP ${response.status}).`); return await response.json() as CreditCardInvoice[] }

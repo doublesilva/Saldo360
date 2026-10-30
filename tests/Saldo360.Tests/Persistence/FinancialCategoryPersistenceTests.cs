@@ -103,8 +103,8 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         await using var second = Db();
         var firstRepository = new FinancialCategoryRepository(first);
         var secondRepository = new FinancialCategoryRepository(second);
-        Assert.False(await firstRepository.NameExistsAsync(_familyA.Id, CategoryType.Expense, "Farmácia", null, CancellationToken.None));
-        Assert.False(await secondRepository.NameExistsAsync(_familyA.Id, CategoryType.Expense, "FARMÁCIA", null, CancellationToken.None));
+        Assert.False(await firstRepository.NameExistsAsync(_familyA.Id, CategoryType.Expense, null, "Farmácia", null, CancellationToken.None));
+        Assert.False(await secondRepository.NameExistsAsync(_familyA.Id, CategoryType.Expense, null, "FARMÁCIA", null, CancellationToken.None));
 
         Assert.True(await firstRepository.TryAddAsync(Category("Farmácia"), CancellationToken.None));
         Assert.False(await secondRepository.TryAddAsync(Category("FARMÁCIA"), CancellationToken.None));
@@ -201,6 +201,24 @@ public sealed class FinancialCategoryPersistenceTests(PostgresFixture postgres) 
         Assert.Equal(2, await verify.Users.CountAsync());
         Assert.Equal(2, await verify.Families.CountAsync());
         Assert.Equal(0, await verify.FinancialCategories.CountAsync()); // nenhuma categoria criada automaticamente
+    }
+
+    [Trait("Category", "INFRA")]
+    [Fact]
+    public async Task HierarchyMigration_DownAndUp_KeepsMainCategoriesAndRestoresTheTwoLevelTrigger()
+    {
+        const string before = "20261029214648_AddMonthlyPlanning";
+        await AddAsync(Category("Moradia"));
+        await using var db = Db();
+        var triggers = () => db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM pg_trigger WHERE tgname = 'trg_financial_categories_two_levels'").SingleAsync();
+
+        await db.GetService<IMigrator>().MigrateAsync(before);
+        Assert.Equal(0, await triggers());
+        await db.GetService<IMigrator>().MigrateAsync();
+
+        Assert.Equal(1, await triggers());
+        var kept = await db.FinancialCategories.AsNoTracking().SingleAsync(c => c.Name == "Moradia");
+        Assert.Null(kept.ParentCategoryId);
     }
 
     private Saldo360DbContext Db() => PostgresFixture.CreateDbContext(_connectionString);

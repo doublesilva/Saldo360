@@ -16,6 +16,8 @@ public sealed class FinancialRecurrence : Entity
     public Guid? FinancialCreditCardId { get; private set; }
     public Guid FinancialCategoryId { get; private set; }
     public CategoryType Type { get; private set; }
+    /// <summary>Natureza da despesa da definição; novas materializações a herdam (as já materializadas não são reclassificadas). Receita: sempre Undefined.</summary>
+    public ExpenseNature Nature { get; private set; }
     public string Description { get; private set; }
     public decimal Amount { get; private set; }
     public bool IsEstimated { get; private set; }
@@ -52,6 +54,7 @@ public sealed class FinancialRecurrence : Entity
             throw new ArgumentException("Recorrência de cartão deve ser despesa.");
         FinancialAccountId = d.AccountId; FinancialCategoryId = d.CategoryId; Type = d.Type; Description = d.Description;
         FinancialCreditCardId = d.CreditCardId;
+        Nature = d.Type == CategoryType.Expense ? d.Nature : ExpenseNature.Undefined;
         Amount = d.Amount; IsEstimated = d.IsEstimated; Frequency = d.Frequency; Interval = d.Interval;
         StartDate = d.StartDate; EndDate = d.EndDate; OccurrenceCount = d.OccurrenceCount;
         DayOfMonth = d.Frequency == RecurrenceFrequency.Weekly ? d.StartDate.Day : d.DayOfMonth ?? d.StartDate.Day;
@@ -60,4 +63,4 @@ public sealed class FinancialRecurrence : Entity
 }
 
 public sealed record RecurrenceDetails(Guid? AccountId, Guid CategoryId, CategoryType Type, string Description, decimal Amount,
-    bool IsEstimated, RecurrenceFrequency Frequency, int Interval, DateOnly StartDate, DateOnly? EndDate, int? OccurrenceCount, int? DayOfMonth, Guid? CreditCardId = null);
+    bool IsEstimated, RecurrenceFrequency Frequency, int Interval, DateOnly StartDate, DateOnly? EndDate, int? OccurrenceCount, int? DayOfMonth, Guid? CreditCardId = null, ExpenseNature Nature = ExpenseNature.Undefined);

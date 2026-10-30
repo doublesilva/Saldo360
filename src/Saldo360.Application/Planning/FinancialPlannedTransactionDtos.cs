@@ -35,7 +35,8 @@ public sealed record FinancialPlannedTransactionDto(
     string Currency,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
-    DateTimeOffset? CancelledAt);
+    DateTimeOffset? CancelledAt,
+    ExpenseNature Nature = ExpenseNature.Undefined);
 
 /// <summary>Dados enviados pelo cliente (brutos, validados pelo serviço).</summary>
 public sealed record PlannedTransactionInput(
@@ -44,7 +45,8 @@ public sealed record PlannedTransactionInput(
     string? Type,
     string? Description,
     decimal? Amount,
-    DateOnly? DueDate);
+    DateOnly? DueDate,
+    string? ExpenseNature = null);
 
 /// <summary>
 /// Filtros brutos (datas já no formato ISO, validadas na API). O período se aplica a DueDate. Por padrão só
@@ -52,11 +54,11 @@ public sealed record PlannedTransactionInput(
 /// </summary>
 public sealed record PlannedTransactionQuery(
     DateOnly? From, DateOnly? To, Guid? AccountId, Guid? CategoryId, string? Type,
-    bool IncludeRealized, bool IncludeCancelled, int? Page, int? PageSize);
+    bool IncludeRealized, bool IncludeCancelled, int? Page, int? PageSize, string? ExpenseNature = null);
 
 public sealed record PlannedTransactionFilter(
     DateOnly? From, DateOnly? To, Guid? AccountId, Guid? CategoryId, CategoryType? Type,
-    bool IncludeRealized, bool IncludeCancelled, int Page, int PageSize);
+    bool IncludeRealized, bool IncludeCancelled, int Page, int PageSize, ExpenseNature? Nature = null);
 
 /// <summary>Uma página, ordenada por data prevista crescente e Id crescente.</summary>
 public sealed record PlannedTransactionPage(IReadOnlyList<FinancialPlannedTransactionDto> Items, int Page, int PageSize, int TotalCount);

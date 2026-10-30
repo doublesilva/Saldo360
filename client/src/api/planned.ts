@@ -1,4 +1,5 @@
 import type { CategoryType } from './categories'
+import type { ExpenseNature } from './expenseNature'
 import { CSRF_HEADER, getCsrfToken } from './csrf'
 import type { FinancialTransaction, TransactionReference } from './transactions'
 
@@ -39,6 +40,8 @@ export interface PlannedTransaction {
   createdAt: string
   updatedAt: string | null
   cancelledAt: string | null
+  /** Tipo de despesa (fixa/variável/não definida); a realização herda esta classificação. Receita é sempre "Undefined". */
+  expenseNature?: ExpenseNature
 }
 
 export interface PlannedPage {
@@ -56,6 +59,8 @@ export interface PlannedInput {
   description: string
   amount: string
   dueDate: string
+  /** Só despesa; omitido = "Não definida". */
+  expenseNature?: ExpenseNature
 }
 
 /** O período (from/to) se aplica à data prevista. Por padrão só pendentes. */
@@ -65,6 +70,7 @@ export interface PlannedFilters {
   accountId: string
   categoryId: string
   type: CategoryType | ''
+  expenseNature: ExpenseNature | ''
   includeRealized: boolean
   includeCancelled: boolean
 }
@@ -75,6 +81,7 @@ export const emptyPlannedFilters: PlannedFilters = {
   accountId: '',
   categoryId: '',
   type: '',
+  expenseNature: '',
   includeRealized: false,
   includeCancelled: false,
 }
@@ -116,6 +123,7 @@ export async function listPlanned(
   if (filters.accountId) query.set('accountId', filters.accountId)
   if (filters.categoryId) query.set('categoryId', filters.categoryId)
   if (filters.type) query.set('type', filters.type)
+  if (filters.expenseNature) query.set('expenseNature', filters.expenseNature)
   if (filters.includeRealized) query.set('includeRealized', 'true')
   if (filters.includeCancelled) query.set('includeCancelled', 'true')
 

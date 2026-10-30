@@ -37,6 +37,8 @@ internal sealed class FinancialPlannedTransactionConfiguration : IEntityTypeConf
         builder.HasKey(planned => planned.Id);
         builder.Property(planned => planned.Id).ValueGeneratedNever();
         builder.Property(planned => planned.Type).HasConversion<string>().HasMaxLength(20);
+        builder.Property(planned => planned.Nature).HasColumnName("expense_nature").HasConversion<string>().HasMaxLength(20).HasDefaultValue(ExpenseNature.Undefined);
+        builder.ToTable(table => table.HasCheckConstraint("ck_financial_planned_transactions_expense_nature", ExpenseNatureCheck.Sql("type", "expense_nature")));
         builder.Property(planned => planned.Description).HasMaxLength(FinancialPlannedTransaction.DescriptionMaxLength).IsRequired();
         builder.Property(planned => planned.Amount).HasColumnType("numeric");
         builder.Property(planned => planned.DueDate).HasColumnType("date");

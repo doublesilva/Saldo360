@@ -35,9 +35,10 @@ internal sealed class FinancialCategoryRepository(Saldo360DbContext db) : IFinan
 
     // A coluna name usa colação ICU que ignora a caixa: a igualdade abaixo já é case-insensitive no banco.
     public Task<bool> NameExistsAsync(
-        Guid workspaceId, CategoryType type, string name, Guid? exceptCategoryId, CancellationToken cancellationToken) =>
+        Guid workspaceId, CategoryType type, Guid? parentCategoryId, string name, Guid? exceptCategoryId, CancellationToken cancellationToken) =>
         db.FinancialCategories.AnyAsync(
-            c => c.WorkspaceId == workspaceId && c.Type == type && c.Name == name && c.Id != exceptCategoryId,
+            c => c.WorkspaceId == workspaceId && c.Name == name && c.Id != exceptCategoryId
+                && (parentCategoryId == null ? c.ParentCategoryId == null && c.Type == type : c.ParentCategoryId == parentCategoryId),
             cancellationToken);
 
     public async Task<IReadOnlyList<FinancialCategoryDto>> ListAsync(
@@ -53,13 +54,17 @@ internal sealed class FinancialCategoryRepository(Saldo360DbContext db) : IFinan
         Project(db.FinancialCategories.Where(c => c.WorkspaceId == workspaceId && c.Id == categoryId))
             .SingleOrDefaultAsync(cancellationToken);
 
-    private static IQueryable<FinancialCategoryDto> Project(IQueryable<FinancialCategory> categories) =>
-        categories.AsNoTracking().Select(c => new FinancialCategoryDto(c.Id, c.Name, c.Type, c.IsActive, c.CreatedAt));
+    private IQueryable<FinancialCategoryDto> Project(IQueryable<FinancialCategory> categories) =>
+        from c in categories.AsNoTracking()
+        join p in db.FinancialCategories.AsNoTracking() on c.ParentCategoryId equals (Guid?)p.Id into parents
+        from parent in parents.DefaultIfEmpty()
+        select new FinancialCategoryDto(c.Id, c.Name, c.Type, c.IsActive, c.CreatedAt, c.ParentCategoryId, parent == null ? null : parent.Name,
+            c.IsActive && (parent == null || parent.IsActive));
 
     private static bool IsDuplicateName(DbUpdateException exception) =>
         exception.InnerException is PostgresException
         {
             SqlState: PostgresErrorCodes.UniqueViolation,
-            ConstraintName: FinancialCategoryConfiguration.UniqueNameIndex,
+            ConstraintName: FinancialCategoryConfiguration.UniqueNameIndex or FinancialCategoryConfiguration.UniqueSubcategoryNameIndex,
         };
 }

@@ -14,11 +14,11 @@ public interface IFinancialCategoryRepository
     Task<bool> TrySaveChangesAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Se já existe outra categoria (ativa ou inativa) com o mesmo nome e tipo na família, sem diferenciar
-    /// maiúsculas de minúsculas. Verificação prévia: a garantia final é o índice único do banco.
+    /// Se já existe outra categoria (ativa ou inativa) com o mesmo nome no mesmo nível, sem diferenciar maiúsculas de minúsculas: entre as
+    /// principais, por tipo; entre as subcategorias, dentro da mesma principal. Verificação prévia: a garantia final são os índices únicos do banco.
     /// </summary>
     Task<bool> NameExistsAsync(
-        Guid workspaceId, CategoryType type, string name, Guid? exceptCategoryId, CancellationToken cancellationToken);
+        Guid workspaceId, CategoryType type, Guid? parentCategoryId, string name, Guid? exceptCategoryId, CancellationToken cancellationToken);
 
     /// <summary>Ativas primeiro; depois receitas antes de despesas; depois por nome.</summary>
     Task<IReadOnlyList<FinancialCategoryDto>> ListAsync(Guid workspaceId, bool includeInactive, CancellationToken cancellationToken);

@@ -7,6 +7,9 @@ public interface IFinancialBudgetRepository
     Task<bool> BudgetExistsAsync(Guid workspaceId, DateOnly competence, CancellationToken cancellationToken);
     Task<FinancialBudget?> FindBudgetAsync(Guid workspaceId, Guid budgetId, CancellationToken cancellationToken);
     Task<FinancialBudgetTarget?> FindTargetAsync(Guid budgetId, Guid targetId, CancellationToken cancellationToken);
+    /// <summary>Existe, no mesmo orçamento, meta ativa da categoria principal ou de uma subcategoria desta categoria (ou da principal dela): contaria o mesmo gasto duas vezes.</summary>
+    Task<bool> RelatedTargetExistsAsync(Guid budgetId, Guid categoryId, CancellationToken cancellationToken);
+
     Task<bool> TargetExistsAsync(Guid budgetId, Guid categoryId, CancellationToken cancellationToken);
     Task<BudgetCategoryState?> GetCategoryAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken);
     Task<bool> TryAddBudgetAsync(FinancialBudget budget, CancellationToken cancellationToken);

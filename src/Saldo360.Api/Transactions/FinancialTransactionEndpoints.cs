@@ -17,6 +17,7 @@ public static class FinancialTransactionEndpoints
         transactions.MapGet("/{transactionId:guid}", Get);
         transactions.MapPut("/{transactionId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
         transactions.MapPut("/{transactionId:guid}/category", Recategorize).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        transactions.MapPut("/{transactionId:guid}/expense-nature", ChangeNature).AddEndpointFilter<ValidateCsrfTokenFilter>();
         transactions.MapPost("/{transactionId:guid}/cancel", Cancel).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
@@ -36,11 +37,12 @@ public static class FinancialTransactionEndpoints
 
     /// <summary>
     /// Página de lançamentos (data decrescente, Id decrescente). Filtros opcionais: from/to (yyyy-MM-dd, inclusivos),
-    /// accountId, categoryId, type (Income/Expense). Cancelados só com includeCancelled=true. excludeInvoicePayments=true omite os pagamentos de fatura. pageSize até 100.
+    /// accountId, categoryId (uma categoria principal inclui as suas subcategorias; uma subcategoria, só ela), type (Income/Expense) e expenseNature
+    /// (Fixed, Variable ou Undefined, que são as despesas ainda não classificadas). Cancelados só com includeCancelled=true. excludeInvoicePayments=true omite os pagamentos de fatura. pageSize até 100.
     /// </summary>
     private static async Task<IResult> List(
         Guid workspaceId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
-        bool? includeCancelled, int? page, int? pageSize, bool? excludeInvoicePayments, CurrentUser currentUser,
+        bool? includeCancelled, int? page, int? pageSize, bool? excludeInvoicePayments, string? expenseNature, CurrentUser currentUser,
         FinancialTransactionService transactions, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -56,7 +58,7 @@ public static class FinancialTransactionEndpoints
             return Results.ValidationProblem(dateErrors);
         }
 
-        var query = new TransactionQuery(fromDate, toDate, accountId, categoryId, type, includeCancelled ?? false, page, pageSize, excludeInvoicePayments ?? false);
+        var query = new TransactionQuery(fromDate, toDate, accountId, categoryId, type, includeCancelled ?? false, page, pageSize, excludeInvoicePayments ?? false, expenseNature);
         var result = await transactions.ListAsync(workspaceId, userId, query, cancellationToken);
         return result switch
         {
@@ -109,6 +111,21 @@ public static class FinancialTransactionEndpoints
             t => Results.Ok(TransactionResponse.From(t)));
     }
 
+    /// <summary>Corrige só o tipo de despesa (fixa, variável ou não definida) de um lançamento não cancelado, de qualquer origem.</summary>
+    private static async Task<IResult> ChangeNature(
+        Guid workspaceId, Guid transactionId, ExpenseNatureRequest? request, CurrentUser currentUser, FinancialTransactionService transactions,
+        CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
+        {
+            return Results.Unauthorized();
+        }
+
+        return ToResponse(
+            await transactions.ChangeNatureAsync(workspaceId, transactionId, userId, request?.ExpenseNature, cancellationToken),
+            t => Results.Ok(TransactionResponse.From(t)));
+    }
+
     /// <summary>Cancela sem excluir. Idempotente: cancelar de novo devolve 200 com o mesmo estado.</summary>
     private static async Task<IResult> Cancel(
         Guid workspaceId, Guid transactionId, CurrentUser currentUser, FinancialTransactionService transactions,
@@ -133,7 +150,7 @@ public static class FinancialTransactionEndpoints
     };
 
     private static TransactionInput ToInput(TransactionRequest? request) => new(
-        request?.AccountId, request?.CategoryId, request?.Type, request?.Description, request?.Amount, request?.TransactionDate);
+        request?.AccountId, request?.CategoryId, request?.Type, request?.Description, request?.Amount, request?.TransactionDate, request?.ExpenseNature);
 }
 
 /// <summary>
@@ -148,7 +165,12 @@ public sealed record TransactionRequest(
     string? Type,
     string? Description,
     decimal? Amount,
-    DateOnly? TransactionDate);
+    DateOnly? TransactionDate,
+    string? ExpenseNature = null);
+
+/// <summary>Novo tipo de despesa (<c>Fixed</c>, <c>Variable</c> ou <c>Undefined</c>); qualquer outro campo é recusado.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ExpenseNatureRequest(string? ExpenseNature);
 
 /// <summary>Nova categoria de um lançamento importado; nula remove a categoria. Qualquer outro campo é recusado.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -174,7 +196,8 @@ public sealed record TransactionResponse(
     Guid? PlannedTransactionId,
     FinancialTransactionOrigin Origin,
     Saldo360.Domain.Pluggy.PluggyCategorySource? CategorySource = null,
-    bool CategoryNeedsReview = false)
+    bool CategoryNeedsReview = false,
+    ExpenseNature ExpenseNature = ExpenseNature.Undefined)
 {
     public static TransactionResponse From(FinancialTransactionDto dto) => new(
         dto.Id,
@@ -192,7 +215,8 @@ public sealed record TransactionResponse(
         dto.PlannedTransactionId,
         dto.Origin,
         dto.CategorySource,
-        dto.CategoryNeedsReview);
+        dto.CategoryNeedsReview,
+        dto.Nature);
 }
 
 public sealed record TransactionPageResponse(IReadOnlyList<TransactionResponse> Items, int Page, int PageSize, int TotalCount)

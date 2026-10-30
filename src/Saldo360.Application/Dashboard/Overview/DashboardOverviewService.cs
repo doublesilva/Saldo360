@@ -185,7 +185,7 @@ public sealed class DashboardOverviewService(
             if (budget is null || budget.Targets.All(t => t.IsArchived)) return new("Complete", false, budget?.Id, null, null, null, 0, 0, []);
             var execution = await budgetExecution.GetAsync(workspaceId, budget.Id, userId, ct);
             if (execution is null) return new("Unavailable", true, budget.Id, null, null, null, 0, 0, []);
-            var names = budget.Targets.Where(t => !t.IsArchived).ToDictionary(t => t.Id, t => t.Category.Name);
+            var names = budget.Targets.Where(t => !t.IsArchived).ToDictionary(t => t.Id, t => t.Category.Path);
             var invariant = System.Globalization.CultureInfo.InvariantCulture;
             var targets = execution.Targets.Where(t => names.ContainsKey(t.TargetId))
                 .Select(t => new OverviewBudgetTargetDto(t.TargetId, t.CategoryId, names[t.TargetId], Money.Format(t.Amounts.Planned), Money.Format(t.Amounts.Realized), Money.Format(t.Amounts.Committed),
@@ -214,7 +214,7 @@ public sealed class DashboardOverviewService(
         {
             var result = await transactionService.ListAsync(workspaceId, userId, new(first, through, accountId, null, null, false, 1, MaxRecent, ExcludeInvoicePayments: true), ct);
             if (result.Page is null) return new("Unavailable", first, through, 0, []);
-            var items = result.Page.Items.Select(t => new OverviewRecentItemDto(t.Id, t.Type.ToString(), Money.Format(t.Amount), t.TransactionDate, t.Description, t.Category?.Name, t.Account.Name,
+            var items = result.Page.Items.Select(t => new OverviewRecentItemDto(t.Id, t.Type.ToString(), Money.Format(t.Amount), t.TransactionDate, t.Description, t.Category?.Path, t.Account.Name,
                 t.Category is null || t.CategoryNeedsReview)).ToList();
             return new("Complete", first, through, result.Page.TotalCount, items);
         }

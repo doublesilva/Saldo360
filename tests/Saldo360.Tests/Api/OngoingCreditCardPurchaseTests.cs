@@ -168,6 +168,7 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         await using var db = Db();
         await Assert.ThrowsAsync<Npgsql.PostgresException>(() => db.GetService<IMigrator>().MigrateAsync("20261022165204_AddBudgetBootstrapExtensions"));
         db.ChangeTracker.Clear();
+        await db.GetService<IMigrator>().MigrateAsync(); // as migrations mais novas já foram revertidas antes da recusa: volta ao esquema atual para ler o dado
         Assert.Equal(2, (await db.FinancialCreditCardPurchases.SingleAsync()).PreviouslyPaidInstallments);
     }
 
@@ -241,6 +242,39 @@ public sealed class OngoingCreditCardPurchaseTests(PostgresFixture postgres) : P
         Assert.Equal(HttpStatusCode.OK, r.StatusCode);
         return await ReadAsync<JsonElement>(r);
     }
+    [Trait("Category", "CORE")]
+    [Fact]
+    public async Task PurchaseNatureAndSubcategoryAreOptionalInheritedByInstallmentsAndCorrectableAfterTheFact()
+    {
+        await ArrangeAsync();
+        var subResponse = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspace}/categories", owner, new { name = "Eletrônicos", parentCategoryId = category });
+        Assert.Equal(HttpStatusCode.Created, subResponse.StatusCode);
+        var sub = (await ReadAsync<JsonElement>(subResponse)).GetProperty("id").GetGuid();
+        object WithNature(string? nature, Guid? categoryId = null) => new
+        {
+            description = "Compra com natureza", purchaseDate = "2026-03-26", totalAmount = "300.00", installmentCount = 3, categoryId = categoryId ?? category,
+            amountMode = "Total", previouslyPaidInstallments = 0, firstPendingCompetence = "2030-11-01", expenseNature = nature,
+        };
+
+        var omitted = await ReadAsync<JsonElement>(await PostAsync("/purchases", WithNature(null)));
+        var fixedInSub = await PostAsync("/purchases", WithNature("Fixed", sub));
+        var invalid = await PostAsync("/purchases", WithNature("Sometimes"));
+
+        Assert.Equal("Undefined", omitted.GetProperty("expenseNature").GetString()); // parcelas e cartão nunca inferem a natureza
+        Assert.Equal(HttpStatusCode.Created, fixedInSub.StatusCode);
+        var created = await ReadAsync<JsonElement>(fixedInSub);
+        Assert.Equal(("Fixed", 3), (created.GetProperty("expenseNature").GetString(), created.GetProperty("installments").GetArrayLength()));
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+        var purchaseId = created.GetProperty("id").GetGuid();
+        var corrected = await SendWithCsrfAsync(HttpMethod.Put, $"{Root}/purchases/{purchaseId}/expense-nature", owner, new { expenseNature = "Variable" });
+        Assert.Equal(HttpStatusCode.OK, corrected.StatusCode);
+        var after = await ReadAsync<JsonElement>(corrected);
+        Assert.Equal(("Variable", "300.00", sub), (after.GetProperty("expenseNature").GetString(), after.GetProperty("totalAmount").GetString(), after.GetProperty("categoryId").GetGuid()));
+        await using var db = Db();
+        Assert.Equal(["Variable"], await db.FinancialCreditCardPurchases.AsNoTracking().Where(p => p.Id == purchaseId).Select(p => p.Nature.ToString()).ToListAsync());
+    }
+
     private async Task ArrangeAsync()
     {
         owner = await SignInAsync("ongoing-purchase-owner");

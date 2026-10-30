@@ -1,4 +1,5 @@
 import type { CategoryType } from './categories'
+import type { ExpenseNature } from './expenseNature'
 import { CSRF_HEADER, getCsrfToken } from './csrf'
 
 export const TRANSACTION_DESCRIPTION_MAX_LENGTH = 200
@@ -8,6 +9,10 @@ export interface TransactionReference {
   id: string
   name: string
   isActive: boolean
+  /** Categoria principal, quando a referência é uma subcategoria. */
+  parentName?: string | null
+  /** "Categoria / Subcategoria" (ou só o nome). */
+  path?: string
 }
 
 /**
@@ -37,6 +42,8 @@ export interface FinancialTransaction {
   categorySource?: 'None' | 'Mapped' | 'User' | 'Pluggy' | 'Rule' | 'AI' | null
   /** A classificação automática não chegou a uma categoria segura: o usuário precisa decidir. */
   categoryNeedsReview?: boolean
+  /** Tipo de despesa (fixa/variável/não definida). Receita é sempre "Undefined" e não tem o conceito. */
+  expenseNature?: ExpenseNature
 }
 
 export interface TransactionPage {
@@ -54,6 +61,8 @@ export interface TransactionInput {
   description: string
   amount: string
   transactionDate: string
+  /** Só despesa; omitido = "Não definida". */
+  expenseNature?: ExpenseNature
 }
 
 export interface TransactionFilters {
@@ -62,6 +71,7 @@ export interface TransactionFilters {
   accountId: string
   categoryId: string
   type: CategoryType | ''
+  expenseNature: ExpenseNature | ''
   includeCancelled: boolean
 }
 
@@ -71,6 +81,7 @@ export const emptyFilters: TransactionFilters = {
   accountId: '',
   categoryId: '',
   type: '',
+  expenseNature: '',
   includeCancelled: false,
 }
 
@@ -97,6 +108,7 @@ export async function listTransactions(
   if (filters.accountId) query.set('accountId', filters.accountId)
   if (filters.categoryId) query.set('categoryId', filters.categoryId)
   if (filters.type) query.set('type', filters.type)
+  if (filters.expenseNature) query.set('expenseNature', filters.expenseNature)
   if (filters.includeCancelled) query.set('includeCancelled', 'true')
 
   const response = await fetch(`${transactionsUrl(workspaceId)}?${query}`, { signal, headers: jsonHeaders })
@@ -151,4 +163,9 @@ export async function getTransaction(workspaceId: string, id: string, signal?: A
 /** Corrige só a categoria de um lançamento importado (os dados de origem não mudam). categoryId null remove a categoria. */
 export function recategorizeTransaction(workspaceId: string, id: string, categoryId: string | null): Promise<SaveTransactionResult> {
   return write('PUT', `${transactionsUrl(workspaceId, id)}/category`, { categoryId }, 200)
+}
+
+/** Corrige só o tipo de despesa de um lançamento (qualquer origem): categoria, valor, data e saldo não mudam. */
+export function changeTransactionNature(workspaceId: string, id: string, expenseNature: ExpenseNature): Promise<SaveTransactionResult> {
+  return write('PUT', `${transactionsUrl(workspaceId, id)}/expense-nature`, { expenseNature }, 200)
 }

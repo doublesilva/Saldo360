@@ -9,7 +9,7 @@ public static class FinancialClassificationVersions
 {
     public const string Rules = "rule:2026-10-28.1";
     public const string Catalog = "pluggy-catalog:2026-10-28.1";
-    public const string Prompt = "2026-10-28.1";
+    public const string Prompt = "2026-10-30.1";
     public static string Ai(string model) => $"ai:{model}:{Prompt}";
 }
 

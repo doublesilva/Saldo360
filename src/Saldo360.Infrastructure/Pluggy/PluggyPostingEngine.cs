@@ -95,7 +95,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 if (byKey.TryGetValue((row.ConnectionId, row.PluggyAccountId), out var link)) { imported[row.Id] = row; linkOf[row.Id] = link; }
 
             foreach (var posting in await db.PluggyPostings.Where(p => p.WorkspaceId == workspaceId).ToListAsync(ct)) postings[posting.ImportedTransactionId] = posting;
-            categories = await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).Select(c => new MappableCategory(c.Id, c.Name, c.Type, c.IsActive)).ToListAsync(ct);
+            categories = await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).ToMappable(db).ToListAsync(ct);
             await LoadCoreAsync(ct);
             var billRows = await db.PluggyCardBills.Where(b => b.WorkspaceId == workspaceId).ToListAsync(ct);
             foreach (var group in billRows.GroupBy(b => b.AccountLinkId)) bills[group.Key] = group.ToDictionary(b => b.PluggyBillId, StringComparer.Ordinal);
@@ -373,7 +373,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
 
         /// <summary>Categoria do rastro apenas se existir no orcamento com o tipo certo; do contrario o lancamento nasce sem categoria (o usuario revisa).</summary>
         private Guid? ValidCategory(PluggyPosting posting, CategoryType type) =>
-            posting.CategoryId is { } id && categories.Any(c => c.Id == id && c.Type == type) ? id : null;
+            posting.CategoryId is { } id && categories.Any(c => c.Id == id && c.Type == type && c.IsAvailable) ? id : null;
 
         private void ToReview(PluggyPosting posting, string reason)
         {
@@ -477,7 +477,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
         private Guid FallbackCategory()
         {
             if (fallbackCategoryId is { } known) return known;
-            var existing = categories.FirstOrDefault(c => c.Type == CategoryType.Expense && PluggyFinancialMapper.Normalize(c.Name) == PluggyFinancialMapper.Normalize(FallbackCategoryName));
+            var existing = categories.FirstOrDefault(c => c.Type == CategoryType.Expense && !c.IsSubcategory && PluggyFinancialMapper.Normalize(c.Name) == PluggyFinancialMapper.Normalize(FallbackCategoryName));
             if (existing is not null) return (fallbackCategoryId = existing.Id).Value;
             var category = FinancialCategory.Create(workspaceId, FallbackCategoryName, CategoryType.Expense, userId, now);
             db.FinancialCategories.Add(category);

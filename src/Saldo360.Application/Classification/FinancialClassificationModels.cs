@@ -71,11 +71,10 @@ public sealed class FinancialClassificationOptions
     public decimal MaxEstimatedCostUsdPerRun { get; set; } = 0.50m;
     public double MinConfidence { get; set; } = 0.80;
     /// <summary>
-    /// A IA pode SUGERIR uma categoria nova quando nenhuma existente serve. Quem cria é o backend, depois de validar o nome (sem dígitos nem dados
-    /// pessoais, sem duplicar equivalentes, do tipo do lançamento) e dentro do limite abaixo por execução.
+    /// A IA pode SUGERIR uma categoria nova quando nenhuma existente serve, mas a sugestão nunca cadastra nada: com nome válido ela só é registrada
+    /// como motivo da revisão ("Sugestão de categoria nova, não cadastrada: X") e o lançamento continua sem categoria até o usuário decidir.
     /// </summary>
     public bool AllowCategorySuggestions { get; set; } = true;
-    public int MaxNewCategoriesPerRun { get; set; } = 10;
     public int MaxRetries { get; set; } = 2;
     public int RetryDelayMilliseconds { get; set; } = 1500;
     /// <summary>
@@ -99,8 +98,16 @@ public static class FinancialCategoryMatching
         return string.Join(' ', builder.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
-    public static MappableCategory? Find(IReadOnlyCollection<MappableCategory> categories, string name, CategoryType type) =>
-        categories.FirstOrDefault(c => c.IsActive && c.Type == type && Key(c.Name) == Key(name));
+    /// <summary>
+    /// Categoria disponível (ela e a principal ativas) com esse nome e tipo. A principal vence a subcategoria homônima; entre subcategorias
+    /// homônimas de principais diferentes a escolha seria um palpite, então não há correspondência segura (null).
+    /// </summary>
+    public static MappableCategory? Find(IReadOnlyCollection<MappableCategory> categories, string name, CategoryType type)
+    {
+        var key = Key(name);
+        var matches = categories.Where(c => c.IsAvailable && c.Type == type && Key(c.Name) == key).ToList();
+        return matches.FirstOrDefault(c => !c.IsSubcategory) ?? (matches.Count == 1 ? matches[0] : null);
+    }
 
     /// <summary>Existe (ativa ou não) uma categoria equivalente? Criar outra violaria a unicidade por nome e tipo.</summary>
     public static bool ExistsInAnyState(IReadOnlyCollection<MappableCategory> categories, string name, CategoryType type) =>

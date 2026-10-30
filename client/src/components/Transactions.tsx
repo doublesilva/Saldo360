@@ -7,6 +7,7 @@ import {
   createTransaction,
   emptyFilters,
   listTransactions,
+  changeTransactionNature,
   recategorizeTransaction,
   updateTransaction,
   type FinancialTransaction,
@@ -16,6 +17,10 @@ import {
 import { todayInSaoPaulo } from '../dates'
 import { decimalToInput, formatBrlDecimal, formatDate, isZeroDecimal, parseAmount } from '../money'
 import { categorySourceLabels } from '../pluggyFormat'
+import { expenseNatureLabels, expenseNatures, type ExpenseNature } from '../api/expenseNature'
+import { categoryPath, hasAvailableCategory } from '../categoryTree'
+import { CategoryFilterOptions, CategoryOptions } from './CategoryOptions'
+import { ExpenseNatureBadge, ExpenseNatureField } from './ExpenseNatureField'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -57,6 +62,7 @@ export function Transactions({
   const [actionError, setActionError] = useState<string | null>(null)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [recategorizingId, setRecategorizingId] = useState<string | null>(null)
+  const [natureChangingId, setNatureChangingId] = useState<string | null>(null)
 
   // Contas e categorias mudam em outras seções: recarrega ao abrir o formulário e após salvar.
   useEffect(() => {
@@ -87,6 +93,21 @@ export function Transactions({
   const changeFilter = <K extends keyof TransactionFilters>(field: K, value: TransactionFilters[K]) => {
     setFilters((current) => ({ ...current, [field]: value }))
     setPageNumber(1)
+  }
+
+  /** Corrige só o tipo de despesa (fixa/variável/não definida); categoria, valor, data e saldo não mudam. */
+  const handleChangeNature = async (transaction: FinancialTransaction, nature: ExpenseNature) => {
+    setNatureChangingId(transaction.id)
+    setActionError(null)
+    try {
+      const result = await changeTransactionNature(workspaceId, transaction.id, nature)
+      if (!result.ok) setActionError(Object.values(result.errors).flat()[0] ?? 'Não foi possível alterar o tipo de despesa.')
+      reload()
+    } catch (error: unknown) {
+      setActionError(errorMessage(error))
+    } finally {
+      setNatureChangingId(null)
+    }
   }
 
   /** Corrige só a categoria interna de um lançamento importado; valor, data e descrição vêm do banco e não mudam. */
@@ -185,6 +206,22 @@ export function Transactions({
             <option value="Expense">Despesas</option>
           </select>
         </label>
+        {filters.type !== 'Income' && (
+          <label>
+            Tipo de despesa
+            <select
+              value={filters.expenseNature}
+              onChange={(event) => changeFilter('expenseNature', event.target.value as ExpenseNature | '')}
+            >
+              <option value="">Todos</option>
+              {expenseNatures.map((nature) => (
+                <option key={nature} value={nature}>
+                  {expenseNatureLabels[nature]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           Conta
           <select value={filters.accountId} onChange={(event) => changeFilter('accountId', event.target.value)}>
@@ -201,14 +238,7 @@ export function Transactions({
           Categoria
           <select value={filters.categoryId} onChange={(event) => changeFilter('categoryId', event.target.value)}>
             <option value="">Todas</option>
-            {categories
-              .filter((category) => !filters.type || category.type === filters.type)
-              .map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                  {category.isActive ? '' : ' (inativa)'}
-                </option>
-              ))}
+            <CategoryFilterOptions categories={categories} type={filters.type} />
           </select>
         </label>
         <label className="checkbox">
@@ -248,9 +278,10 @@ export function Transactions({
                   <span>{formatDate(transaction.transactionDate)}</span>
                   <span>{typeLabels[transaction.type]}</span>
                   <span>
-                    {transaction.category ? transaction.category.name : 'Sem categoria'}
+                    {transaction.category ? categoryPath(transaction.category) : 'Sem categoria'}
                     {transaction.category && !transaction.category.isActive ? ' (inativa)' : ''}
                   </span>
+                  {transaction.type === 'Expense' && <ExpenseNatureBadge nature={transaction.expenseNature} />}
                   <span>
                     {transaction.account.name}
                     {transaction.account.isActive ? '' : ' (inativa)'}
@@ -275,13 +306,25 @@ export function Transactions({
                           onChange={(event) => void handleRecategorize(transaction, event.target.value)}
                         >
                           <option value="">Sem categoria</option>
-                          {categories
-                            .filter((category) => category.type === transaction.type && (category.isActive || category.id === transaction.category?.id))
-                            .map((category) => (
-                              <option key={category.id} value={category.id}>
-                                {category.name}
-                              </option>
-                            ))}
+                          <CategoryOptions categories={categories} type={transaction.type} keepId={transaction.category?.id} />
+                        </select>
+                      </label>
+                    )}
+                    {/* Importado, realização de previsão ou compra: o tipo de despesa se corrige aqui, sem tocar na categoria. */}
+                    {transaction.type === 'Expense' && (transaction.origin === 'PluggyImport' || transaction.plannedTransactionId) && (
+                      <label className="inline-select">
+                        Tipo de despesa
+                        <select
+                          aria-label={`Tipo de despesa de ${transaction.description}`}
+                          value={transaction.expenseNature ?? 'Undefined'}
+                          disabled={natureChangingId === transaction.id}
+                          onChange={(event) => void handleChangeNature(transaction, event.target.value as ExpenseNature)}
+                        >
+                          {expenseNatures.map((nature) => (
+                            <option key={nature} value={nature}>
+                              {expenseNatureLabels[nature]}
+                            </option>
+                          ))}
                         </select>
                       </label>
                     )}
@@ -339,6 +382,7 @@ type FormState = {
   description: string
   amount: string
   transactionDate: string
+  expenseNature: ExpenseNature
 }
 
 export function TransactionForm({
@@ -364,8 +408,9 @@ export function TransactionForm({
           description: transaction.description,
           amount: decimalToInput(transaction.amount),
           transactionDate: transaction.transactionDate,
+          expenseNature: transaction.expenseNature ?? 'Undefined',
         }
-      : { type: 'Expense', accountId: '', categoryId: '', description: '', amount: '', transactionDate: today },
+      : { type: 'Expense', accountId: '', categoryId: '', description: '', amount: '', transactionDate: today, expenseNature: 'Undefined' },
   )
   const [errors, setErrors] = useState<Record<string, string[]>>({})
   const [busy, setBusy] = useState(false)
@@ -377,18 +422,16 @@ export function TransactionForm({
   const accountOptions = references.accounts.filter(
     (account) => account.isActive || account.id === transaction?.account.id,
   )
-  const categoryOptions = references.categories.filter(
-    (category) =>
-      category.type === form.type && (category.isActive || category.id === transaction?.category?.id),
-  )
   const hasActiveAccount = references.accounts.some((account) => account.isActive)
-  const hasActiveCategory = references.categories.some((category) => category.isActive && category.type === form.type)
+  const hasActiveCategory = hasAvailableCategory(references.categories, form.type)
   const singular = form.type === 'Income' ? 'receita' : 'despesa'
 
   const changeType = (type: CategoryType) =>
     setForm((current) => ({
       ...current,
       type,
+      // Receita não tem tipo de despesa.
+      expenseNature: type === 'Income' ? 'Undefined' : current.expenseNature,
       // Categoria é de um tipo só: ao trocar o tipo, a escolha anterior deixa de valer.
       categoryId: references.categories.some((c) => c.id === current.categoryId && c.type === type) ? current.categoryId : '',
     }))
@@ -424,6 +467,7 @@ export function TransactionForm({
         description: form.description.trim(),
         amount: amount.text,
         transactionDate: form.transactionDate,
+        ...(form.type === 'Expense' ? { expenseNature: form.expenseNature } : {}),
       }
       const result = transaction
         ? await updateTransaction(workspaceId, transaction.id, input)
@@ -506,15 +550,19 @@ export function TransactionForm({
         aria-describedby={describedBy('categoryId')}
       >
         <option value="">Escolha a categoria de {singular}</option>
-        {categoryOptions.map((category) => (
-          <option key={category.id} value={category.id}>
-            {category.name}
-            {category.isActive ? '' : ' — inativa'}
-          </option>
-        ))}
+        <CategoryOptions categories={references.categories} type={form.type} keepId={transaction?.category?.id} />
       </select>
       {fieldError('categoryId')}
       {fieldError('type')}
+
+      {form.type === 'Expense' && (
+        <ExpenseNatureField
+          id="transaction-expense-nature"
+          value={form.expenseNature}
+          onChange={(value) => set('expenseNature', value)}
+          error={errors.expenseNature?.[0]}
+        />
+      )}
 
       <label htmlFor="transaction-description">Descrição</label>
       <input

@@ -4,9 +4,12 @@ using Saldo360.Domain.Common;
 namespace Saldo360.Domain.Categories;
 
 /// <summary>
-/// Categoria de receita ou despesa da família, sem subcategorias. Serve a contas PF e PJ: o escopo vem da
-/// conta do lançamento, não da categoria. O nome é único por família e tipo, sem diferenciar maiúsculas de
-/// minúsculas e contando as inativas. O tipo não muda depois da criação, e não há exclusão física (só desativação).
+/// Categoria de receita ou despesa do orçamento, com no máximo dois níveis (R02): categoria principal e subcategoria opcional. Uma subcategoria é uma
+/// linha desta mesma tabela com <see cref="ParentCategoryId"/>; o lançamento aponta para UMA categoria (a principal ou a subcategoria), então a
+/// classificação nunca diverge. A subcategoria tem o mesmo orçamento e o mesmo tipo da principal e não tem filhas.
+/// Serve a contas PF e PJ: o escopo vem da conta do lançamento, não da categoria. O nome da principal é único por orçamento e tipo, e o da
+/// subcategoria é único dentro da principal, sem diferenciar maiúsculas de minúsculas e contando as inativas. Tipo e principal não mudam depois
+/// da criação, e não há exclusão física (só desativação).
 /// </summary>
 public sealed class FinancialCategory : Entity
 {
@@ -22,6 +25,11 @@ public sealed class FinancialCategory : Entity
     public string Name { get; private set; }
 
     public CategoryType Type { get; private init; }
+
+    /// <summary>Categoria principal desta subcategoria; nulo = esta é uma categoria principal. Imutável.</summary>
+    public Guid? ParentCategoryId { get; private init; }
+
+    public bool IsSubcategory => ParentCategoryId is not null;
 
     public bool IsActive { get; private set; }
 
@@ -40,6 +48,22 @@ public sealed class FinancialCategory : Entity
             CreatedAt = now,
             CreatedByUserId = createdByUserId,
         };
+
+    /// <summary>Subcategoria de <paramref name="parent"/>: herda orçamento e tipo. A aplicação garante que a principal é ativa e não é, ela mesma, uma subcategoria.</summary>
+    public static FinancialCategory CreateSubcategory(FinancialCategory parent, string name, Guid createdByUserId, DateTimeOffset now)
+    {
+        if (parent.IsSubcategory) throw new InvalidOperationException("Subcategoria não pode ter subcategorias.");
+        return new()
+        {
+            WorkspaceId = parent.WorkspaceId,
+            Name = name,
+            Type = parent.Type,
+            ParentCategoryId = parent.Id,
+            IsActive = true,
+            CreatedAt = now,
+            CreatedByUserId = createdByUserId,
+        };
+    }
 
     /// <summary>Renomeia e ativa/desativa. Família, tipo, criador e data de criação não mudam.</summary>
     /// <param name="name">Já normalizado por <see cref="TryNormalizeName"/>.</param>

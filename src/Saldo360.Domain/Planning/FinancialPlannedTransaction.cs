@@ -32,6 +32,9 @@ public sealed class FinancialPlannedTransaction : Entity
     /// <summary>Receita ou despesa; o mesmo tipo da categoria (garantido também por FK).</summary>
     public CategoryType Type { get; private set; }
 
+    /// <summary>Natureza da despesa; a realização a leva ao lançamento. Receita é sempre <see cref="ExpenseNature.Undefined"/>.</summary>
+    public ExpenseNature Nature { get; private set; }
+
     public string Description { get; private set; }
 
     /// <summary>Sempre positivo, até duas casas decimais.</summary>
@@ -88,7 +91,7 @@ public sealed class FinancialPlannedTransaction : Entity
     /// </summary>
     public TransactionDetails? ToRealizationDetails(
         decimal? amount, DateOnly? transactionDate, DateOnly today, out Dictionary<string, string[]> errors) =>
-        TransactionDetails.TryCreate(AccountId, CategoryId, Type.ToString(), Description, amount, transactionDate, today, out errors);
+        TransactionDetails.TryCreate(AccountId, CategoryId, Type.ToString(), Description, amount, transactionDate, today, out errors, Nature.ToString());
 
     /// <summary>Cancela preservando o registro. Idempotente: false se já estava cancelada (nada muda).</summary>
     public bool Cancel(Guid userId, DateTimeOffset now)
@@ -120,6 +123,7 @@ public sealed class FinancialPlannedTransaction : Entity
         AccountId = details.AccountId;
         CategoryId = details.CategoryId;
         Type = details.Type;
+        Nature = details.Type == CategoryType.Expense ? details.Nature : ExpenseNature.Undefined;
         Description = details.Description;
         Amount = details.Amount;
         DueDate = details.DueDate;
@@ -133,8 +137,9 @@ public sealed class FinancialPlannedTransaction : Entity
 public sealed record PlannedTransactionDetails
 {
     private PlannedTransactionDetails(
-        Guid accountId, Guid categoryId, CategoryType type, string description, decimal amount, DateOnly dueDate)
+        Guid accountId, Guid categoryId, CategoryType type, string description, decimal amount, DateOnly dueDate, ExpenseNature nature)
     {
+        Nature = nature;
         AccountId = accountId;
         CategoryId = categoryId;
         Type = type;
@@ -149,6 +154,8 @@ public sealed record PlannedTransactionDetails
 
     public CategoryType Type { get; }
 
+    public ExpenseNature Nature { get; }
+
     public string Description { get; }
 
     public decimal Amount { get; }
@@ -162,7 +169,7 @@ public sealed record PlannedTransactionDetails
     /// </summary>
     public static PlannedTransactionDetails? TryCreate(
         Guid? accountId, Guid? categoryId, string? type, string? description, decimal? amount, DateOnly? dueDate,
-        out Dictionary<string, string[]> errors)
+        out Dictionary<string, string[]> errors, string? expenseNature = null)
     {
         errors = [];
         var trimmedDescription = description?.Trim() ?? string.Empty;
@@ -180,6 +187,12 @@ public sealed record PlannedTransactionDetails
         if (!CategoryTypes.TryParse(type, out var parsedType))
         {
             errors["type"] = ["Tipo inválido. Use Income (receita) ou Expense (despesa)."];
+        }
+
+        var nature = ExpenseNature.Undefined;
+        if (!errors.ContainsKey("type") && !ExpenseNatures.TryResolve(expenseNature, parsedType, out nature, out var natureError))
+        {
+            errors["expenseNature"] = [natureError!];
         }
 
         if (trimmedDescription.Length == 0)
@@ -210,7 +223,7 @@ public sealed record PlannedTransactionDetails
         }
 
         return errors.Count == 0
-            ? new PlannedTransactionDetails(accountId!.Value, categoryId!.Value, parsedType, trimmedDescription, amount!.Value, dueDate!.Value)
+            ? new PlannedTransactionDetails(accountId!.Value, categoryId!.Value, parsedType, trimmedDescription, amount!.Value, dueDate!.Value, nature)
             : null;
     }
 }

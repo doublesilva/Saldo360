@@ -229,6 +229,7 @@ describe('Transactions — formulário', () => {
       description: 'Mercado da semana',
       amount: '1234.56',
       transactionDate: '2026-10-05',
+      expenseNature: 'Undefined', // despesa sempre envia o tipo, e o padrão é "Não definida"
     })
   })
 
@@ -312,6 +313,7 @@ describe('Transactions — formulário', () => {
       description: 'Feira do mês (corrigida)',
       amount: '1234.56',
       transactionDate: '2026-10-05',
+      expenseNature: 'Undefined', // despesa sempre envia o tipo, e o padrão é "Não definida"
     })
   })
 

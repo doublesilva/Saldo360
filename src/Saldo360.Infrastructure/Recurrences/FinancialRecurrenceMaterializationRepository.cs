@@ -54,7 +54,7 @@ internal sealed class FinancialRecurrenceMaterializationRepository(Saldo360DbCon
                     continue;
                 }
 
-                var details = PlannedTransactionDetails.TryCreate(recurrence.FinancialAccountId!.Value, recurrence.FinancialCategoryId, recurrence.Type.ToString(), recurrence.Description, recurrence.Amount, occurrence.Date, out var errors);
+                var details = PlannedTransactionDetails.TryCreate(recurrence.FinancialAccountId!.Value, recurrence.FinancialCategoryId, recurrence.Type.ToString(), recurrence.Description, recurrence.Amount, occurrence.Date, out var errors, recurrence.Nature.ToString());
                 if (details is null) throw new InvalidOperationException($"Não foi possível materializar a ocorrência {occurrence.Sequence}: {string.Join(" ", errors.SelectMany(x => x.Value))}");
                 var planned = FinancialPlannedTransaction.Create(recurrence.WorkspaceId, details, userId, now);
                 db.FinancialPlannedTransactions.Add(planned);
@@ -90,7 +90,7 @@ internal sealed class FinancialRecurrenceMaterializationRepository(Saldo360DbCon
                 continue;
             }
             // Occurrence is the scheduled recurring charge date, not a bank due date or an invoice payment.
-            var charge = FinancialCreditCardPurchase.Create(r.WorkspaceId, cardId, r.FinancialCategoryId, r.Description, o.Date, o.Amount, 1, userId, now);
+            var charge = FinancialCreditCardPurchase.Create(r.WorkspaceId, cardId, r.FinancialCategoryId, r.Description, o.Date, o.Amount, 1, userId, now, r.Nature);
             var cycle = CreditCardInvoiceCalendarCalculator.ForInstallment(o.Date, 1, card.ClosingDay, card.DueDay);
             var invoice = invoices.SingleOrDefault(x => x.ClosingDate == cycle.ClosingDate);
             if (invoice is null)

@@ -25,7 +25,7 @@ public static class FinancialCategoryEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await categories.CreateAsync(workspaceId, userId, request?.Name, request?.Type, cancellationToken);
+        var result = await categories.CreateAsync(workspaceId, userId, request?.Name, request?.Type, request?.ParentCategoryId, cancellationToken);
         return ToResponse(result, category => Results.Created($"/api/financial-workspaces/{workspaceId}/categories/{category.Id}", category));
     }
 
@@ -82,11 +82,12 @@ public static class FinancialCategoryEndpoints
 }
 
 /// <summary>
-/// Cadastro de categoria: nome e tipo (<c>Income</c> ou <c>Expense</c>). Família vem da rota e criador da sessão;
+/// Cadastro de categoria: nome e tipo (<c>Income</c> ou <c>Expense</c>) para uma categoria principal; para uma subcategoria, nome e
+/// <c>parentCategoryId</c> (o tipo é o da principal e, se enviado, precisa coincidir). Orçamento vem da rota e criador da sessão;
 /// campos como workspaceId, createdByUserId, isActive ou createdAt são recusados (400).
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record CreateCategoryRequest(string? Name, string? Type);
+public sealed record CreateCategoryRequest(string? Name, string? Type, Guid? ParentCategoryId = null);
 
 /// <summary>Edição: nome e situação. O tipo é imutável: enviá-lo (ou qualquer campo do servidor) dá 400.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

@@ -131,20 +131,7 @@ public sealed class PluggyCategorizationService(IPluggyCategorizationRepository 
             }
         }
 
-        // Sugestões de categoria nova da IA: o backend (nunca a IA) cria cada categoria uma única vez, já validada, e só então aplica.
-        var aiProposals = final.Values.Where(o => o.Source == FinancialClassificationSource.AI && o.ProposedName is not null).ToList();
-        if (aiProposals.Count > 0)
-        {
-            created += await repository.EnsureCategoriesAsync(workspaceId, userId, aiProposals.Select(o => (o.ProposedName!, o.ProposedType!.Value)).Distinct().ToList(), now, ct);
-            categories = await repository.ListCategoriesAsync(workspaceId, ct);
-            foreach (var proposal in aiProposals)
-            {
-                var match = FinancialCategoryMatching.Find(categories, proposal.ProposedName!, proposal.ProposedType!.Value);
-                final[proposal.Key] = match is null
-                    ? proposal with { CategoryId = null, ProposedName = null, ProposedType = null, Source = null, NeedsReview = true, Reason = "Categoria sugerida não pôde ser criada" }
-                    : proposal with { CategoryId = match.Id, ProposedName = null, ProposedType = null };
-            }
-        }
+        // Sugestão de categoria nova da IA não é cadastro autorizado: o classificador já a devolve como revisão e nada é criado aqui.
 
         var decisions = new List<PluggyCategoryDecision>();
         int byPluggy = 0, byRule = 0, byAi = 0, unresolved = 0;

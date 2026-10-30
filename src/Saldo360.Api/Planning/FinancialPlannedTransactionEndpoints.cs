@@ -38,12 +38,12 @@ public static class FinancialPlannedTransactionEndpoints
 
     /// <summary>
     /// Página de previsões (data prevista crescente, Id crescente). Filtros: from/to sobre a data prevista (yyyy-MM-dd,
-    /// inclusivos), accountId, categoryId, type. Por padrão só pendentes; includeRealized=true e includeCancelled=true
+    /// inclusivos), accountId, categoryId (principal inclui as subcategorias), type, expenseNature. Por padrão só pendentes; includeRealized=true e includeCancelled=true
     /// acrescentam realizadas e canceladas. pageSize de 1 a 100.
     /// </summary>
     private static async Task<IResult> List(
         Guid workspaceId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
-        bool? includeRealized, bool? includeCancelled, int? page, int? pageSize, CurrentUser currentUser,
+        bool? includeRealized, bool? includeCancelled, int? page, int? pageSize, string? expenseNature, CurrentUser currentUser,
         FinancialPlannedTransactionService planned, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -60,7 +60,7 @@ public static class FinancialPlannedTransactionEndpoints
         }
 
         var query = new PlannedTransactionQuery(
-            fromDate, toDate, accountId, categoryId, type, includeRealized ?? false, includeCancelled ?? false, page, pageSize);
+            fromDate, toDate, accountId, categoryId, type, includeRealized ?? false, includeCancelled ?? false, page, pageSize, expenseNature);
         var result = await planned.ListAsync(workspaceId, userId, query, cancellationToken);
         return result switch
         {
@@ -148,7 +148,7 @@ public static class FinancialPlannedTransactionEndpoints
         };
 
     private static PlannedTransactionInput ToInput(PlannedTransactionRequest? request) => new(
-        request?.AccountId, request?.CategoryId, request?.Type, request?.Description, request?.Amount, request?.DueDate);
+        request?.AccountId, request?.CategoryId, request?.Type, request?.Description, request?.Amount, request?.DueDate, request?.ExpenseNature);
 }
 
 /// <summary>
@@ -163,7 +163,8 @@ public sealed record PlannedTransactionRequest(
     string? Type,
     string? Description,
     decimal? Amount,
-    DateOnly? DueDate);
+    DateOnly? DueDate,
+    string? ExpenseNature = null);
 
 /// <summary>Realização: só valor e data efetivos. Conta, categoria, tipo e descrição vêm da previsão.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -188,7 +189,8 @@ public sealed record PlannedTransactionResponse(
     string Currency,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
-    DateTimeOffset? CancelledAt)
+    DateTimeOffset? CancelledAt,
+    ExpenseNature ExpenseNature = ExpenseNature.Undefined)
 {
     public static PlannedTransactionResponse From(FinancialPlannedTransactionDto dto) => new(
         dto.Id,
@@ -204,7 +206,8 @@ public sealed record PlannedTransactionResponse(
         dto.Currency,
         dto.CreatedAt,
         dto.UpdatedAt,
-        dto.CancelledAt);
+        dto.CancelledAt,
+        dto.Nature);
 }
 
 public sealed record PlannedTransactionPageResponse(IReadOnlyList<PlannedTransactionResponse> Items, int Page, int PageSize, int TotalCount)

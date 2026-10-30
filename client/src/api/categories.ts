@@ -4,13 +4,22 @@ export type CategoryType = 'Income' | 'Expense'
 
 export const CATEGORY_NAME_MAX_LENGTH = 100
 
-/** Categoria de receita ou despesa da família. O tipo não muda depois de criada. */
+/**
+ * Categoria de receita ou despesa da família. O tipo não muda depois de criada. Há no máximo dois níveis: a principal e a subcategoria
+ * (`parentCategoryId` preenchido, mesmo tipo da principal). `isAvailable` diz se pode receber NOVAS classificações (ativa e, numa
+ * subcategoria, com a principal também ativa); registros já classificados continuam legíveis de qualquer forma.
+ */
 export interface FinancialCategory {
   id: string
   name: string
   type: CategoryType
   isActive: boolean
   createdAt: string
+  parentCategoryId?: string | null
+  parentName?: string | null
+  isAvailable?: boolean
+  /** "Categoria / Subcategoria", ou só o nome numa categoria principal. */
+  path?: string
 }
 
 /** Erros por campo (400) ou nome duplicado (409, em `name`). */
@@ -50,14 +59,20 @@ async function send(method: 'POST' | 'PUT', url: string, body: unknown, expected
   }
   if (response.status === 409) {
     const problem = (await response.json().catch(() => ({}))) as { title?: string }
-    return { ok: false, errors: { name: [problem.title ?? 'Já existe uma categoria com esse nome e tipo.'] } }
+    return { ok: false, errors: { name: [problem.title ?? 'Já existe uma categoria com esse nome neste nível.'] } }
   }
   if (response.status === 404) throw new Error('Categoria ou orçamento não encontrado.')
   throw new Error(`Falha ao salvar a categoria (HTTP ${response.status}).`)
 }
 
-export function createCategory(workspaceId: string, name: string, type: CategoryType): Promise<SaveCategoryResult> {
-  return send('POST', categoriesUrl(workspaceId), { name, type }, 201)
+/** Cria uma categoria principal ou, com `parentCategoryId`, uma subcategoria (o tipo é o da principal e não é enviado). */
+export function createCategory(
+  workspaceId: string,
+  name: string,
+  type: CategoryType,
+  parentCategoryId?: string,
+): Promise<SaveCategoryResult> {
+  return send('POST', categoriesUrl(workspaceId), parentCategoryId ? { name, parentCategoryId } : { name, type }, 201)
 }
 
 /** Renomeia e/ou ativa/desativa. O tipo não é enviado: é imutável. */

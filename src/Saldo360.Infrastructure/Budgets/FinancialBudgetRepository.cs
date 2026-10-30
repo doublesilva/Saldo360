@@ -19,13 +19,19 @@ internal sealed class FinancialBudgetRepository(Saldo360DbContext db) : IFinanci
     public Task<FinancialBudgetTarget?> FindTargetAsync(Guid budgetId, Guid targetId, CancellationToken cancellationToken) =>
         db.FinancialBudgetTargets.SingleOrDefaultAsync(item => item.BudgetId == budgetId && item.Id == targetId, cancellationToken);
 
+    public Task<bool> RelatedTargetExistsAsync(Guid budgetId, Guid categoryId, CancellationToken cancellationToken) =>
+        db.FinancialBudgetTargets.AnyAsync(target => target.BudgetId == budgetId && !target.IsArchived && target.CategoryId != categoryId
+            && (db.FinancialCategories.Any(c => c.Id == target.CategoryId && c.ParentCategoryId == categoryId)
+                || db.FinancialCategories.Any(c => c.Id == categoryId && c.ParentCategoryId == target.CategoryId)), cancellationToken);
+
     public Task<bool> TargetExistsAsync(Guid budgetId, Guid categoryId, CancellationToken cancellationToken) =>
         db.FinancialBudgetTargets.AnyAsync(item => item.BudgetId == budgetId && item.CategoryId == categoryId, cancellationToken);
 
     public Task<BudgetCategoryState?> GetCategoryAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) =>
         db.FinancialCategories.AsNoTracking()
             .Where(item => item.WorkspaceId == workspaceId && item.Id == categoryId)
-            .Select(item => new BudgetCategoryState(item.Name, item.IsActive, item.Type == CategoryType.Expense))
+            .Select(item => new BudgetCategoryState(item.Name, item.IsActive && (item.ParentCategoryId == null
+                || db.FinancialCategories.Any(p => p.Id == item.ParentCategoryId && p.IsActive)), item.Type == CategoryType.Expense))
             .SingleOrDefaultAsync(cancellationToken);
 
     public async Task<bool> TryAddBudgetAsync(FinancialBudget budget, CancellationToken cancellationToken)
@@ -84,7 +90,7 @@ internal sealed class FinancialBudgetRepository(Saldo360DbContext db) : IFinanci
             {
                 target.BudgetId,
                 Dto = new FinancialBudgetTargetDto(target.Id, target.Name, target.PlannedAmount, target.GroupingType,
-                    new FinancialBudgetCategoryDto(category.Id, category.Name, category.IsActive), target.IsArchived,
+                    new FinancialBudgetCategoryDto(category.Id, category.Name, category.IsActive, db.FinancialCategories.Where(p => p.Id == category.ParentCategoryId).Select(p => p.Name).FirstOrDefault()), target.IsArchived,
                     target.CreatedAt, target.UpdatedAt, target.ArchivedAt),
             }).ToListAsync(cancellationToken);
         return entities.Select(item =>

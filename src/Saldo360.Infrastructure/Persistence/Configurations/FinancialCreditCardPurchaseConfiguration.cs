@@ -24,6 +24,8 @@ internal sealed class FinancialCreditCardPurchaseConfiguration : IEntityTypeConf
         builder.Property(p => p.Description).HasMaxLength(FinancialCreditCardPurchase.DescriptionMaxLength).IsRequired();
         builder.Property(p => p.TotalAmount).HasColumnType("numeric"); builder.Property(p => p.PurchaseDate).HasColumnType("date");
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
+        builder.Property(p => p.Nature).HasColumnName("expense_nature").HasConversion<string>().HasMaxLength(20).HasDefaultValue(Saldo360.Domain.Categories.ExpenseNature.Undefined);
+        builder.ToTable(table => table.HasCheckConstraint("ck_credit_card_purchases_expense_nature", ExpenseNatureCheck.Sql(null, "expense_nature")));
         builder.HasIndex(p => new { p.WorkspaceId, p.CreditCardId, p.PurchaseDate });
         builder.HasAlternateKey(p => new { p.WorkspaceId, p.Id });
         builder.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(p => p.WorkspaceId).OnDelete(DeleteBehavior.Restrict);

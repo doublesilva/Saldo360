@@ -210,8 +210,17 @@ public static class PluggyFinancialMapper
     }
 }
 
-/// <summary>Categoria do Saldo360 existente no orçamento (somente leitura para o mapeamento).</summary>
-public sealed record MappableCategory(Guid Id, string Name, CategoryType Type, bool IsActive);
+/// <summary>
+/// Categoria do Saldo360 existente no orçamento (somente leitura para o mapeamento). Subcategoria traz a principal em <c>ParentId</c>/<c>ParentName</c>;
+/// ela só está disponível para classificar algo novo quando ela e a principal estão ativas.
+/// </summary>
+public sealed record MappableCategory(Guid Id, string Name, CategoryType Type, bool IsActive, Guid? ParentId = null, string? ParentName = null, bool ParentIsActive = true)
+{
+    public bool IsSubcategory => ParentId is not null;
+    public bool IsAvailable => IsActive && (ParentId is null || ParentIsActive);
+    /// <summary>"Principal / Sub" para subcategorias; o nome simples para as principais.</summary>
+    public string Label => ParentName is null ? Name : $"{ParentName} / {Name}";
+}
 
 /// <summary>
 /// Mapeia a categoria textual da Pluggy para uma categoria do orçamento quando houver correspondência segura. Delega ao catálogo único

@@ -221,7 +221,7 @@ internal sealed class PluggyFinancialRepository(Saldo360DbContext db) : IPluggyF
     }
 
     public async Task<IReadOnlyList<MappableCategory>> ListCategoriesAsync(Guid workspaceId, CancellationToken ct) =>
-        await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).Select(c => new MappableCategory(c.Id, c.Name, c.Type, c.IsActive)).ToListAsync(ct);
+        await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).ToMappable(db).ToListAsync(ct);
 
     public Task<DateOnly?> EarliestAppliedDateAsync(Guid workspaceId, Guid linkId, CancellationToken ct) =>
         db.PluggyPostings.AsNoTracking().Where(p => p.WorkspaceId == workspaceId && p.AccountLinkId == linkId && p.State == PluggyPostingState.Applied)

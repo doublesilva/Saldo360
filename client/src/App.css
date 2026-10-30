@@ -738,6 +738,70 @@ button {
   gap: 0.5rem;
 }
 
+/* Categoria principal com suas subcategorias (até dois níveis). */
+.category-list > .category-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.subcategory-list {
+  list-style: none;
+  margin: 0 0 0 1.25rem;
+  padding: 0 0 0 0.75rem;
+  border-left: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.category--sub {
+  font-size: 0.95em;
+}
+
+.category-add--sub {
+  margin-left: 1.25rem;
+}
+
+.category-add__parent {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* Tipo de despesa: sempre em texto; a borda só reforça. */
+.badge--nature-fixed {
+  color: var(--accent);
+}
+
+.badge--nature-variable {
+  color: var(--ok);
+  border-style: dashed;
+}
+
+.badge--nature-undefined {
+  border-style: dotted;
+}
+
+.inline-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Seletores dentro das ações de um lançamento/compra (categoria, tipo de despesa): ocupam a linha toda no celular. */
+@media (max-width: 640px) {
+  .form__actions > label {
+    flex: 1 1 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .form__actions > label select {
+    width: 100%;
+  }
+}
+
 .transactions {
   margin-top: 1rem;
   padding-top: 0.5rem;

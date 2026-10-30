@@ -49,7 +49,14 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
 
         if (filter.CategoryId is { } categoryId)
         {
-            query = query.Where(p => p.CategoryId == categoryId);
+            // Categoria principal inclui as subcategorias; subcategoria traz só as dela.
+            query = query.Where(p => p.CategoryId == categoryId
+                || db.FinancialCategories.Any(c => c.WorkspaceId == workspaceId && c.Id == p.CategoryId && c.ParentCategoryId == categoryId));
+        }
+
+        if (filter.Nature is { } nature)
+        {
+            query = query.Where(p => p.Nature == nature);
         }
 
         if (filter.Type is { } type)
@@ -120,7 +127,8 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
     public Task<CategoryState?> GetCategoryStateAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken) =>
         db.FinancialCategories
             .Where(c => c.WorkspaceId == workspaceId && c.Id == categoryId)
-            .Select(c => new CategoryState(c.Type, c.IsActive))
+            .Select(c => new CategoryState(c.Type, c.IsActive && (c.ParentCategoryId == null
+                || db.FinancialCategories.Any(p => p.Id == c.ParentCategoryId && p.IsActive))))
             .SingleOrDefaultAsync(cancellationToken);
 
     // Conta e categoria pela mesma família (as FKs garantem que existem) e o lançamento efetivo ATIVO, se houver
@@ -141,7 +149,7 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
             p.DueDate,
             p.Description,
             new TransactionReferenceDto(a.Id, a.Name, a.IsActive),
-            new TransactionReferenceDto(c.Id, c.Name, c.IsActive),
+            new TransactionReferenceDto(c.Id, c.Name, c.IsActive, db.FinancialCategories.Where(p => p.Id == c.ParentCategoryId).Select(p => p.Name).FirstOrDefault()),
             p.IsCancelled
                 ? PlannedTransactionStatus.Cancelled
                 : r != null ? PlannedTransactionStatus.Realized : PlannedTransactionStatus.Pending,
@@ -150,7 +158,8 @@ internal sealed class FinancialPlannedTransactionRepository(Saldo360DbContext db
             p.Currency,
             p.CreatedAt,
             p.UpdatedAt,
-            p.CancelledAt);
+            p.CancelledAt,
+            p.Nature);
 
     private sealed class Lock(Saldo360DbContext db, FinancialPlannedTransaction planned, FinancialTransaction? active)
         : IPlannedTransactionLock

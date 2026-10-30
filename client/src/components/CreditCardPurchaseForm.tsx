@@ -4,6 +4,9 @@ import type { FinancialCategory } from '../api/categories'
 import { todayInSaoPaulo } from '../dates'
 import { formatBrlDecimal, parseAmount } from '../money'
 import { OperationalError } from './OperationalFeedback'
+import type { ExpenseNature } from '../api/expenseNature'
+import { CategoryOptions } from './CategoryOptions'
+import { ExpenseNatureField } from './ExpenseNatureField'
 
 export function CreditCardPurchaseForm({ workspaceId, cards, cardId, categories, purchase, competence, onDone, onCancel }: {
   workspaceId: string; cards: FinancialCreditCard[]; cardId: string; categories: FinancialCategory[]; purchase?: CreditCardPurchase; competence?: string; onDone: (cardId: string) => void; onCancel: () => void
@@ -20,11 +23,12 @@ export function CreditCardPurchaseForm({ workspaceId, cards, cardId, categories,
   const [fraction, setFraction] = useState('')
   const [firstMonth, setFirstMonth] = useState(purchase?.firstPendingCompetence?.slice(0, 7) ?? competence ?? '')
   const [category, setCategory] = useState(purchase?.categoryId ?? '')
+  const [expenseNature, setExpenseNature] = useState<ExpenseNature>(purchase?.expenseNature ?? 'Undefined')
   const [preview, setPreview] = useState<{ key: string; data: PurchasePreview } | null>(null)
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
   const inFlight = useRef(false)
-  const key = JSON.stringify([selected, description, date, amount, amountMode, count, paid, numberMode, fraction, firstMonth, category])
+  const key = JSON.stringify([selected, description, date, amount, amountMode, count, paid, numberMode, fraction, firstMonth, category, expenseNature])
   const current = preview?.key === key ? preview.data : null
   const input = (): PurchaseInput => {
     const parsed = parseAmount(amount, 'O valor')
@@ -36,7 +40,7 @@ export function CreditCardPurchaseForm({ workspaceId, cards, cardId, categories,
     if (kind === 'single' && n !== 1 || kind === 'installments' && n < 2) throw new Error('Confira o tipo e a quantidade de parcelas.')
     if (!description.trim() || !date || !category || !selected) throw new Error('Informe cartão, descrição, data e categoria.')
     if (already > 0 && !firstMonth) throw new Error('Informe a primeira competência pendente.')
-    return { description, purchaseDate: date, totalAmount: parsed.text, installmentCount: n, categoryId: category, amountMode, previouslyPaidInstallments: already, firstPendingCompetence: firstMonth ? `${firstMonth}-01` : null }
+    return { description, purchaseDate: date, totalAmount: parsed.text, installmentCount: n, categoryId: category, amountMode, previouslyPaidInstallments: already, firstPendingCompetence: firstMonth ? `${firstMonth}-01` : null, expenseNature }
   }
   const run = async (save: boolean) => {
     if (inFlight.current) return
@@ -67,7 +71,9 @@ export function CreditCardPurchaseForm({ workspaceId, cards, cardId, categories,
     {numberMode === 'paid' ? <div className="form-row"><label>Número de parcelas<input type="number" min="2" max="120" value={count} onChange={e => { setCount(e.target.value); setPaid('0') }} /></label><label>Parcelas já pagas<input type="number" min="0" max={Number(count) - 1} value={paid} onChange={e => setPaid(e.target.value)} /></label></div> : <label>Primeira parcela pendente<input placeholder="7/10" value={fraction} onChange={e => setFraction(e.target.value)} /></label>}</>}
     <p className="meta">Uma parcela significa compra à vista. Parcelas anteriores pagas não geram pagamentos nem movimentos bancários.</p>
     <label>Primeira competência pendente (opcional para compra nova)<input type="month" value={firstMonth} onChange={e => setFirstMonth(e.target.value)} /></label>
-    <label>Categoria<select value={category} onChange={e => setCategory(e.target.value)} required><option value="">Selecionar categoria</option>{categories.filter(c => c.type === 'Expense' && (c.isActive || c.id === category)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+    <label>Categoria<select value={category} onChange={e => setCategory(e.target.value)} required><option value="">Selecionar categoria</option><CategoryOptions categories={categories} type="Expense" keepId={purchase?.categoryId} /></select></label>
+    <ExpenseNatureField id="purchase-expense-nature" value={expenseNature} onChange={setExpenseNature} disabled={busy} />
+    <p className="meta">Cartão e parcelas não definem o tipo de despesa: ele só muda quando você escolhe.</p>
     <button type="button" disabled={busy} onClick={() => void run(false)}>Revisar resumo</button>
     {current && <section aria-label="Resumo da compra" className="purchase-preview"><h6>Resumo calculado pelo servidor</h6><p>Total original: <strong>{formatBrlDecimal(current.totalAmount)}</strong></p><p>Já pagas: {current.previouslyPaidInstallments} · Primeira pendente: {current.previouslyPaidInstallments + 1}/{current.installmentCount}</p><p>Restam {current.installments.length} parcelas · Valor restante: <strong>{formatBrlDecimal(current.remainingAmount)}</strong></p><ul>{current.installments.map(i => <li key={i.number}>{i.number}/{current.installmentCount} · {i.competence} · vence {i.dueDate} · {formatBrlDecimal(i.amount)}</li>)}</ul></section>}
     {error != null && <OperationalError error={error} />}

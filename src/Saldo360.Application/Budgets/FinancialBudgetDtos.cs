@@ -2,7 +2,10 @@ using Saldo360.Domain.Budgets;
 
 namespace Saldo360.Application.Budgets;
 
-public sealed record FinancialBudgetCategoryDto(Guid Id, string Name, bool IsActive);
+public sealed record FinancialBudgetCategoryDto(Guid Id, string Name, bool IsActive, string? ParentName = null)
+{
+    public string Path => ParentName is null ? Name : $"{ParentName} / {Name}";
+}
 
 public sealed record FinancialBudgetTargetDto(
     Guid Id,
@@ -36,6 +39,7 @@ public sealed record BudgetResult(
 {
     public const string DuplicateBudgetMessage = "Já existe um orçamento para esta família e competência.";
     public const string DuplicateTargetMessage = "Já existe uma meta para esta categoria neste orçamento.";
+    public const string OverlappingTargetMessage = "Já existe meta para a categoria principal ou para uma subcategoria desta: use um só nível para o mesmo gasto não ser contado duas vezes.";
     public const string ArchivedMessage = "Orçamento ou meta arquivada não pode ser alterada.";
     public static BudgetResult NotFound { get; } = new(BudgetAccess.NotFound, null, null);
     public static BudgetResult Invalid(IDictionary<string, string[]> errors) => new(BudgetAccess.Invalid, null, errors);

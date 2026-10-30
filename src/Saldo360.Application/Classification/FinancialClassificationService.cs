@@ -70,7 +70,7 @@ public sealed class FinancialClassificationService(IFinancialClassificationModel
                 continue;
             }
             var type = input.Kind == FinancialMovementKind.Income ? CategoryType.Income : CategoryType.Expense;
-            if (!categories.Any(c => c.IsActive && c.Type == type))
+            if (!categories.Any(c => c.IsAvailable && c.Type == type))
             {
                 outcomes.Add(new(input.Key, null, null, null, null, true, "Não há categoria elegível desse tipo", FinancialClassificationVersions.Rules));
                 continue;
@@ -89,15 +89,15 @@ public sealed class FinancialClassificationService(IFinancialClassificationModel
         }
 
         // "Outros" é o marcador de "sem categoria" das compras de cartão: oferecê-lo à IA só estimularia a resposta preguiçosa.
-        var eligible = categories.Where(c => c.IsActive && FinancialCategoryMatching.Key(c.Name) != "outros").OrderBy(c => c.Type).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        var codes = eligible.Select((c, i) => new FinancialModelCategory(i + 1, c.Name, c.Type)).ToList();
+        // Só categorias disponíveis (ela e a principal ativas). A subcategoria vai como "Principal / Sub", que é como o usuário a enxerga.
+        var eligible = categories.Where(c => c.IsAvailable && FinancialCategoryMatching.Key(c.Name) != "outros").OrderBy(c => c.Type).ThenBy(c => c.Label, StringComparer.OrdinalIgnoreCase).ToList();
+        var codes = eligible.Select((c, i) => new FinancialModelCategory(i + 1, c.Label, c.Type)).ToList();
         var codeToCategory = codes.ToDictionary(c => c.Code, c => eligible[c.Code - 1]);
 
         var remaining = candidates.Take(Math.Max(0, options.MaxItemsPerRun)).ToList();
         foreach (var skipped in candidates.Skip(remaining.Count)) outcomes.Add(Skipped(skipped.Input.Key, "Limite de itens da execução"));
         if (candidates.Count > remaining.Count) stopped = "MaxItemsPerRun";
 
-        var newNames = new HashSet<string>(StringComparer.Ordinal);
         var batchSize = Math.Clamp(options.BatchSize, 1, 50);
         for (var offset = 0; offset < remaining.Count; offset += batchSize)
         {
@@ -136,7 +136,7 @@ public sealed class FinancialClassificationService(IFinancialClassificationModel
             for (var i = 0; i < batch.Count; i++)
             {
                 var input = batch[i].Input;
-                outcomes.Add(byIndex.TryGetValue(i, out var d) ? Validate(input, d, codeToCategory, categories, newNames, method) : Review(input.Key, "Sem resposta válida da IA", method));
+                outcomes.Add(byIndex.TryGetValue(i, out var d) ? Validate(input, d, codeToCategory, categories, method) : Review(input.Key, "Sem resposta válida da IA", method));
             }
         }
 
@@ -144,7 +144,7 @@ public sealed class FinancialClassificationService(IFinancialClassificationModel
     }
 
     private FinancialClassificationOutcome Validate(FinancialClassificationInput input, FinancialModelDecision decision, Dictionary<int, MappableCategory> codeToCategory,
-        IReadOnlyCollection<MappableCategory> categories, HashSet<string> newNames, string method)
+        IReadOnlyCollection<MappableCategory> categories, string method)
     {
         var expected = input.Kind == FinancialMovementKind.Income ? CategoryType.Income : CategoryType.Expense;
         var reason = SafeReason(decision.Reason);
@@ -152,30 +152,26 @@ public sealed class FinancialClassificationService(IFinancialClassificationModel
         if (double.IsNaN(decision.Confidence) || decision.Confidence < options.MinConfidence) return Review(input.Key, reason ?? "Confiança insuficiente", method);
         if (decision.CategoryCode is { } code)
         {
-            // Categoria inexistente, inativa ou de outro tipo: rejeitada. A IA nunca escapa do menu enviado.
-            if (!codeToCategory.TryGetValue(code, out var category) || !category.IsActive || category.Type != expected)
+            // Categoria inexistente, indisponível (ela ou a principal inativa) ou de outro tipo: rejeitada. A IA nunca escapa do menu enviado.
+            if (!codeToCategory.TryGetValue(code, out var category) || !category.IsAvailable || category.Type != expected)
                 return Review(input.Key, "Categoria inválida ou incompatível com o tipo", method);
             return new(input.Key, category.Id, FinancialClassificationSource.AI, null, null, false, reason ?? "Classificado pela IA", method);
         }
         return options.AllowCategorySuggestions && SuggestedName(decision.SuggestedCategory) is { } suggestion
-            ? Suggest(input, suggestion, expected, categories, newNames, reason, method)
+            ? Suggest(input, suggestion, expected, categories, method)
             : Review(input.Key, reason ?? "IA sem evidência suficiente", method);
     }
 
     /// <summary>
-    /// Sugestão de categoria nova da IA. Se já existe equivalente ativa, usa-a; se existe equivalente inativa (o usuário a desativou), não recria.
-    /// Só vira proposta (criada pelo backend) com nome válido e dentro do limite de novas categorias da execução.
+    /// Sugestão de categoria nova da IA. Se já existe equivalente disponível, usa-a; se existe equivalente desativada (o usuário a desativou), não
+    /// sugere. Caso contrário a sugestão NÃO é um cadastro autorizado: nada é criado, o lançamento fica em revisão e o nome só consta no motivo.
     /// </summary>
-    private FinancialClassificationOutcome Suggest(FinancialClassificationInput input, string name, CategoryType type, IReadOnlyCollection<MappableCategory> categories,
-        HashSet<string> newNames, string? reason, string method)
+    private static FinancialClassificationOutcome Suggest(FinancialClassificationInput input, string name, CategoryType type, IReadOnlyCollection<MappableCategory> categories, string method)
     {
         if (FinancialCategoryMatching.Find(categories, name, type) is { } existing)
-            return new(input.Key, existing.Id, FinancialClassificationSource.AI, null, null, false, reason ?? "Sugestão equivalente a categoria existente", method);
-        if (FinancialCategoryMatching.ExistsInAnyState(categories, name, type)) return Review(input.Key, "Categoria equivalente está desativada", method);
-        var key = type + ":" + FinancialCategoryMatching.Key(name);
-        if (!newNames.Contains(key) && newNames.Count >= Math.Max(0, options.MaxNewCategoriesPerRun)) return Review(input.Key, "Limite de novas categorias da execução", method);
-        newNames.Add(key);
-        return new(input.Key, null, FinancialClassificationSource.AI, name, type, false, reason ?? "Nova categoria sugerida pela IA", method);
+            return new(input.Key, existing.Id, FinancialClassificationSource.AI, null, null, false, "Sugestão equivalente a categoria existente", method);
+        if (FinancialCategoryMatching.ExistsInAnyState(categories, name, type)) return Review(input.Key, "Categoria equivalente está indisponível", method);
+        return Review(input.Key, $"Sugestão de categoria nova, não cadastrada: {name}", method);
     }
 
     private static readonly HashSet<string> GenericNames = new(StringComparer.Ordinal)

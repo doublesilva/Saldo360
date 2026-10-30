@@ -87,6 +87,8 @@ public sealed class FinancialBudgetService(
             return BudgetResult.Invalid(new Dictionary<string, string[]> { ["categoryId"] = ["A meta deve referenciar uma categoria de despesa."] });
         if (await budgets.TargetExistsAsync(budgetId, categoryId.Value, cancellationToken))
             return BudgetResult.Conflict(BudgetResult.DuplicateTargetMessage);
+        if (await budgets.RelatedTargetExistsAsync(budgetId, categoryId.Value, cancellationToken))
+            return BudgetResult.Conflict(BudgetResult.OverlappingTargetMessage);
         var now = timeProvider.GetUtcNow();
         var target = FinancialBudgetTarget.Create(
             workspaceId, budgetId, normalized, amount!.Value, categoryId.Value, userId, now);
@@ -145,6 +147,7 @@ public sealed class FinancialBudgetService(
             || await budgets.FindTargetAsync(budgetId, targetId, cancellationToken) is not { } target)
             return BudgetResult.NotFound;
         if (budget.IsArchived) return BudgetResult.Conflict(BudgetResult.ArchivedMessage);
+        if (await budgets.RelatedTargetExistsAsync(budgetId, target.CategoryId, cancellationToken)) return BudgetResult.Conflict(BudgetResult.OverlappingTargetMessage);
         var errors = ValidateTarget(target.Name, amount, nameof(BudgetTargetGroupingType.Category), target.CategoryId, out var normalized);
         if (errors.Count > 0) return BudgetResult.Invalid(errors);
         var now = timeProvider.GetUtcNow();

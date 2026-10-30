@@ -278,10 +278,10 @@ public sealed class FinancialClassificationTests
         Assert.True(result.Outcomes.Single().NeedsReview);
     }
 
-    // ---- 5. Sugestão de categoria nova (consultor financeiro) -------------------------------------------------------------
+    // ---- 5. Sugestão de categoria nova (consultor financeiro): informativa, nunca cadastra ---------------------------------
 
     [Fact]
-    public async Task WhenNoExistingCategoryFitsTheModelSuggestsANewOneAndTheBackendProposesItOnce()
+    public async Task WhenNoExistingCategoryFitsTheSuggestionIsOnlyReportedInTheReviewAndNothingIsProposedForCreation()
     {
         var (service, model) = Create();
         model.Responder = FakeFinancialClassificationModel.Suggest("Entretenimento");
@@ -289,12 +289,20 @@ public sealed class FinancialClassificationTests
 
         var result = await service.ClassifyWithAiAsync(inputs, [Food], default);
 
-        Assert.All(result.Outcomes, o => Assert.Equal(("Entretenimento", CategoryType.Expense, FinancialClassificationSource.AI, (Guid?)null), (o.ProposedName, o.ProposedType, o.Source, o.CategoryId)));
+        Assert.All(result.Outcomes, o =>
+        {
+            Assert.Null(o.ProposedName);
+            Assert.Null(o.ProposedType);
+            Assert.Null(o.CategoryId);
+            Assert.True(o.NeedsReview);
+            Assert.Contains("Entretenimento", o.Reason);
+            Assert.Contains("não cadastrada", o.Reason);
+        });
         Assert.Contains("consultor financeiro", OpenAiFinancialClassificationModel.SystemPrompt);
     }
 
     [Fact]
-    public async Task ASuggestionEquivalentToAnExistingCategoryReusesItAndOneEquivalentToAnInactiveOneIsNeverRecreated()
+    public async Task ASuggestionEquivalentToAnAvailableCategoryReusesItAndOneEquivalentToAnInactiveOneIsNeverSuggested()
     {
         var (service, model) = Create();
         var existing = new MappableCategory(Guid.NewGuid(), "Entretenimento", CategoryType.Expense, true);
@@ -308,6 +316,7 @@ public sealed class FinancialClassificationTests
         Assert.Null(blocked.Outcomes.Single().ProposedName);
         Assert.Null(blocked.Outcomes.Single().CategoryId);
         Assert.True(blocked.Outcomes.Single().NeedsReview);
+        Assert.DoesNotContain("não cadastrada", blocked.Outcomes.Single().Reason);
     }
 
     [Theory]
@@ -327,32 +336,95 @@ public sealed class FinancialClassificationTests
 
         Assert.Null(result.Outcomes.Single().ProposedName);
         Assert.True(result.Outcomes.Single().NeedsReview);
+        Assert.DoesNotContain("não cadastrada", result.Outcomes.Single().Reason);
     }
 
     [Fact]
-    public async Task SuggestionsRespectTheConfidenceTheModelReviewFlagTheOptionAndTheNewCategoryLimit()
+    public async Task SuggestionsRespectTheConfidenceTheModelReviewFlagAndTheOptionAndNeverCreateAnything()
     {
-        var (service, model) = Create(o => o.MaxNewCategoriesPerRun = 1);
+        var (service, model) = Create();
         model.Responder = request => new FinancialModelResponse([
             new(0, null, 0.95, false, "ok", "Viagens"),
             new(1, null, 0.40, false, "baixa confiança", "Esportes"),
             new(2, null, 0.95, true, "incerto", "Esportes"),
-            new(3, null, 0.95, false, "outra", "Hobbies"),
-            new(4, null, 0.95, false, "mesma", "viagens"),
         ], 10, 5);
-        var inputs = Enumerable.Range(0, 5).Select(i => Input($"k{i}", description: $"LOJA QUALQUER {(char)('A' + i)}")).ToList();
+        var inputs = Enumerable.Range(0, 3).Select(i => Input($"k{i}", description: $"LOJA QUALQUER {(char)('A' + i)}")).ToList();
 
         var result = await service.ClassifyWithAiAsync(inputs, [Leisure], default);
 
         var byKey = result.Outcomes.ToDictionary(o => o.Key);
-        Assert.Equal("Viagens", byKey["k0"].ProposedName);
-        Assert.Null(byKey["k1"].ProposedName); // confiança baixa
-        Assert.Null(byKey["k2"].ProposedName); // o próprio modelo pediu revisão
-        Assert.Null(byKey["k3"].ProposedName); // passou do limite de 1 categoria nova por execução
-        Assert.Equal("Viagens", byKey["k4"].ProposedName); // mesmo nome (equivalente) não conta como outra categoria
+        Assert.All(result.Outcomes, o => { Assert.Null(o.ProposedName); Assert.Null(o.CategoryId); Assert.True(o.NeedsReview); });
+        Assert.Contains("Viagens", byKey["k0"].Reason);
+        Assert.DoesNotContain("Esportes", byKey["k1"].Reason); // confiança baixa
+        Assert.DoesNotContain("Esportes", byKey["k2"].Reason); // o próprio modelo pediu revisão
 
         var (disabled, disabledModel) = Create(o => o.AllowCategorySuggestions = false);
         disabledModel.Responder = FakeFinancialClassificationModel.Suggest("Viagens");
-        Assert.Null((await disabled.ClassifyWithAiAsync([Input("a", card: true)], [Leisure], default)).Outcomes.Single().ProposedName);
+        var off = (await disabled.ClassifyWithAiAsync([Input("a", card: true)], [Leisure], default)).Outcomes.Single();
+        Assert.DoesNotContain("Viagens", off.Reason);
+    }
+
+    // ---- 6. Hierarquia (R02): principal + subcategoria ------------------------------------------------------------------------
+
+    private static readonly MappableCategory Housing = new(Guid.NewGuid(), "Moradia", CategoryType.Expense, true);
+    private static readonly MappableCategory Energy = new(Guid.NewGuid(), "Energia", CategoryType.Expense, true, Housing.Id, "Moradia", true);
+    private static readonly MappableCategory Water = new(Guid.NewGuid(), "Água", CategoryType.Expense, true, Housing.Id, "Moradia", true);
+
+    [Fact]
+    public void TheLabelShowsTheMainAndTheSubcategoryAndAvailabilityNeedsBothActive()
+    {
+        var inactiveParent = Energy with { ParentIsActive = false };
+        var inactiveSub = Energy with { IsActive = false };
+
+        Assert.Equal("Moradia / Energia", Energy.Label);
+        Assert.Equal("Moradia", Housing.Label);
+        Assert.True(Energy.IsAvailable);
+        Assert.False(inactiveParent.IsAvailable); // principal inativa: subcategoria indisponível para classificar algo novo
+        Assert.False(inactiveSub.IsAvailable);
+    }
+
+    [Fact]
+    public async Task TheAiMenuListsSubcategoriesAsMainSlashSubAndLeavesOutTheOnesWhoseMainIsInactive()
+    {
+        var (service, model) = Create();
+        var hiddenSub = new MappableCategory(Guid.NewGuid(), "Escola", CategoryType.Expense, true, Guid.NewGuid(), "Educação", false);
+        model.Responder = FakeFinancialClassificationModel.Always("Energia");
+
+        var result = await service.ClassifyWithAiAsync([Input("a", description: "CIA DE ENERGIA", card: true)], [Housing, Energy, Water, hiddenSub, Salary], default);
+
+        var menu = model.Requests.Single().Categories.Select(c => c.Name).ToList();
+        Assert.Contains("Moradia / Energia", menu);
+        Assert.Contains("Moradia / Água", menu);
+        Assert.Contains("Moradia", menu);
+        Assert.DoesNotContain("Educação / Escola", menu);
+        Assert.Equal((Energy.Id, FinancialClassificationSource.AI), (result.Outcomes.Single().CategoryId, result.Outcomes.Single().Source));
+    }
+
+    [Fact]
+    public async Task AnAiCodeOutsideTheMenuOrOfAnotherTypeIsRejectedAndNothingIsClassified()
+    {
+        var (service, model) = Create();
+        model.Responder = request => new FinancialModelResponse(request.Items.Select(i => new FinancialModelDecision(i.Index, 99, 0.95, false, "Teste")).ToList(), 10, 5);
+        var wrongType = await service.ClassifyWithAiAsync([Input("a", card: true)], [Housing, Energy], default);
+
+        model.Responder = request => new FinancialModelResponse(request.Items.Select(i => new FinancialModelDecision(
+            i.Index, request.Categories.First(c => c.Type == CategoryType.Income).Code, 0.95, false, "Teste")).ToList(), 10, 5);
+        var incomeCode = await service.ClassifyWithAiAsync([Input("b", card: true)], [Housing, Energy, Salary], default);
+
+        Assert.All(wrongType.Outcomes.Concat(incomeCode.Outcomes), o => { Assert.Null(o.CategoryId); Assert.True(o.NeedsReview); });
+    }
+
+    [Fact]
+    public void ThePluggyCatalogFindsTheMainFirstAndRefusesToGuessBetweenHomonymousSubcategories()
+    {
+        var otherMain = new MappableCategory(Guid.NewGuid(), "Casa", CategoryType.Expense, true);
+        var housingWater = Water;
+        var houseWater = new MappableCategory(Guid.NewGuid(), "Água", CategoryType.Expense, true, otherMain.Id, "Casa", true);
+        var mainWater = new MappableCategory(Guid.NewGuid(), "Água", CategoryType.Expense, true);
+
+        Assert.Null(FinancialCategoryMatching.Find([Housing, otherMain, housingWater, houseWater], "agua", CategoryType.Expense)); // ambígua
+        Assert.Equal(housingWater.Id, FinancialCategoryMatching.Find([Housing, housingWater], "Água", CategoryType.Expense)?.Id);
+        Assert.Equal(mainWater.Id, FinancialCategoryMatching.Find([housingWater, mainWater, houseWater], "agua", CategoryType.Expense)?.Id); // a principal vence
+        Assert.Null(FinancialCategoryMatching.Find([Housing, Energy with { ParentIsActive = false }], "Energia", CategoryType.Expense)); // principal inativa
     }
 }

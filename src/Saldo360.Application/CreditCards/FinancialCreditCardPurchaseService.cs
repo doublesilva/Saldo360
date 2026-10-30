@@ -1,3 +1,4 @@
+using Saldo360.Domain.Categories;
 using Saldo360.Application.Workspaces;
 using Saldo360.Domain.CreditCards;
 
@@ -63,7 +64,10 @@ public sealed class FinancialCreditCardPurchaseService(IFinancialWorkspaceReposi
         try { preview = BuildPreview(input, calendar); }
         catch (ArgumentException ex) { return CreditCardPurchaseResult.Invalid(new Dictionary<string, string[]> { ["purchase"] = [ex.Message] }); }
         var errors = new Dictionary<string, string[]>();
-        if (input.CategoryId is null || !await purchases.IsExpenseCategoryAsync(workspaceId, input.CategoryId.Value, cancellationToken)) errors["categoryId"] = ["A categoria deve ser uma despesa do orçamento."];
+        Guid? currentCategory = null;
+        if (purchaseId is { } editing && await purchases.FindAsync(workspaceId, cardId, editing, cancellationToken) is { } existing) currentCategory = existing.CategoryId;
+        if (input.CategoryId is null || !await purchases.IsExpenseCategoryAsync(workspaceId, input.CategoryId.Value, currentCategory, cancellationToken)) errors["categoryId"] = ["A categoria deve ser uma despesa ativa do orçamento (e, numa subcategoria, a categoria principal também ativa)."];
+        if (!ExpenseNatures.TryResolve(input.ExpenseNature, CategoryType.Expense, out var nature, out var natureError)) errors["expenseNature"] = [natureError!];
         if (errors.Count > 0) return CreditCardPurchaseResult.Invalid(errors);
         var total = decimal.Parse(preview.TotalAmount, System.Globalization.CultureInfo.InvariantCulture);
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(timeProvider.GetUtcNow(), TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo")).DateTime);
@@ -75,12 +79,12 @@ public sealed class FinancialCreditCardPurchaseService(IFinancialWorkspaceReposi
             if (!await purchases.CanEditAsync(workspaceId, cardId, id, today, cancellationToken))
                 return new(CreditCardPurchaseAccess.Conflict, null, new Dictionary<string, string[]> { ["purchase"] = ["Compra vinculada a fatura fechada, pagamento ou conciliação. Histórico protegido."] });
             purchase = found;
-            try { purchase.UpdateSchedule(input.CategoryId!.Value, input.Description!, input.PurchaseDate!.Value, total, input.InstallmentCount!.Value, input.PreviouslyPaidInstallments, input.FirstPendingCompetence, userId, timeProvider.GetUtcNow()); }
+            try { purchase.UpdateSchedule(input.CategoryId!.Value, input.Description!, input.PurchaseDate!.Value, total, input.InstallmentCount!.Value, input.PreviouslyPaidInstallments, input.FirstPendingCompetence, userId, timeProvider.GetUtcNow(), input.ExpenseNature is null ? null : nature); }
             catch (InvalidOperationException ex) { return new(CreditCardPurchaseAccess.Conflict, null, new Dictionary<string, string[]> { ["purchase"] = [ex.Message] }); }
         }
         else
         {
-            purchase = FinancialCreditCardPurchase.CreateOngoing(workspaceId, cardId, input.CategoryId!.Value, input.Description!, input.PurchaseDate!.Value, total, input.InstallmentCount!.Value, input.PreviouslyPaidInstallments, input.FirstPendingCompetence, userId, timeProvider.GetUtcNow());
+            purchase = FinancialCreditCardPurchase.CreateOngoing(workspaceId, cardId, input.CategoryId!.Value, input.Description!, input.PurchaseDate!.Value, total, input.InstallmentCount!.Value, input.PreviouslyPaidInstallments, input.FirstPendingCompetence, userId, timeProvider.GetUtcNow(), nature);
             await purchases.AddAsync(purchase, cancellationToken);
         }
         foreach (var installment in purchase.Installments.Where(i => i.Status == CreditCardInstallmentStatus.Active))
@@ -102,6 +106,24 @@ public sealed class FinancialCreditCardPurchaseService(IFinancialWorkspaceReposi
         }
         await purchases.SaveChangesAsync(cancellationToken);
         return CreditCardPurchaseResult.Ok((await purchases.GetAsync(workspaceId, cardId, purchase.Id, cancellationToken))!);
+    }
+
+    /// <summary>
+    /// Corrige só o tipo de despesa (fixa/variável/não definida) da compra e, por herança, de todas as suas parcelas. Vale mesmo com a fatura fechada ou paga:
+    /// valor, parcelas, fatura e categoria não mudam. Compra cancelada não é editável.
+    /// </summary>
+    public async Task<CreditCardPurchaseResult> ChangeNatureAsync(Guid workspaceId, Guid cardId, Guid purchaseId, Guid userId, string? expenseNature, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipant(workspaceId, userId, cancellationToken) || await purchases.FindAsync(workspaceId, cardId, purchaseId, cancellationToken) is not { } purchase) return CreditCardPurchaseResult.NotFound;
+        var nature = ExpenseNature.Undefined;
+        string? error = null;
+        if (expenseNature is null || !ExpenseNatures.TryResolve(expenseNature, CategoryType.Expense, out nature, out error))
+            return CreditCardPurchaseResult.Invalid(new Dictionary<string, string[]> { ["expenseNature"] = [error ?? "Informe o tipo de despesa."] });
+        if (purchase.Status != CreditCardPurchaseStatus.Active)
+            return new(CreditCardPurchaseAccess.Conflict, null, new Dictionary<string, string[]> { ["purchase"] = ["Compra cancelada não pode ser editada."] });
+        purchase.ChangeNature(nature, userId, timeProvider.GetUtcNow());
+        await purchases.SaveChangesAsync(cancellationToken);
+        return CreditCardPurchaseResult.Ok((await purchases.GetAsync(workspaceId, cardId, purchaseId, cancellationToken))!);
     }
 
     public async Task<IReadOnlyList<FinancialCreditCardPurchaseDto>?> ListAsync(Guid workspaceId, Guid cardId, Guid userId, DateOnly? from, DateOnly? through, CancellationToken cancellationToken) =>

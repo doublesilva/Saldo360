@@ -3,9 +3,9 @@ using Saldo360.Domain.CreditCards;
 namespace Saldo360.Application.CreditCards;
 
 public sealed record FinancialCreditCardInstallmentDto(Guid Id, int Number, string Amount, CreditCardInstallmentStatus Status);
-public sealed record FinancialCreditCardPurchaseDto(Guid Id, Guid CreditCardId, Guid CategoryId, string Description, DateOnly PurchaseDate, string TotalAmount, int InstallmentCount, CreditCardPurchaseStatus Status, IReadOnlyList<FinancialCreditCardInstallmentDto> Installments, int PreviouslyPaidInstallments = 0, DateOnly? FirstPendingCompetence = null);
+public sealed record FinancialCreditCardPurchaseDto(Guid Id, Guid CreditCardId, Guid CategoryId, string Description, DateOnly PurchaseDate, string TotalAmount, int InstallmentCount, CreditCardPurchaseStatus Status, IReadOnlyList<FinancialCreditCardInstallmentDto> Installments, int PreviouslyPaidInstallments = 0, DateOnly? FirstPendingCompetence = null, Saldo360.Domain.Categories.ExpenseNature Nature = Saldo360.Domain.Categories.ExpenseNature.Undefined);
 public sealed record CreditCardPurchaseInput(string? Description, DateOnly? PurchaseDate, decimal? TotalAmount, int? InstallmentCount, Guid? CategoryId,
-    string AmountMode = "Total", int PreviouslyPaidInstallments = 0, DateOnly? FirstPendingCompetence = null);
+    string AmountMode = "Total", int PreviouslyPaidInstallments = 0, DateOnly? FirstPendingCompetence = null, string? ExpenseNature = null);
 public sealed record CreditCardPortfolioDto(int CardCount, string TotalLimit, string InvoiceTotal, string AvailableLimit, IReadOnlyList<CreditCardPortfolioItemDto> Cards)
 {
     public string PeriodInvoiceTotal { get; init; } = "0.00";

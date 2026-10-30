@@ -16,6 +16,7 @@ public static class FinancialCreditCardPurchaseEndpoints
         group.MapGet("/", List);
         group.MapGet("/{purchaseId:guid}", Get);
         group.MapPost("/{purchaseId:guid}/cancel", Cancel).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPut("/{purchaseId:guid}/expense-nature", ChangeNature).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
     }
 
@@ -57,6 +58,14 @@ public static class FinancialCreditCardPurchaseEndpoints
     private static async Task<IResult> Get(Guid workspaceId, Guid cardId, Guid purchaseId, CurrentUser user, FinancialCreditCardPurchaseService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : await service.GetAsync(workspaceId, cardId, purchaseId, userId, ct) is { } purchase ? Results.Ok(PurchaseResponse.From(purchase)) : Results.NotFound();
 
+    /// <summary>Corrige só o tipo de despesa (fixa/variável/não definida) da compra; as parcelas herdam. Não toca valor, fatura nem categoria.</summary>
+    private static async Task<IResult> ChangeNature(Guid workspaceId, Guid cardId, Guid purchaseId, PurchaseNatureRequest? request, CurrentUser user, FinancialCreditCardPurchaseService service, CancellationToken ct)
+    {
+        if (await user.GetUserIdAsync(ct) is not { } userId) return Results.Unauthorized();
+        var result = await service.ChangeNatureAsync(workspaceId, cardId, purchaseId, userId, request?.ExpenseNature, ct);
+        return result.Access switch { CreditCardPurchaseAccess.NotFound => Results.NotFound(), CreditCardPurchaseAccess.Invalid => Results.ValidationProblem(result.Errors!), CreditCardPurchaseAccess.Conflict => Results.Conflict(new { title = result.Errors?.Values.FirstOrDefault()?.FirstOrDefault() }), _ => Results.Ok(PurchaseResponse.From(result.Purchase!)) };
+    }
+
     private static async Task<IResult> Cancel(Guid workspaceId, Guid cardId, Guid purchaseId, CurrentUser user, FinancialCreditCardPurchaseService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : await service.CancelAsync(workspaceId, cardId, purchaseId, userId, ct) ? Results.NoContent() : Results.NotFound();
 
@@ -65,13 +74,17 @@ public static class FinancialCreditCardPurchaseEndpoints
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record PurchaseRequest(string? Description, DateOnly? PurchaseDate, decimal? TotalAmount, int? InstallmentCount, Guid? CategoryId,
-    string AmountMode = "Total", int PreviouslyPaidInstallments = 0, DateOnly? FirstPendingCompetence = null)
+    string AmountMode = "Total", int PreviouslyPaidInstallments = 0, DateOnly? FirstPendingCompetence = null, string? ExpenseNature = null)
 {
-    public CreditCardPurchaseInput ToInput() => new(Description, PurchaseDate, TotalAmount, InstallmentCount, CategoryId, AmountMode, PreviouslyPaidInstallments, FirstPendingCompetence);
+    public CreditCardPurchaseInput ToInput() => new(Description, PurchaseDate, TotalAmount, InstallmentCount, CategoryId, AmountMode, PreviouslyPaidInstallments, FirstPendingCompetence, ExpenseNature);
 }
 
+/// <summary>Novo tipo de despesa da compra (<c>Fixed</c>, <c>Variable</c> ou <c>Undefined</c>); qualquer outro campo é recusado.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record PurchaseNatureRequest(string? ExpenseNature);
+
 public sealed record InstallmentResponse(Guid Id, int Number, string Amount, CreditCardInstallmentStatus Status);
-public sealed record PurchaseResponse(Guid Id, Guid CreditCardId, Guid CategoryId, string Description, DateOnly PurchaseDate, string TotalAmount, int InstallmentCount, CreditCardPurchaseStatus Status, IReadOnlyList<InstallmentResponse> Installments, int PreviouslyPaidInstallments, DateOnly? FirstPendingCompetence)
+public sealed record PurchaseResponse(Guid Id, Guid CreditCardId, Guid CategoryId, string Description, DateOnly PurchaseDate, string TotalAmount, int InstallmentCount, CreditCardPurchaseStatus Status, IReadOnlyList<InstallmentResponse> Installments, int PreviouslyPaidInstallments, DateOnly? FirstPendingCompetence, string ExpenseNature = "Undefined")
 {
-    public static PurchaseResponse From(FinancialCreditCardPurchaseDto p) => new(p.Id, p.CreditCardId, p.CategoryId, p.Description, p.PurchaseDate, p.TotalAmount, p.InstallmentCount, p.Status, p.Installments.Select(i => new InstallmentResponse(i.Id, i.Number, i.Amount, i.Status)).ToList(), p.PreviouslyPaidInstallments, p.FirstPendingCompetence);
+    public static PurchaseResponse From(FinancialCreditCardPurchaseDto p) => new(p.Id, p.CreditCardId, p.CategoryId, p.Description, p.PurchaseDate, p.TotalAmount, p.InstallmentCount, p.Status, p.Installments.Select(i => new InstallmentResponse(i.Id, i.Number, i.Amount, i.Status)).ToList(), p.PreviouslyPaidInstallments, p.FirstPendingCompetence, p.Nature.ToString());
 }
