@@ -93,6 +93,15 @@ internal sealed partial class FinancialCategoryRepository
                 await db.SaveChangesAsync(cancellationToken);
             }
 
+            // Registra a inicialização na mesma transação, se ainda não houver (uma aplicação posterior não a altera). Por último de propósito: a
+            // trava de escrita do banco compara a versão (xmin) do orçamento com a capturada na abertura da conexão, então nenhuma escrita
+            // financeira pode vir depois desta atualização dentro da transação.
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                UPDATE financial_workspaces SET default_categories_initialized_at = {now}, default_categories_catalog_version = {catalog.Version}
+                WHERE id = {workspaceId} AND default_categories_initialized_at IS NULL
+                """, cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
             return plan;
         }

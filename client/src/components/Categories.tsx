@@ -77,6 +77,11 @@ export function Categories({ workspaceId }: { workspaceId: string }) {
 
       {list.kind === 'loading' && <p className="status status--pending">Carregando categorias…</p>}
       {list.kind === 'error' && <p className="status status--down">{list.message}</p>}
+      {list.kind === 'loaded' && list.categories.length === 0 && (
+        <p className="status status--pending" role="note">
+          Este orçamento não tem categorias. Use "Adicionar categorias padrão" para começar com o catálogo sugerido, ou crie as suas abaixo.
+        </p>
+      )}
       {list.kind === 'loaded' && (
         <div className="categories__sections">
           {sections.map((section) => (

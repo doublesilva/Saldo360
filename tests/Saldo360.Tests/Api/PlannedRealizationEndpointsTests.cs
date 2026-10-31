@@ -304,8 +304,12 @@ public sealed class PlannedRealizationEndpointsTests(PostgresFixture postgres) :
             new { name = "Itaú PF", type = "Checking", financialScope = "PF", openingBalance = "1000.00", openingBalanceDate = Reference, isActive = true });
         await SendWithCsrfAsync(HttpMethod.Put, $"/api/financial-workspaces/{_family.Id}/categories/{_aluguel}", _owner, new { name = "Aluguel", isActive = false });
 
-        await AssertValidationErrorAsync(await RealizeAsync(planned, "200.00", Effective), "categoryId");
-        await AssertNoTransactionsAsync();
+
+        // Categoria inativa não impede realizar a previsão já cadastrada, e o lançamento preserva a categoria original.
+        var realized = await RealizeAsync(planned, "200.00", Effective);
+        Assert.Equal(HttpStatusCode.Created, realized.StatusCode);
+        await using var db = Db();
+        Assert.Equal(_aluguel, (await db.FinancialTransactions.AsNoTracking().SingleAsync()).CategoryId);
     }
 
     [Fact]

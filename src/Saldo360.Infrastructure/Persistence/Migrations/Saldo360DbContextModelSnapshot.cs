@@ -2207,6 +2207,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("WorkspaceId", "Id")
                         .HasName("ak_financial_debt_installments_workspace_id_id");
 
+                    b.HasIndex("WorkspaceId", "CategoryId")
+                        .HasDatabaseName("ix_financial_debt_installments_workspace_id_category_id");
+
                     b.HasIndex("WorkspaceId", "DueDate")
                         .HasDatabaseName("ix_financial_debt_installments_workspace_id_due_date");
 
@@ -5854,6 +5857,13 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_debt_installments_financial_workspaces_workspace_");
+
+                    b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "CategoryId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_debt_installments_categories_same_workspace");
 
                     b.HasOne("Saldo360.Domain.Debts.FinancialDebt", null)
                         .WithMany()

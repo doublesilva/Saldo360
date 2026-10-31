@@ -257,10 +257,7 @@ public sealed class FinancialPlannedTransactionService(
             errors[ReferenceRules.AccountField] = ["A conta da previsão está inativa. Edite a previsão e escolha uma conta ativa antes de realizar."];
         }
 
-        if (await planned.GetCategoryStateAsync(workspaceId, entity.CategoryId, cancellationToken) is { IsActive: false })
-        {
-            errors[ReferenceRules.CategoryField] = ["A categoria da previsão está inativa. Edite a previsão e escolha uma categoria ativa antes de realizar."];
-        }
+        // Categoria inativa não impede realizar uma previsão já cadastrada: o histórico preserva a classificação original (só novos cadastros exigem categoria disponível).
     }
 
     private async Task<bool> IsParticipantAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>

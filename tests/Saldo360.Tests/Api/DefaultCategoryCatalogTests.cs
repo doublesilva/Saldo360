@@ -183,6 +183,60 @@ public sealed class DefaultCategoryCatalogTests(PostgresFixture postgres) : Post
     }
 
     [Fact]
+    public async Task IntegratedJourney_RealCatalog_UseDeleteReopenAndApplyAgain()
+    {
+        var owner = await SignInAsync("catalogo-jornada");
+        var workspace = await CreateWorkspaceAsync(owner);
+        var url = CategoriesUrl(workspace);
+        var all = await ListAsync(owner, workspace);
+        Assert.Equal(CatalogRows, all.Count);
+        var market = all.Single(c => c.Name == "Mercado e feira");
+        Assert.Equal(all.Single(c => c.Name == "Alimentação").Id, market.ParentCategoryId);
+
+        // Usa uma subcategoria do catálogo num lançamento; ela passa a ter vínculo e não pode ser excluída.
+        var account = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspace.Id}/accounts", owner, new { name = "Conta", type = "Checking", financialScope = "PF" });
+        var accountId = JsonDocument.Parse(await account.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+        Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspace.Id}/transactions", owner,
+            new { accountId, categoryId = market.Id, type = "Expense", description = "Feira", amount = "30.00", transactionDate = "2026-10-06" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await SendWithCsrfAsync(HttpMethod.Delete, $"{url}/{market.Id}", owner)).StatusCode);
+
+        // Exclui uma sem vínculos, reabre o orçamento: não reaparece.
+        var seguros = all.Single(c => c.Name == "Seguros");
+        Assert.Equal(HttpStatusCode.NoContent, (await SendWithCsrfAsync(HttpMethod.Delete, $"{url}/{seguros.Id}", owner)).StatusCode);
+        await CreateWorkspaceAsync(owner);
+        Assert.DoesNotContain(await ListAsync(owner, workspace), c => c.Name == "Seguros");
+
+        // A aplicação explícita devolve só o que falta (a categoria excluída volta por ação do usuário), registra a inicialização e é idempotente.
+        var first = await ReadAsync<ApplyDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{url}/defaults", owner));
+        var second = await ReadAsync<ApplyDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{url}/defaults", owner));
+        Assert.Equal((0, 1, 0, 0), (first.CategoriesCreated, first.SubcategoriesCreated, second.CategoriesCreated, second.SubcategoriesCreated));
+        Assert.Equal(CatalogRows, (await ListAsync(owner, workspace)).Count);
+    }
+
+    [Fact]
+    public async Task ExplicitAction_RecordsTheInitializationOnce_InTheSameTransaction()
+    {
+        var owner = await SignInAsync("catalogo-registro");
+        var workspace = await CreateWorkspaceAsync(owner);
+        await MakeLegacyEmptyBudgetAsync(workspace);
+
+        await SendWithCsrfAsync(HttpMethod.Post, $"{CategoriesUrl(workspace)}/defaults", owner);
+        DateTimeOffset? firstStamp;
+        await using (var db = Db())
+        {
+            var stored = await db.FinancialWorkspaces.AsNoTracking().SingleAsync();
+            firstStamp = stored.DefaultCategoriesInitializedAt;
+            Assert.NotNull(firstStamp);
+            Assert.Equal(1, stored.DefaultCategoriesCatalogVersion);
+        }
+
+        await SendWithCsrfAsync(HttpMethod.Post, $"{CategoriesUrl(workspace)}/defaults", owner);
+        await using var verify = Db();
+        Assert.Equal(firstStamp, (await verify.FinancialWorkspaces.AsNoTracking().SingleAsync()).DefaultCategoriesInitializedAt);
+        Assert.Equal(CatalogRows, await verify.FinancialCategories.CountAsync());
+    }
+
+    [Fact]
     public async Task ExplicitAction_ConcurrentApplications_DoNotDuplicate()
     {
         var owner = await SignInAsync("catalogo-aplicacao-concorrente");

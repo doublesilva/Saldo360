@@ -12,7 +12,7 @@ const actionText: Record<DefaultCategoryAction, string> = {
   Create: 'será adicionada',
   Exists: 'já existe',
   ExistsInactive: 'já existe, inativa (não será reativada)',
-  SkippedParentInactive: 'não será adicionada (categoria principal inativa)',
+  SkippedParentInactive: 'Não adicionada: categoria principal inativa (reative-a para adicionar)',
 }
 
 const sections: { type: CategoryType; title: string }[] = [

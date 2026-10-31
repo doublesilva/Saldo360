@@ -218,7 +218,6 @@ describe('Categories: Adicionar categorias padrão', () => {
     expect(within(region).getByText('Moradia').closest('li')!.textContent).toContain('inativa (não será reativada)')
     expect(within(region).getByText('Refeições fora e delivery').closest('li')!.textContent).toContain('será adicionada')
     expect(within(region).getByText('Rendimentos').closest('li')!.textContent).toContain('será adicionada')
-    expect(calls.map((c) => c.url)).not.toContain('/api/financial-workspaces/f1/categories/defaults?apply')
     expect(writes(calls)).toHaveLength(0)
   })
 

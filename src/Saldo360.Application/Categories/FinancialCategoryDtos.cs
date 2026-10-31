@@ -41,8 +41,6 @@ public enum CategoryAccess
 public sealed record CategoryResult(
     CategoryAccess Access, FinancialCategoryDto? Category, IDictionary<string, string[]>? Errors, CategoryImpactDto? Impact = null)
 {
-    public static CategoryResult Blocked(CategoryImpactDto impact) => new(CategoryAccess.Blocked, null, null, impact);
-
     public const string DuplicateMessage = "Já existe uma categoria com esse nome neste nível (ativa ou inativa): categorias principais são únicas por tipo e subcategorias, dentro da principal.";
 
     public static CategoryResult NotFound { get; } = new(CategoryAccess.NotFound, null, null);
@@ -52,6 +50,8 @@ public sealed record CategoryResult(
     public static CategoryResult Ok(FinancialCategoryDto category) => new(CategoryAccess.Allowed, category, null);
 
     public static CategoryResult Invalid(IDictionary<string, string[]> errors) => new(CategoryAccess.Invalid, null, errors);
+
+    public static CategoryResult Blocked(CategoryImpactDto impact) => new(CategoryAccess.Blocked, null, null, impact);
 }
 
 /// <summary>Quantos registros de uma origem (ex.: "Lançamentos") usam a categoria ou alguma das suas subcategorias.</summary>
