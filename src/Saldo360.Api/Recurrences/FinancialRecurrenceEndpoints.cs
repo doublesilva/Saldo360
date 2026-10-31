@@ -11,10 +11,10 @@ public static class FinancialRecurrenceEndpoints
     {
         var g=app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/recurrences").RequireAuthorization();
         g.MapGet("/",List); g.MapPost("/",Create).AddEndpointFilter<ValidateCsrfTokenFilter>(); g.MapGet("/{id:guid}",Get); g.MapPut("/{id:guid}",Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
-        g.MapPost("/{id:guid}/pause",(Guid f,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(f,id,u,s,"pause",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
-        g.MapPost("/{id:guid}/resume",(Guid f,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(f,id,u,s,"resume",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
-        g.MapPost("/{id:guid}/end",(Guid f,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(f,id,u,s,"end",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
-        g.MapDelete("/{id:guid}", (Guid f,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(f,id,u,s,"archive",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        g.MapPost("/{id:guid}/pause",(Guid workspaceId,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(workspaceId,id,u,s,"pause",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        g.MapPost("/{id:guid}/resume",(Guid workspaceId,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(workspaceId,id,u,s,"resume",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        g.MapPost("/{id:guid}/end",(Guid workspaceId,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(workspaceId,id,u,s,"end",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        g.MapDelete("/{id:guid}", (Guid workspaceId,Guid id,CurrentUser u,FinancialRecurrenceService s,CancellationToken ct)=>Change(workspaceId,id,u,s,"archive",ct)).AddEndpointFilter<ValidateCsrfTokenFilter>();
         g.MapGet("/{id:guid}/occurrences",Occurrences);
         g.MapPost("/{id:guid}/materialize",Materialize).AddEndpointFilter<ValidateCsrfTokenFilter>();
         g.MapGet("/{id:guid}/materializations",Materializations);
