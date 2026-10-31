@@ -77,4 +77,22 @@ public sealed partial class PluggyFinancialIntegrationTests
         Assert.Equal((200m, -200m), (await CashEffectAsync(p.PersonalAccount), await CashEffectAsync(p.BusinessAccount))); // saldos: +200 na PF e -200 na PJ
         Assert.Equal(HttpStatusCode.BadRequest, (await GetAsync(p.C, $"/api/financial-workspaces/{p.C.Workspace}/accounts/flows?competence=2026-13")).StatusCode);
     }
+
+    [Fact]
+    public async Task RefundsAreCashCreditsInTheOverviewTotalsButNeverRevenueAndTheAccountsAndOverviewCashTotalsAgree()
+    {
+        var (p, account) = await ArrangeRefundAsync("t-cash-totals", 40, 55.99m, ("back", 2, 55.99m, MarketplaceBack));
+        var originalId = await TransactionIdOfAsync("pay");
+        Assert.Equal(HttpStatusCode.OK, (await RefundActionAsync(p.C, "confirm", await PostingIdAsync("back"), originalId)).StatusCode);
+        var month = Today.AddDays(-2).ToString("yyyy-MM");
+
+        var overview = (await JsonGetAsync(p.C, $"/api/financial-workspaces/{p.C.Workspace}/financial-dashboard/overview?competence={month}&scope=account&accountId={account}")).GetProperty("transfers");
+        var flows = (await JsonGetAsync(p.C, $"/api/financial-workspaces/{p.C.Workspace}/accounts/flows?competence={month}")).GetProperty("accounts").EnumerateArray().Single(a => a.GetProperty("accountId").GetGuid() == account);
+
+        Assert.Equal("0.00", overview.GetProperty("externalIncome").GetString()); // devolucao nao e receita
+        Assert.Equal("55.99", overview.GetProperty("refunds").GetString());
+        Assert.Equal(flows.GetProperty("totalInflows").GetString(), overview.GetProperty("totalInflows").GetString()); // mesma definicao de caixa nas duas telas
+        Assert.Equal(flows.GetProperty("totalOutflows").GetString(), overview.GetProperty("totalOutflows").GetString());
+        Assert.Equal("55.99", overview.GetProperty("totalInflows").GetString());
+    }
 }

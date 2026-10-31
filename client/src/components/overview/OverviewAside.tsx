@@ -119,13 +119,14 @@ export function OverviewTransfersBlock({ transfers, scopeKind, onOpen }: { trans
       <button type="button" onClick={onOpen}>Abrir Transferências</button></header>
     <dl className="ov-meta">
       {transfers.externalIncome != null && <div><dt>Receitas de fontes externas</dt><dd>{money(transfers.externalIncome)}</dd></div>}
+      {transfers.refunds != null && transfers.refunds !== '0.00' && <div><dt>Devoluções e estornos (crédito de caixa, não são receita)</dt><dd>{money(transfers.refunds)}</dd></div>}
       <div><dt>Transferências recebidas</dt><dd>{money(transfers.received)}</dd></div>
       <div><dt>Transferências enviadas</dt><dd>{money(transfers.sent)}</dd></div>
       {transfers.internalMoved != null && transfers.internalMoved !== '0.00' && <div><dt>Entre as contas deste conjunto (neutralizado)</dt><dd>{money(transfers.internalMoved)} · líquido {money(transfers.net)}</dd></div>}
-      {transfers.externalExpenses != null && <div><dt>Despesas</dt><dd>{money(transfers.externalExpenses)}</dd></div>}
+      {transfers.cashExpenses != null && <div><dt>Despesas pagas (caixa)</dt><dd>{money(transfers.cashExpenses)}</dd></div>}
       {transfers.available != null && <div><dt>Disponível (saldo das contas)</dt><dd>{money(transfers.available)}</dd></div>}
-      {transfers.totalInflows != null && <div><dt>Total de entradas (receitas + transferências recebidas)</dt><dd>{money(transfers.totalInflows)}</dd></div>}
-      {transfers.totalOutflows != null && <div><dt>Total de saídas (despesas + transferências enviadas)</dt><dd>{money(transfers.totalOutflows)}</dd></div>}
+      {transfers.totalInflows != null && <div><dt>Total de entradas (todos os créditos efetivos)</dt><dd>{money(transfers.totalInflows)}</dd></div>}
+      {transfers.totalOutflows != null && <div><dt>Total de saídas (todos os débitos efetivos)</dt><dd>{money(transfers.totalOutflows)}</dd></div>}
     </dl>
     {transfers.count === 0 ? <p className="ov-empty">Nenhuma transferência neste mês.</p>
       : <ul className="ov-list">{transfers.items.map(line => <li key={`${line.direction}:${line.counterpart}:${line.counterpart2 ?? ''}`}><span className="ov-row">

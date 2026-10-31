@@ -50,7 +50,7 @@ describe('Visão Geral — transferências entre contas', () => {
     expect(within(card).getByText(/apenas para corrigir um pareamento incorreto/)).toBeTruthy()
     expect(within(card).queryByText(/pró-labore|virar receita|use “Desfazer vínculo”: o crédito volta/i)).toBeNull()
     expect(within(card).getByText('Receitas de fontes externas')).toBeTruthy()
-    expect(within(card).getByText('Total de entradas (receitas + transferências recebidas)')).toBeTruthy()
+    expect(within(card).getByText('Total de entradas (todos os créditos efetivos)')).toBeTruthy()
     expect(within(card).getByText('R$ 13.012,00')).toBeTruthy()
     expect(within(indicators().getByRole('article', { name: 'Receitas do mês' })).getByText('R$ 450,00')).toBeTruthy()
     fireEvent.click(within(card).getByRole('button', { name: 'Abrir Transferências' }))

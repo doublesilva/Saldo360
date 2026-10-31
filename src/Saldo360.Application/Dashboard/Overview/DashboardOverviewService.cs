@@ -75,7 +75,8 @@ public sealed record OverviewTransferLineDto(string Direction, string Counterpar
 /// No consolidado Received = Sent, então as transferências internas não alteram o fluxo líquido (TotalInflows - TotalOutflows = ExternalIncome - ExternalExpenses).
 /// </summary>
 public sealed record OverviewTransfersDto(string State, string Received, string Sent, string Net, int Count, IReadOnlyList<OverviewTransferLineDto> Items,
-    string? ExternalIncome = null, string? ExternalExpenses = null, string? TotalInflows = null, string? TotalOutflows = null, string? Available = null, string? InternalMoved = null);
+    string? ExternalIncome = null, string? ExternalExpenses = null, string? TotalInflows = null, string? TotalOutflows = null, string? Available = null, string? InternalMoved = null,
+    string? Refunds = null, string? CashExpenses = null);
 
 public sealed record DashboardOverviewDto(string Competence, DateOnly AsOf, string ScopeKind, Guid? ScopeAccountId, OverviewAccountsDto Accounts, OverviewCommitmentsDto Commitments, OverviewGoalsDto Goals,
     OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null);
@@ -149,7 +150,7 @@ public sealed class DashboardOverviewService(
             : accounts.Items.Where(a => a.InScope).Select(a => a.AccountId).ToHashSet();
         var flows = await BuildTransferFlowsAsync(workspaceId, month, selected, ct);
         if (flows.State != "Complete") return flows;
-        string? external = null, expenses = null, inflows = null, outflows = null, available = null;
+        string? external = null, expenses = null, inflows = null, outflows = null, available = null, refunds = null, cashExpenses = null;
         var inScope = accounts.Items.Where(a => a.InScope && a.BalanceAvailable && a.Balance is not null).ToList();
         if (inScope.Count > 0) available = Money.Format(inScope.Sum(a => decimal.Parse(a.Balance!, System.Globalization.CultureInfo.InvariantCulture)));
         try
@@ -158,13 +159,25 @@ public sealed class DashboardOverviewService(
             if (plan.Value is { } dashboard)
             {
                 var parse = (string v) => decimal.Parse(v, System.Globalization.CultureInfo.InvariantCulture);
-                var income = parse(dashboard.Income.Realized); var expense = parse(dashboard.Expenses.Consumption.Realized);
-                external = Money.Format(income); expenses = Money.Format(expense);
-                inflows = Money.Format(income + parse(flows.Received)); outflows = Money.Format(expense + parse(flows.Sent));
+                external = Money.Format(parse(dashboard.Income.Realized)); expenses = Money.Format(parse(dashboard.Expenses.Consumption.Realized));
             }
+            // Totais de CAIXA, com a mesma definição da tela Contas e do saldo: todos os créditos e todos os débitos efetivos da conta (devoluções e estornos entram como
+            // crédito/débito de caixa, mas aparecem à parte e NUNCA como receita econômica), mais as transferências que cruzam o conjunto.
+            var first = new DateOnly(int.Parse(month[..4]), int.Parse(month[5..]), 1);
+            var cash = await accountService.GetFlowsAsync(workspaceId, userId, first, ct);
+            if (cash is not null)
+            {
+                var chosen = cash.Accounts.Where(a => selected.Contains(a.AccountId)).ToList();
+                var credits = chosen.Sum(a => a.Income); var debits = chosen.Sum(a => a.Expense);
+                inflows = Money.Format(credits + decimal.Parse(flows.Received, System.Globalization.CultureInfo.InvariantCulture));
+                outflows = Money.Format(debits + decimal.Parse(flows.Sent, System.Globalization.CultureInfo.InvariantCulture));
+                cashExpenses = Money.Format(debits);
+            }
+            var agenda = await calendar.ListAsync(workspaceId, userId, new(first, first.AddMonths(1).AddDays(-1), accountId, null), ct);
+            if (agenda.Calendar is { } calendarData) refunds = Money.Format(calendarData.Summary.RealizedRefunds);
         }
-        catch (Exception) when (!ct.IsCancellationRequested) { /* os totais externos ficam nulos; as transferências continuam exibidas */ }
-        return flows with { ExternalIncome = external, ExternalExpenses = expenses, TotalInflows = inflows, TotalOutflows = outflows, Available = available };
+        catch (Exception) when (!ct.IsCancellationRequested) { /* os totais ficam nulos; as transferências continuam exibidas */ }
+        return flows with { ExternalIncome = external, ExternalExpenses = expenses, TotalInflows = inflows, TotalOutflows = outflows, Available = available, Refunds = refunds, CashExpenses = cashExpenses };
     }
 
     /// <summary>

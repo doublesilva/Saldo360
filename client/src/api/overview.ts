@@ -49,6 +49,7 @@ export interface OverviewTransferLine { direction: 'Received' | 'Sent' | 'Betwee
 export interface OverviewTransfers {
   state: BlockState; received: string; sent: string; net: string; count: number; items: OverviewTransferLine[]
   externalIncome?: string | null; externalExpenses?: string | null; totalInflows?: string | null; totalOutflows?: string | null; available?: string | null; internalMoved?: string | null
+  refunds?: string | null; cashExpenses?: string | null
 }
 
 export interface DashboardOverview {
