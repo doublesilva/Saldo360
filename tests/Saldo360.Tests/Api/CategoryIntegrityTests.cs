@@ -74,7 +74,8 @@ public sealed class CategoryIntegrityTests(PostgresFixture postgres) : PostgresA
     [Theory]
     [InlineData("plannedTransactions")]
     [InlineData("cardPurchases")]
-    public async Task Delete_IsRefused_WhenAPlannedTransactionOrACardPurchaseUsesTheCategory(string source)
+    [InlineData("planLines")]
+    public async Task Delete_IsRefused_WhenAPlannedTransactionACardPurchaseOrAPlanLineUsesTheCategory(string source)
     {
         await ArrangeAsync();
         var category = (await CreateCategoryAsync("Compras")).Id;
@@ -83,6 +84,11 @@ public sealed class CategoryIntegrityTests(PostgresFixture postgres) : PostgresA
         {
             Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"{Base}/planned-transactions", _owner,
                 new { accountId = account, categoryId = category, type = "Expense", description = "Luz", amount = "10.00", dueDate = "2026-10-20" })).StatusCode);
+        }
+        else if (source == "planLines")
+        {
+            Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"{Base}/monthly-plan/lines", _owner,
+                new { competence = "2027-03", kind = "Expense", nature = "Fixed", description = "Linha", accountId = account, categoryId = category, amount = "10.00" })).StatusCode);
         }
         else
         {

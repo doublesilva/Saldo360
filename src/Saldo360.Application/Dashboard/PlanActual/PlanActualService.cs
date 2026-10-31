@@ -189,7 +189,8 @@ public sealed class PlanActualService(
         foreach (var account in inScope)
         {
             if (!history.TryGetValue(account.Id, out var accountFacts)) continue;
-            var eligible = (accountFacts.OverdraftContractedLimit ?? 0m) > 0m || (accountFacts.OverdraftUsedLimit ?? 0m) > 0m;
+            var effectiveLimit = account.OverdraftLimit ?? accountFacts.OverdraftContractedLimit;
+            var eligible = effectiveLimit is not null || (accountFacts.OverdraftUsedLimit ?? 0m) > 0m;
             if (!eligible) continue;
             var current = accountFacts.Anchors.FirstOrDefault(a => a.IsCurrent && a.Kind == nameof(BalanceAnchorKind.CurrentBalance));
             var observations = accountFacts.Anchors.Where(a => a.Kind == nameof(BalanceAnchorKind.CurrentBalance) && a.Reliability != nameof(BalanceAnchorReliability.Unreliable))
@@ -207,7 +208,7 @@ public sealed class PlanActualService(
                 }
             }
             decimal? difference = overview.TryGetValue(account.Id, out var recon) && recon.Difference is { } text ? decimal.Parse(text, CultureInfo.InvariantCulture) : null;
-            overdraftResults.Add(PlanActualCalculator.Overdraft(new(account.Id, account.Name, accountFacts.OverdraftContractedLimit, accountFacts.OverdraftUsedLimit, current?.Amount, current?.ObservedAt,
+            overdraftResults.Add(PlanActualCalculator.Overdraft(new(account.Id, account.Name, effectiveLimit, accountFacts.OverdraftUsedLimit, current?.Amount, current?.ObservedAt,
                 current?.AsOfDate, observations, month, today, closing, difference)));
         }
         var overdraft = PlanActualCalculator.ConsolidateOverdraft(overdraftResults, periodKind);

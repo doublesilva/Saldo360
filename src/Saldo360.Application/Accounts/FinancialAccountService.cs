@@ -311,6 +311,8 @@ public sealed class FinancialAccountService(
     private async Task<AccountBalanceDto?> ReadBalanceAsync(
         Guid workspaceId, Guid accountId, DateOnly date, CancellationToken cancellationToken)
     {
+        var account = await accounts.GetAsync(workspaceId, accountId, cancellationToken);
+        if (account is null) return null;
         if (await accounts.GetOpeningBalanceAsync(workspaceId, accountId, cancellationToken) is not { } opening)
         {
             return null;
@@ -329,12 +331,15 @@ public sealed class FinancialAccountService(
         var totals = await accounts.SumMovementsAsync(workspaceId, accountId, referenceDate, date, cancellationToken);
         var balance = FinancialBalanceCalculator.ApplyMovements(
             amount, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut);
+        var used = Math.Max(0m, -balance);
+        decimal? available = account.OverdraftLimit is { } limit ? Math.Max(0m, limit - used) : null;
+        decimal? excess = account.OverdraftLimit is { } knownLimit ? Math.Max(0m, used - knownLimit) : null;
         return new AccountBalanceDto(
             accountId, date, amount, referenceDate, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut,
-            balance, null, opening.Source);
+            balance, null, opening.Source, account.OverdraftLimit, used, available, excess);
 
         AccountBalanceDto Unavailable(BalanceUnavailableReason reason) =>
-            new(accountId, date, opening.Amount, opening.Date, null, null, null, null, null, reason, opening.Source);
+            new(accountId, date, opening.Amount, opening.Date, null, null, null, null, null, reason, opening.Source, account.OverdraftLimit);
     }
 
     private async Task<bool> IsParticipantAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>
@@ -345,7 +350,7 @@ public sealed class FinancialAccountService(
     {
         var details = AccountDetails.TryCreate(
             input.Name, input.Institution, input.Type, input.FinancialScope, input.ResponsibleUserId,
-            input.OpeningBalance, input.OpeningBalanceDate, out var errors);
+            input.OpeningBalance, input.OpeningBalanceDate, input.OverdraftLimit, out var errors);
 
         // Responsável precisa ser vínculo desta família. A mensagem não diz se o Id existe em outra.
         if (input.ResponsibleUserId is { } memberId && !errors.ContainsKey(ResponsibleField)

@@ -180,7 +180,7 @@ public static class FinancialAccountEndpoints
 
         var input = new AccountInput(
             request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleUserId,
-            request?.OpeningBalance, request?.OpeningBalanceDate, request?.IsPrimary, request?.ReplacementPrimaryAccountId);
+            request?.OpeningBalance, request?.OpeningBalanceDate, request?.OverdraftLimit, request?.IsPrimary, request?.ReplacementPrimaryAccountId);
         var result = await accounts.UpdateAsync(workspaceId, accountId, userId, input, request?.IsActive, cancellationToken);
         return result.Access switch
         {
@@ -192,7 +192,7 @@ public static class FinancialAccountEndpoints
 
     private static AccountInput ToInput(CreateAccountRequest? request) =>
         new(request?.Name, request?.Institution, request?.Type, request?.FinancialScope, request?.ResponsibleUserId,
-            request?.OpeningBalance, request?.OpeningBalanceDate, request?.IsPrimary);
+            request?.OpeningBalance, request?.OpeningBalanceDate, request?.OverdraftLimit, request?.IsPrimary);
 }
 
 /// <summary>
@@ -210,6 +210,7 @@ public sealed record CreateAccountRequest(
     Guid? ResponsibleUserId,
     decimal? OpeningBalance,
     DateOnly? OpeningBalanceDate,
+    decimal? OverdraftLimit,
     bool? IsPrimary = null);
 
 /// <summary>
@@ -225,6 +226,7 @@ public sealed record UpdateAccountRequest(
     Guid? ResponsibleUserId,
     decimal? OpeningBalance,
     DateOnly? OpeningBalanceDate,
+    decimal? OverdraftLimit,
     bool? IsActive,
     bool? IsPrimary = null,
     Guid? ReplacementPrimaryAccountId = null);
@@ -244,7 +246,11 @@ public sealed record AccountBalanceResponse(
     string? TotalTransferOut,
     string? Balance,
     BalanceUnavailableReason? UnavailableReason,
-    string? OpeningSource = null)
+    string? OpeningSource = null,
+    string? OverdraftLimit = null,
+    string? OverdraftUsed = null,
+    string? OverdraftAvailable = null,
+    string? OverdraftExcess = null)
 {
     public static AccountBalanceResponse From(AccountBalanceDto dto) => new(
         dto.AccountId,
@@ -257,7 +263,11 @@ public sealed record AccountBalanceResponse(
         Format(dto.TotalTransferOut),
         Format(dto.Balance),
         dto.UnavailableReason,
-        dto.OpeningSource);
+        dto.OpeningSource,
+        Format(dto.OverdraftLimit),
+        Format(dto.OverdraftUsed),
+        Format(dto.OverdraftAvailable),
+        Format(dto.OverdraftExcess));
 
     private static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
 }
@@ -275,6 +285,7 @@ public sealed record AccountResponse(
     AccountResponsibleDto? Responsible,
     string? OpeningBalance,
     DateOnly? OpeningBalanceDate,
+    string? OverdraftLimit,
     bool IsActive,
     string Currency,
     DateTimeOffset CreatedAt,
@@ -291,6 +302,7 @@ public sealed record AccountResponse(
         dto.Responsible,
         dto.OpeningBalance is { } amount ? Money.Format(amount) : null,
         dto.OpeningBalanceDate,
+        dto.OverdraftLimit is { } limit ? Money.Format(limit) : null,
         dto.IsActive,
         dto.Currency,
         dto.CreatedAt,

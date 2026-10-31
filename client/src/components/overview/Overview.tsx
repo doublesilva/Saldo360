@@ -10,6 +10,7 @@ import { OverviewBudget } from './OverviewBudget'
 import type { BudgetGroup } from '../budget/budgetText'
 import type { ExpenseNature } from '../../api/expenseNature'
 import { OverviewAccountsBlock, OverviewCommitmentsBlock, OverviewGoalsBlock, OverviewRecentBlock } from './OverviewAside'
+import { OverviewRecovery } from './OverviewRecovery'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
 import { useLoad } from './useLoad'
 import '../../Overview.css'
@@ -81,6 +82,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
 
     <div className="ov-layout">
       <div className="ov-main">
+        {planData && <div className="ov-slot"><OverviewRecovery key={`${planData.competence}:${planData.scope.accountId ?? planData.scope.kind}`} workspaceId={workspaceId} data={planData} onAccounts={() => onNavigate('accounts')} onProjection={() => openAgenda()} /></div>}
         <div className="ov-slot ov-slot--evolution">
         {evolutionData ? <div className={evolution.load.state === 'loading' ? 'ov-stale' : undefined}><OverviewEvolution plan={evolutionData} /></div>
           : evolution.load.state === 'error' ? <section className="ov-card"><h3>Evolução financeira</h3><OperationalError error={evolution.load.error} onRetry={evolution.retry} retryLabel="Recarregar a evolução" /></section>

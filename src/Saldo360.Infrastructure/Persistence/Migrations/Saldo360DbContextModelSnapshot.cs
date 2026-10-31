@@ -96,6 +96,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("opening_balance_date");
 
+                    b.Property<decimal?>("OverdraftLimit")
+                        .HasColumnType("numeric")
+                        .HasColumnName("overdraft_limit");
+
                     b.Property<Guid?>("ResponsibleUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("responsible_user_id");
@@ -147,6 +151,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_accounts_opening_balance_range", "abs(opening_balance) < 10000000000000");
 
                             t.HasCheckConstraint("ck_financial_accounts_opening_balance_scale", "scale(opening_balance) <= 2");
+
+                            t.HasCheckConstraint("ck_financial_accounts_overdraft_limit", "overdraft_limit IS NULL OR (overdraft_limit >= 0 AND overdraft_limit < 10000000000000 AND scale(overdraft_limit) <= 2)");
 
                             t.HasCheckConstraint("ck_financial_accounts_primary_eligible", "NOT is_primary OR (is_active AND type IN ('Checking', 'Savings'))");
 
@@ -245,6 +251,82 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_balance_anchors_kind", "kind IN ('CurrentBalance','AvailableBalance','Unknown')");
 
                             t.HasCheckConstraint("ck_balance_anchors_reliability", "reliability IN ('Reliable','Provisional','Unreliable')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Accounts.OverdraftRecoverySnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<DateTimeOffset>("CapturedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("captured_at");
+
+                    b.Property<DateOnly>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<string>("Composition")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("composition");
+
+                    b.Property<decimal>("OpeningBalance")
+                        .HasColumnType("numeric")
+                        .HasColumnName("opening_balance");
+
+                    b.Property<decimal>("PlannedClosingBalance")
+                        .HasColumnType("numeric")
+                        .HasColumnName("planned_closing_balance");
+
+                    b.Property<decimal>("PlannedExpense")
+                        .HasColumnType("numeric")
+                        .HasColumnName("planned_expense");
+
+                    b.Property<decimal>("PlannedIncome")
+                        .HasColumnType("numeric")
+                        .HasColumnName("planned_income");
+
+                    b.Property<string>("Quality")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("quality");
+
+                    b.Property<decimal>("RecoveryTarget")
+                        .HasColumnType("numeric")
+                        .HasColumnName("recovery_target");
+
+                    b.Property<DateOnly>("ReferenceDate")
+                        .HasColumnType("date")
+                        .HasColumnName("reference_date");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_overdraft_recovery_snapshots");
+
+                    b.HasIndex("AccountId")
+                        .HasDatabaseName("ix_overdraft_recovery_snapshots_account_id");
+
+                    b.HasIndex("WorkspaceId", "AccountId", "Competence")
+                        .IsUnique()
+                        .HasDatabaseName("ix_overdraft_recovery_snapshots_workspace_id_account_id_compet");
+
+                    b.ToTable("overdraft_recovery_snapshots", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_overdraft_recovery_snapshot_competence", "extract(day from competence) = 1");
+
+                            t.HasCheckConstraint("ck_overdraft_recovery_snapshot_money", "abs(opening_balance) < 10000000000000 AND abs(planned_income) < 10000000000000 AND abs(planned_expense) < 10000000000000 AND abs(planned_closing_balance) < 10000000000000 AND abs(recovery_target) < 10000000000000");
                         });
                 });
 
@@ -5287,6 +5369,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_account_balance_anchors_financial_workspaces_work");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Accounts.OverdraftRecoverySnapshot", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_overdraft_recovery_snapshots_financial_accounts_account_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance", b =>

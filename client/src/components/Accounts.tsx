@@ -400,6 +400,11 @@ function RealizedBalance({ workspaceId, accountId, refreshKey }: { workspaceId: 
         <strong className={negative ? 'amount amount--negative' : 'amount'}>{formatBrlDecimal(balance.balance)}</strong>
         {negative && <span className="meta"> — saldo negativo: valor devido, não é crédito disponível.</span>}
       </p>
+      {negative && balance.overdraftLimit == null && <p className="meta">Limite contratado desconhecido. Use “Editar” para informar o limite.</p>}
+      {balance.overdraftLimit != null && <p className="meta">
+        Limite contratado {formatBrlDecimal(balance.overdraftLimit)} · usado {formatBrlDecimal(balance.overdraftUsed ?? '0.00')} · disponível estimado {formatBrlDecimal(balance.overdraftAvailable ?? '0.00')}
+        {balance.overdraftExcess != null && balance.overdraftExcess !== '0.00' ? ` · acima do limite ${formatBrlDecimal(balance.overdraftExcess)}` : ''}
+      </p>}
       {balance.openingSource === 'BalanceAnchor' && (
         <p className="meta">
           Saldo calculado a partir da referência bancária (saldo informado pelo banco) e dos movimentos consistentes, sem cadastro manual de saldo inicial. O histórico só existe a partir da data abaixo.
@@ -425,6 +430,7 @@ const emptyInput: AccountInput = {
   responsibleUserId: null,
   openingBalance: null,
   openingBalanceDate: null,
+  overdraftLimit: null,
 }
 
 function AccountForm({
@@ -444,6 +450,9 @@ function AccountForm({
   // Texto digitado no valor (pt-BR); convertido sem arredondar só no envio.
   const [balanceText, setBalanceText] = useState(
     account?.openingBalance != null ? decimalToInput(account.openingBalance) : '',
+  )
+  const [overdraftText, setOverdraftText] = useState(
+    account?.overdraftLimit != null ? decimalToInput(account.overdraftLimit) : '',
   )
   const [errors, setErrors] = useState<Record<string, string[]>>({})
   const [busy, setBusy] = useState(false)
@@ -466,6 +475,10 @@ function AccountForm({
       clientErrors.openingBalance = ['Informe o valor do saldo inicial ou remova a data de referência.']
     else if (amount.kind === 'ok' && !date) clientErrors.openingBalanceDate = ['Informe a data de referência do saldo inicial.']
 
+    const overdraft = parseAmount(overdraftText, 'O limite de cheque especial')
+    if (overdraft.kind === 'invalid') clientErrors.overdraftLimit = [overdraft.message]
+    else if (overdraft.kind === 'ok' && overdraft.text.startsWith('-')) clientErrors.overdraftLimit = ['O limite de cheque especial não pode ser negativo.']
+
     if (Object.keys(clientErrors).length > 0) {
       setErrors(clientErrors)
       return
@@ -479,6 +492,7 @@ function AccountForm({
         institution: input.institution?.trim() || null,
         openingBalance: amount.kind === 'ok' ? amount.text : null,
         openingBalanceDate: date,
+        overdraftLimit: input.type !== 'Cash' && overdraft.kind === 'ok' ? overdraft.text : null,
       }
       const primaryNow = input.type !== 'Cash' && wantsPrimary
       if (primaryNow !== (account?.isPrimary === true)) payload.isPrimary = primaryNow
@@ -604,6 +618,15 @@ function AccountForm({
         />
         {fieldError('openingBalanceDate')}
       </fieldset>
+
+      {input.type !== 'Cash' && <fieldset>
+        <legend>Cheque especial</legend>
+        <p className="meta">Informe apenas o limite contratado. Deixe em branco se desconhecido; use zero se a conta explicitamente não possui limite.</p>
+        <label htmlFor="account-overdraft-limit">Limite contratado (R$)</label>
+        <input id="account-overdraft-limit" value={overdraftText} onChange={event => setOverdraftText(event.target.value)} inputMode="decimal"
+          placeholder="Ex.: 20.000,00" aria-invalid={Boolean(errors.overdraftLimit)} aria-describedby={errors.overdraftLimit ? 'account-overdraftLimit-error' : undefined} />
+        {fieldError('overdraftLimit')}
+      </fieldset>}
 
       <p className="meta">Não informe agência, número de conta nem senhas: o Saldo360 não guarda esses dados.</p>
       {fieldError('form')}

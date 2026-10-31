@@ -158,6 +158,7 @@ describe('Accounts', () => {
       responsibleUserId: 'm-ana',
       openingBalance: null,
       openingBalanceDate: null,
+      overdraftLimit: null,
       isActive: false,
     })
   })
@@ -184,6 +185,7 @@ describe('Accounts', () => {
       responsibleUserId: 'm-bruno',
       openingBalance: null,
       openingBalanceDate: null,
+      overdraftLimit: null,
     })
   })
 

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Saldo360.Application.Categories;
 using System.Net;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -197,6 +199,46 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
         await using var db = Db();
         Assert.Equal(before, await db.FinancialCategories.AsNoTracking().OrderBy(x => x.Name).Select(x => new { x.Id, x.Name, x.IsActive }).ToListAsync());
         Assert.Equal(PluggyCategorySource.None, (await CategoriesByImportedAsync(c.Workspace))["unk"].Source);
+    }
+
+    [Fact]
+    public async Task RealCatalog_DeletedDefaultCategoriesNeverReappear_AfterSyncAndCategorization_AndClassifiedOnesAreProtected()
+    {
+        var session = await SignInAsync("t931-catalogo-real");
+        var client = LabClient(configure: services =>
+            services.AddSingleton<IDefaultCategoryCatalog>(StandardDefaultCategoryCatalog.Instance));
+        var workspace = (await JsonOf(await Send(client, HttpMethod.Post, "/api/me/financial-workspace", session))).GetProperty("id").GetGuid();
+        var categoriesUrl = $"/api/financial-workspaces/{workspace}/categories";
+        var all = (await JsonOf(await Send(client, HttpMethod.Get, categoriesUrl, session))).EnumerateArray().ToList();
+        Assert.Equal(49, all.Count);
+        var food = all.Single(x => x.GetProperty("name").GetString() == "Alimentação").GetProperty("id").GetGuid();
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Delete, $"{categoriesUrl}/{food}?confirmSubcategories=true", session)).StatusCode);
+
+        var connection = await LinkAsync(client, session, workspace, ItemA, "Itaú PF");
+        Pluggy.TransactionPageSize = 50;
+        Pluggy.TransactionsByAccount[BankA] =
+        [
+            Tx("g1", BankA, 9, -10.25m, description: "Mercado Central"),
+            Tx("sal", BankA, 7, 1500m, "OUTROS", "Empresa X Pagamento", "Salary"),
+        ];
+        var c = new Ctx(session, workspace, client, connection);
+        await LinkBankAsync(c);
+        await SyncAsync(c);
+        await RunAsync(c);
+        await RunAsync(c, new { force = true });
+
+        var after = (await JsonOf(await Send(client, HttpMethod.Get, categoriesUrl, session))).EnumerateArray().ToList();
+        Assert.Equal(46, after.Count); // nada recriado: as 49 menos Alimentação e as suas 2 subcategorias
+        Assert.DoesNotContain(after, x => x.GetProperty("name").GetString() is "Alimentação" or "Mercado e feira" or "Refeições fora e delivery");
+        var imported = await CategoriesByImportedAsync(workspace);
+        Assert.Equal((null, PluggyCategorySource.None), imported["g1"]); // categoria de origem preservada como informação; sem local, fica para revisão
+        Assert.Equal(("Salário", PluggyCategorySource.Pluggy), imported["sal"]); // existe localmente (catálogo): é aplicada
+
+        // A categoria aplicada pela Pluggy agora tem vínculo (lançamento e classificação importada): não pode ser excluída.
+        var salary = after.Single(x => x.GetProperty("name").GetString() == "Salário").GetProperty("id").GetGuid();
+        var refused = await Send(client, HttpMethod.Delete, $"{categoriesUrl}/{salary}", session);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Contains((await JsonOf(refused)).GetProperty("impact").GetProperty("references").EnumerateArray(), r => r.GetProperty("source").GetString() == "pluggyPostings");
     }
     [Fact]
     public async Task ReRunningIsIdempotentAndDoesNotReprocessWhatWasAlreadyClassified()

@@ -15,6 +15,7 @@ public sealed record FinancialAccountDto(
     AccountResponsibleDto? Responsible,
     decimal? OpeningBalance,
     DateOnly? OpeningBalanceDate,
+    decimal? OverdraftLimit,
     bool IsActive,
     string Currency,
     DateTimeOffset CreatedAt,
@@ -57,6 +58,7 @@ public sealed record AccountInput(
     Guid? ResponsibleUserId,
     decimal? OpeningBalance,
     DateOnly? OpeningBalanceDate,
+    decimal? OverdraftLimit,
     bool? IsPrimary = null,
     Guid? ReplacementPrimaryAccountId = null);
 
@@ -123,7 +125,11 @@ public sealed record AccountBalanceDto(
     decimal? TotalTransferOut,
     decimal? Balance,
     BalanceUnavailableReason? UnavailableReason,
-    string? OpeningSource = null);
+    string? OpeningSource = null,
+    decimal? OverdraftLimit = null,
+    decimal? OverdraftUsed = null,
+    decimal? OverdraftAvailable = null,
+    decimal? OverdraftExcess = null);
 
 public enum BalanceAccess
 {

@@ -37,6 +37,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FamilyInvitation> FamilyInvitations => Set<FamilyInvitation>();
 
     public DbSet<FinancialAccount> FinancialAccounts => Set<FinancialAccount>();
+    public DbSet<OverdraftRecoverySnapshot> OverdraftRecoverySnapshots => Set<OverdraftRecoverySnapshot>();
 
     public DbSet<FinancialCategory> FinancialCategories => Set<FinancialCategory>();
 

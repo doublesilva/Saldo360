@@ -28,6 +28,8 @@ internal sealed class FinancialAccountConfiguration : IEntityTypeConfiguration<F
                 $"scale(opening_balance) <= {Money.MaxScale}");
             table.HasCheckConstraint("ck_financial_accounts_opening_balance_range",
                 $"abs(opening_balance) < {Money.Limit}");
+            table.HasCheckConstraint("ck_financial_accounts_overdraft_limit",
+                $"overdraft_limit IS NULL OR (overdraft_limit >= 0 AND overdraft_limit < {Money.Limit} AND scale(overdraft_limit) <= {Money.MaxScale})");
 
             // Conta principal (T09.3.3): só conta bancária e ativa pode ser a principal.
             table.HasCheckConstraint("ck_financial_accounts_primary_eligible",
@@ -42,6 +44,7 @@ internal sealed class FinancialAccountConfiguration : IEntityTypeConfiguration<F
         builder.Property(account => account.Scope).HasConversion<string>().HasMaxLength(2);
         builder.Property(account => account.OpeningBalance).HasColumnType("numeric");
         builder.Property(account => account.OpeningBalanceDate).HasColumnType("date");
+        builder.Property(account => account.OverdraftLimit).HasColumnType("numeric");
         builder.Property(account => account.Currency).HasMaxLength(3).IsFixedLength();
         builder.HasIndex(account => new { account.WorkspaceId, account.IsActive });
         builder.Property(account => account.IsPrimary).HasDefaultValue(false);

@@ -176,7 +176,7 @@ public sealed class PluggyAccountLinkService(
         if (account.OpeningBalance is not null && !replaceExisting)
             return new(PluggyAccess.Conflict, Message: "A conta já tem saldo inicial. Confirme a substituição para aplicar o sugerido.");
         var input = new AccountInput(account.Name, account.Institution, account.Type.ToString(), account.FinancialScope.ToString(), account.Responsible?.UserId,
-            decimal.Parse(amountText, CultureInfo.InvariantCulture), date);
+            decimal.Parse(amountText, CultureInfo.InvariantCulture), date, account.OverdraftLimit);
         var updated = await accountService.UpdateAsync(workspaceId, accountId, userId, input, account.IsActive, ct);
         if (updated.Access != AccountAccess.Allowed) return PluggyResult<PluggyAccountLinkDetailView>.Invalid("Não foi possível aplicar o saldo inicial sugerido.");
         return await GetDetailAsync(workspaceId, userId, linkId, ct);

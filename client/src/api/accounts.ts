@@ -36,6 +36,8 @@ export interface FinancialAccount {
   openingBalance: string | null
   /** "yyyy-MM-dd", sem horário. */
   openingBalanceDate: string | null
+  /** Limite manual contratado: null desconhecido; "0.00" significa explicitamente sem limite. */
+  overdraftLimit?: string | null
   isActive: boolean
   currency: string
   createdAt: string
@@ -69,6 +71,7 @@ export interface AccountInput {
   /** Texto decimal exato ("-1234.56"). Valor e data juntos ou ambos null. */
   openingBalance: string | null
   openingBalanceDate: string | null
+  overdraftLimit?: string | null
   /** true define (e substitui a anterior), false remove a condição de principal e ausente não altera. */
   isPrimary?: boolean
   /** Só ao desativar a conta principal: a substituta vira a principal na mesma operação. */
@@ -149,6 +152,7 @@ export function toInput(account: FinancialAccount): AccountInput {
     responsibleUserId: account.responsible?.userId ?? null,
     openingBalance: account.openingBalance,
     openingBalanceDate: account.openingBalanceDate,
+    overdraftLimit: account.overdraftLimit ?? null,
   }
 }
 
@@ -172,6 +176,10 @@ export interface AccountBalance {
   unavailableReason: BalanceUnavailableReason | null
   /** Origem do saldo inicial usado: 'Manual' (cadastro) ou 'BalanceAnchor' (derivado do saldo informado pelo banco, sem cadastro manual). */
   openingSource?: 'Manual' | 'BalanceAnchor' | null
+  overdraftLimit?: string | null
+  overdraftUsed?: string | null
+  overdraftAvailable?: string | null
+  overdraftExcess?: string | null
 }
 
 /** Saldo realizado até hoje (America/Sao_Paulo, definido pela API). */

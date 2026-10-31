@@ -46,6 +46,9 @@ public sealed class FinancialAccount : Entity
     /// <summary>Data de referência do saldo inicial (sem horário). Null se e somente se o saldo for null.</summary>
     public DateOnly? OpeningBalanceDate { get; private set; }
 
+    /// <summary>Limite de cheque especial informado pelo usuário. Null = desconhecido; zero = explicitamente sem limite.</summary>
+    public decimal? OverdraftLimit { get; private set; }
+
     public bool IsActive { get; private set; }
 
     /// <summary>
@@ -113,6 +116,7 @@ public sealed class FinancialAccount : Entity
         ResponsibleUserId = details.ResponsibleUserId;
         OpeningBalance = details.OpeningBalance?.Amount;
         OpeningBalanceDate = details.OpeningBalance?.Date;
+        OverdraftLimit = details.OverdraftLimit;
     }
 }
 
@@ -121,7 +125,7 @@ public sealed record AccountDetails
 {
     private AccountDetails(
         string name, string? institution, AccountType type, FinancialScope scope, Guid? responsibleUserId,
-        OpeningBalance? openingBalance)
+        OpeningBalance? openingBalance, decimal? overdraftLimit)
     {
         Name = name;
         Institution = institution;
@@ -129,6 +133,7 @@ public sealed record AccountDetails
         Scope = scope;
         ResponsibleUserId = responsibleUserId;
         OpeningBalance = openingBalance;
+        OverdraftLimit = overdraftLimit;
     }
 
     public string Name { get; }
@@ -144,6 +149,8 @@ public sealed record AccountDetails
     /// <summary>Saldo inicial com data de referência; null = não informado.</summary>
     public OpeningBalance? OpeningBalance { get; }
 
+    public decimal? OverdraftLimit { get; }
+
     /// <summary>
     /// Valida nome (obrigatório, até 100), instituição (opcional, até 100), os valores textuais de tipo e
     /// escopo, que precisam ser exatamente um dos nomes permitidos, e o saldo inicial (valor e data juntos ou
@@ -152,6 +159,12 @@ public sealed record AccountDetails
     public static AccountDetails? TryCreate(
         string? name, string? institution, string? type, string? scope, Guid? responsibleUserId,
         decimal? openingBalance, DateOnly? openingBalanceDate,
+        out Dictionary<string, string[]> errors) =>
+        TryCreate(name, institution, type, scope, responsibleUserId, openingBalance, openingBalanceDate, null, out errors);
+
+    public static AccountDetails? TryCreate(
+        string? name, string? institution, string? type, string? scope, Guid? responsibleUserId,
+        decimal? openingBalance, DateOnly? openingBalanceDate, decimal? overdraftLimit,
         out Dictionary<string, string[]> errors)
     {
         errors = [];
@@ -189,8 +202,15 @@ public sealed record AccountDetails
 
         var parsedBalance = Accounts.OpeningBalance.TryCreate(openingBalance, openingBalanceDate, errors);
 
+        if (overdraftLimit is { } limit)
+        {
+            if (!FinancialAccount.IsBankType(parsedType)) errors["overdraftLimit"] = ["Limite de cheque especial só pode ser informado para conta bancária."];
+            else if (limit < 0m) errors["overdraftLimit"] = ["O limite de cheque especial não pode ser negativo."];
+            else if (Money.Validate(limit, "O limite de cheque especial") is { } limitError) errors["overdraftLimit"] = [limitError];
+        }
+
         return errors.Count == 0
-            ? new AccountDetails(trimmedName, trimmedInstitution, parsedType, parsedScope, responsibleUserId, parsedBalance)
+            ? new AccountDetails(trimmedName, trimmedInstitution, parsedType, parsedScope, responsibleUserId, parsedBalance, overdraftLimit)
             : null;
     }
 }

@@ -216,6 +216,7 @@ describe('Categories: Adicionar categorias padrão', () => {
     expect(region.textContent).toContain('Serão adicionadas 12 categorias e 30 subcategorias')
     expect(within(region).getByText('Mercado e feira').closest('li')!.textContent).toContain('já existe')
     expect(within(region).getByText('Moradia').closest('li')!.textContent).toContain('inativa (não será reativada)')
+    expect(within(region).getByText('Contas da casa').closest('li')!.textContent).toContain('Não adicionada: categoria principal inativa')
     expect(within(region).getByText('Refeições fora e delivery').closest('li')!.textContent).toContain('será adicionada')
     expect(within(region).getByText('Rendimentos').closest('li')!.textContent).toContain('será adicionada')
     expect(writes(calls)).toHaveLength(0)

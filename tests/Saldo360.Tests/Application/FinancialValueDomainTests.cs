@@ -39,6 +39,34 @@ public sealed class MoneyDomainTests
 public sealed class FinancialAccountDomainTests
 {
     [Theory]
+    [InlineData(null, true)]
+    [InlineData("0", true)]
+    [InlineData("20000.00", true)]
+    [InlineData("-0.01", false)]
+    [InlineData("1.001", false)]
+    public void OverdraftLimit_DistinguishesUnknownZeroAndPositive_AndRejectsInvalid(string? text, bool valid)
+    {
+        var details = AccountDetails.TryCreate("Conta", null, "Checking", "PF", null, null, null,
+            text is null ? null : decimal.Parse(text, CultureInfo.InvariantCulture), out var errors);
+
+        Assert.Equal(valid, details is not null);
+        Assert.Equal(valid, !errors.ContainsKey("overdraftLimit"));
+    }
+
+    [Fact]
+    public void RecoverySnapshot_FreezesTheOpeningPlan_AndAllowsWorseningTarget()
+    {
+        var captured = new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.Zero);
+        var improving = OverdraftRecoverySnapshot.Create(Guid.NewGuid(), Guid.NewGuid(), new(2026, 10, 20), -15000m,
+            new(2026, 10, 1), 10000m, 7500m, -12500m, "Complete", "projection", captured);
+        var worsening = OverdraftRecoverySnapshot.Create(Guid.NewGuid(), Guid.NewGuid(), new(2026, 10, 1), -15000m,
+            new(2026, 10, 1), 1000m, 3000m, -17000m, "Partial", "late", captured);
+
+        Assert.Equal((new DateOnly(2026, 10, 1), 2500m, captured), (improving.Competence, improving.RecoveryTarget, improving.CapturedAt));
+        Assert.Equal(-2000m, worsening.RecoveryTarget);
+    }
+
+    [Theory]
     [InlineData("1234.5", null, "openingBalanceDate")]
     [InlineData(null, "2026-10-01", "openingBalance")]
     [InlineData("0.001", "2026-10-01", "openingBalance")]

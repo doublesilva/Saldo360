@@ -48,6 +48,7 @@ export function FinancialReset({ workspaceId, onReset }: { workspaceId: string; 
     {open && <form onSubmit={submit} aria-busy={busy || loading}>
       <p>Esta ação apagará permanentemente todos os dados financeiros deste orçamento.</p>
       <p>Ela não pode ser desfeita pela aplicação.</p>
+      <p>As categorias também serão removidas e não são reinstaladas automaticamente: depois do reset, use "Adicionar categorias padrão" em Categorias.</p>
       <p>Dados ativos serão removidos. Backups de infraestrutura podem seguir a política de retenção do ambiente.</p>
       {loading && <p role="status">Consultando impacto…</p>}
       {error && <p role="alert">{error}</p>}
