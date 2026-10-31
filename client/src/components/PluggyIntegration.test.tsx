@@ -286,6 +286,25 @@ describe('PluggyReviewPanel', () => {
     expect(onChanged).toHaveBeenCalled()
   })
 
+  it('explica a falta de rastreabilidade e permite confirmar crédito externo sem criar contraparte', async () => {
+    api.listReview.mockResolvedValue({
+      ...page(), total: 2, items: [
+        { ...page().items[0], direction: 'Income', amount: '1960.49', description: 'Entrada GRPQA LTDA', allowedResolutions: ['AsIncome', 'Ignore'] },
+        { ...page().items[0], postingId: 'p3', importedTransactionId: 't3', reason: 'NoCounterpart:InvestmentRedemption', direction: 'Income', amount: '850.00', description: 'RESGATE APLICACAO', allowedResolutions: ['AsIncome', 'Ignore'] },
+      ],
+    })
+    render(<PluggyReviewPanel workspaceId="w1" refreshKey="0" />)
+
+    const rent = (await screen.findByText('Entrada GRPQA LTDA')).closest('li')!
+    expect(within(rent).getByText(/histórico disponível não comprova uma transferência interna/i)).toBeTruthy()
+    expect(within(rent).getByText(/nenhuma contraparte será criada/i)).toBeTruthy()
+    expect(within(rent).getByRole('button', { name: 'Contabilizar como receita' })).toBeTruthy()
+
+    const redemption = screen.getByText('RESGATE APLICACAO').closest('li')!
+    expect(within(redemption).getByText(/não identifica a aplicação ou movimentação correspondente/i)).toBeTruthy()
+    expect(within(redemption).getByText(/não será tratado automaticamente como resgate/i)).toBeTruthy()
+  })
+
   it('"Não contabilizar" pede confirmação', async () => {
     api.listReview.mockResolvedValue(page())
     api.resolveReview.mockResolvedValue({})

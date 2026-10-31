@@ -272,6 +272,12 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { work
             : <p className="meta">Nenhuma despesa dos últimos 180 dias com saldo devolvível.</p>}
         </>}
         {item.reviewKind === 'Link' && (!item.candidates || item.candidates.length === 0) && <p className="meta">Nenhuma contraparte elegível encontrada nas contas integradas.</p>}
+        {item.reason === 'TransferWithoutCounterpart' && item.direction === 'Income' && <p className="meta">
+          O histórico disponível não comprova uma transferência interna. Se este crédito veio de fora do orçamento, confirme-o como receita; nenhuma contraparte será criada.
+        </p>}
+        {item.reason === 'NoCounterpart:InvestmentRedemption' && <p className="meta">
+          O histórico disponível não identifica a aplicação ou movimentação correspondente. Sem essa evidência, este crédito não será tratado automaticamente como resgate.
+        </p>}
         {item.allowedResolutions.length > 0 && <div className="form__actions">
           {item.allowedResolutions.map(resolution => <button key={resolution} type="button" disabled={busy === item.postingId} onClick={() => void decide(item.postingId, resolution)}>{resolutionLabels[resolution]}</button>)}
         </div>}

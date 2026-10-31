@@ -897,6 +897,40 @@ public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture post
     }
 
     [Fact]
+    public async Task AManuallyConfirmedExternalIncomeKeepsTheImportedDateAndHasOneFinancialEffectWithoutACounterpart()
+    {
+        var c = await ArrangeAsync("t93-external-income", seed: false);
+        Pluggy.TransactionsByAccount[BankA] =
+        [
+            Tx("rent-2026-10-08", BankA, (Today.ToDateTime(TimeOnly.MinValue) - new DateTime(2026, 10, 8)).Days, 1960.49m,
+                operation: "TRANSFERENCIA_MESMA_INSTITUICAO", description: "Entrada GRPQA LTDA", category: "Transfer - Internal"),
+        ];
+        await LinkBankAsync(c, name: "Itaú PF");
+        await SyncAsync(c);
+
+        var review = await ReviewAsync(c);
+        var item = Assert.Single(review.GetProperty("items").EnumerateArray());
+        Assert.Equal(("TransferWithoutCounterpart", "2026-10-08", "1960.49"),
+            (item.GetProperty("reason").GetString(), item.GetProperty("date").GetString(), item.GetProperty("amount").GetString()));
+        Assert.Empty(await CoreAsync(c.Workspace));
+
+        var response = await PostAsync(c, $"{Integration(c.Workspace)}/review/{item.GetProperty("postingId").GetGuid()}/resolve", new { resolution = "AsIncome" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var income = Assert.Single(await CoreAsync(c.Workspace));
+        Assert.Equal((CategoryType.Income, new DateOnly(2026, 10, 8), 1960.49m, "Entrada GRPQA LTDA"),
+            (income.Type, income.TransactionDate, income.Amount, income.Description));
+        await using var db = Db();
+        var posting = await db.PluggyPostings.AsNoTracking().SingleAsync(p => p.ImportedTransactionId == item.GetProperty("importedTransactionId").GetGuid());
+        Assert.Equal((PluggyPostingState.Applied, PluggyPostingKind.BankMovement, PluggyResolution.AsIncome, income.Id, null),
+            (posting.State, posting.Kind, posting.Resolution, posting.FinancialTransactionId, posting.CounterpartPostingId));
+        Assert.Empty(await db.FinancialTransfers.AsNoTracking().Where(t => t.WorkspaceId == c.Workspace).ToListAsync());
+
+        await SyncAsync(c);
+        Assert.Single(await CoreAsync(c.Workspace));
+    }
+
+    [Fact]
     public async Task IgnoredReviewItemsStayOutOfTheRealizedForever()
     {
         var c = await ArrangeAsync("t93-ignore");

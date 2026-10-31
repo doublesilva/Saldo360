@@ -59,7 +59,7 @@ export const reviewReasonLabels: Record<string, string> = {
   RefundUndone: 'Devolução desfeita por você',
   SourceChanged: 'Os dados do banco mudaram depois do pareamento',
   'NoCounterpart:CashWithdrawal': 'Saque em dinheiro',
-  'NoCounterpart:InvestmentRedemption': 'Resgate de aplicação',
+  'NoCounterpart:InvestmentRedemption': 'Possível resgate sem aplicação ou movimentação correspondente identificada',
   'Card:CardRefund': 'Estorno no cartão',
   'Card:CardCredit': 'Crédito no cartão',
   'Card:CardCreditOperation': 'Operação de crédito no cartão',
