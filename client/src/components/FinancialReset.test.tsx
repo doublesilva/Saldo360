@@ -46,6 +46,7 @@ it('remounts financial state after success, keeps workspace and reconsults the e
   const before = calls.filter(c => c.url.includes('/financial-dashboard/overview?')).length
   fireEvent.click(screen.getByRole('button', { name: 'Apagar dados financeiros' }))
   await screen.findByText(/Orçamento reiniciado/)
+  expect(screen.getByText(/Adicionar categorias padrão/)).toBeTruthy()
   await waitFor(() => expect(calls.filter(c => c.url.includes('/financial-dashboard/overview?')).length).toBeGreaterThan(before))
   expect(calls.filter(c => c.url === '/api/me/financial-workspace')).toHaveLength(1)
   expect(calls.some(c => c.url.includes('/auth/logout'))).toBe(false)

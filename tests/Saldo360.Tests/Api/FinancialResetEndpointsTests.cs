@@ -56,6 +56,9 @@ public sealed class FinancialResetEndpointsTests(PostgresFixture postgres) : Pos
         Assert.Equal(2, await db.FinancialWorkspaces.CountAsync());
         Assert.Equal(2,await db.Users.CountAsync()); Assert.Equal(sessionsBefore,await db.UserSessions.CountAsync()); Assert.Equal(keysBefore,await db.DataProtectionKeys.CountAsync());
         Assert.Equal(wa.OwnerUserId, (await db.FinancialWorkspaces.SingleAsync(x => x.Id == wa.Id)).OwnerUserId);
+        var resetWorkspace = await db.FinancialWorkspaces.AsNoTracking().SingleAsync(x => x.Id == wa.Id);
+        Assert.NotNull(resetWorkspace.DefaultCategoriesInitializedAt); // registro original fica no orçamento
+        Assert.Equal(0, await db.FinancialCategories.CountAsync(c => c.WorkspaceId == wa.Id)); // reset não repopula o catálogo
         Assert.Equal(2, await db.ServiceAccounts.CountAsync()); Assert.Equal(2, await db.ServiceAccountIdentifiers.CountAsync());
         Assert.Single(await db.Families.ToListAsync()); Assert.Equal(2, await db.FamilyMembers.CountAsync()); Assert.Equal(2, await db.FamilyInvitations.CountAsync());
         Assert.Equal("reset-a", (await GetMeAsync(a)).Subject);

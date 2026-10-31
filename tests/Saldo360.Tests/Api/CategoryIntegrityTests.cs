@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Saldo360.Domain.Debts;
+using Saldo360.Domain.Planning;
 using Saldo360.Tests.Support;
 
 namespace Saldo360.Tests.Api;
@@ -143,6 +144,52 @@ public sealed class CategoryIntegrityTests(PostgresFixture postgres) : PostgresA
         await using var db = Db();
         var target = await db.FinancialBudgetTargets.AsNoTracking().SingleAsync();
         Assert.Equal((food, false, 500m), (target.CategoryId, target.IsArchived, target.PlannedAmount));
+    }
+
+    [Fact]
+    public async Task Delete_IsRefused_WhenAnOfficialCardInstallmentUsesTheCategory()
+    {
+        await ArrangeAsync();
+        var category = (await CreateCategoryAsync("Parcela oficial")).Id;
+        var card = await SendWithCsrfAsync(HttpMethod.Post, $"{Base}/credit-cards", _owner,
+            new { name = "Cartão", issuer = "Banco", creditLimit = "10000.00", closingDay = 10, dueDay = 20 });
+        var cardId = (await ReadAsync<IdDto>(card)).Id;
+        Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"{Base}/credit-cards/{cardId}/purchases", _owner,
+            new { description = "Compra", purchaseDate = "2026-09-05", totalAmount = "120.00", installmentCount = 1, categoryId = category })).StatusCode);
+        await using (var db = Db())
+        {
+            var purchase = await db.FinancialCreditCardPurchases.Include(p => p.Installments).SingleAsync();
+            purchase.Installments.Single().ApplyOfficial(120m, category);
+            await db.SaveChangesAsync();
+        }
+
+        var refused = await SendWithCsrfAsync(HttpMethod.Delete, $"{Base}/categories/{category}", _owner);
+
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        using var body = JsonDocument.Parse(await refused.Content.ReadAsStringAsync());
+        Assert.Contains(body.RootElement.GetProperty("impact").GetProperty("references").EnumerateArray(),
+            r => r.GetProperty("source").GetString() == "cardInstallments");
+    }
+
+    [Fact]
+    public async Task Delete_IsRefused_WhenAMonthlyPlanLineUsesTheCategory()
+    {
+        await ArrangeAsync();
+        var category = (await CreateCategoryAsync("Plano")).Id;
+        await using (var db = Db())
+        {
+            db.FinancialPlanLines.Add(FinancialPlanLine.Create(_family.Id, new DateOnly(2026, 11, 1),
+                new(PlanLineKind.Expense, PlanLineNature.Fixed, "Plano mensal", null, null, category, 250m, null, null, null, null),
+                _family.OwnerUserId, DateTimeOffset.UtcNow));
+            await db.SaveChangesAsync();
+        }
+
+        var refused = await SendWithCsrfAsync(HttpMethod.Delete, $"{Base}/categories/{category}", _owner);
+
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        using var body = JsonDocument.Parse(await refused.Content.ReadAsStringAsync());
+        Assert.Contains(body.RootElement.GetProperty("impact").GetProperty("references").EnumerateArray(),
+            r => r.GetProperty("source").GetString() == "planLines");
     }
 
     private async Task<IdDto> CreateCategoryAsync(string name)

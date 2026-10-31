@@ -159,6 +159,13 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
         Assert.Equal((2, 0, 0, 2), (result.GetProperty("pluggy").GetInt32(), result.GetProperty("rule").GetInt32(), result.GetProperty("categoriesCreated").GetInt32(), result.GetProperty("unresolved").GetInt32()));
         Assert.Equal(0, Ai.Calls); // etapa local nunca consulta a IA
 
+        // A categoria local agora também está vinculada ao posting de classificação; a exclusão explica essa origem e não deixa o vínculo órfão.
+        var deletion = await Send(c.Client, HttpMethod.Delete, $"/api/financial-workspaces/{c.Workspace}/categories/{existingFood}", c.Session);
+        Assert.Equal(HttpStatusCode.Conflict, deletion.StatusCode);
+        using (var deletionBody = JsonDocument.Parse(await deletion.Content.ReadAsStringAsync()))
+            Assert.Contains(deletionBody.RootElement.GetProperty("impact").GetProperty("references").EnumerateArray(),
+                reference => reference.GetProperty("source").GetString() == "pluggyPostings");
+
         // A API de lançamentos expõe a origem da categoria para a tela: Pluggy para os mapeados, nenhuma para o que ficou sem categoria.
         var page = await JsonOf(await Send(c.Client, HttpMethod.Get, $"/api/financial-workspaces/{c.Workspace}/transactions?pageSize=50", c.Session));
         var items = page.GetProperty("items").EnumerateArray().ToList();

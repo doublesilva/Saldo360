@@ -185,10 +185,10 @@ public sealed class CategoryLifecycleTests(PostgresFixture postgres) : PostgresA
         Assert.False(problem.Impact.CanDeactivate);
         await AssertAllActiveAsync(housing.Id, rent.Id);
 
-        await ChangeRecurrenceAsync(recurrenceId, r => r.Pause(DateTimeOffset.UtcNow));
+        Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post, $"{Base}/recurrences/{recurrenceId}/pause", _owner)).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await SendWithCsrfAsync(HttpMethod.Put, $"{Base}/categories/{rent.Id}", _owner, new { name = "Aluguel", isActive = false })).StatusCode);
 
-        await ChangeRecurrenceAsync(recurrenceId, r => r.End(DateTimeOffset.UtcNow));
+        Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Post, $"{Base}/recurrences/{recurrenceId}/end", _owner)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await SendWithCsrfAsync(HttpMethod.Put, $"{Base}/categories/{housing.Id}", _owner, new { name = "Moradia", isActive = false })).StatusCode);
 
         var deletion = await DeleteAsync(housing.Id, confirm: true);
@@ -274,14 +274,6 @@ public sealed class CategoryLifecycleTests(PostgresFixture postgres) : PostgresA
         db.FinancialRecurrences.Add(recurrence);
         await db.SaveChangesAsync();
         return recurrence.Id;
-    }
-
-    // Muda o estado pelo domínio: as rotas pause/end de recorrências respondem 400 hoje (defeito anterior, fora do escopo desta tarefa).
-    private async Task ChangeRecurrenceAsync(Guid id, Action<FinancialRecurrence> change)
-    {
-        await using var db = Db();
-        change(await db.FinancialRecurrences.SingleAsync(r => r.Id == id));
-        await db.SaveChangesAsync();
     }
 
     private async Task AssertTransactionKeepsCategoryAsync(Guid transactionId, Guid categoryId)
