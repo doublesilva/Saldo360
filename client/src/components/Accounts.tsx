@@ -400,9 +400,9 @@ function RealizedBalance({ workspaceId, accountId, refreshKey }: { workspaceId: 
         <strong className={negative ? 'amount amount--negative' : 'amount'}>{formatBrlDecimal(balance.balance)}</strong>
         {negative && <span className="meta"> — saldo negativo: valor devido, não é crédito disponível.</span>}
       </p>
-      {negative && balance.overdraftLimit == null && <p className="meta">Limite contratado desconhecido. Use “Editar” para informar o limite.</p>}
+      {negative && balance.overdraftLimit == null && <p className="meta">Saldo negativo de {formatBrlDecimal(balance.balance)}. O limite de cheque especial não foi informado; o Saldo360 não afirma que exista limite contratado. Use “Editar” (Informar limite) para cadastrá-lo.</p>}
       {balance.overdraftLimit != null && <p className="meta">
-        Limite contratado {formatBrlDecimal(balance.overdraftLimit)} · usado {formatBrlDecimal(balance.overdraftUsed ?? '0.00')} · disponível estimado {formatBrlDecimal(balance.overdraftAvailable ?? '0.00')}
+        Limite contratado {formatBrlDecimal(balance.overdraftLimit)} · usado {formatBrlDecimal(balance.overdraftUsed ?? '0.00')} · disponível estimado pelo Saldo360 {formatBrlDecimal(balance.overdraftAvailable ?? '0.00')}
         {balance.overdraftExcess != null && balance.overdraftExcess !== '0.00' ? ` · acima do limite ${formatBrlDecimal(balance.overdraftExcess)}` : ''}
       </p>}
       {balance.openingSource === 'BalanceAnchor' && (

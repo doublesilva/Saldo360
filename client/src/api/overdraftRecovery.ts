@@ -6,6 +6,7 @@ export interface OverdraftRecovery {
   contractedLimit: string | null; openingUsed: string; currentUsed: string; available: string | null; aboveLimit: string | null
   target: string; recovered: string; projectedRecovery: string | null; deviation: string | null; positiveBalance: string | null
   referenceDate: string; capturedAt: string; updatedAt: string; reasons: string[]
+  isFinalResult: boolean; lateReference: boolean; attainmentPercent: string | null; balanceAsOf: string
 }
 
 const url = (workspaceId: string, accountId: string, competence: string) =>

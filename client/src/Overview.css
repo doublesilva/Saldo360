@@ -133,3 +133,9 @@
   .ov-bars__label { font-size: .7rem; }
   .ov-bars__label small { font-size: .58rem; }
 }
+
+/* Recuperação do limite: uma conta por bloco; nomes longos quebram e a barra é limitada a 100% (o texto mostra o valor real). */
+.ov-recovery__account { padding: .5rem 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.ov-recovery__account:first-of-type { border-top: 0; }
+.ov-bar { display: block; height: .5rem; margin-top: .25rem; background: var(--border); border-radius: .25rem; overflow: hidden; }
+.ov-bar > span { display: block; height: 100%; background: var(--accent); }
