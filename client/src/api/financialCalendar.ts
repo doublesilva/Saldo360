@@ -2,7 +2,7 @@ import type { BalanceUnavailableReason, FinancialAccount } from './accounts'
 import type { CategoryType } from './categories'
 import type { TransactionReference } from './transactions'
 
-export type FinancialCalendarSource = 'Transaction' | 'PlannedTransaction' | 'DebtInstallment'
+export type FinancialCalendarSource = 'Transaction' | 'PlannedTransaction' | 'DebtInstallment' | 'Transfer'
 export type FinancialCalendarStatus = 'Realized' | 'Pending' | 'Overdue'
 
 export interface FinancialCalendarItem {
@@ -36,6 +36,10 @@ export interface FinancialCalendarSummary {
   overdueExpense: string
   /** Devoluções bancárias do período: não são receita e já estão abatidas de realizedExpense. */
   realizedRefunds?: string
+  /** Transferências do período, sempre à parte de receitas/despesas (aditivo). */
+  transfersReceived?: string
+  transfersSent?: string
+  transfersInternal?: string
 }
 
 export interface FinancialCalendarResponse {
@@ -134,7 +138,7 @@ export async function getFinancialCalendar(
   filters: FinancialCalendarFilters,
   signal?: AbortSignal,
 ): Promise<FinancialCalendarResponse> {
-  const query = new URLSearchParams({ from, through })
+  const query = new URLSearchParams({ from, through, includeTransfers: 'true' })
   if (filters.accountId) query.set('accountId', filters.accountId)
   if (filters.type) query.set('type', filters.type)
 

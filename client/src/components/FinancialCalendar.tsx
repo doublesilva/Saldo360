@@ -602,6 +602,9 @@ export function FinancialCalendarSummary({ summary }: { summary: FinancialCalend
       <SummaryValue label="Receitas realizadas" value={summary.realizedIncome} kind="income" />
       <SummaryValue label="Despesas realizadas" value={summary.realizedExpense} kind="expense" />
       {summary.realizedRefunds && !isZeroDecimal(summary.realizedRefunds) && <SummaryValue label="Devoluções (já abatidas das despesas, fora das receitas)" value={summary.realizedRefunds} kind="income" />}
+      {summary.transfersReceived && !isZeroDecimal(summary.transfersReceived) && <SummaryValue label="Transferências recebidas (não são receita)" value={summary.transfersReceived} kind="income" />}
+      {summary.transfersSent && !isZeroDecimal(summary.transfersSent) && <SummaryValue label="Transferências enviadas (não são despesa)" value={summary.transfersSent} kind="expense" />}
+      {summary.transfersInternal && !isZeroDecimal(summary.transfersInternal) && <SummaryValue label="Transferências entre as contas (neutralizadas no consolidado)" value={summary.transfersInternal} kind="income" />}
       <SummaryValue label="Receitas pendentes" value={summary.pendingIncome} kind="income" planned />
       <SummaryValue label="Despesas pendentes" value={summary.pendingExpense} kind="expense" planned />
       <SummaryValue label="Receitas vencidas" value={summary.overdueIncome} kind="income" overdue />
@@ -746,19 +749,19 @@ export function FinancialCalendarEvents({
                 </strong>
               </div>
               <div className="calendar-event__meta">
-                <span>{typeLabels[item.type]}</span>
+                <span>{item.source === 'Transfer' ? (item.type === 'Income' ? 'Transferência recebida' : 'Transferência enviada') : typeLabels[item.type]}</span>
                 <span>{item.account?.name ?? 'Sem conta atribuída'}{item.account && !item.account.isActive ? ' (inativa)' : ''}</span>
                 {item.category && <span>{item.category.name}{item.category.isActive ? '' : ' (inativa)'}</span>}
               </div>
               <span className={`badge badge--calendar-${item.status.toLowerCase()}`}>{statusLabels[item.status]}</span>
-              <button
+              {item.source !== 'Transfer' && <button
                 type="button"
                 className="button--link calendar-event__details"
                 onClick={(event) => onOpen(item, event.currentTarget)}
                 aria-label={`Ver detalhes de ${item.description}`}
               >
                 Ver detalhes
-              </button>
+              </button>}
             </li>
           ))}
         </ul>

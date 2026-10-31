@@ -10,6 +10,9 @@ public enum FinancialCalendarSource
     Transaction,
     PlannedTransaction,
     DebtInstallment,
+
+    /// <summary>Uma ponta de transferência entre contas próprias (só com includeTransfers=true). Não é receita nem despesa.</summary>
+    Transfer,
 }
 
 /// <summary>
@@ -71,6 +74,14 @@ public sealed record FinancialCalendarSummaryDto(
 {
     /// <summary>Devoluções bancárias do período: entradas de caixa que NÃO são receita e que já estão abatidas da despesa realizada (informativo).</summary>
     public decimal RealizedRefunds { get; init; }
+
+    /// <summary>
+    /// Transferências do período pela perspectiva da conta (ou do conjunto de todas): recebidas e enviadas são entradas/saídas da conta, SEPARADAS de receitas/despesas;
+    /// as internas ao conjunto (sem conta escolhida, origem e destino no orçamento) são neutralizadas e só informadas.
+    /// </summary>
+    public decimal TransfersReceived { get; init; }
+    public decimal TransfersSent { get; init; }
+    public decimal TransfersInternal { get; init; }
 }
 
 public sealed record FinancialCalendarSnapshot(
@@ -87,7 +98,8 @@ public sealed record FinancialCalendarQuery(
     DateOnly From,
     DateOnly Through,
     Guid? AccountId,
-    string? Type);
+    string? Type,
+    bool IncludeTransfers = false);
 
 public sealed record FinancialCalendarResult(
     FinancialCalendar? Calendar,

@@ -216,7 +216,7 @@ describe('FinancialCalendarPage — mês, calendário e compromissos', () => {
     expect(await screen.findByText('Dezembro de 2026')).toBeTruthy()
     await waitFor(() => expect(calendarCalls(calls)).toHaveLength(1))
     const query = new URL(calendarCalls(calls)[0].url, 'http://x').searchParams
-    expect(Object.fromEntries(query)).toEqual({ from: '2026-12-01', through: '2026-12-31' })
+    expect(Object.fromEntries(query)).toEqual({ from: '2026-12-01', through: '2026-12-31', includeTransfers: 'true' })
     const today = screen.getByRole('gridcell', { name: /15\/12\/2026/ })
     expect(today.getAttribute('aria-current')).toBe('date')
     expect(today.getAttribute('aria-pressed')).toBe('true')

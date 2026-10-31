@@ -142,7 +142,11 @@ public sealed class DashboardOverviewService(
 
     private async Task<OverviewTransfersDto> BuildTransfersAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, OverviewAccountsDto accounts, CancellationToken ct)
     {
-        var selected = accounts.Items.Where(a => a.InScope).Select(a => a.AccountId).ToHashSet();
+        // Conjunto selecionado: a conta escolhida ou, no consolidado, TODAS as contas do orçamento (inclusive inativas com movimentação), para que uma transferência
+        // entre contas do mesmo orçamento seja sempre interna e neutralizada.
+        var selected = accountId is null
+            ? ((await accountService.ListAsync(workspaceId, userId, includeInactive: true, ct)) ?? []).Select(a => a.Id).ToHashSet()
+            : accounts.Items.Where(a => a.InScope).Select(a => a.AccountId).ToHashSet();
         var flows = await BuildTransferFlowsAsync(workspaceId, month, selected, ct);
         if (flows.State != "Complete") return flows;
         string? external = null, expenses = null, inflows = null, outflows = null, available = null;

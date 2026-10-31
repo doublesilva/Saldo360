@@ -137,6 +137,7 @@ public static class FinancialCalendarEndpoints
         string? through,
         Guid? accountId,
         string? type,
+        bool? includeTransfers,
         CurrentUser currentUser,
         FinancialCalendarService calendar,
         CancellationToken cancellationToken)
@@ -157,7 +158,7 @@ public static class FinancialCalendarEndpoints
         var result = await calendar.ListAsync(
             workspaceId,
             userId,
-            new FinancialCalendarQuery(fromDate!.Value, throughDate!.Value, accountId, type),
+            new FinancialCalendarQuery(fromDate!.Value, throughDate!.Value, accountId, type, includeTransfers ?? false),
             cancellationToken);
         return result switch
         {
@@ -207,6 +208,10 @@ public sealed record FinancialCalendarSummaryResponse(
 {
     /// <summary>Devoluções bancárias do período, já abatidas de <c>RealizedExpense</c> e fora de <c>RealizedIncome</c>.</summary>
     public string RealizedRefunds { get; init; } = "0.00";
+    /// <summary>Transferências do período, sempre separadas de receitas/despesas (recebidas/enviadas da conta; internas ao conjunto quando não há conta).</summary>
+    public string TransfersReceived { get; init; } = "0.00";
+    public string TransfersSent { get; init; } = "0.00";
+    public string TransfersInternal { get; init; } = "0.00";
 
     public static FinancialCalendarSummaryResponse From(FinancialCalendarSummaryDto summary) => new(
         Money.Format(summary.RealizedIncome),
@@ -215,7 +220,7 @@ public sealed record FinancialCalendarSummaryResponse(
         Money.Format(summary.PendingExpense),
         Money.Format(summary.OverdueIncome),
         Money.Format(summary.OverdueExpense))
-    { RealizedRefunds = Money.Format(summary.RealizedRefunds) };
+    { RealizedRefunds = Money.Format(summary.RealizedRefunds), TransfersReceived = Money.Format(summary.TransfersReceived), TransfersSent = Money.Format(summary.TransfersSent), TransfersInternal = Money.Format(summary.TransfersInternal) };
 }
 
 public sealed record FinancialCalendarBalancesResponse(
