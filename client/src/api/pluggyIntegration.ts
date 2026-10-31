@@ -60,12 +60,37 @@ export interface LinkRequest {
 }
 
 export type Resolution = 'AsIncome' | 'AsExpense' | 'AsCardPurchase' | 'Ignore'
+/** Possível contraparte de uma transferência. Só `canConfirm` permite confirmar; `blockedReason` diz por quê não (ex.: DifferentDate). */
+export interface TransferCandidate {
+  postingId: string; linkId: string; linkDisplayName: string; date: string; amount: string; direction: 'Income' | 'Expense'; description: string
+  operationType: string | null; accounted: boolean; sameDay: boolean; canConfirm: boolean; blockedReason: string | null
+}
 export interface ReviewItem {
   postingId: string; importedTransactionId: string; linkId: string; linkDisplayName: string; linkKind: LinkKind; state: string; reason: string | null
   date: string | null; amount: string | null; direction: 'Income' | 'Expense' | null; description: string; pluggyCategory: string | null; pluggyStatus: string
   operationType: string | null; allowedResolutions: Resolution[]; resolution: Resolution | null
+  /** Já contabilizado (efeito nos totais e saldos) x ainda fora dos totais. Independe da categoria. */
+  accounted?: boolean; impact?: 'InTotals' | 'OutOfTotals'
+  /** `Evidence` = revisão financeira de evidência não aplicada; `Link` = revisão do vínculo entre movimentos (transferência). */
+  reviewKind?: 'Evidence' | 'Link'; linkReviewReason?: string | null; linkOrigin?: 'Inferred' | 'UserConfirmed' | null; linkRuleVersion?: string | null
+  counterpartPostingId?: string | null; canUndoLink?: boolean; candidates?: TransferCandidate[]
 }
-export interface ReviewPage { items: ReviewItem[]; total: number; page: number; pageSize: number; counts: PostingCounts }
+export interface ReviewPage { items: ReviewItem[]; total: number; page: number; pageSize: number; counts: PostingCounts; accountedInReview?: number }
+
+export interface LinkActionResult { outcome: 'Done' | 'AlreadyDone'; summary: ApplySummary | null }
+
+/** Prévia do reprocessamento (nunca persiste): interpretação atual x proposta e o efeito esperado em receitas, despesas, transferências e saldo. */
+export interface Interpretation { state: string; kind: string; reason: string | null; effect: string | null }
+export interface RecoveryItem {
+  postingId: string | null; importedTransactionId: string; linkId: string; linkDisplayName: string; date: string | null; amount: string | null
+  direction: 'Income' | 'Expense' | null; description: string; operationType: string | null; pluggyStatus: string; current: Interpretation; proposed: Interpretation
+  outcome: 'Unchanged' | 'WillChange' | 'NeedsDecision'; note: string | null
+}
+export interface Figures { income: string; expense: string; transfersIn: string; transfersOut: string; net: string }
+export interface RecoveryPreview {
+  generatedAt: string; wouldApply: ApplySummary; accounts: { linkId: string; linkDisplayName: string; before: Figures; after: Figures }[]
+  totalBefore: Figures; totalAfter: Figures; items: RecoveryItem[]; itemsTotal: number; willChange: number; needsDecision: number; persisted: false
+}
 export interface ApplySummary {
   created: number; updated: number; waiting: number; needsReview: number; covered: number; transfersPaired: number; billPaymentsPaired: number; outOfRange: number; unchanged: number
   purchasesRehomed?: number; cardCreditsApplied?: number; invoicesClosedByInstitution?: number; staleInvoicesRemoved?: number; billsEvaluated?: number; balanceAnchorsUpdated?: number
@@ -115,6 +140,21 @@ export const reprocessImported = (workspaceId: string) =>
 
 export const listReview = (workspaceId: string, page = 1, signal?: AbortSignal) =>
   get<ReviewPage>(`${base(workspaceId)}/review?page=${page}&pageSize=25`, 'Falha ao carregar os movimentos em revisão.', signal)
+
+/** Confirma, rejeita ou desfaz o vínculo entre duas pontas. Todas as validações ficam no backend (mesmo dia, contas, operação, disponibilidade). */
+export const confirmTransfer = (workspaceId: string, postingId: string, counterpartPostingId: string) =>
+  post<LinkActionResult>(`${base(workspaceId)}/review/${encodeURIComponent(postingId)}/transfer/confirm`, { counterpartPostingId }, 'Falha ao confirmar a transferência.')
+
+export const rejectTransfer = (workspaceId: string, postingId: string, counterpartPostingId: string) =>
+  post<LinkActionResult>(`${base(workspaceId)}/review/${encodeURIComponent(postingId)}/transfer/reject`, { counterpartPostingId }, 'Falha ao rejeitar a sugestão.')
+
+export const undoTransfer = (workspaceId: string, postingId: string) =>
+  post<LinkActionResult>(`${base(workspaceId)}/review/${encodeURIComponent(postingId)}/transfer/undo`, {}, 'Falha ao desfazer o vínculo da transferência.')
+
+export const previewRecovery = (workspaceId: string, filter: { amount?: string; from?: string; to?: string } = {}) =>
+  post<RecoveryPreview>(`${base(workspaceId)}/recovery/preview`, {
+    ...(filter.amount ? { amount: Number(filter.amount.replace(',', '.')) } : {}), ...(filter.from ? { from: filter.from } : {}), ...(filter.to ? { to: filter.to } : {}),
+  }, 'Falha ao gerar a prévia.')
 
 export const resolveReview = (workspaceId: string, postingId: string, resolution: Resolution) =>
   post<ReviewItem>(`${base(workspaceId)}/review/${encodeURIComponent(postingId)}/resolve`, { resolution }, 'Falha ao registrar a decisão.')

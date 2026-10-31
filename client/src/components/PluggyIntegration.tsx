@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  applyCardScheduleSuggestion, applyOpeningBalanceSuggestion, getCategorizationOverview, getLinkDetail, listLinks, listReview, reprocessImported, resolveReview, runCategorization,
-  type AccountLink, type AccountLinkDetail, type CategorizationOverview, type CategorizationResult, type ReviewPage, type Resolution,
+  applyCardScheduleSuggestion, applyOpeningBalanceSuggestion, confirmTransfer, getCategorizationOverview, getLinkDetail, listLinks, listReview, previewRecovery, rejectTransfer,
+  reprocessImported, resolveReview, runCategorization,
+  type AccountLink, type AccountLinkDetail, type CategorizationOverview, type CategorizationResult, type RecoveryPreview, type ReviewPage, type Resolution,
 } from '../api/pluggyIntegration'
 import { formatBrlDecimal, formatDate, isNegativeDecimal } from '../money'
-import { aiStopLabels, billCycleLabels, billPaymentLabels, billReconciliationLabels, billReconciliationReasonLabels, dateTime, scheduleReasonLabels, linkStatusLabels, money, NOT_INFORMED, resolutionLabels, reviewReason, unavailableReasonLabels } from '../pluggyFormat'
+import { aiStopLabels, billCycleLabels, billPaymentLabels, billReconciliationLabels, billReconciliationReasonLabels, candidateBlockLabels, dateTime, recoveryEffectLabels, scheduleReasonLabels, linkStatusLabels, money, NOT_INFORMED, resolutionLabels, reviewReason, unavailableReasonLabels } from '../pluggyFormat'
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Falha inesperada.')
 
@@ -116,6 +117,7 @@ export function PluggyIntegrationSection({ workspaceId, refreshKey, onChanged }:
       <ul className="account-list">{cards.map(card => <li key={card.id} className="account"><PluggyAccountPanel workspaceId={workspaceId} linkId={card.id} refreshKey={refreshKey} onChanged={onChanged} /></li>)}</ul>
     </>}
     <PluggyReviewPanel workspaceId={workspaceId} refreshKey={refreshKey} onChanged={onChanged} />
+    <PluggyRecoveryPanel workspaceId={workspaceId} refreshKey={refreshKey} onChanged={onChanged} />
   </section>
 }
 
@@ -183,7 +185,11 @@ export function PluggyCategorizationPanel({ workspaceId, refreshKey, onChanged }
   </section>
 }
 
-/** Movimentos importados sem classificação segura: ficam fora de receitas, despesas e saldos até a decisão do usuário. */
+/**
+ * Revisão dos movimentos importados. Três coisas diferentes, nunca misturadas: a categoria pendente de um lançamento já contabilizado (não está aqui),
+ * a evidência financeira ainda NÃO contabilizada (fora dos totais até a decisão) e o vínculo entre movimentos (transferência), que pode envolver pontas
+ * já contabilizadas (continuam nos totais até a decisão). Cada item informa se já conta nos totais.
+ */
 export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { workspaceId: string; refreshKey: string; onChanged?: () => void }) {
   const [page, setPage] = useState<ReviewPage | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -204,9 +210,25 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { work
     finally { setBusy(null) }
   }, [workspaceId, onChanged])
 
+  const confirm = useCallback(async (postingId: string, counterpartId: string) => {
+    if (!window.confirm('Confirmar que estes dois movimentos são a mesma transferência entre as suas contas? Os lançamentos de receita e despesa dessas pontas, se existirem, são substituídos pela transferência (nada é apagado).')) return
+    setBusy(postingId); setError(null)
+    try { await confirmTransfer(workspaceId, postingId, counterpartId); setVersion(value => value + 1); onChanged?.() }
+    catch (cause) { setError(errorText(cause)) }
+    finally { setBusy(null) }
+  }, [workspaceId, onChanged])
+
+  const reject = useCallback(async (postingId: string, counterpartId: string) => {
+    if (!window.confirm('Estes movimentos não são a mesma transferência? Cada um segue como receita ou despesa comum e a sugestão não volta nas próximas sincronizações.')) return
+    setBusy(postingId); setError(null)
+    try { await rejectTransfer(workspaceId, postingId, counterpartId); setVersion(value => value + 1); onChanged?.() }
+    catch (cause) { setError(errorText(cause)) }
+    finally { setBusy(null) }
+  }, [workspaceId, onChanged])
+
   return <section aria-labelledby="pluggy-review-title">
     <h4 id="pluggy-review-title">Movimentos para revisar{page ? ` (${page.total})` : ''}</h4>
-    <p className="meta">Estes movimentos vieram do banco, mas não há classificação segura: não entram em receitas, despesas nem saldos até você decidir. Transferências e pagamentos de fatura nunca são identificados só pela descrição.</p>
+    <p className="meta">Movimentos que o banco informou, mas sem classificação ou vínculo seguro. Os <strong>ainda não contabilizados</strong> ficam fora de receitas, despesas e saldos até você decidir; os <strong>já contabilizados</strong> continuam nos totais. Transferências e pagamentos de fatura nunca são identificados só pela descrição.</p>
     {error && <p role="alert" className="notice notice--error">{error}</p>}
     {page && page.items.length === 0 && <p className="meta">Nada para revisar.</p>}
     {page && page.items.length > 0 && <ul className="transaction-list">
@@ -214,10 +236,82 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { work
         <div className="transaction__main"><span className="transaction__description">{item.description}</span>
           <strong className={item.direction === 'Income' ? 'amount amount--income' : 'amount amount--negative'}>{item.direction === 'Income' ? '+' : '−'}{money(item.amount)}</strong></div>
         <div className="transaction__meta meta"><span>{item.date ? formatDate(item.date) : NOT_INFORMED}</span><span>{item.linkDisplayName}</span><span>{reviewReason(item.reason)}</span></div>
-        <div className="form__actions">
+        {item.accounted !== undefined && <p className="meta" data-testid="review-impact">
+          {item.accounted ? <strong>Já contabilizado — continua nos totais até a decisão.</strong> : <strong>Ainda não contabilizado — fora dos totais até a decisão.</strong>}
+          {' '}{item.reviewKind === 'Link' ? 'Revisão do vínculo entre movimentos.' : 'Revisão financeira da evidência.'}
+        </p>}
+        {item.candidates && item.candidates.length > 0 && <ul aria-label="Possíveis contrapartes" className="meta">
+          {item.candidates.map(candidate => <li key={candidate.postingId}>
+            {candidate.linkDisplayName}: {candidate.description} — {candidate.direction === 'Income' ? '+' : '−'}{money(candidate.amount)} em {formatDate(candidate.date)}
+            {candidate.accounted ? ' (já contabilizado)' : ' (ainda não contabilizado)'}
+            {' '}{candidate.canConfirm
+              ? <button type="button" disabled={busy === item.postingId} onClick={() => void confirm(item.postingId, candidate.postingId)}>Confirmar transferência</button>
+              : <span>— não pode ser confirmada: {candidateBlockLabels[candidate.blockedReason ?? ''] ?? candidate.blockedReason}.</span>}
+            {' '}<button type="button" disabled={busy === item.postingId} onClick={() => void reject(item.postingId, candidate.postingId)}>Não é transferência</button>
+          </li>)}
+        </ul>}
+        {item.reviewKind === 'Link' && (!item.candidates || item.candidates.length === 0) && <p className="meta">Nenhuma contraparte elegível encontrada nas contas integradas.</p>}
+        {item.allowedResolutions.length > 0 && <div className="form__actions">
           {item.allowedResolutions.map(resolution => <button key={resolution} type="button" disabled={busy === item.postingId} onClick={() => void decide(item.postingId, resolution)}>{resolutionLabels[resolution]}</button>)}
-        </div>
+        </div>}
       </li>)}
     </ul>}
+  </section>
+}
+
+/**
+ * Recuperação dos dados existentes: a prévia roda o motor atual numa transação que é sempre desfeita (nada é gravado) e mostra o que mudaria em receitas,
+ * despesas, transferências e saldo por conta, mais os casos que exigem decisão sua. Aplicar usa o reprocessamento idempotente, sem nova consulta ao banco.
+ */
+export function PluggyRecoveryPanel({ workspaceId, onChanged }: { workspaceId: string; refreshKey?: string; onChanged?: () => void }) {
+  const [preview, setPreview] = useState<RecoveryPreview | null>(null)
+  const [amount, setAmount] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [applied, setApplied] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const generate = async () => {
+    setBusy(true); setError(null); setApplied(false)
+    try { setPreview(await previewRecovery(workspaceId, { amount: amount.trim() || undefined })) }
+    catch (cause) { setError(errorText(cause)) }
+    finally { setBusy(false) }
+  }
+  const apply = async () => {
+    if (!window.confirm('Aplicar o reprocessamento? Ele reaplica os dados já importados (sem consultar o banco), preserva suas decisões manuais e não apaga nenhuma evidência.')) return
+    setBusy(true); setError(null)
+    try { await reprocessImported(workspaceId); setApplied(true); setPreview(null); onChanged?.() }
+    catch (cause) { setError(errorText(cause)) }
+    finally { setBusy(false) }
+  }
+  const figures = (label: string, f: RecoveryPreview['totalBefore']) =>
+    <li>{label}: receitas {money(f.income)} · despesas {money(f.expense)} · transferências recebidas {money(f.transfersIn)} · enviadas {money(f.transfersOut)} · efeito no saldo {money(f.net)}</li>
+
+  return <section aria-labelledby="pluggy-recovery-title">
+    <h4 id="pluggy-recovery-title">Recuperação dos movimentos importados</h4>
+    <p className="meta">A prévia não altera nada. Informe um valor para rastrear um movimento (do importado até o efeito nos totais).</p>
+    <div className="form__actions">
+      <label>Rastrear valor (opcional)<input inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="55,99" /></label>
+      <button type="button" disabled={busy} onClick={() => void generate()}>Gerar prévia</button>
+      <button type="button" disabled={busy || !preview} onClick={() => void apply()}>Aplicar reprocessamento</button>
+    </div>
+    {error && <p role="alert" className="notice notice--error">{error}</p>}
+    {applied && <p role="status" className="notice">Reprocessamento aplicado. Gere uma nova prévia para conferir o que ainda exige decisão.</p>}
+    {preview && <div aria-label="Prévia do reprocessamento">
+      <ul className="meta">
+        {figures('Hoje', preview.totalBefore)}
+        {figures('Depois', preview.totalAfter)}
+      </ul>
+      <p className="meta">{preview.willChange} movimento(s) mudariam · {preview.needsDecision} exigem decisão sua. Os efeitos já aplicados nunca são removidos em silêncio.</p>
+      {preview.items.length === 0 ? <p className="meta">Nada a mudar nem a decidir.</p> : <ul className="transaction-list">
+        {preview.items.map(item => <li key={item.importedTransactionId} className="transaction">
+          <div className="transaction__main"><span className="transaction__description">{item.description}</span>
+            <strong>{item.direction === 'Income' ? '+' : item.direction === 'Expense' ? '−' : ''}{money(item.amount)}</strong></div>
+          <div className="transaction__meta meta"><span>{item.date ? formatDate(item.date) : NOT_INFORMED}</span><span>{item.linkDisplayName}</span>
+            <span>Hoje: {recoveryEffectLabels[item.current.effect ?? 'None'] ?? item.current.effect}</span>
+            <span>Proposta: {recoveryEffectLabels[item.proposed.effect ?? 'None'] ?? item.proposed.effect}{item.proposed.state === 'NeedsReview' ? ' (em revisão)' : ''}</span>
+            <span>{item.outcome === 'NeedsDecision' ? `Exige decisão${item.note ? ` — ${reviewReason(item.note.replace('Rule:', ''))}` : ''}` : item.outcome === 'WillChange' ? 'Mudaria' : 'Sem mudança'}</span></div>
+        </li>)}
+      </ul>}
+    </div>}
   </section>
 }

@@ -5,6 +5,9 @@ import type { FinancialTransfer, TransferPage } from '../api/transfers'
 import { todayInSaoPaulo } from '../dates'
 import { Transfers } from './Transfers'
 
+const pluggy = vi.hoisted(() => ({ undoTransfer: vi.fn() }))
+vi.mock('../api/pluggyIntegration', () => pluggy)
+
 const account = (id: string, name: string, scope: 'PF' | 'PJ', isActive = true): FinancialAccount => ({
   id,
   name,
@@ -239,5 +242,48 @@ describe('Transfers — formulário', () => {
 
     expect(await screen.findByText('Conta de origem inválida.')).toBeTruthy()
     expect(onChanged).not.toHaveBeenCalled()
+  })
+})
+
+describe('Transfers — vínculo da integração bancária', () => {
+  const integrated: FinancialTransfer = {
+    ...prolabore, id: 't9', description: 'Pix enviado', sourceAccount: { id: empresas.id, name: 'Itaú PJ', financialScope: 'PJ', isActive: true },
+    destinationAccount: { id: pessoal.id, name: 'Itaú PF', financialScope: 'PF', isActive: true }, integration: { postingId: 'post-1', origin: 'Inferred', ruleVersion: 'transfer-v2' },
+  }
+
+  it('identifica o vínculo inferido e confirmado, e apresenta recebida na PF e enviada na PJ quando há conta filtrada', async () => {
+    mockApi({ page: { items: [integrated, { ...integrated, id: 't10', integration: { postingId: 'post-2', origin: 'UserConfirmed', ruleVersion: null } }], totalCount: 2 } })
+    render(<Transfers workspaceId="f1" />)
+
+    const items = (await screen.findAllByText(/^De Itaú PJ \(PJ\) para Itaú PF \(PF\)$/)).map((node) => node.closest('li')!)
+    expect(within(items[0]).getByText('Integração bancária · Inferido pela regra automática')).toBeTruthy()
+    expect(within(items[1]).getByText('Integração bancária · Confirmado por você')).toBeTruthy()
+    expect(items[0].textContent).not.toMatch(/[+−]R\$/)
+
+    fireEvent.change(screen.getByLabelText('Conta (origem ou destino)'), { target: { value: pessoal.id } })
+    expect((await screen.findAllByText('Transferência recebida da Itaú PJ')).length).toBe(2)
+    fireEvent.change(screen.getByLabelText('Conta (origem ou destino)'), { target: { value: empresas.id } })
+    expect((await screen.findAllByText('Transferência enviada para Itaú PF')).length).toBe(2)
+  })
+
+  it('desfaz o vínculo pelo rastro da ponta, depois de confirmar, e recarrega a lista', async () => {
+    const calls = mockApi({ page: { items: [integrated], totalCount: 1 } })
+    pluggy.undoTransfer.mockResolvedValue({ outcome: 'Done', summary: null })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const onChanged = vi.fn()
+    render(<Transfers workspaceId="f1" onChanged={onChanged} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Desfazer vínculo' }))
+
+    await waitFor(() => expect(pluggy.undoTransfer).toHaveBeenCalledWith('f1', 'post-1'))
+    await waitFor(() => expect(listCalls(calls).length).toBeGreaterThan(1))
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('transferência cadastrada à mão não oferece desfazer vínculo', async () => {
+    mockApi()
+    render(<Transfers workspaceId="f1" />)
+    await screen.findByText(/Pró-labore/)
+    expect(screen.queryByRole('button', { name: 'Desfazer vínculo' })).toBeNull()
   })
 })

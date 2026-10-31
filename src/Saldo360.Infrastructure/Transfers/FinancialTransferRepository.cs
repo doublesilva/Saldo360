@@ -75,5 +75,7 @@ internal sealed class FinancialTransferRepository(Saldo360DbContext db) : IFinan
             t.IsCancelled,
             t.Currency,
             t.CreatedAt,
-            t.CancelledAt);
+            t.CancelledAt,
+            db.PluggyPostings.Where(p => p.FinancialTransferId == t.Id && p.State == Saldo360.Domain.Pluggy.PluggyPostingState.Applied).OrderBy(p => p.Id)
+                .Select(p => new TransferIntegrationDto(p.Id, p.LinkOrigin == Saldo360.Domain.Pluggy.PluggyLinkOrigin.UserConfirmed ? "UserConfirmed" : "Inferred", p.LinkRuleVersion)).FirstOrDefault());
 }

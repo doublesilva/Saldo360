@@ -72,9 +72,63 @@ public sealed record PluggyAccountLinkDetailView(PluggyAccountLinkView Link, Plu
 
 public sealed record PluggyReviewItemView(Guid PostingId, Guid ImportedTransactionId, Guid LinkId, string LinkDisplayName, string LinkKind, string State, string? Reason,
     DateOnly? Date, string? Amount, string? Direction, string Description, string? PluggyCategory, string PluggyStatus, string? OperationType,
-    IReadOnlyList<string> AllowedResolutions, string? Resolution);
+    IReadOnlyList<string> AllowedResolutions, string? Resolution)
+{
+    /// <summary>Já contabilizado: o movimento já gerou efeito nos totais e saldos (ponta aplicada ou evidência coberta). Falso = fora dos totais até a decisão.</summary>
+    public bool Accounted { get; init; }
+    /// <summary>Efeito atual nos totais: <c>InTotals</c> (já conta) ou <c>OutOfTotals</c> (não conta até a decisão). Independe da categoria.</summary>
+    public string Impact { get; init; } = "OutOfTotals";
+    /// <summary><c>Evidence</c> = revisão financeira da evidência ainda não aplicada; <c>Link</c> = revisão do vínculo entre movimentos (transferência).</summary>
+    public string ReviewKind { get; init; } = "Evidence";
+    /// <summary>Dúvida de vínculo desta ponta (contraparte ambígua, datas diferentes...), inclusive quando ela já está contabilizada.</summary>
+    public string? LinkReviewReason { get; init; }
+    /// <summary><c>Inferred</c> (regra automática) ou <c>UserConfirmed</c>, quando a ponta já é uma transferência aplicada.</summary>
+    public string? LinkOrigin { get; init; }
+    public string? LinkRuleVersion { get; init; }
+    public Guid? CounterpartPostingId { get; init; }
+    public bool CanUndoLink { get; init; }
+    /// <summary>Possíveis contrapartes (revisão de vínculo): outras pontas de mesmo valor em outra conta, com o motivo quando não podem ser confirmadas.</summary>
+    public IReadOnlyList<PluggyTransferCandidateView> Candidates { get; init; } = [];
+}
 
-public sealed record PluggyReviewPage(IReadOnlyList<PluggyReviewItemView> Items, int Total, int Page, int PageSize, PluggyPostingCounts Counts);
+/// <summary>Possível contraparte de uma transferência. <c>CanConfirm</c> só é verdadeiro quando as regras de elegibilidade (mesmo dia, operação, contas distintas...) são atendidas.</summary>
+public sealed record PluggyTransferCandidateView(Guid PostingId, Guid LinkId, string LinkDisplayName, DateOnly Date, string Amount, string Direction, string Description,
+    string? OperationType, bool Accounted, bool SameDay, bool CanConfirm, string? BlockedReason);
+
+public sealed record PluggyReviewPage(IReadOnlyList<PluggyReviewItemView> Items, int Total, int Page, int PageSize, PluggyPostingCounts Counts)
+{
+    /// <summary>Pontas já contabilizadas que aparecem na revisão por dúvida de vínculo (continuam nos totais até a decisão).</summary>
+    public int AccountedInReview { get; init; }
+}
+
+public enum PluggyManualOutcome { Done, AlreadyDone, NotFound, Invalid, Conflict }
+
+/// <summary>Resultado de uma ação manual sobre vínculos. <c>Reason</c> é um código estável (ver <see cref="PluggyTransferEligibility.Reasons"/>).</summary>
+public sealed record PluggyManualResult(PluggyManualOutcome Outcome, string? Reason = null, PluggyApplySummary? Summary = null);
+
+// ---- Prévia de recuperação (somente leitura: executa o motor numa transação que é sempre desfeita) -------------------------
+
+public sealed record PluggyRecoveryFilter(decimal? Amount, DateOnly? From, DateOnly? To, int Take = 100);
+
+public sealed record PluggyInterpretation(string State, string Kind, string? Reason, string? Effect);
+
+/// <summary>
+/// Um movimento importado e a cadeia até o efeito: interpretação atual x proposta pelo motor atual. <c>Outcome</c>: <c>Unchanged</c>, <c>WillChange</c>,
+/// <c>NeedsDecision</c> (o motor preservaria o efeito aplicado, mas a regra atual leria diferente: exige decisão manual) ou <c>NotAccounted</c> (sem posting).
+/// </summary>
+public sealed record PluggyRecoveryItem(Guid? PostingId, Guid ImportedTransactionId, Guid LinkId, string LinkDisplayName, DateOnly? Date, string? Amount, string? Direction,
+    string Description, string? OperationType, string PluggyStatus, PluggyInterpretation Current, PluggyInterpretation Proposed, string Outcome, string? Note);
+
+public sealed record PluggyFigures(string Income, string Expense, string TransfersIn, string TransfersOut, string Net);
+
+public sealed record PluggyAccountDelta(Guid LinkId, string LinkDisplayName, PluggyFigures Before, PluggyFigures After);
+
+public sealed record PluggyRecoveryPreview(DateTimeOffset GeneratedAt, PluggyApplySummary WouldApply, IReadOnlyList<PluggyAccountDelta> Accounts, PluggyFigures TotalBefore, PluggyFigures TotalAfter,
+    IReadOnlyList<PluggyRecoveryItem> Items, int ItemsTotal, int WillChange, int NeedsDecision)
+{
+    /// <summary>Sempre falso: a prévia nunca persiste nada.</summary>
+    public bool Persisted => false;
+}
 
 public sealed record PluggyApplySummary(int Created, int Updated, int Waiting, int NeedsReview, int Covered, int TransfersPaired, int BillPaymentsPaired,
     int OutOfRange, int Unchanged)
@@ -137,12 +191,35 @@ public interface IPluggyFinancialRepository
     Task SaveResolutionAsync(Guid workspaceId, Guid postingId, PluggyResolution resolution, Guid userId, DateTimeOffset now, CancellationToken ct);
     Task<PluggyReviewItemView?> GetReviewItemAsync(Guid workspaceId, Guid postingId, CancellationToken ct);
     Task<IReadOnlyList<MappableCategory>> ListCategoriesAsync(Guid workspaceId, CancellationToken ct);
+    /// <summary>Todas as pontas bancárias do orçamento (com a decisão do mapper) para listar possíveis contrapartes de uma transferência.</summary>
+    Task<IReadOnlyList<PluggyTransferPoolRow>> ListTransferPoolAsync(Guid workspaceId, CancellationToken ct);
+    /// <summary>Pares que o usuário rejeitou (ordem canônica), para a revisão não os oferecer como confirmáveis.</summary>
+    Task<IReadOnlySet<(Guid First, Guid Second)>> ListRejectedPairsAsync(Guid workspaceId, CancellationToken ct);
     /// <summary>Data do movimento aplicado mais antigo da conta integrada (base do histórico para sugerir o saldo inicial).</summary>
     Task<DateOnly?> EarliestAppliedDateAsync(Guid workspaceId, Guid linkId, CancellationToken ct);
 }
+
+/// <summary>Ponta bancária importada e o seu rastro, para a lista de contrapartes.</summary>
+public sealed record PluggyTransferPoolRow(ImportedFacts Facts, Guid PostingId, Guid? FinancialAccountId, string LinkDisplayName, PluggyPostingState State, PluggyPostingKind Kind,
+    Guid? CounterpartPostingId, PluggyResolution? Resolution);
 
 /// <summary>Transforma as transações importadas em movimentos do núcleo financeiro. Idempotente, serializado por orçamento.</summary>
 public interface IPluggyPostingEngine
 {
     Task<PluggyApplySummary> ApplyAsync(Guid workspaceId, Guid userId, DateTimeOffset now, CancellationToken ct);
+
+    /// <summary>
+    /// Confirma manualmente que duas pontas (identificadas por seus rastros) formam uma transferência. Revalida tudo dentro da transação, com o orçamento travado:
+    /// repetir é idempotente e duas confirmações concorrentes pela mesma ponta resultam em conflito controlado para a perdedora.
+    /// </summary>
+    Task<PluggyManualResult> ConfirmTransferAsync(Guid workspaceId, Guid userId, Guid postingId, Guid counterpartPostingId, DateTimeOffset now, CancellationToken ct);
+
+    /// <summary>Rejeita a sugestão de par: o motor não volta a pareá-lo. Não altera nenhum efeito financeiro já aplicado.</summary>
+    Task<PluggyManualResult> RejectTransferAsync(Guid workspaceId, Guid userId, Guid postingId, Guid counterpartPostingId, DateTimeOffset now, CancellationToken ct);
+
+    /// <summary>Desfaz uma transferência aplicada (a inferida ou a confirmada): cancela a transferência, preserva os movimentos reais e impede o motor de recriar o mesmo par.</summary>
+    Task<PluggyManualResult> UndoTransferAsync(Guid workspaceId, Guid userId, Guid postingId, DateTimeOffset now, CancellationToken ct);
+
+    /// <summary>Prévia do reprocessamento: roda o motor numa transação sempre desfeita e compara antes e depois. Nunca persiste.</summary>
+    Task<PluggyRecoveryPreview> PreviewAsync(Guid workspaceId, Guid userId, DateTimeOffset now, PluggyRecoveryFilter filter, CancellationToken ct);
 }

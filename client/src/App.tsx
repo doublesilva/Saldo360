@@ -55,9 +55,14 @@ function App() {
 
   // A API redireciona para "/?login=failed&ref=<correlação>" quando o login não é concluído.
   const params = new URLSearchParams(window.location.search)
-  const loginFailed = params.get('login') === 'failed'
-  const failureRef = params.get('ref')
   const financialArea = session.state.kind === 'authenticated' && !onInvitePage
+  // O aviso de falha de login só vale enquanto não há sessão: com o usuário autenticado ele é resíduo da URL e aparecia no topo de qualquer tela
+  // (inclusive Lançamentos) como se fosse erro da operação em curso. A parte "?login=failed&ref=..." é removida da URL quando a sessão existe.
+  const loginFailed = params.get('login') === 'failed' && session.state.kind !== 'authenticated'
+  const failureRef = params.get('ref')
+  useEffect(() => {
+    if (session.state.kind === 'authenticated' && new URLSearchParams(window.location.search).get('login') === 'failed') window.history.replaceState(null, '', window.location.pathname)
+  }, [session.state.kind])
 
   return (
     <main className={`page${financialArea ? ' page--authenticated' : ''}`}>

@@ -210,6 +210,20 @@ describe('Transactions — lista', () => {
   })
 })
 
+describe('Transactions — transferências', () => {
+  it('não diz mais que as transferências "terão fluxo próprio": elas já têm seção, com atalho', async () => {
+    mockApi()
+    const open = vi.fn()
+    render(<Transactions workspaceId="f1" onOpenTransfers={open} />)
+    await screen.findByText('Feira do mês')
+
+    expect(screen.queryByText(/terão fluxo próprio/)).toBeNull()
+    expect(screen.getByText(/não são receita nem despesa e têm a sua própria seção/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Transferências' }))
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('Transactions — formulário', () => {
   it('cria despesa enviando o valor como texto decimal exato e a data sem horário', async () => {
     const calls = await openNewForm()

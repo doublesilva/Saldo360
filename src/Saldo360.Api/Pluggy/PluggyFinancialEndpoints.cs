@@ -32,6 +32,12 @@ public static class PluggyFinancialEndpoints
         group.MapPost("/reprocess", Reprocess).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/review", ListReview);
         group.MapPost("/review/{postingId:guid}/resolve", Resolve).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        // Vínculo entre movimentos: confirmar, rejeitar e desfazer a transferência entre duas pontas. Cálculos e validações ficam no backend.
+        group.MapPost("/review/{postingId:guid}/transfer/confirm", ConfirmTransfer).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/review/{postingId:guid}/transfer/reject", RejectTransfer).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/review/{postingId:guid}/transfer/undo", UndoTransfer).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        // Prévia do reprocessamento (e rastreio por valor/período). Roda o motor numa transação sempre desfeita: nunca persiste.
+        group.MapPost("/recovery/preview", RecoveryPreview).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/categorization", CategorizationOverview);
         group.MapPost("/categorization/run", RunCategorization).AddEndpointFilter<ValidateCsrfTokenFilter>();
         // R04: central de automação (preferências, estado e histórico). A leitura nunca dispara execução.
@@ -180,6 +186,22 @@ public static class PluggyFinancialEndpoints
         _ => Results.NotFound(),
     };
 
+    private static async Task<IResult> ConfirmTransfer(Guid workspaceId, Guid postingId, TransferLinkRequest? request, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : PluggyPocEndpoints.Map(await service.ConfirmTransferAsync(workspaceId, userId, postingId, request?.CounterpartPostingId, ct), Results.Ok);
+
+    private static async Task<IResult> RejectTransfer(Guid workspaceId, Guid postingId, TransferLinkRequest? request, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : PluggyPocEndpoints.Map(await service.RejectTransferAsync(workspaceId, userId, postingId, request?.CounterpartPostingId, ct), Results.Ok);
+
+    private static async Task<IResult> UndoTransfer(Guid workspaceId, Guid postingId, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : PluggyPocEndpoints.Map(await service.UndoTransferAsync(workspaceId, userId, postingId, ct), Results.Ok);
+
+    private static async Task<IResult> RecoveryPreview(Guid workspaceId, RecoveryPreviewRequest? request, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : PluggyPocEndpoints.Map(await service.PreviewAsync(workspaceId, userId, request?.Amount, request?.From, request?.To, request?.Take, ct), Results.Ok);
+
     private static async Task<IResult> Resolve(Guid workspaceId, Guid postingId, ResolveRequest? request, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
         : PluggyPocEndpoints.Map(await service.ResolveAsync(workspaceId, userId, postingId, request?.Resolution, ct), Results.Ok);
@@ -195,6 +217,12 @@ public sealed record OpeningBalanceRequest(bool? Confirm, bool? ReplaceExisting)
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ResolveRequest(string? Resolution);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record TransferLinkRequest(Guid? CounterpartPostingId);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record RecoveryPreviewRequest(decimal? Amount, DateOnly? From, DateOnly? To, int? Take);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CategorizationRequest(bool? UseAi, bool? ConfirmExternal, bool? Force);

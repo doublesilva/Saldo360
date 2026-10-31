@@ -43,12 +43,15 @@ export function Transactions({
   refreshKey = 0,
   initialFilters,
   startWithForm = false,
+  onOpenTransfers,
 }: {
   workspaceId: string
   /** Recorte inicial vindo da Visão Geral (período e conta). */
   initialFilters?: Partial<TransactionFilters>
   /** Abre o formulário de novo lançamento ao entrar (atalho da Visão Geral). */
   startWithForm?: boolean
+  /** Atalho para a seção Transferências (PJ ↔ PF e entre contas), que tem tela própria. */
+  onOpenTransfers?: () => void
   onChanged?: () => void
   /** Muda quando outra seção altera lançamentos (ex.: realizar previsão): a lista é recarregada. */
   refreshKey?: number
@@ -182,7 +185,16 @@ export function Transactions({
       </div>
       <p className="meta">
         Registre aqui entradas e saídas que <strong>já aconteceram</strong>: recebimentos e pagamentos efetivos. Valores
-        previstos, parcelas futuras e transferências entre contas (inclusive PJ → PF) terão fluxo próprio.
+        previstos e parcelas futuras ficam em Previstos e Planejamento. As transferências entre contas (inclusive PJ → PF)
+        não são receita nem despesa e têm a sua própria seção{' '}
+        {onOpenTransfers ? (
+          <button type="button" className="button--link" onClick={onOpenTransfers}>
+            Transferências
+          </button>
+        ) : (
+          <strong>Transferências</strong>
+        )}
+        .
       </p>
 
       <fieldset className="transaction-filters">

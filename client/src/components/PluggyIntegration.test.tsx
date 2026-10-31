@@ -4,11 +4,12 @@ import type { AccountLink, AccountLinkDetail, AvailableAccount, CategorizationOv
 import type { PluggyConnection } from '../api/pluggyPoc'
 import type { FinancialAccount } from '../api/accounts'
 import { PluggyAccountLinkForm } from './PluggyAccountLinkForm'
-import { PluggyAccountPanel, PluggyCategorizationPanel, PluggyReviewPanel } from './PluggyIntegration'
+import { PluggyAccountPanel, PluggyCategorizationPanel, PluggyRecoveryPanel, PluggyReviewPanel } from './PluggyIntegration'
 
 const api = vi.hoisted(() => ({
   listIntegrationConnections: vi.fn(), listAvailableAccounts: vi.fn(), linkAccount: vi.fn(), getLinkDetail: vi.fn(), applyOpeningBalanceSuggestion: vi.fn(),
   reprocessImported: vi.fn(), listReview: vi.fn(), resolveReview: vi.fn(), listLinks: vi.fn(), getCategorizationOverview: vi.fn(), runCategorization: vi.fn(), applyCardScheduleSuggestion: vi.fn(),
+  confirmTransfer: vi.fn(), rejectTransfer: vi.fn(), previewRecovery: vi.fn(),
 }))
 vi.mock('../api/pluggyIntegration', () => api)
 
@@ -402,5 +403,100 @@ describe('PluggyCategorizationPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Categorizar automaticamente' }))
 
     expect((await screen.findByRole('alert')).textContent).toMatch(/Falha ao categorizar/)
+  })
+})
+
+describe('PluggyReviewPanel — vínculo entre movimentos', () => {
+  const base = { linkKind: 'Bank' as const, importedTransactionId: 't', pluggyCategory: null, pluggyStatus: 'Posted', operationType: 'PIX', resolution: null, reviewKind: 'Link' as const }
+  const candidate = { postingId: 'c1', linkId: 'l2', linkDisplayName: 'Itaú PJ', date: '2026-10-05', amount: '300.00', direction: 'Income' as const, description: 'Pix recebido',
+    operationType: 'PIX', accounted: false, sameDay: true, canConfirm: true, blockedReason: null }
+  const page = (): ReviewPage => ({
+    items: [
+      { ...base, postingId: 'p1', linkId: 'l1', linkDisplayName: 'Itaú PF', state: 'Applied', reason: 'AmbiguousTransferCounterpart', date: '2026-10-05', amount: '300.00', direction: 'Expense',
+        description: 'Pix enviado', allowedResolutions: [], accounted: true, impact: 'InTotals', linkReviewReason: 'AmbiguousTransferCounterpart', candidates: [candidate,
+          { ...candidate, postingId: 'c2', date: '2026-10-04', sameDay: false, canConfirm: false, blockedReason: 'DifferentDate' }] },
+      { ...base, postingId: 'p2', linkId: 'l2', linkDisplayName: 'Itaú PJ', state: 'NeedsReview', reason: 'TransferDateMismatch', date: '2026-10-05', amount: '300.00', direction: 'Income',
+        description: 'Pix recebido', allowedResolutions: ['AsIncome', 'Ignore'], accounted: false, impact: 'OutOfTotals', candidates: [] },
+    ],
+    total: 2, page: 1, pageSize: 25, counts: { applied: 1, waiting: 0, needsReview: 1, covered: 0, ignored: 0 }, accountedInReview: 1,
+  })
+
+  it('informa se cada ponta já conta nos totais, mostra as contrapartes e por que uma não pode ser confirmada', async () => {
+    api.listReview.mockResolvedValue(page())
+    render(<PluggyReviewPanel workspaceId="w1" refreshKey="0" />)
+
+    const accounted = (await screen.findByText('Pix enviado')).closest('li')!
+    expect(within(accounted).getByText(/Já contabilizado — continua nos totais até a decisão/)).toBeTruthy()
+    expect(within(accounted).getByText(/Revisão do vínculo entre movimentos/)).toBeTruthy()
+    expect(within(accounted).queryByRole('button', { name: 'Contabilizar como despesa' })).toBeNull() // ponta aplicada não aceita decisão financeira
+    const candidates = within(accounted).getByLabelText('Possíveis contrapartes')
+    expect(within(candidates).getAllByRole('button', { name: 'Confirmar transferência' })).toHaveLength(1)
+    expect(within(candidates).getByText(/Data diferente: a transferência tem uma única data/)).toBeTruthy()
+    const pending = screen.getAllByText('Pix recebido')[0].closest('li')!
+    expect(within(pending).getByText(/Ainda não contabilizado — fora dos totais até a decisão/)).toBeTruthy()
+    expect(within(pending).getByText('Há uma possível contraparte com data diferente (uma transferência tem uma única data)')).toBeTruthy()
+  })
+
+  it('confirma o par pelos identificadores dos dois rastros, só depois de confirmar com o usuário', async () => {
+    api.listReview.mockResolvedValue(page())
+    api.confirmTransfer.mockResolvedValue({ outcome: 'Done', summary: null })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
+    const onChanged = vi.fn()
+    render(<PluggyReviewPanel workspaceId="w1" refreshKey="0" onChanged={onChanged} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar transferência' }))
+    expect(api.confirmTransfer).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar transferência' }))
+
+    await waitFor(() => expect(api.confirmTransfer).toHaveBeenCalledWith('w1', 'p1', 'c1'))
+    expect(confirm).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  })
+
+  it('rejeita a sugestão e mostra o erro do backend sem perder a lista', async () => {
+    api.listReview.mockResolvedValue(page())
+    api.rejectTransfer.mockRejectedValue(new Error('Estas pontas já formam uma transferência: desfaça o vínculo em vez de rejeitá-lo. (AlreadyLinked)'))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<PluggyReviewPanel workspaceId="w1" refreshKey="0" />)
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Não é transferência' }))[0])
+
+    await waitFor(() => expect(api.rejectTransfer).toHaveBeenCalledWith('w1', 'p1', 'c1'))
+    expect((await screen.findByRole('alert')).textContent).toContain('AlreadyLinked')
+    expect(screen.getByText('Movimentos para revisar (2)')).toBeTruthy()
+  })
+})
+
+describe('PluggyRecoveryPanel', () => {
+  const figures = (income: string, expense: string, inn: string, out: string) => ({ income, expense, transfersIn: inn, transfersOut: out, net: '0.00' })
+  const preview = () => ({
+    generatedAt: '2026-10-31T10:00:00Z', wouldApply: {} as never, accounts: [], totalBefore: figures('755.99', '55.99', '0.00', '0.00'), totalAfter: figures('700.00', '55.99', '0.00', '0.00'),
+    itemsTotal: 1, willChange: 0, needsDecision: 1, persisted: false as const,
+    items: [{ postingId: 'p1', importedTransactionId: 't1', linkId: 'l1', linkDisplayName: 'Itaú PF', date: '2026-10-23', amount: '55.99', direction: 'Income' as const, description: 'Pix devolvido Pix Marketplace',
+      operationType: 'PIX', pluggyStatus: 'Posted', current: { state: 'Applied', kind: 'BankMovement', reason: null, effect: 'Income' }, proposed: { state: 'Applied', kind: 'BankMovement', reason: null, effect: 'Income' },
+      outcome: 'NeedsDecision' as const, note: 'Rule:PossibleRefundByDescription' }],
+  })
+
+  it('gera a prévia sem aplicar, mostra o que exige decisão e só deixa aplicar depois dela', async () => {
+    api.previewRecovery.mockResolvedValue(preview())
+    api.reprocessImported.mockResolvedValue({})
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<PluggyRecoveryPanel workspaceId="w1" />)
+    const apply = screen.getByRole('button', { name: 'Aplicar reprocessamento' }) as HTMLButtonElement
+    expect(apply.disabled).toBe(true)
+
+    fireEvent.change(screen.getByLabelText(/Rastrear valor/), { target: { value: '55,99' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar prévia' }))
+
+    const result = await screen.findByLabelText('Prévia do reprocessamento')
+    expect(api.previewRecovery).toHaveBeenCalledWith('w1', { amount: '55,99' })
+    expect(within(result).getByText(/1 exigem decisão sua/)).toBeTruthy()
+    expect(within(result).getByText(/Exige decisão — A descrição sugere devolução/)).toBeTruthy()
+    expect(api.reprocessImported).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar reprocessamento' }))
+
+    await waitFor(() => expect(api.reprocessImported).toHaveBeenCalledWith('w1'))
+    expect(await screen.findByText(/Reprocessamento aplicado/)).toBeTruthy()
   })
 })

@@ -271,6 +271,126 @@ public sealed class PluggyFinancialMapperTests
         Assert.Equal([(source.Id, hinted.Id)], tied.Pairs);
         Assert.Empty(onlyHint.Pairs);
     }
+
+    // ---- Pareamento do mesmo dia, normalização de operações, datas e dica de devolução ---------------------------------------------
+
+    [Theory]
+    [InlineData("pix", "PIX")]
+    [InlineData("  Pix ", "PIX")]
+    [InlineData("TED", "TED")]
+    [InlineData("Transferência Mesma-Instituição", "TRANSFERENCIA_MESMA_INSTITUICAO")]
+    [InlineData("devolução", "DEVOLUCAO")]
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    public void OperationCodesAreNormalizedInOneConsistentWay(string? raw, string expected) => Assert.Equal(expected, PluggyOperationCodes.Normalize(raw));
+
+    [Fact]
+    public void TheMapperUsesTheNormalizedOperationEverywhere()
+    {
+        Assert.Equal(PluggyDisposition.TransferProbe, PluggyFinancialMapper.Decide(Facts(type: "CREDIT", amount: 10m, operation: " pix "), Today).Disposition);
+        Assert.Equal("PossibleRefund", PluggyFinancialMapper.Decide(Facts(type: "CREDIT", amount: 30m, operation: "estorno"), Today).Reason);
+    }
+
+    [Fact]
+    public void TheBusinessDateIsTheUtcCalendarDayOfTheBankInstantWithoutShiftingToSaoPaulo()
+    {
+        // A Pluggy entrega a data bancária à meia-noite UTC: converter para America/Sao_Paulo (UTC-3) a deslocaria para a véspera.
+        Assert.Equal(new DateOnly(2026, 10, 9), PluggyFinancialMapper.BusinessDate(DateTimeOffset.Parse("2026-10-09T00:00:00.000Z")));
+        Assert.Equal(new DateOnly(2026, 10, 9), PluggyFinancialMapper.BusinessDate(DateTimeOffset.Parse("2026-10-09T12:00:00Z")));
+    }
+
+    [Fact]
+    public void ACreditWhoseDescriptionMentionsAReturnGoesToReviewAndIsNeverConfirmedAsARefundOrIncomeByItself()
+    {
+        var refund = PluggyFinancialMapper.Decide(Facts(type: "CREDIT", amount: 55.99m, operation: "PIX", description: "Pix devolvido Pix Marketplace"), Today);
+        var plainPix = PluggyFinancialMapper.Decide(Facts(type: "CREDIT", amount: 320m, operation: "PIX", description: "Pix recebido DEIVID SILVA SILVA"), Today);
+        var debitSameWords = PluggyFinancialMapper.Decide(Facts(type: "DEBIT", amount: -55.99m, operation: "PIX", description: "Pagamento de Pix QR Code Pix Marketplace"), Today);
+
+        Assert.Equal((PluggyDisposition.Review, "PossibleRefundByDescription"), (refund.Disposition, refund.Reason));
+        Assert.Equal(PluggyDisposition.TransferProbe, plainPix.Disposition); // sem dica: segue como recebimento de terceiro (receita da conta)
+        Assert.Equal(PluggyDisposition.TransferProbe, debitSameWords.Disposition);
+    }
+
+    [Fact]
+    public void AUserDecisionOverridesTheRefundDescriptionHint()
+    {
+        var facts = Facts(type: "CREDIT", amount: 55.99m, operation: "PIX", description: "Pix devolvido Pix Marketplace");
+
+        Assert.Equal(PluggyDisposition.BankMovement, PluggyFinancialMapper.Decide(facts, Today, PluggyResolution.AsIncome).Disposition);
+    }
+
+    [Theory]
+    [InlineData("Pix devolvido", true)]
+    [InlineData("DEVOLUCAO PIX", true)]
+    [InlineData("Estorno compra", true)]
+    [InlineData("Reembolso viagem", true)]
+    [InlineData("Pix recebido DEIVID SILVA SILVA", false)]
+    [InlineData("Pagamento de Pix QR Code", false)]
+    [InlineData(null, false)]
+    public void TheRefundHintLooksOnlyAtWholeWords(string? description, bool expected) => Assert.Equal(expected, PluggyFinancialMapper.DescribesRefund(description, null));
+
+    [Fact]
+    public void PairsOnlyMatchOnTheSameDayWhenToleranceIsZeroAndDifferentDaysAreReportedForReviewInstead()
+    {
+        var debit = Item(100m, "2026-10-10"); var sameDay = Item(100m, "2026-10-10"); var otherDay = Item(100m, "2026-10-11");
+
+        var matched = PluggyPairing.Match([debit], [sameDay], 0, differentLinks: true);
+        var notMatched = PluggyPairing.Match([debit], [otherDay], 0, differentLinks: true);
+        var mismatch = PluggyPairing.DateMismatches([debit], [otherDay], 1, differentLinks: true);
+
+        Assert.Equal([(debit.Id, sameDay.Id)], matched.Pairs);
+        Assert.Empty(notMatched.Pairs);
+        Assert.Equal(new[] { debit.Id, otherDay.Id }.Order(), mismatch.Order());
+    }
+
+    [Fact]
+    public void DateMismatchesIgnoreSameDayFarDatesDifferentAmountsSameAccountAndRejectedPairs()
+    {
+        var link = Guid.NewGuid();
+        var source = Item(100m, "2026-10-10");
+        Assert.Empty(PluggyPairing.DateMismatches([source], [Item(100m, "2026-10-10")], 1, true)); // mesmo dia não é divergência de data
+        Assert.Empty(PluggyPairing.DateMismatches([source], [Item(100m, "2026-10-13")], 1, true));
+        Assert.Empty(PluggyPairing.DateMismatches([source], [Item(100.01m, "2026-10-11")], 1, true));
+        Assert.Empty(PluggyPairing.DateMismatches([Item(100m, "2026-10-10", link)], [Item(100m, "2026-10-11", link)], 1, true));
+        var near = Item(100m, "2026-10-11");
+        Assert.Empty(PluggyPairing.DateMismatches([source], [near], 1, true, (a, b) => a == source.Id && b == near.Id));
+    }
+
+    [Fact]
+    public void ARejectedPairIsNeverMatchedButTheEndsStayFreeForOtherCounterparts()
+    {
+        var debit = Item(100m, "2026-10-10"); var rejectedCredit = Item(100m, "2026-10-10"); var otherDebit = Item(100m, "2026-10-10");
+
+        var result = PluggyPairing.Match([debit, otherDebit], [rejectedCredit], 0, true, (a, b) => a == debit.Id && b == rejectedCredit.Id);
+
+        Assert.Equal([(otherDebit.Id, rejectedCredit.Id)], result.Pairs);
+    }
+
+    private static TransferSide Side(bool debit, string operation = "PIX", string day = "2026-10-10", decimal amount = 100m, Guid? link = null, Guid? account = null,
+        PluggyDisposition disposition = PluggyDisposition.TransferProbe, PluggyPostingState state = PluggyPostingState.NeedsReview, PluggyPostingKind kind = PluggyPostingKind.None,
+        PluggyResolution? resolution = null, PluggyLinkedAccountKind linkKind = PluggyLinkedAccountKind.Bank) =>
+        new(Guid.NewGuid(), link ?? Guid.NewGuid(), account ?? Guid.NewGuid(), linkKind, disposition, debit, amount, DateOnly.Parse(day), operation, state, kind, null, resolution);
+
+    [Fact]
+    public void EligibilityAcceptsOppositeSidesWithSameAmountDayAndOperationOnDistinctBankAccounts() =>
+        Assert.Null(PluggyTransferEligibility.Check(Side(debit: true), Side(debit: false)));
+
+    [Fact]
+    public void EligibilityReportsTheFirstBlockingReason()
+    {
+        Assert.Equal(PluggyTransferEligibility.Reasons.SameDirection, PluggyTransferEligibility.Check(Side(true), Side(true)));
+        var sharedLink = Guid.NewGuid();
+        Assert.Equal(PluggyTransferEligibility.Reasons.SameAccount, PluggyTransferEligibility.Check(Side(true, link: sharedLink), Side(false, link: sharedLink)));
+        Assert.Equal(PluggyTransferEligibility.Reasons.NotBankAccount, PluggyTransferEligibility.Check(Side(true), Side(false, linkKind: PluggyLinkedAccountKind.Card)));
+        Assert.Equal(PluggyTransferEligibility.Reasons.ManualDecision, PluggyTransferEligibility.Check(Side(true), Side(false, resolution: PluggyResolution.AsIncome)));
+        Assert.Equal(PluggyTransferEligibility.Reasons.NotTransferEvidence, PluggyTransferEligibility.Check(Side(true), Side(false, disposition: PluggyDisposition.BankMovement)));
+        Assert.Equal(PluggyTransferEligibility.Reasons.EndUnavailable, PluggyTransferEligibility.Check(Side(true), Side(false, state: PluggyPostingState.Ignored)));
+        Assert.Equal(PluggyTransferEligibility.Reasons.EndUsedElsewhere, PluggyTransferEligibility.Check(Side(true), Side(false, state: PluggyPostingState.Applied, kind: PluggyPostingKind.CardBillPayment)));
+        Assert.Equal(PluggyTransferEligibility.Reasons.DifferentAmount, PluggyTransferEligibility.Check(Side(true), Side(false, amount: 100.01m)));
+        Assert.Equal(PluggyTransferEligibility.Reasons.DifferentDate, PluggyTransferEligibility.Check(Side(true), Side(false, day: "2026-10-11")));
+        Assert.Equal(PluggyTransferEligibility.Reasons.IncompatibleOperation, PluggyTransferEligibility.Check(Side(true, "PIX"), Side(false, "TED")));
+        Assert.Equal(PluggyTransferEligibility.Reasons.IncompatibleOperation, PluggyTransferEligibility.Check(Side(true, "BOLETO"), Side(false, "BOLETO")));
+    }
 }
 
 internal static class FactsExtensions

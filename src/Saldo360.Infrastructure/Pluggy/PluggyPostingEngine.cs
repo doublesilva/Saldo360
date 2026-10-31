@@ -26,7 +26,12 @@ namespace Saldo360.Infrastructure.Pluggy;
 /// </summary>
 internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPostingEngine
 {
-    private const int TransferToleranceDays = 1;
+    /// <summary>
+    /// Transferência entre contas tem uma única data: a inferência automática só casa pontas do MESMO dia bancário. Pontas com dias diferentes (até
+    /// <see cref="TransferDateMismatchDays"/> de distância) não são pareadas nem recebem uma data comum forçada: vão para revisão.
+    /// </summary>
+    private const int TransferToleranceDays = 0;
+    private const int TransferDateMismatchDays = 1;
     private const int BillPaymentToleranceDays = 3;
     private const int BillEvidenceToleranceDays = 2;
     private const string FallbackCategoryName = "Outros";
@@ -38,7 +43,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
         try
         {
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", ct);
-            var summary = await new Run(db, workspaceId, userId, now).ExecuteAsync(ct);
+            var summary = await new Run(db, workspaceId, userId, now, null).ExecuteAsync(ct);
             if (tx is not null) await tx.CommitAsync(ct);
             return summary;
         }
@@ -54,9 +59,126 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
         }
     }
 
-    /// <summary>Uma execução do motor: carrega tudo do orçamento, decide, aplica e salva.</summary>
-    private sealed class Run(Saldo360DbContext db, Guid workspaceId, Guid userId, DateTimeOffset now)
+    public Task<PluggyManualResult> ConfirmTransferAsync(Guid workspaceId, Guid userId, Guid postingId, Guid counterpartPostingId, DateTimeOffset now, CancellationToken ct) =>
+        ManualAsync(workspaceId, userId, now, new ManualConfirm(postingId, counterpartPostingId), ct);
+
+    public Task<PluggyManualResult> RejectTransferAsync(Guid workspaceId, Guid userId, Guid postingId, Guid counterpartPostingId, DateTimeOffset now, CancellationToken ct) =>
+        ManualAsync(workspaceId, userId, now, new ManualReject(postingId, counterpartPostingId), ct);
+
+    public Task<PluggyManualResult> UndoTransferAsync(Guid workspaceId, Guid userId, Guid postingId, DateTimeOffset now, CancellationToken ct) =>
+        ManualAsync(workspaceId, userId, now, new ManualUndo(postingId), ct);
+
+    /// <summary>
+    /// Ação manual sobre vínculos: com o orçamento travado, valida de novo e executa a MESMA passada do motor (decide, desfaz, pareia, aplica) com a intenção
+    /// do usuário incorporada, então os cenários (nenhuma, uma ou ambas as pontas já contabilizadas) seguem o mesmo caminho da inferência automática.
+    /// Resultado inválido ou em conflito desfaz a transação inteira: nada é gravado.
+    /// </summary>
+    private async Task<PluggyManualResult> ManualAsync(Guid workspaceId, Guid userId, DateTimeOffset now, ManualIntent intent, CancellationToken ct)
     {
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        var tx = ownsTransaction ? await db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", ct);
+            var run = new Run(db, workspaceId, userId, now, intent);
+            var summary = await run.ExecuteAsync(ct);
+            var result = run.ManualResult ?? new PluggyManualResult(PluggyManualOutcome.NotFound);
+            if (result.Outcome is PluggyManualOutcome.NotFound or PluggyManualOutcome.Invalid or PluggyManualOutcome.Conflict)
+            {
+                if (tx is not null) await tx.RollbackAsync(CancellationToken.None);
+                db.ChangeTracker.Clear();
+                return result;
+            }
+            if (tx is not null) await tx.CommitAsync(ct);
+            return result with { Summary = summary };
+        }
+        catch
+        {
+            if (tx is not null) await tx.RollbackAsync(CancellationToken.None);
+            db.ChangeTracker.Clear();
+            throw;
+        }
+        finally
+        {
+            if (tx is not null) await tx.DisposeAsync();
+        }
+    }
+
+    public async Task<PluggyRecoveryPreview> PreviewAsync(Guid workspaceId, Guid userId, DateTimeOffset now, PluggyRecoveryFilter filter, CancellationToken ct)
+    {
+        if (db.Database.CurrentTransaction is not null) throw new InvalidOperationException("A prévia precisa da própria transação, que é sempre desfeita.");
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", ct);
+            var accounts = await db.PluggyAccountLinks.AsNoTracking().Where(l => l.WorkspaceId == workspaceId && l.Kind == PluggyLinkedAccountKind.Bank && l.FinancialAccountId != null)
+                .OrderBy(l => l.LinkedAt).ThenBy(l => l.Id).Select(l => new { l.Id, l.DisplayName, AccountId = l.FinancialAccountId!.Value }).ToListAsync(ct);
+            var before = await MeasureAsync(workspaceId, accounts.Select(a => (a.Id, a.AccountId)).ToList(), ct);
+            var snapshots = await db.PluggyPostings.AsNoTracking().Where(p => p.WorkspaceId == workspaceId)
+                .Select(p => new PostingSnapshot(p.ImportedTransactionId, p.State, p.Kind, p.Reason, p.AppliedType, p.LinkReviewReason)).ToDictionaryAsync(p => p.ImportedTransactionId, ct);
+            var run = new Run(db, workspaceId, userId, now, null);
+            var summary = await run.ExecuteAsync(ct);
+            var after = await MeasureAsync(workspaceId, accounts.Select(a => (a.Id, a.AccountId)).ToList(), ct);
+            var items = run.BuildPreviewItems(snapshots, filter, out var total, out var willChange, out var needsDecision);
+            var deltas = accounts.Select(a => new PluggyAccountDelta(a.Id, a.DisplayName, before[a.Id], after[a.Id])).ToList();
+            return new PluggyRecoveryPreview(now, summary, deltas, SumFigures(before.Values), SumFigures(after.Values), items, total, willChange, needsDecision);
+        }
+        finally
+        {
+            // A prévia nunca persiste: tudo que o motor fez dentro desta transação é descartado.
+            await tx.RollbackAsync(CancellationToken.None);
+            db.ChangeTracker.Clear();
+        }
+    }
+
+    private sealed record PostingSnapshot(Guid ImportedTransactionId, PluggyPostingState State, PluggyPostingKind Kind, string? Reason, CategoryType? AppliedType, string? LinkReviewReason);
+
+    /// <summary>Receitas, despesas e transferências (não canceladas) de cada conta bancária integrada, para comparar antes e depois do motor.</summary>
+    private async Task<Dictionary<Guid, PluggyFigures>> MeasureAsync(Guid workspaceId, IReadOnlyList<(Guid LinkId, Guid AccountId)> accounts, CancellationToken ct)
+    {
+        var accountIds = accounts.Select(a => a.AccountId).ToList();
+        var transactions = await db.FinancialTransactions.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && accountIds.Contains(t.AccountId))
+            .GroupBy(t => new { t.AccountId, t.Type }).Select(g => new { g.Key.AccountId, g.Key.Type, Sum = g.Sum(x => x.Amount) }).ToListAsync(ct);
+        var transfers = await db.FinancialTransfers.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && (accountIds.Contains(t.SourceAccountId) || accountIds.Contains(t.DestinationAccountId)))
+            .Select(t => new { t.SourceAccountId, t.DestinationAccountId, t.Amount }).ToListAsync(ct);
+        var result = new Dictionary<Guid, PluggyFigures>();
+        foreach (var (linkId, accountId) in accounts)
+        {
+            var income = transactions.Where(t => t.AccountId == accountId && t.Type == CategoryType.Income).Sum(t => t.Sum);
+            var expense = transactions.Where(t => t.AccountId == accountId && t.Type == CategoryType.Expense).Sum(t => t.Sum);
+            var transfersIn = transfers.Where(t => t.DestinationAccountId == accountId).Sum(t => t.Amount);
+            var transfersOut = transfers.Where(t => t.SourceAccountId == accountId).Sum(t => t.Amount);
+            result[linkId] = Figures(income, expense, transfersIn, transfersOut);
+        }
+        return result;
+    }
+
+    private static PluggyFigures Figures(decimal income, decimal expense, decimal transfersIn, decimal transfersOut) =>
+        new(Format(income), Format(expense), Format(transfersIn), Format(transfersOut), Format(income - expense + transfersIn - transfersOut));
+
+    private static PluggyFigures SumFigures(IEnumerable<PluggyFigures> figures)
+    {
+        decimal Sum(Func<PluggyFigures, string> pick) => figures.Sum(f => decimal.Parse(pick(f), System.Globalization.CultureInfo.InvariantCulture));
+        return Figures(Sum(f => f.Income), Sum(f => f.Expense), Sum(f => f.TransfersIn), Sum(f => f.TransfersOut));
+    }
+
+    private static string Format(decimal value) => decimal.Round(value, 2, MidpointRounding.AwayFromZero).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private abstract record ManualIntent;
+    private sealed record ManualConfirm(Guid PostingId, Guid CounterpartPostingId) : ManualIntent;
+    private sealed record ManualReject(Guid PostingId, Guid CounterpartPostingId) : ManualIntent;
+    private sealed record ManualUndo(Guid PostingId) : ManualIntent;
+
+    /// <summary>Uma execução do motor: carrega tudo do orçamento, decide, aplica e salva.</summary>
+    private sealed class Run(Saldo360DbContext db, Guid workspaceId, Guid userId, DateTimeOffset now, ManualIntent? manual)
+    {
+        /// <summary>Resultado da ação manual, quando houve uma (nulo = passada comum do motor).</summary>
+        public PluggyManualResult? ManualResult { get; private set; }
+        private readonly Dictionary<Guid, PluggyAccountLink> linkOfImported = [];
+        private readonly HashSet<(Guid First, Guid Second)> rejected = [];
+        private readonly Dictionary<(Guid First, Guid Second), PluggyTransferRejection> rejectionRows = [];
+        private readonly HashSet<(Guid Debit, Guid Credit)> forcedTransfers = [];
+        private readonly HashSet<Guid> linkFlagged = [];
         private readonly DateOnly today = BusinessCalendar.Today(now);
         private readonly Dictionary<Guid, PluggyPosting> postings = [];
         private readonly Dictionary<Guid, PluggyAccountLink> links = [];
@@ -83,7 +205,11 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
         public async Task<PluggyApplySummary> ExecuteAsync(CancellationToken ct)
         {
             foreach (var link in await db.PluggyAccountLinks.Where(l => l.WorkspaceId == workspaceId).ToListAsync(ct)) links[link.Id] = link;
-            if (links.Count == 0) return new(0, 0, 0, 0, 0, 0, 0, 0, 0);
+            if (links.Count == 0)
+            {
+                if (manual is not null) ManualResult = new(PluggyManualOutcome.NotFound); // orçamento sem contas integradas: não há ponta a vincular
+                return new(0, 0, 0, 0, 0, 0, 0, 0, 0);
+            }
 
             var connectionIds = links.Values.Select(l => l.ConnectionId).Distinct().ToList();
             var accountIds = links.Values.Select(l => l.PluggyAccountId).Distinct().ToList();
@@ -92,9 +218,14 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 .Where(t => t.WorkspaceId == workspaceId && connectionIds.Contains(t.ConnectionId) && accountIds.Contains(t.PluggyAccountId)).ToListAsync(ct);
             var linkOf = new Dictionary<Guid, PluggyAccountLink>();
             foreach (var row in rows)
-                if (byKey.TryGetValue((row.ConnectionId, row.PluggyAccountId), out var link)) { imported[row.Id] = row; linkOf[row.Id] = link; }
+                if (byKey.TryGetValue((row.ConnectionId, row.PluggyAccountId), out var link)) { imported[row.Id] = row; linkOf[row.Id] = link; linkOfImported[row.Id] = link; }
 
             foreach (var posting in await db.PluggyPostings.Where(p => p.WorkspaceId == workspaceId).ToListAsync(ct)) postings[posting.ImportedTransactionId] = posting;
+            foreach (var row in await db.PluggyTransferRejections.Where(r => r.WorkspaceId == workspaceId).ToListAsync(ct))
+            {
+                rejected.Add((row.FirstPostingId, row.SecondPostingId));
+                rejectionRows[(row.FirstPostingId, row.SecondPostingId)] = row;
+            }
             categories = await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).ToMappable(db).ToListAsync(ct);
             await LoadCoreAsync(ct);
             var billRows = await db.PluggyCardBills.Where(b => b.WorkspaceId == workspaceId).ToListAsync(ct);
@@ -126,6 +257,9 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 }
             }
 
+            // 1b) Ação manual do usuário (confirmar, rejeitar, desfazer): validada agora, com o orçamento travado; inválida ou em conflito, nada mais acontece.
+            if (manual is not null && !PrepareManual(manual, linkOf)) return new(0, 0, 0, 0, 0, 0, 0, 0, 0);
+
             // 2) Desfaz pares cujo dado de origem mudou ou cuja outra ponta foi cancelada pelo usuário; depois pareia o que sobrou.
             UnwindBrokenPairs();
             var pairing = Pair(linkOf);
@@ -137,6 +271,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 await ApplyOneAsync(t, linkOf[t.Id], movement, pairing, ct);
             }
             ApplyTransfers(pairing, linkOf);
+            ClearStaleLinkReviews();
             await db.SaveChangesAsync(ct);
             // 4) Fechamento informado pela instituição (independe de conciliação), pagamentos de fatura reconhecidos, limpeza de faturas calculadas
             // que ficaram vazias, estado de conciliação de cada fatura e referência de saldo das contas. Tudo idempotente.
@@ -189,10 +324,165 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             foreach (var i in await db.FinancialCreditCardInvoices.Where(i => i.WorkspaceId == workspaceId && cardIds.Contains(i.CreditCardId)).ToListAsync(ct)) invoices[(i.CreditCardId, i.ClosingDate)] = i;
         }
 
+        // ---- Ações manuais sobre vínculos -----------------------------------------------------------------------------------
+
+        private void AddRejection(Guid postingA, Guid postingB)
+        {
+            var key = PluggyTransferRejection.Order(postingA, postingB);
+            if (!rejected.Add(key)) return;
+            var row = PluggyTransferRejection.Create(workspaceId, postingA, postingB, userId, now);
+            rejectionRows[key] = row;
+            db.PluggyTransferRejections.Add(row);
+        }
+
+        private void RemoveRejection(Guid postingA, Guid postingB)
+        {
+            var key = PluggyTransferRejection.Order(postingA, postingB);
+            if (rejected.Remove(key) && rejectionRows.Remove(key, out var row)) db.PluggyTransferRejections.Remove(row);
+        }
+
+        /// <returns>Falso quando a ação é inválida ou está em conflito (nada mais deve ser feito nem gravado).</returns>
+        private bool PrepareManual(ManualIntent intent, Dictionary<Guid, PluggyAccountLink> linkOf)
+        {
+            var byPosting = postings.Values.ToDictionary(p => p.Id);
+            var importedOf = postings.ToDictionary(kv => kv.Value.Id, kv => kv.Key);
+            bool Fail(PluggyManualOutcome outcome, string? reason) { ManualResult = new(outcome, reason); return false; }
+            bool Succeed(PluggyManualOutcome outcome) { ManualResult = new(outcome); return true; }
+            TransferSide? SideOf(PluggyPosting p)
+            {
+                var importedId = importedOf[p.Id];
+                if (!decisions.TryGetValue(importedId, out var movement) || !imported.TryGetValue(importedId, out var transaction)) return null;
+                var link = linkOf[importedId];
+                return new TransferSide(p.Id, link.Id, link.FinancialAccountId, link.Kind, movement.Disposition, movement.IsDebit, movement.Amount, movement.Date,
+                    PluggyOperationCodes.Normalize(transaction.OperationType), p.State, p.Kind, p.CounterpartPostingId, p.Resolution);
+            }
+
+            switch (intent)
+            {
+                case ManualConfirm confirm:
+                {
+                    if (confirm.PostingId == confirm.CounterpartPostingId) return Fail(PluggyManualOutcome.Invalid, PluggyTransferEligibility.Reasons.SameAccount);
+                    if (!byPosting.TryGetValue(confirm.PostingId, out var a) || !byPosting.TryGetValue(confirm.CounterpartPostingId, out var b)) return Fail(PluggyManualOutcome.NotFound, null);
+                    if (SideOf(a) is not { } sideA || SideOf(b) is not { } sideB) return Fail(PluggyManualOutcome.Invalid, PluggyTransferEligibility.Reasons.EndUnavailable);
+                    if (PluggyTransferEligibility.AlreadyLinkedToEachOther(sideA, sideB))
+                    {
+                        // Repetir a confirmação não gera efeito financeiro algum; só o primeiro registro do usuário sobre um vínculo inferido muda a origem do vínculo.
+                        var upgrade = a.LinkOrigin != PluggyLinkOrigin.UserConfirmed || b.LinkOrigin != PluggyLinkOrigin.UserConfirmed;
+                        if (upgrade) { a.ConfirmLink(userId, now); b.ConfirmLink(userId, now); }
+                        return Succeed(upgrade ? PluggyManualOutcome.Done : PluggyManualOutcome.AlreadyDone);
+                    }
+                    if (PluggyTransferEligibility.UsedByAnotherLink(sideA, sideB)) return Fail(PluggyManualOutcome.Conflict, PluggyTransferEligibility.Reasons.EndUsedElsewhere);
+                    if (PluggyTransferEligibility.Check(sideA, sideB) is { } reason)
+                        return Fail(reason == PluggyTransferEligibility.Reasons.EndUsedElsewhere ? PluggyManualOutcome.Conflict : PluggyManualOutcome.Invalid, reason);
+                    // A confirmação do usuário supera uma rejeição anterior do mesmo par.
+                    RemoveRejection(a.Id, b.Id);
+                    var (debit, credit) = sideA.IsDebit ? (a, b) : (b, a);
+                    forcedTransfers.Add((importedOf[debit.Id], importedOf[credit.Id]));
+                    return Succeed(PluggyManualOutcome.Done);
+                }
+                case ManualReject reject:
+                {
+                    if (reject.PostingId == reject.CounterpartPostingId) return Fail(PluggyManualOutcome.Invalid, PluggyTransferEligibility.Reasons.SameAccount);
+                    if (!byPosting.TryGetValue(reject.PostingId, out var a) || !byPosting.TryGetValue(reject.CounterpartPostingId, out var b)) return Fail(PluggyManualOutcome.NotFound, null);
+                    if (a.State == PluggyPostingState.Applied && a.Kind == PluggyPostingKind.Transfer && a.CounterpartPostingId == b.Id) return Fail(PluggyManualOutcome.Conflict, "AlreadyLinked");
+                    if (rejected.Contains(PluggyTransferRejection.Order(a.Id, b.Id))) return Succeed(PluggyManualOutcome.AlreadyDone);
+                    AddRejection(a.Id, b.Id);
+                    return Succeed(PluggyManualOutcome.Done);
+                }
+                case ManualUndo undo:
+                {
+                    if (!byPosting.TryGetValue(undo.PostingId, out var a)) return Fail(PluggyManualOutcome.NotFound, null);
+                    if (a.State != PluggyPostingState.Applied || a.Kind != PluggyPostingKind.Transfer || a.CounterpartPostingId is not { } counterpartId || !byPosting.TryGetValue(counterpartId, out var b))
+                    {
+                        // Desfazer de novo, depois de desfeito, não repete efeito: o par rejeitado indica que já foi desfeito.
+                        var wasUndone = rejected.Any(r => r.First == undo.PostingId || r.Second == undo.PostingId);
+                        return wasUndone ? Succeed(PluggyManualOutcome.AlreadyDone) : Fail(PluggyManualOutcome.Invalid, "NotLinked");
+                    }
+                    // Cancela a transferência e devolve as duas pontas à interpretação própria de cada evidência (movimento comum ou revisão); os movimentos reais permanecem.
+                    UnwindPair(a, b, "UserUndone");
+                    AddRejection(a.Id, b.Id);
+                    return Succeed(PluggyManualOutcome.Done);
+                }
+            }
+            return true;
+        }
+
+        // ---- Prévia -----------------------------------------------------------------------------------------------------
+
+        private static string EffectOf(PluggyPostingState state, PluggyPostingKind kind, CategoryType? appliedType, string? importedType)
+        {
+            if (state == PluggyPostingState.Covered) return "Evidence";
+            if (state != PluggyPostingState.Applied) return "None";
+            var debit = string.Equals(importedType, "DEBIT", StringComparison.OrdinalIgnoreCase);
+            return kind switch
+            {
+                PluggyPostingKind.BankMovement => appliedType == CategoryType.Income ? "Income" : "Expense",
+                PluggyPostingKind.Transfer => debit ? "TransferOut" : "TransferIn",
+                PluggyPostingKind.CardPurchase => "CardExpense",
+                PluggyPostingKind.CardBillPayment => "BillPayment",
+                PluggyPostingKind.CardCredit => "CardCredit",
+                _ => "None",
+            };
+        }
+
+        /// <summary>
+        /// Cadeia de cada movimento importado: o que o posting era antes da passada e o que o motor atual o deixou. Sem filtro, só o que muda ou exige decisão;
+        /// com filtro (valor e/ou período), tudo que casa, inclusive o que ficou fora do período de importação e nunca ganhou posting.
+        /// </summary>
+        internal IReadOnlyList<PluggyRecoveryItem> BuildPreviewItems(IReadOnlyDictionary<Guid, PostingSnapshot> before, PluggyRecoveryFilter filter, out int total, out int willChange, out int needsDecision)
+        {
+            var filtered = filter.Amount is not null || filter.From is not null || filter.To is not null;
+            var items = new List<PluggyRecoveryItem>();
+            willChange = 0; needsDecision = 0;
+            foreach (var t in imported.Values.OrderBy(t => t.Date).ThenBy(t => t.Id))
+            {
+                var date = t.Date is { } d ? PluggyFinancialMapper.BusinessDate(d) : (DateOnly?)null;
+                if (filter.Amount is { } wanted && (t.Amount is null || Math.Abs(t.Amount.Value) != wanted)) continue;
+                if (filter.From is { } from && (date is null || date < from)) continue;
+                if (filter.To is { } to && (date is null || date > to)) continue;
+                var link = linkOfImported[t.Id];
+                postings.TryGetValue(t.Id, out var posting);
+                decisions.TryGetValue(t.Id, out var movement);
+                before.TryGetValue(t.Id, out var snapshot);
+                var current = snapshot is null
+                    ? new PluggyInterpretation("None", "None", null, "None")
+                    : new PluggyInterpretation(snapshot.State.ToString(), snapshot.Kind.ToString(), snapshot.Reason, EffectOf(snapshot.State, snapshot.Kind, snapshot.AppliedType, t.Type));
+                PluggyInterpretation proposed;
+                string outcome; string? note = null;
+                if (posting is null)
+                {
+                    // Fora do período de importação da conta (ou sem decisão): nunca gera posting nem efeito.
+                    proposed = new("OutOfRange", "None", "BeforeImportFrom", "None");
+                    outcome = "Unchanged"; note = "NoPosting";
+                }
+                else
+                {
+                    proposed = new(posting.State.ToString(), posting.Kind.ToString(), posting.Reason, EffectOf(posting.State, posting.Kind, posting.AppliedType, t.Type));
+                    var applied = posting.State is PluggyPostingState.Applied or PluggyPostingState.Covered;
+                    var decide = posting.LinkReviewReason is not null || posting.State == PluggyPostingState.NeedsReview || (applied && movement?.Disposition == PluggyDisposition.Review);
+                    if (decide)
+                    {
+                        outcome = "NeedsDecision";
+                        note = posting.LinkReviewReason ?? (applied ? "Rule:" + movement?.Reason : posting.Reason);
+                    }
+                    else outcome = current == proposed && snapshot is not null ? "Unchanged" : "WillChange";
+                }
+                if (outcome == "WillChange") willChange++;
+                if (outcome == "NeedsDecision") needsDecision++;
+                if (!filtered && outcome is "Unchanged") continue;
+                items.Add(new PluggyRecoveryItem(posting?.Id, t.Id, link.Id, link.DisplayName, date,
+                    t.Amount is { } amount ? decimal.Round(Math.Abs(amount), 2, MidpointRounding.AwayFromZero).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : null,
+                    string.Equals(t.Type, "DEBIT", StringComparison.OrdinalIgnoreCase) ? "Expense" : string.Equals(t.Type, "CREDIT", StringComparison.OrdinalIgnoreCase) ? "Income" : null,
+                    PluggyFinancialMapper.Describe(t.Description, t.DescriptionRaw), t.OperationType, t.Status.ToString(), current, proposed, outcome, note));
+            }
+            total = items.Count;
+            return items.Take(Math.Clamp(filter.Take, 1, 500)).ToList();
+        }
+
         // ---- Pares ------------------------------------------------------------------------------------------------------
 
         private sealed record Pairs(IReadOnlyList<(Guid Source, Guid Target)> Transfers, IReadOnlyList<(Guid Card, Guid Bank)> Bills, IReadOnlySet<Guid> TransferAmbiguous, IReadOnlySet<Guid> BillAmbiguous,
-            IReadOnlySet<Guid> TransferPaired, IReadOnlySet<Guid> BillPaired, IReadOnlyList<(Guid BillPaymentId, Guid Bank)> BillEvidence);
+            IReadOnlySet<Guid> TransferPaired, IReadOnlySet<Guid> BillPaired, IReadOnlyList<(Guid BillPaymentId, Guid Bank)> BillEvidence, IReadOnlySet<Guid> TransferDateMismatch);
 
         private static bool Settled(PluggyPosting p) => p.CounterpartPostingId is not null && p.State is PluggyPostingState.Applied or PluggyPostingState.Covered;
 
@@ -267,19 +557,26 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             PairItem Item(Guid importedId, bool hint) => new(importedId, linkOf[importedId].Id, decisions[importedId].Amount, decisions[importedId].Date, hint);
             bool Free(Guid importedId) => !Settled(postings[importedId]) && postings[importedId].State != PluggyPostingState.Ignored;
 
-            // Transferências só se casam com a mesma operação do banco nas duas pontas (PIX com PIX, TED com TED...); nunca por descrição.
-            var transferPairs = new List<(Guid Source, Guid Target)>();
+            // Transferências só se casam com a mesma operação do banco nas duas pontas (PIX com PIX, TED com TED...), no mesmo dia bancário, com
+            // correspondência única e sem par rejeitado pelo usuário; nunca por descrição. Pares confirmados manualmente entram primeiro e saem da disputa.
+            bool Rejected(Guid a, Guid b) => rejected.Contains(PluggyTransferRejection.Order(postings[a].Id, postings[b].Id));
+            var forcedEnds = forcedTransfers.SelectMany(f => new[] { f.Debit, f.Credit }).ToHashSet();
+            var transferPairs = new List<(Guid Source, Guid Target)>(forcedTransfers.Select(f => (f.Debit, f.Credit)));
             var transferAmbiguous = new HashSet<Guid>();
-            var transferSides = decisions.Where(d => d.Value.Disposition is PluggyDisposition.TransferCandidate or PluggyDisposition.TransferProbe && Free(d.Key))
-                .GroupBy(d => imported[d.Key].OperationType?.ToUpperInvariant() ?? string.Empty);
+            var dateMismatch = new HashSet<Guid>();
+            var transferSides = decisions.Where(d => d.Value.Disposition is PluggyDisposition.TransferCandidate or PluggyDisposition.TransferProbe && Free(d.Key) && !forcedEnds.Contains(d.Key))
+                .GroupBy(d => PluggyOperationCodes.Normalize(imported[d.Key].OperationType));
             foreach (var operation in transferSides)
             {
                 var debits = operation.Where(d => d.Value.IsDebit).Select(d => Item(d.Key, false)).ToList();
                 var credits = operation.Where(d => !d.Value.IsDebit).Select(d => Item(d.Key, false)).ToList();
-                var result = PluggyPairing.Match(debits, credits, TransferToleranceDays, differentLinks: true);
+                var result = PluggyPairing.Match(debits, credits, TransferToleranceDays, differentLinks: true, Rejected);
                 transferPairs.AddRange(result.Pairs);
                 transferAmbiguous.UnionWith(result.Ambiguous);
+                dateMismatch.UnionWith(PluggyPairing.DateMismatches(debits, credits, TransferDateMismatchDays, differentLinks: true, Rejected));
             }
+            dateMismatch.ExceptWith(transferPairs.SelectMany(p => new[] { p.Source, p.Target }));
+            dateMismatch.ExceptWith(transferAmbiguous);
             var transferResult = new PairingResult(transferPairs, transferAmbiguous);
 
             var cardPayments = decisions.Where(d => d.Value.Disposition == PluggyDisposition.CardBillPayment && Free(d.Key)).Select(d => Item(d.Key, false)).ToList();
@@ -323,7 +620,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             return new(transferResult.Pairs, billResult.Pairs, transferResult.Ambiguous, billAmbiguous,
                 transferResult.Pairs.SelectMany(p => new[] { p.Source, p.Target }).ToHashSet(),
                 cardPaired.Concat(evidenceResult.Pairs.Select(p => p.Target)).ToHashSet(),
-                evidenceResult.Pairs.Select(p => (BillPaymentId: p.Source, Bank: p.Target)).ToList());
+                evidenceResult.Pairs.Select(p => (BillPaymentId: p.Source, Bank: p.Target)).ToList(), dateMismatch);
         }
 
         private static readonly HashSet<string> PaymentReasons = new(StringComparer.Ordinal)
@@ -352,10 +649,14 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 case PluggyDisposition.BankDebitBillHint:
                     ToReview(posting, pairs.BillAmbiguous.Contains(t.Id) ? "AmbiguousCardBillPayment" : "UnconfirmedCardBillPayment"); break;
                 case PluggyDisposition.TransferCandidate:
-                    ToReview(posting, pairs.TransferAmbiguous.Contains(t.Id) ? "AmbiguousTransferCounterpart" : "TransferWithoutCounterpart"); break;
+                    if (pairs.TransferAmbiguous.Contains(t.Id)) LinkDoubt(posting, "AmbiguousTransferCounterpart");
+                    else if (pairs.TransferDateMismatch.Contains(t.Id)) LinkDoubt(posting, "TransferDateMismatch");
+                    else ToReview(posting, "TransferWithoutCounterpart");
+                    break;
                 case PluggyDisposition.TransferProbe:
                     // Sem ponta oposta numa conta integrada é receita/despesa comum (PIX/TED com terceiros); só a dúvida real vai para revisão.
-                    if (pairs.TransferAmbiguous.Contains(t.Id)) ToReview(posting, "AmbiguousTransferCounterpart");
+                    if (pairs.TransferAmbiguous.Contains(t.Id)) LinkDoubt(posting, "AmbiguousTransferCounterpart");
+                    else if (pairs.TransferDateMismatch.Contains(t.Id)) LinkDoubt(posting, "TransferDateMismatch");
                     else if (pairs.BillAmbiguous.Contains(t.Id)) ToReview(posting, "AmbiguousCardBillPayment");
                     else ApplyBankMovement(t, link, movement, posting);
                     break;
@@ -374,6 +675,23 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
         /// <summary>Categoria do rastro apenas se existir no orcamento com o tipo certo; do contrario o lancamento nasce sem categoria (o usuario revisa).</summary>
         private Guid? ValidCategory(PluggyPosting posting, CategoryType type) =>
             posting.CategoryId is { } id && categories.Any(c => c.Id == id && c.Type == type && c.IsAvailable) ? id : null;
+
+        /// <summary>
+        /// Dúvida sobre o vínculo de uma ponta: marca a dúvida mesmo quando a ponta já está contabilizada (o efeito aplicado permanece, nada é removido em
+        /// silêncio) e leva à fila apenas o que ainda não foi aplicado.
+        /// </summary>
+        private void LinkDoubt(PluggyPosting posting, string reason)
+        {
+            linkFlagged.Add(posting.Id);
+            posting.SetLinkReview(reason, now);
+            ToReview(posting, reason);
+        }
+
+        private void ClearStaleLinkReviews()
+        {
+            foreach (var posting in postings.Values)
+                if (posting.LinkReviewReason is not null && !linkFlagged.Contains(posting.Id)) posting.SetLinkReview(null, now);
+        }
 
         private void ToReview(PluggyPosting posting, string reason)
         {
@@ -496,11 +814,13 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 if (details is null) { ToReview(debitPosting, "TransferInvalid"); ToReview(creditPosting, "TransferInvalid"); continue; }
                 var transfer = FinancialTransfer.Create(workspaceId, details, userId, now);
                 db.FinancialTransfers.Add(transfer);
-                // Se uma das pontas já tinha virado receita/despesa, cancela o lançamento: a transferência o substitui.
+                // Se uma das pontas (ou as duas) já tinha virado receita/despesa, cancela o lançamento: a transferência o substitui, sem somar de novo. O lançamento
+                // cancelado permanece no histórico; só o rastro deixa de apontar para ele.
                 foreach (var p in new[] { debitPosting, creditPosting })
                     if (p.FinancialTransactionId is { } id) CancelCore(id);
-                debitPosting.ApplyTransfer(transfer.Id, creditPosting.Id, debit.Amount, debit.Date, now);
-                creditPosting.ApplyTransfer(transfer.Id, debitPosting.Id, credit.Amount, credit.Date, now);
+                var origin = forcedTransfers.Contains((debitId, creditId)) ? PluggyLinkOrigin.UserConfirmed : PluggyLinkOrigin.Inferred;
+                debitPosting.ApplyTransfer(transfer.Id, creditPosting.Id, debit.Amount, debit.Date, now, origin, PluggyTransferEligibility.RuleVersion, userId);
+                creditPosting.ApplyTransfer(transfer.Id, debitPosting.Id, credit.Amount, credit.Date, now, origin, PluggyTransferEligibility.RuleVersion, userId);
                 transfersPaired++; created++;
             }
         }

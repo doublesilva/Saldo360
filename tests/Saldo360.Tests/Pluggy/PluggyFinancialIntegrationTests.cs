@@ -773,7 +773,14 @@ public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture post
         await using var db = Db();
         Assert.Equal(0, await db.FinancialTransfers.CountAsync());
         Assert.Equal([300m], (await CoreAsync(c.Workspace)).Select(t => t.Amount)); // a ponta já lançada antes de a outra conta existir permanece como estava
-        Assert.Equal(["AmbiguousTransferCounterpart", "AmbiguousTransferCounterpart"], Reasons(await ReviewAsync(c))); // as duas candidatas não são adivinhadas
+        // A revisão apresenta TODAS as pontas envolvidas: as duas candidatas não aplicadas (fora dos totais) e a que já estava contabilizada (continua nos totais).
+        var review = await ReviewAsync(c);
+        Assert.Equal(["AmbiguousTransferCounterpart", "AmbiguousTransferCounterpart", "AmbiguousTransferCounterpart"], Reasons(review));
+        var items = review.GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal(1, items.Count(i => i.GetProperty("accounted").GetBoolean() && i.GetProperty("impact").GetString() == "InTotals"));
+        Assert.Equal(2, items.Count(i => !i.GetProperty("accounted").GetBoolean() && i.GetProperty("impact").GetString() == "OutOfTotals"));
+        Assert.All(items, i => Assert.Equal("Link", i.GetProperty("reviewKind").GetString()));
+        Assert.Equal(1, review.GetProperty("accountedInReview").GetInt32());
     }
 
     [Fact]

@@ -16,7 +16,14 @@ public sealed record FinancialTransferDto(
     bool IsCancelled,
     string Currency,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? CancelledAt);
+    DateTimeOffset? CancelledAt,
+    TransferIntegrationDto? Integration = null);
+
+/// <summary>
+/// Vínculo da integração bancária que gerou a transferência (quando houver): <c>Origin</c> é <c>Inferred</c> (regra automática) ou <c>UserConfirmed</c>;
+/// <c>PostingId</c> identifica uma das pontas para desfazer o vínculo. Vínculos anteriores ao registro de origem contam como inferidos, sem versão.
+/// </summary>
+public sealed record TransferIntegrationDto(Guid PostingId, string Origin, string? RuleVersion);
 
 public sealed record TransferAccountDto(Guid Id, string Name, FinancialScope FinancialScope, bool IsActive);
 

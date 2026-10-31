@@ -125,7 +125,8 @@ public sealed record TransferResponse(
     bool IsCancelled,
     string Currency,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? CancelledAt)
+    DateTimeOffset? CancelledAt,
+    TransferIntegrationDto? Integration = null)
 {
     public static TransferResponse From(FinancialTransferDto dto) => new(
         dto.Id,
@@ -137,7 +138,8 @@ public sealed record TransferResponse(
         dto.IsCancelled,
         dto.Currency,
         dto.CreatedAt,
-        dto.CancelledAt);
+        dto.CancelledAt,
+        dto.Integration);
 }
 
 public sealed record TransferAccountResponse(Guid Id, string Name, FinancialScope FinancialScope, bool IsActive)

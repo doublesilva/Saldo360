@@ -3951,6 +3951,21 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("kind");
 
+                    b.Property<string>("LinkOrigin")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("link_origin");
+
+                    b.Property<string>("LinkReviewReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("link_review_reason");
+
+                    b.Property<string>("LinkRuleVersion")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("link_rule_version");
+
                     b.Property<string>("Reason")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
@@ -4043,6 +4058,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User','Pluggy','Rule','AI')");
 
                             t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment','CardCredit')");
+
+                            t.HasCheckConstraint("ck_pluggy_postings_link_origin", "link_origin IS NULL OR (link_origin IN ('Inferred','UserConfirmed') AND kind = 'Transfer' AND state = 'Applied')");
 
                             t.HasCheckConstraint("ck_pluggy_postings_resolution", "resolution IS NULL OR resolution IN ('AsIncome','AsExpense','AsCardPurchase','Ignore')");
 
@@ -4313,6 +4330,51 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_pluggy_transaction_changes_transaction_id_observed_at");
 
                     b.ToTable("pluggy_transaction_changes", (string)null);
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyTransferRejection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("FirstPostingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("first_posting_id");
+
+                    b.Property<DateTimeOffset>("RejectedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("rejected_at");
+
+                    b.Property<Guid>("RejectedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rejected_by_user_id");
+
+                    b.Property<Guid>("SecondPostingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("second_posting_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pluggy_transfer_rejections");
+
+                    b.HasIndex("RejectedByUserId")
+                        .HasDatabaseName("ix_pluggy_transfer_rejections_rejected_by_user_id");
+
+                    b.HasIndex("SecondPostingId")
+                        .HasDatabaseName("ix_pluggy_transfer_rejections_second_posting_id");
+
+                    b.HasIndex("WorkspaceId")
+                        .HasDatabaseName("ix_pluggy_transfer_rejections_workspace_id");
+
+                    b.HasIndex("FirstPostingId", "SecondPostingId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pluggy_transfer_rejections_pair");
+
+                    b.ToTable("pluggy_transfer_rejections", (string)null);
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>
@@ -6264,6 +6326,37 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pluggy_transaction_changes_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Pluggy.PluggyTransferRejection", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyPosting", null)
+                        .WithMany()
+                        .HasForeignKey("FirstPostingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_transfer_rejections_pluggy_postings_first_posting_id");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RejectedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_transfer_rejections_application_users_rejected_by_us");
+
+                    b.HasOne("Saldo360.Domain.Pluggy.PluggyPosting", null)
+                        .WithMany()
+                        .HasForeignKey("SecondPostingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_transfer_rejections_pluggy_postings_second_posting_id");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pluggy_transfer_rejections_financial_workspaces_workspace_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>

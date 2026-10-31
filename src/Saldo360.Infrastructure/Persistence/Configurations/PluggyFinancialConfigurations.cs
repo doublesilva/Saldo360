@@ -64,6 +64,7 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
             t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment','CardCredit')");
             t.HasCheckConstraint("ck_pluggy_postings_resolution", "resolution IS NULL OR resolution IN ('AsIncome','AsExpense','AsCardPurchase','Ignore')");
             t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User','Pluggy','Rule','AI')");
+            t.HasCheckConstraint("ck_pluggy_postings_link_origin", "link_origin IS NULL OR (link_origin IN ('Inferred','UserConfirmed') AND kind = 'Transfer' AND state = 'Applied')");
             // Aplicado sempre aponta para o registro que gerou; qualquer outro estado não aponta para movimento próprio.
             t.HasCheckConstraint("ck_pluggy_postings_applied_targets",
                 "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) "
@@ -79,6 +80,9 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
         b.Property(x => x.Resolution).HasConversion<string>().HasMaxLength(16);
         b.Property(x => x.CategorySource).HasConversion<string>().HasMaxLength(8);
         b.Property(x => x.AppliedType).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.LinkOrigin).HasConversion<string>().HasMaxLength(16);
+        b.Property(x => x.LinkRuleVersion).HasMaxLength(PluggyPosting.LinkRuleVersionMaxLength);
+        b.Property(x => x.LinkReviewReason).HasMaxLength(PluggyPosting.ReasonMaxLength);
         b.Property(x => x.Reason).HasMaxLength(PluggyPosting.ReasonMaxLength);
         b.Property(x => x.CategoryMethodVersion).HasMaxLength(PluggyPosting.CategoryMethodMaxLength);
         b.Property(x => x.CategoryReason).HasMaxLength(PluggyPosting.CategoryReasonMaxLength);
@@ -107,6 +111,21 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
         b.HasOne<PluggyPosting>().WithMany().HasForeignKey(x => x.CounterpartPostingId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<FinancialCategory>().WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ResolvedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class PluggyTransferRejectionConfiguration : IEntityTypeConfiguration<PluggyTransferRejection>
+{
+    public void Configure(EntityTypeBuilder<PluggyTransferRejection> b)
+    {
+        b.ToTable("pluggy_transfer_rejections");
+        b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
+        b.HasIndex(x => new { x.FirstPostingId, x.SecondPostingId }).IsUnique().HasDatabaseName("ux_pluggy_transfer_rejections_pair");
+        b.HasIndex(x => x.WorkspaceId);
+        b.HasOne<FinancialWorkspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<PluggyPosting>().WithMany().HasForeignKey(x => x.FirstPostingId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<PluggyPosting>().WithMany().HasForeignKey(x => x.SecondPostingId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RejectedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 

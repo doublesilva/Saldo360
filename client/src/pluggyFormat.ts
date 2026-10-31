@@ -52,6 +52,9 @@ export const reviewReasonLabels: Record<string, string> = {
   ForeignCurrency: 'Moeda diferente de real',
   UnknownStatus: 'Situação desconhecida na Pluggy',
   TransferInvalid: 'Transferência inválida',
+  TransferDateMismatch: 'Há uma possível contraparte com data diferente (uma transferência tem uma única data)',
+  PossibleRefundByDescription: 'A descrição sugere devolução; qual gasto foi devolvido é decisão sua',
+  UserUndone: 'Vínculo desfeito por você',
   SourceChanged: 'Os dados do banco mudaram depois do pareamento',
   'NoCounterpart:CashWithdrawal': 'Saque em dinheiro',
   'NoCounterpart:InvestmentRedemption': 'Resgate de aplicação',
@@ -61,6 +64,18 @@ export const reviewReasonLabels: Record<string, string> = {
   'Card:UnclassifiedCardOperation': 'Operação de cartão não reconhecida',
 }
 export const reviewReason = (code: string | null) => (code === null ? NOT_INFORMED : reviewReasonLabels[code] ?? code)
+
+/** Por que uma possível contraparte não pode ser confirmada. */
+export const candidateBlockLabels: Record<string, string> = {
+  DifferentDate: 'Data diferente: a transferência tem uma única data', DifferentAmount: 'Valor diferente', IncompatibleOperation: 'Operação bancária incompatível',
+  SameDirection: 'Mesmo sentido', SameAccount: 'Mesma conta', ManualDecision: 'Há decisão manual incompatível', EndUsedElsewhere: 'Já usada em outro vínculo',
+  EndUnavailable: 'Indisponível', NotTransferEvidence: 'Não é PIX, TED, DOC ou transferência', NotBankAccount: 'Não é conta bancária', AlreadyLinked: 'Já formam uma transferência',
+}
+export const linkOriginLabels: Record<string, string> = { Inferred: 'Inferido pela regra automática', UserConfirmed: 'Confirmado por você' }
+export const recoveryEffectLabels: Record<string, string> = {
+  Income: 'Receita', Expense: 'Despesa', TransferIn: 'Transferência recebida', TransferOut: 'Transferência enviada', CardExpense: 'Compra no cartão', BillPayment: 'Pagamento de fatura',
+  CardCredit: 'Crédito no cartão', Evidence: 'Evidência de outro registro', None: 'Sem efeito',
+}
 
 /** Origem da categoria de um lançamento importado (T09.3.1). "Mapped" é o valor legado da categoria casada pela Pluggy. */
 export const categorySourceLabels: Record<string, string> = {

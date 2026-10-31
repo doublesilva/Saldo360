@@ -27,6 +27,8 @@ export interface FinancialTransfer {
   currency: string
   createdAt: string
   cancelledAt: string | null
+  /** Vínculo da integração bancária que gerou a transferência (inferido pela regra ou confirmado por você); null = cadastrada à mão. */
+  integration?: { postingId: string; origin: 'Inferred' | 'UserConfirmed'; ruleVersion: string | null } | null
 }
 
 export interface TransferPage {

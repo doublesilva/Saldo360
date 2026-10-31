@@ -11,6 +11,8 @@ import {
   type TransferFilters,
   type TransferPage,
 } from '../api/transfers'
+import { undoTransfer } from '../api/pluggyIntegration'
+import { linkOriginLabels } from '../pluggyFormat'
 import { todayInSaoPaulo } from '../dates'
 import { formatBrlDecimal, formatDate, isZeroDecimal, parseAmount } from '../money'
 
@@ -22,6 +24,13 @@ type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'erro
 
 function accountLabel(account: TransferAccount): string {
   return `${account.name} (${account.financialScope})${account.isActive ? '' : ' — inativa'}`
+}
+
+/** Com uma conta filtrada, diz o que a transferência foi para ELA: recebida da origem ou enviada ao destino. Sem filtro, mostra origem e destino. */
+function directionText(transfer: FinancialTransfer, accountId: string): string {
+  if (accountId && transfer.destinationAccount.id === accountId) return `Transferência recebida da ${transfer.sourceAccount.name}`
+  if (accountId && transfer.sourceAccount.id === accountId) return `Transferência enviada para ${transfer.destinationAccount.name}`
+  return `De ${accountLabel(transfer.sourceAccount)} para ${accountLabel(transfer.destinationAccount)}`
 }
 
 /**
@@ -38,6 +47,7 @@ export function Transfers({ workspaceId, onChanged }: { workspaceId: string; onC
   const [creating, setCreating] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [undoingId, setUndoingId] = useState<string | null>(null)
 
   // Contas mudam em outra seção: recarrega ao abrir o formulário e após salvar.
   useEffect(() => {
@@ -85,6 +95,26 @@ export function Transfers({ workspaceId, onChanged }: { workspaceId: string; onC
       setActionError(errorMessage(error))
     } finally {
       setCancellingId(null)
+    }
+  }
+
+  /** Desfaz o vínculo da integração: a transferência é cancelada e as duas pontas voltam a ser receita e despesa; os movimentos do banco são preservados. */
+  const handleUndoLink = async (transfer: FinancialTransfer) => {
+    if (!transfer.integration) return
+    const question =
+      `Desfazer o vínculo desta transferência de ${formatBrlDecimal(transfer.amount)}? Ela será cancelada (o registro é preservado) e os dois movimentos do banco ` +
+      'voltam a aparecer como a receita e a despesa que são. O Saldo360 não voltará a pareá-los sozinho.'
+    if (!window.confirm(question)) return
+    setUndoingId(transfer.id)
+    setActionError(null)
+    try {
+      await undoTransfer(workspaceId, transfer.integration.postingId)
+      reload()
+      onChanged?.()
+    } catch (error: unknown) {
+      setActionError(errorMessage(error))
+    } finally {
+      setUndoingId(null)
     }
   }
 
@@ -167,18 +197,24 @@ export function Transfers({ workspaceId, onChanged }: { workspaceId: string; onC
             {page.data.items.map((transfer) => (
               <li key={transfer.id} className={transfer.isCancelled ? 'transaction transaction--cancelled' : 'transaction'}>
                 <div className="transaction__main">
-                  <span className="transaction__description">
-                    De {accountLabel(transfer.sourceAccount)} para {accountLabel(transfer.destinationAccount)}
-                  </span>
+                  <span className="transaction__description">{directionText(transfer, filters.accountId)}</span>
                   <strong className="amount amount--transfer">{formatBrlDecimal(transfer.amount)}</strong>
                 </div>
                 <div className="transaction__meta meta">
                   <span>{formatDate(transfer.transferDate)}</span>
                   <span>{transfer.description}</span>
                   {transfer.isCancelled && <span className="badge badge--cancelled">Cancelada</span>}
+                  {transfer.integration && (
+                    <span className="badge badge--realization">Integração bancária · {linkOriginLabels[transfer.integration.origin] ?? transfer.integration.origin}</span>
+                  )}
                 </div>
                 {!transfer.isCancelled && (
                   <div className="form__actions">
+                    {transfer.integration && (
+                      <button type="button" onClick={() => void handleUndoLink(transfer)} disabled={undoingId === transfer.id}>
+                        Desfazer vínculo
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => void handleCancel(transfer)}

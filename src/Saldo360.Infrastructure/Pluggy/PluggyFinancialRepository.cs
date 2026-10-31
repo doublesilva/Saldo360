@@ -192,12 +192,14 @@ internal sealed class PluggyFinancialRepository(Saldo360DbContext db) : IPluggyF
 
     public async Task<PluggyReviewPage> ListReviewAsync(Guid workspaceId, PluggyReviewFilter filter, CancellationToken ct)
     {
-        var query = ReviewQuery(workspaceId).Where(r => r.Posting.State == PluggyPostingState.NeedsReview && (filter.LinkId == null || r.Link.Id == filter.LinkId));
+        // Fila = o que ainda não foi aplicado (revisão financeira) + as pontas já contabilizadas com dúvida de vínculo (continuam nos totais até a decisão).
+        var query = ReviewQuery(workspaceId).Where(r => (r.Posting.State == PluggyPostingState.NeedsReview || r.Posting.LinkReviewReason != null) && (filter.LinkId == null || r.Link.Id == filter.LinkId));
         var total = await query.CountAsync(ct);
+        var accountedInReview = await query.CountAsync(r => r.Posting.State != PluggyPostingState.NeedsReview, ct);
         var rows = await query.OrderBy(r => r.Transaction.Date).ThenBy(r => r.Posting.Id).Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize).ToListAsync(ct);
         var counts = await db.PluggyPostings.AsNoTracking().Where(p => p.WorkspaceId == workspaceId && (filter.LinkId == null || p.AccountLinkId == filter.LinkId))
             .GroupBy(p => p.State).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.Count, ct);
-        return new(rows.Select(ToItem).ToArray(), total, filter.Page, filter.PageSize, Counts(counts));
+        return new(rows.Select(ToItem).ToArray(), total, filter.Page, filter.PageSize, Counts(counts)) { AccountedInReview = accountedInReview };
     }
 
     public async Task<PluggyReviewTarget?> FindReviewTargetAsync(Guid workspaceId, Guid postingId, CancellationToken ct)
@@ -220,6 +222,22 @@ internal sealed class PluggyFinancialRepository(Saldo360DbContext db) : IPluggyF
         return row is null ? null : ToItem(row);
     }
 
+    public async Task<IReadOnlyList<PluggyTransferPoolRow>> ListTransferPoolAsync(Guid workspaceId, CancellationToken ct)
+    {
+        var rows = await (from posting in db.PluggyPostings.AsNoTracking()
+                          join transaction in db.PluggyImportedTransactions.AsNoTracking() on posting.ImportedTransactionId equals transaction.Id
+                          join link in db.PluggyAccountLinks.AsNoTracking() on posting.AccountLinkId equals link.Id
+                          where posting.WorkspaceId == workspaceId && link.Kind == PluggyLinkedAccountKind.Bank && transaction.Status == PluggyTransactionStatus.Posted
+                              && (posting.State == PluggyPostingState.NeedsReview || posting.State == PluggyPostingState.Applied)
+                          select new { posting, transaction, link }).ToListAsync(ct);
+        return rows.Select(r => new PluggyTransferPoolRow(ImportedFacts.From(r.transaction, r.link), r.posting.Id, r.link.FinancialAccountId, r.link.DisplayName, r.posting.State, r.posting.Kind,
+            r.posting.CounterpartPostingId, r.posting.Resolution)).ToList();
+    }
+
+    public async Task<IReadOnlySet<(Guid First, Guid Second)>> ListRejectedPairsAsync(Guid workspaceId, CancellationToken ct) =>
+        (await db.PluggyTransferRejections.AsNoTracking().Where(r => r.WorkspaceId == workspaceId).Select(r => new { r.FirstPostingId, r.SecondPostingId }).ToListAsync(ct))
+        .Select(r => (r.FirstPostingId, r.SecondPostingId)).ToHashSet();
+
     public async Task<IReadOnlyList<MappableCategory>> ListCategoriesAsync(Guid workspaceId, CancellationToken ct) =>
         await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).ToMappable(db).ToListAsync(ct);
 
@@ -239,11 +257,28 @@ internal sealed class PluggyFinancialRepository(Saldo360DbContext db) : IPluggyF
         var isDebit = string.Equals(r.Transaction.Type, "DEBIT", StringComparison.OrdinalIgnoreCase);
         var isCredit = string.Equals(r.Transaction.Type, "CREDIT", StringComparison.OrdinalIgnoreCase);
         var amount = r.Transaction.Amount is { } value ? decimal.Round(Math.Abs(value), 2, MidpointRounding.AwayFromZero).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : null;
-        return new(r.Posting.Id, r.Transaction.Id, r.Link.Id, r.Link.DisplayName, r.Link.Kind.ToString(), r.Posting.State.ToString(), r.Posting.Reason,
+        var accounted = r.Posting.State is PluggyPostingState.Applied or PluggyPostingState.Covered;
+        var reason = r.Posting.Reason ?? r.Posting.LinkReviewReason;
+        var isLink = r.Posting.LinkReviewReason is not null || (reason is not null && LinkReasons.Contains(reason));
+        return new(r.Posting.Id, r.Transaction.Id, r.Link.Id, r.Link.DisplayName, r.Link.Kind.ToString(), r.Posting.State.ToString(), reason,
             r.Transaction.Date is { } d ? PluggyFinancialMapper.BusinessDate(d) : null, amount, isDebit ? "Expense" : isCredit ? "Income" : null,
             PluggyFinancialMapper.Describe(r.Transaction.Description, r.Transaction.DescriptionRaw), r.Transaction.Category, r.Transaction.Status.ToString(), r.Transaction.OperationType,
-            PluggyReviewService.AllowedResolutions(r.Link.Kind, r.Transaction.Type), r.Posting.Resolution?.ToString());
+            // Só o que ainda não foi aplicado aceita decisão financeira; uma ponta contabilizada com dúvida de vínculo se resolve pelas ações do vínculo.
+            r.Posting.State == PluggyPostingState.NeedsReview ? PluggyReviewService.AllowedResolutions(r.Link.Kind, r.Transaction.Type) : [], r.Posting.Resolution?.ToString())
+        {
+            Accounted = accounted, Impact = accounted ? "InTotals" : "OutOfTotals", ReviewKind = isLink ? "Link" : "Evidence",
+            LinkReviewReason = r.Posting.LinkReviewReason,
+            // Vínculos aplicados antes do registro de origem (legado) foram inferidos pela regra automática, sem versão registrada.
+            LinkOrigin = r.Posting.LinkOrigin?.ToString() ?? (r.Posting.State == PluggyPostingState.Applied && r.Posting.Kind == PluggyPostingKind.Transfer ? nameof(PluggyLinkOrigin.Inferred) : null),
+            LinkRuleVersion = r.Posting.LinkRuleVersion,
+            CounterpartPostingId = r.Posting.Kind == PluggyPostingKind.Transfer ? r.Posting.CounterpartPostingId : null,
+            CanUndoLink = r.Posting.State == PluggyPostingState.Applied && r.Posting.Kind == PluggyPostingKind.Transfer && r.Posting.CounterpartPostingId is not null,
+        };
     }
+
+    /// <summary>Motivos que pertencem à revisão do vínculo entre movimentos (e não da evidência financeira isolada).</summary>
+    private static readonly HashSet<string> LinkReasons = new(StringComparer.Ordinal)
+        { "AmbiguousTransferCounterpart", "TransferDateMismatch", "TransferWithoutCounterpart", "TransferInvalid" };
 
     private sealed class ReviewRow
     {

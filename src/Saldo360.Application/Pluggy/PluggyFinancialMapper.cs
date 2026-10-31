@@ -78,7 +78,23 @@ public static class PluggyFinancialMapper
         _ => (AccountType.Checking, false),
     };
 
+    /// <summary>
+    /// Dia bancário de uma data da Pluggy. A Pluggy entrega a data do lançamento bancário como instante à meia-noite UTC ("2026-10-09T00:00:00.000Z"
+    /// nos contratos e fixtures observados): o dia civil já está na parte UTC, então converter para America/Sao_Paulo deslocaria o movimento para a
+    /// véspera (00:00Z = 21:00 do dia anterior). Por isso a data UTC é a data bancária. Datas com horário real não foram observadas; se aparecerem,
+    /// esta regra deve ser revista com evidência (dado real) antes de qualquer conversão.
+    /// </summary>
     public static DateOnly BusinessDate(DateTimeOffset date) => DateOnly.FromDateTime(date.UtcDateTime);
+
+    /// <summary>Evidência fraca de devolução na descrição (nunca decide sozinha: só leva o crédito à revisão).</summary>
+    public static bool DescribesRefund(string? description, string? raw) =>
+        RefundHint(Normalize(description)) || RefundHint(Normalize(raw));
+
+    private static bool RefundHint(string normalized) =>
+        normalized.Length > 0 && RefundPattern.IsMatch(normalized);
+
+    private static readonly System.Text.RegularExpressions.Regex RefundPattern = new(@"(?<![a-z])(devolvid[oa]s?|devolucao|estorn\w*|reembolso)(?![a-z])",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.Compiled);
 
     public static string Describe(string? description, string? raw)
     {
@@ -140,7 +156,7 @@ public static class PluggyFinancialMapper
         var isDebit = string.Equals(f.Type, "DEBIT", StringComparison.OrdinalIgnoreCase);
         if (resolution == PluggyResolution.AsCardPurchase && isDebit) return result(PluggyDisposition.CardPurchase, "UserDecision", CategoryType.Expense);
         var category = Saldo360.Application.Classification.FinancialCategoryMatching.Key(f.Category);
-        var operation = f.OperationType?.Trim().ToUpperInvariant();
+        var operation = PluggyOperationCodes.Normalize(f.OperationType);
         var inCatalog = Saldo360.Application.Classification.FinancialExternalCategoryCatalog.Find(f.Category, CategoryType.Expense) is not null;
         return f.Class switch
         {
@@ -159,7 +175,7 @@ public static class PluggyFinancialMapper
         };
     }
 
-    private static PluggyMovement CardCreditDecision(ImportedFacts f, string category, string? operation, Func<PluggyDisposition, string?, CategoryType?, PluggyMovement> result)
+    private static PluggyMovement CardCreditDecision(ImportedFacts f, string category, string operation, Func<PluggyDisposition, string?, CategoryType?, PluggyMovement> result)
     {
         if (operation == "ESTORNO") return result(PluggyDisposition.CardCredit, "CardRefund", CategoryType.Income);
         if (category == "cashback") return result(PluggyDisposition.CardCredit, "CardCashback", CategoryType.Income);
@@ -178,12 +194,14 @@ public static class PluggyFinancialMapper
         if (resolution == PluggyResolution.AsIncome && isCredit) return result(PluggyDisposition.BankMovement, "UserDecision", CategoryType.Income);
         if (resolution == PluggyResolution.AsExpense && isDebit) return result(PluggyDisposition.BankMovement, "UserDecision", CategoryType.Expense);
 
-        var operation = f.OperationType?.ToUpperInvariant();
+        var operation = PluggyOperationCodes.Normalize(f.OperationType);
         switch (f.Class)
         {
             case PluggyTransactionClass.PotentialIncome or PluggyTransactionClass.PotentialExpense:
                 // Estorno/devolução volta o valor de um gasto anterior: não é receita nova.
                 if (isCredit && operation is "ESTORNO" or "DEVOLUCAO") return result(PluggyDisposition.Review, "PossibleRefund", null);
+                // Descrição que cita devolução é só uma dica: leva o crédito à revisão (qual gasto foi devolvido é decisão do usuário), nunca o confirma.
+                if (isCredit && f.ClassReason != "InvestmentYield" && DescribesRefund(f.Description, f.DescriptionRaw)) return result(PluggyDisposition.Review, "PossibleRefundByDescription", null);
                 if (operation is "PIX" or "TED" or "DOC") return result(PluggyDisposition.TransferProbe, f.ClassReason, null);
                 return result(PluggyDisposition.BankMovement, f.ClassReason, null);
             case PluggyTransactionClass.PotentialTransfer:
@@ -244,18 +262,22 @@ public sealed record PairingResult(IReadOnlyList<(Guid Source, Guid Target)> Pai
 /// </summary>
 public static class PluggyPairing
 {
-    public static PairingResult Match(IReadOnlyList<PairItem> sources, IReadOnlyList<PairItem> targets, int toleranceDays, bool differentLinks)
+    /// <param name="isRejected">Par (origem, alvo) que o usuário já rejeitou: nunca é candidato.</param>
+    public static PairingResult Match(IReadOnlyList<PairItem> sources, IReadOnlyList<PairItem> targets, int toleranceDays, bool differentLinks, Func<Guid, Guid, bool>? isRejected = null)
     {
+        bool Compatible(PairItem s, PairItem t) => t.Amount == s.Amount && Math.Abs(t.Date.DayNumber - s.Date.DayNumber) <= toleranceDays
+            && (!differentLinks || t.LinkId != s.LinkId) && (isRejected is null || !isRejected(s.Id, t.Id));
+
         List<PairItem> Candidates(PairItem s, IReadOnlyList<PairItem> pool)
         {
-            var list = pool.Where(t => t.Amount == s.Amount && Math.Abs(t.Date.DayNumber - s.Date.DayNumber) <= toleranceDays && (!differentLinks || t.LinkId != s.LinkId)).ToList();
+            var list = pool.Where(t => Compatible(s, t)).ToList();
             // Dica (descrição citando fatura) só desempata quando há mais de uma opção; nunca cria correspondência sozinha.
             if (list.Count > 1 && list.Count(t => t.Hint) == 1) list = [list.First(t => t.Hint)];
             return list;
         }
 
         var forward = sources.ToDictionary(s => s.Id, s => Candidates(s, targets));
-        var backward = targets.ToDictionary(t => t.Id, t => sources.Where(s => s.Amount == t.Amount && Math.Abs(t.Date.DayNumber - s.Date.DayNumber) <= toleranceDays && (!differentLinks || t.LinkId != s.LinkId)).ToList());
+        var backward = targets.ToDictionary(t => t.Id, t => sources.Where(s => Compatible(s, t)).ToList());
         var pairs = new List<(Guid, Guid)>();
         var ambiguous = new HashSet<Guid>();
         foreach (var s in sources.OrderBy(x => x.Date).ThenBy(x => x.Id))
@@ -273,5 +295,22 @@ public static class PluggyPairing
         var paired = pairs.SelectMany(p => new[] { p.Item1, p.Item2 }).ToHashSet();
         ambiguous.ExceptWith(paired);
         return new PairingResult(pairs, ambiguous);
+    }
+
+    /// <summary>
+    /// Pontas que só teriam contraparte com data diferente (mesmo valor, outra conta, exatamente <paramref name="maxDays"/> dia(s) de distância ou menos, nunca o
+    /// mesmo dia). Não é correspondência: uma transferência tem uma única data, então esses casos vão para revisão em vez de receber uma data comum forçada.
+    /// </summary>
+    public static IReadOnlySet<Guid> DateMismatches(IReadOnlyList<PairItem> sources, IReadOnlyList<PairItem> targets, int maxDays, bool differentLinks, Func<Guid, Guid, bool>? isRejected = null)
+    {
+        var result = new HashSet<Guid>();
+        foreach (var s in sources)
+            foreach (var t in targets)
+            {
+                var distance = Math.Abs(t.Date.DayNumber - s.Date.DayNumber);
+                if (distance == 0 || distance > maxDays || t.Amount != s.Amount || (differentLinks && t.LinkId == s.LinkId) || (isRejected is not null && isRejected(s.Id, t.Id))) continue;
+                result.Add(s.Id); result.Add(t.Id);
+            }
+        return result;
     }
 }

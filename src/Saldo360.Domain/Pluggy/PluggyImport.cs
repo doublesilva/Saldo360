@@ -30,7 +30,7 @@ public static partial class PluggyTransactionClassifier
         var isCredit = string.Equals(t.Type, "CREDIT", StringComparison.OrdinalIgnoreCase);
         var isDebit = string.Equals(t.Type, "DEBIT", StringComparison.OrdinalIgnoreCase);
         if (t.Amount is null or 0m || (!isCredit && !isDebit)) return new(PluggyTransactionClass.InsufficientInformation, "MissingTypeOrAmount");
-        var operation = t.OperationType?.ToUpperInvariant();
+        var operation = PluggyOperationCodes.Normalize(t.OperationType) is { Length: > 0 } normalized ? normalized : null;
 
         if (string.Equals(t.AccountType, "CREDIT", StringComparison.OrdinalIgnoreCase)) return ClassifyCard(t, operation, isCredit);
 
