@@ -10,7 +10,8 @@ namespace Saldo360.Application.Dashboard;
 public sealed record OverdraftRecoveryView(Guid AccountId, string AccountName, string Competence, string PeriodKind, string State,
     string? ContractedLimit, string OpeningUsed, string CurrentUsed, string? Available, string? AboveLimit, string Target,
     string Recovered, string? ProjectedRecovery, string? Deviation, string? PositiveBalance, DateOnly ReferenceDate,
-    DateTimeOffset CapturedAt, DateTimeOffset UpdatedAt, IReadOnlyList<string> Reasons);
+    DateTimeOffset CapturedAt, DateTimeOffset UpdatedAt, IReadOnlyList<string> Reasons,
+    bool IsFinalResult, bool LateReference, string? AttainmentPercent, DateOnly BalanceAsOf);
 
 public interface IOverdraftRecoveryRepository
 {
@@ -69,10 +70,17 @@ public sealed class OverdraftRecoveryService(IFinancialWorkspaceRepository works
         var available = account.OverdraftLimit is { } limit ? Math.Max(0m, limit - currentUsed) : (decimal?)null;
         var excess = account.OverdraftLimit is { } known ? Math.Max(0m, currentUsed - known) : (decimal?)null;
         var reasons = string.IsNullOrWhiteSpace(snapshot.Composition) ? [] : snapshot.Composition.Split(',', StringSplitOptions.RemoveEmptyEntries);
-        var state = currentUsed == 0m ? "FullyRecovered" : recovered < 0m ? "Worsening" : excess > 0m ? "AboveLimit" : snapshot.Quality;
-        return PlanActualResult<OverdraftRecoveryView>.Ok(new(account.Id, account.Name, competence, PlanActualCalculator.PeriodKind(month, today), state,
+        // Estados (o texto em português é da tela): a recuperação termina quando a utilização zera; saldo positivo aparece em PositiveBalance.
+        var state = currentUsed == 0m ? (openingUsed == 0m ? "NoUsage" : "FullyRecovered") : excess > 0m ? "AboveLimit" : recovered < 0m ? "Worsening"
+            : recovered > 0m ? "PartialRecovery" : snapshot.Quality == "Partial" ? "ProjectionIncomplete" : "InProgress";
+        var kind = PlanActualCalculator.PeriodKind(month, today);
+        // Referência tardia: a meta foi registrada depois do primeiro dia da competência; a abertura usada é a do ReferenceDate, nunca um histórico inventado.
+        var late = BusinessCalendar.Today(snapshot.CapturedAt) > month;
+        var attainment = snapshot.RecoveryTarget > 0m ? PlanActualCalculator.Percent(recovered / snapshot.RecoveryTarget * 100m) : null;
+        return PlanActualResult<OverdraftRecoveryView>.Ok(new(account.Id, account.Name, competence, kind, state,
             F(account.OverdraftLimit), F(openingUsed)!, F(currentUsed)!, F(available), F(excess), F(snapshot.RecoveryTarget)!, F(recovered)!, F(projectedRecovery), F(deviation),
-            balance > 0m ? F(balance) : null, snapshot.ReferenceDate, snapshot.CapturedAt, time.GetUtcNow(), reasons));
+            balance > 0m ? F(balance) : null, snapshot.ReferenceDate, snapshot.CapturedAt, time.GetUtcNow(), reasons,
+            kind == "Past", late, attainment, asOf));
     }
 
     private static decimal Parse(string value) => decimal.Parse(value, CultureInfo.InvariantCulture);

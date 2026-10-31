@@ -98,7 +98,8 @@ internal static class FinancialResetFixture
         var planHistory = FinancialPlanHistoryEntry.Create(w, new DateOnly(date.Year, date.Month, 1), PlanHistorySubject.Line, planLine.Id, PlanHistoryAction.Created, "Synthetic", null, 10m, null, u, now);
         var nonWorkingDay = FinancialNonWorkingDay.Create(w, date, NonWorkingDayKind.Holiday, "Synthetic", u, now);
         var pluggyChange = PluggyTransactionChange.Create(pluggyTransaction, pluggyTransaction.Observe(pluggySnapshot with { Status = PluggyTransactionStatus.Posted }, pluggyRun.Id, now), pluggyRun.Id, now);
-        db.AddRange(account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, refundTransaction, bankRefund, transfer,
+        var recoverySnapshot = OverdraftRecoverySnapshot.Create(w, account.Id, new DateOnly(date.Year, date.Month, 1), -100m, date, 0m, 0m, -50m, "Complete", string.Empty, now);
+        db.AddRange(recoverySnapshot, account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, refundTransaction, bankRefund, transfer,
             recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
             scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyTransaction2, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyPosting2, pluggyRejection, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState, automationSettings, categorizationRun, cardTarget, planLine, planHistory, nonWorkingDay);
