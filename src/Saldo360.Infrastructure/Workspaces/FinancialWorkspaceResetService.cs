@@ -11,9 +11,14 @@ using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.Workspaces;
 
-internal sealed class FinancialWorkspaceResetService(Saldo360DbContext db) : IFinancialWorkspaceResetService
+internal sealed class FinancialWorkspaceResetService(Saldo360DbContext db, Saldo360.Application.Categories.IDefaultCategoryCatalog catalog) : IFinancialWorkspaceResetService
 {
     private sealed record Content(IEntityType Entity, string Name, string SqlTable);
+
+    /// <summary>Sem catálogo padrão: o orçamento fica vazio após o reset (usado por testes que montam o próprio cadastro).</summary>
+    public FinancialWorkspaceResetService(Saldo360DbContext db) : this(db, Saldo360.Application.Categories.EmptyDefaultCategoryCatalog.Instance)
+    {
+    }
     private List<Content> Inventory()
     {
         var names = typeof(Saldo360DbContext).GetProperties()
@@ -68,18 +73,28 @@ internal sealed class FinancialWorkspaceResetService(Saldo360DbContext db) : IFi
         if (confirmation != "APAGAR ORÇAMENTO") throw new FinancialResetRejected("InvalidConfirmation");
         await Authorize(w, actor, ct);
         var deleted = new Dictionary<string, long>();
+        int recreated;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
             await Execute("SELECT id FROM financial_workspaces WHERE id=@w FOR UPDATE", w, false, ct);
             await Authorize(w, actor, ct);
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT set_config('saldo360.resetting_workspace', {w.ToString()}, true)", ct);
             foreach (var item in Inventory()) deleted[item.Name] = await Execute($"DELETE FROM {item.SqlTable} WHERE workspace_id=@w", w, false, ct);
+            // Recria do zero: o catálogo padrão volta na mesma transação (a trava de escrita está liberada para este orçamento pelo resetting_workspace).
+            var now = DateTimeOffset.UtcNow;
+            var created = Saldo360.Application.Categories.DefaultCategoryPlanner.Plan(catalog, [])
+                .CreateEntities(w, actor, now, new Dictionary<Guid, Saldo360.Domain.Categories.FinancialCategory>());
+            db.Set<Saldo360.Domain.Categories.FinancialCategory>().AddRange(created);
+            recreated = created.Count;
+            await db.SaveChangesAsync(ct);
             await Execute("UPDATE financial_workspaces SET last_financial_reset_at=clock_timestamp() WHERE id=@w", w, false, ct);
+            // Registro da inicialização refeito de forma consistente (data e versão juntas); o reset repetido chega ao mesmo estado.
+            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE financial_workspaces SET default_categories_initialized_at = {now}, default_categories_catalog_version = {catalog.Version} WHERE id = {w}", ct);
             db.Set<FinancialResetAudit>().Add(new() { Id = Guid.CreateVersion7(), WorkspaceId = w, ActorUserId = actor,
                 CreatedAt = DateTimeOffset.UtcNow, TraceId = traceId.Length > 128 ? traceId[..128] : traceId, DeletedEntities = deleted.Values.Sum() });
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
         }
-        return new(w, deleted.Values.Any(n => n != 0) ? "ResetCompleted" : "AlreadyEmpty", deleted);
+        return new(w, deleted.Values.Any(n => n != 0) ? "ResetCompleted" : "AlreadyEmpty", deleted, recreated);
     }
 }

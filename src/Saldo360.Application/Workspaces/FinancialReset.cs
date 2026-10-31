@@ -1,6 +1,6 @@
 namespace Saldo360.Application.Workspaces;
 
-public sealed record FinancialResetReport(Guid WorkspaceId, string Status, IReadOnlyDictionary<string, long> Counts);
+public sealed record FinancialResetReport(Guid WorkspaceId, string Status, IReadOnlyDictionary<string, long> Counts, int CategoriesRecreated = 0);
 public interface IFinancialWorkspaceResetService
 {
     Task<FinancialResetReport> PreviewAsync(Guid workspaceId, Guid actorUserId, CancellationToken ct);

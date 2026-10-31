@@ -198,3 +198,9 @@ restauração ou bootstrap de Vivo/CEEE/DMAE. Automações permanecem desligadas
 
 Relatório final publicado separadamente das alterações executáveis, sem novo deploy ou reset. Não repetir
 a recriação, restaurar dados antigos ou habilitar integrações como consequência deste encerramento.
+
+## Reset hard com catálogo padrão (T10.5)
+
+O reset de orçamento (`POST .../financial-reset`, mesma confirmação, CSRF e permissão de dono) apaga **todos** os dados do orçamento do usuário, guiado pelo modelo (toda entidade com `WorkspaceId`: inclusive categorias, devoluções bancárias, rejeições de transferência Pluggy, metas de recuperação do cheque especial e as conexões, vínculos e movimentos importados da Pluggy) e, **na mesma transação e sob o lock do orçamento**, recria do zero as 49 categorias padrão (10 de despesa, 4 de receita) e refaz o registro de inicialização (data e versão). Repetir o reset chega ao mesmo estado; resets concorrentes serializam pelo lock (o perdedor pode receber 409).
+
+**Preservado:** o próprio orçamento (workspace) e seu dono, usuário, sessão, vínculos sociais/família, contas de serviço pessoais, e todos os dados de outros orçamentos. **Apagado:** tudo o mais do orçamento; é preciso reconectar o banco na Pluggy depois (nenhuma chamada à Pluggy é feita pelo reset). A resposta traz `categoriesRecreated`.

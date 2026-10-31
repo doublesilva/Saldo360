@@ -28,7 +28,7 @@ public static class FinancialResetEndpoints
             return await Run(context, user, async actor =>
             {
                 var result = await service.ResetAsync(workspaceId, actor, body?.Confirmation ?? "", context.TraceIdentifier, ct);
-                return Results.Ok(new { result.WorkspaceId, result.Status, deleted = result.Counts });
+                return Results.Ok(new { result.WorkspaceId, result.Status, deleted = result.Counts, categoriesRecreated = result.CategoriesRecreated });
             }, ct);
         }).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
