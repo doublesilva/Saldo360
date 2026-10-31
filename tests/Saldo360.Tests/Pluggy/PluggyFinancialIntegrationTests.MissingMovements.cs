@@ -23,17 +23,17 @@ public sealed partial class PluggyFinancialIntegrationTests
     [Fact]
     public async Task AnIncomingPixWithAnOppositeSameDaySameAmountDebitInAnotherIntegratedAccountBecomesATransferAndIsTraceableByAmount()
     {
-        var p = await ArrangePairAsync("t-missing-transfer-end", [Tx("pf-in", BankA, 8, 4321.55m, operation: "PIX", description: "Pix recebido EMPRESA", category: "Transfer - PIX")],
-            [Tx("pj-out", BankB, 8, -4321.55m, operation: "PIX", description: "Pix enviado", category: "Transfer - PIX")]);
+        var p = await ArrangePairAsync("t-missing-transfer-end", [Tx("pf-in", BankA, 8, 1960.49m, operation: "PIX", description: "Pix recebido EMPRESA", category: "Transfer - PIX")],
+            [Tx("pj-out", BankB, 8, -1960.49m, operation: "PIX", description: "Pix enviado", category: "Transfer - PIX")]);
 
         await SyncBothAsync(p);
 
         // Sai de Lançamentos ativos: vive em Transferências. Se a ponta já tinha sido lançada como receita antes do par existir (A sincronizou antes de B), o lançamento
         // fica CANCELADO e visível só com "Mostrar cancelados"; se B sincroniza primeiro, nem isso existe.
         var active = await JsonGetAsync(p.C, $"/api/financial-workspaces/{p.C.Workspace}/transactions?pageSize=100");
-        Assert.False(Listed(active, 4321.55m));
+        Assert.False(Listed(active, 1960.49m));
         Assert.Equal(1, await ActiveTransfersAsync());
-        var trace = (await TraceAsync(p.C, 4321.55m)).GetProperty("items").EnumerateArray().ToList();
+        var trace = (await TraceAsync(p.C, 1960.49m)).GetProperty("items").EnumerateArray().ToList();
         Assert.Equal(2, trace.Count);
         Assert.All(trace, i => Assert.Equal(("Applied", "Transfer"), (i.GetProperty("current").GetProperty("state").GetString(), i.GetProperty("current").GetProperty("kind").GetString())));
     }
@@ -42,14 +42,14 @@ public sealed partial class PluggyFinancialIntegrationTests
     public async Task ACreditOperationDebitNeverBecomesAMovementButWaitsInReviewAndIsTraceableByAmount()
     {
         var c = await ArrangeAsync("t-missing-credit-op", seed: false);
-        Pluggy.TransactionsByAccount[BankA] = [Tx("crediario", BankA, 6, -389.9m, operation: "OPERACAO_CREDITO", description: "Crediario Solar", category: "Loans")];
+        Pluggy.TransactionsByAccount[BankA] = [Tx("crediario", BankA, 6, -748.31m, operation: "OPERACAO_CREDITO", description: "Crediario Solar", category: "Loans")];
         await LinkBankAsync(c);
 
         await SyncAsync(c);
 
-        Assert.False(Listed(await ListedAsync(c), 389.9m));
+        Assert.False(Listed(await ListedAsync(c), 748.31m));
         Assert.Equal(["CreditOperation"], Reasons(await ReviewAsync(c))); // não é silencioso: está na revisão com motivo
-        var item = (await TraceAsync(c, 389.9m)).GetProperty("items").EnumerateArray().Single();
+        var item = (await TraceAsync(c, 748.31m)).GetProperty("items").EnumerateArray().Single();
         Assert.Equal(("NeedsReview", "CreditOperation"), (item.GetProperty("current").GetProperty("state").GetString(), item.GetProperty("current").GetProperty("reason").GetString()));
     }
 
@@ -57,12 +57,12 @@ public sealed partial class PluggyFinancialIntegrationTests
     public async Task AnUnknownOperationTypeDebitIsAnOrdinaryExpenseAndAppearsInTheMovementList()
     {
         var c = await ArrangeAsync("t-missing-unknown-op", seed: false);
-        Pluggy.TransactionsByAccount[BankA] = [Tx("crediario2", BankA, 6, -389.9m, operation: "CREDIARIO_LOJA", description: "Crediario Solar", category: null)];
+        Pluggy.TransactionsByAccount[BankA] = [Tx("crediario2", BankA, 6, -748.31m, operation: "CREDIARIO_LOJA", description: "Crediario Solar", category: null)];
         await LinkBankAsync(c);
 
         await SyncAsync(c);
 
-        Assert.True(Listed(await ListedAsync(c), 389.9m));
+        Assert.True(Listed(await ListedAsync(c), 748.31m));
         Assert.Empty(Reasons(await ReviewAsync(c)));
     }
 
@@ -116,5 +116,24 @@ public sealed partial class PluggyFinancialIntegrationTests
         await using var db = Db();
         Assert.Equal(1, await db.PluggyPostings.CountAsync(p => p.State == PluggyPostingState.WaitingPosted));
         Assert.Equal(0, await db.PluggyPostings.CountAsync(p => p.State == PluggyPostingState.Applied));
+    }
+
+    [Fact]
+    public async Task ADebitPairedWithACardBillPaymentCreditIsEitherAnInvoicePaymentInTheListOrHeldInReviewWithAReason()
+    {
+        var c = await ArrangeAsync("t-missing-bill-name", seed: false);
+        Pluggy.TransactionsByAccount[BankA] = [Tx("crediario3", BankA, 6, -748.31m, operation: "PIX", description: "Crediario Solar", category: "Credit card payment")];
+        SeedCard(Tx("pay-card2", CardA, 6, 748.31m, operation: "PAGAMENTO_FATURA", description: "PAGAMENTO FATURA", type: "CREDIT", category: null));
+        await LinkBankAsync(c);
+        await LinkCardAsync(c, Today.AddDays(-15).Day, Today.AddDays(-8).Day);
+
+        await SyncAsync(c);
+
+        // Sem fatura do cartão que comporte o pagamento, as duas pontas ficam em Revisão (nada some em silêncio); com a fatura, vira "Pagamento de fatura …" em Lançamentos.
+        var page = await ListedAsync(c);
+        var item = page.GetProperty("items").EnumerateArray().SingleOrDefault(i => decimal.Parse(i.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture) == 748.31m);
+        if (item.ValueKind == JsonValueKind.Object) Assert.StartsWith("Pagamento de fatura", item.GetProperty("description").GetString());
+        else Assert.All(Reasons(await ReviewAsync(c)), r => Assert.Equal("NoInvoiceForPayment", r));
+        Assert.True(item.ValueKind == JsonValueKind.Object || Reasons(await ReviewAsync(c)).Length == 2, page.GetRawText());
     }
 }
