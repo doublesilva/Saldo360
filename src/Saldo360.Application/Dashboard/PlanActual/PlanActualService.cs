@@ -190,7 +190,8 @@ public sealed class PlanActualService(
         {
             if (!history.TryGetValue(account.Id, out var accountFacts)) continue;
             var effectiveLimit = account.OverdraftLimit ?? accountFacts.OverdraftContractedLimit;
-            var eligible = effectiveLimit is not null || (accountFacts.OverdraftUsedLimit ?? 0m) > 0m;
+            // Limite zero (informado pelo usuário ou pelo banco) é "sem limite": sem limite positivo nem utilização não há indicador de cheque especial.
+            var eligible = (effectiveLimit ?? 0m) > 0m || (accountFacts.OverdraftUsedLimit ?? 0m) > 0m;
             if (!eligible) continue;
             var current = accountFacts.Anchors.FirstOrDefault(a => a.IsCurrent && a.Kind == nameof(BalanceAnchorKind.CurrentBalance));
             var observations = accountFacts.Anchors.Where(a => a.Kind == nameof(BalanceAnchorKind.CurrentBalance) && a.Reliability != nameof(BalanceAnchorReliability.Unreliable))
