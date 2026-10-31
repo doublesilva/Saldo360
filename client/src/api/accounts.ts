@@ -223,3 +223,16 @@ export async function getAccountProjection(
   if (!response.ok) throw new Error(`Falha ao calcular a projeção (HTTP ${response.status}).`)
   return (await response.json()) as AccountProjection
 }
+
+/** Entradas e saídas do mês por conta (calculadas na API): receitas/despesas e transferências SEPARADAS, mais os totais. Só formatar, nunca somar. */
+export interface AccountFlow {
+  accountId: string; name: string; isActive: boolean
+  income: string; expense: string; transfersReceived: string; transfersSent: string; totalInflows: string; totalOutflows: string
+}
+export interface AccountFlows { from: string; through: string; accounts: AccountFlow[]; consolidatedIncome: string; consolidatedExpense: string; internalTransfers: string }
+
+export async function getAccountFlows(workspaceId: string, competence: string, signal?: AbortSignal): Promise<AccountFlows> {
+  const response = await fetch(`${accountsUrl(workspaceId)}/flows?competence=${encodeURIComponent(competence)}`, { signal, headers: jsonHeaders })
+  if (!response.ok) throw new Error(`Falha ao carregar as entradas e saídas das contas (HTTP ${response.status}).`)
+  return (await response.json()) as AccountFlows
+}

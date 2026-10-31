@@ -17,7 +17,7 @@ import '../../Overview.css'
 
 export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions' | 'transfers' | 'automation'
 /** Contexto levado ao detalhe: o mês da Agenda, a competência do orçamento ou o recorte da lista de lançamentos. */
-export interface OverviewNavigation { month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
+export interface OverviewNavigation { month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature; type?: 'Transfer' }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
 
 export interface OverviewSelection { competence: string; scope: PlanActualScopeChoice }
 

@@ -539,3 +539,27 @@ describe('Accounts — saldo projetado', () => {
     await waitFor(() => expect(projectionCalls(calls).length).toBe(before + 1))
   })
 })
+
+describe('Accounts — entradas e saídas do mês', () => {
+  it('mostra entradas e saídas = receitas/despesas + transferências, separadas, e abre o extrato filtrado por Transferência', async () => {
+    mockApi()
+    const original = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/accounts/flows')) {
+        return Response.json({
+          from: '2026-10-01', through: '2026-10-31', consolidatedIncome: '0.00', consolidatedExpense: '0.00', internalTransfers: '200.00',
+          accounts: [{ accountId: 'a1', name: 'Itaú PF', isActive: true, income: '0.00', expense: '0.00', transfersReceived: '200.00', transfersSent: '0.00', totalInflows: '200.00', totalOutflows: '0.00' }],
+        })
+      }
+      return original(input, init)
+    }))
+    const opened: unknown[] = []
+    render(<Accounts workspaceId="f1" members={members} onOpenStatement={(filters) => opened.push(filters)} />)
+
+    const block = await screen.findByLabelText('Entradas e saídas de Itaú PF no mês')
+    expect(within(block).getByText(/entradas/).textContent).toMatch(/R\$\s?200,00.*receitas R\$\s?0,00.*transferências recebidas\s*R\$\s?200,00/)
+    expect(within(block).getByText(/não são receita nem despesa e movimentam o saldo das duas contas/)).toBeTruthy()
+    fireEvent.click(within(block).getByRole('button', { name: 'Ver transferências desta conta no extrato' }))
+    expect(opened).toEqual([{ from: '2026-10-01', to: '2026-10-31', accountId: 'a1', type: 'Transfer' }])
+  })
+})

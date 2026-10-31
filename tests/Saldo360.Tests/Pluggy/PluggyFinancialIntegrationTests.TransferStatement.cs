@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
@@ -58,5 +59,22 @@ public sealed partial class PluggyFinancialIntegrationTests
         var all = (await TransferOverviewAsync(p.C, "all")).GetProperty("transfers");
 
         Assert.Equal(("0.00", "0.00", "200.00"), (all.GetProperty("received").GetString(), all.GetProperty("sent").GetString(), all.GetProperty("internalMoved").GetString()));
+    }
+
+    [Fact]
+    public async Task TheAccountsFlowsEndpointShowsTwoHundredAsPersonalInflowAndBusinessOutflowWithNoConsolidatedChange()
+    {
+        var p = await ArrangePairAsync("t-accounts-flows", [Tx("pf-in", BankA, 3, 200m, operation: "PIX", description: "Pix recebido")], [Tx("pj-out", BankB, 3, -200m, operation: "PIX", description: "Pix enviado")]);
+        await SyncBothAsync(p);
+
+        var flows = await JsonGetAsync(p.C, $"/api/financial-workspaces/{p.C.Workspace}/accounts/flows?competence={Today.AddDays(-3):yyyy-MM}");
+
+        var accounts = flows.GetProperty("accounts").EnumerateArray().ToDictionary(a => a.GetProperty("accountId").GetGuid());
+        var pf = accounts[p.PersonalAccount]; var pj = accounts[p.BusinessAccount];
+        Assert.Equal(("0.00", "200.00", "200.00", "0.00"), (pf.GetProperty("income").GetString(), pf.GetProperty("transfersReceived").GetString(), pf.GetProperty("totalInflows").GetString(), pf.GetProperty("totalOutflows").GetString()));
+        Assert.Equal(("0.00", "200.00", "200.00", "0.00"), (pj.GetProperty("expense").GetString(), pj.GetProperty("transfersSent").GetString(), pj.GetProperty("totalOutflows").GetString(), pj.GetProperty("totalInflows").GetString()));
+        Assert.Equal(("0.00", "0.00", "200.00"), (flows.GetProperty("consolidatedIncome").GetString(), flows.GetProperty("consolidatedExpense").GetString(), flows.GetProperty("internalTransfers").GetString()));
+        Assert.Equal((200m, -200m), (await CashEffectAsync(p.PersonalAccount), await CashEffectAsync(p.BusinessAccount))); // saldos: +200 na PF e -200 na PJ
+        Assert.Equal(HttpStatusCode.BadRequest, (await GetAsync(p.C, $"/api/financial-workspaces/{p.C.Workspace}/accounts/flows?competence=2026-13")).StatusCode);
     }
 }

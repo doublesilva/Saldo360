@@ -13,6 +13,7 @@ public static class FinancialAccountEndpoints
         var accounts = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/accounts").RequireAuthorization();
         accounts.MapPost("/", Create).AddEndpointFilter<ValidateCsrfTokenFilter>();
         accounts.MapGet("/", List);
+        accounts.MapGet("/flows", Flows);
         accounts.MapGet("/{accountId:guid}", Get);
         accounts.MapPut("/{accountId:guid}", Update).AddEndpointFilter<ValidateCsrfTokenFilter>();
         accounts.MapPut("/{accountId:guid}/primary", SetPrimary).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -137,6 +138,16 @@ public static class FinancialAccountEndpoints
             AccountAccess.Invalid => Results.ValidationProblem(result.Errors!),
             _ => Results.Created($"/api/financial-workspaces/{workspaceId}/accounts/{result.Account!.Id}", AccountResponse.From(result.Account)),
         };
+    }
+
+    /// <summary>Entradas e saídas do mês por conta (receitas/despesas e transferências separadas, mais os totais) e o conjunto de todas as contas. <c>competence</c> = yyyy-MM (padrão: mês atual).</summary>
+    private static async Task<IResult> Flows(Guid workspaceId, string? competence, CurrentUser currentUser, FinancialAccountService accounts, TimeProvider time, CancellationToken cancellationToken)
+    {
+        if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId) return Results.Unauthorized();
+        var month = BusinessCalendar.Today(time.GetUtcNow());
+        if (!string.IsNullOrWhiteSpace(competence) && !DateOnly.TryParseExact(competence + "-01", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out month))
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["competence"] = ["Use uma competência no formato yyyy-MM."] });
+        return await accounts.GetFlowsAsync(workspaceId, userId, month, cancellationToken) is { } flows ? Results.Ok(AccountFlowsResponse.Create(flows)) : Results.NotFound();
     }
 
     /// <summary>Contas ativas; com <c>includeInactive=true</c>, também as desativadas.</summary>
@@ -362,4 +373,15 @@ public sealed record AccountProjectionResponse(
         dto.CreditCardProjectionComplete);
 
     private static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
+}
+
+public sealed record AccountFlowResponse(Guid AccountId, string Name, bool IsActive, string Income, string Expense, string TransfersReceived, string TransfersSent, string TotalInflows, string TotalOutflows)
+{
+    public static AccountFlowResponse From(AccountFlowDto f) => new(f.AccountId, f.Name, f.IsActive, Money.Format(f.Income), Money.Format(f.Expense), Money.Format(f.TransfersReceived),
+        Money.Format(f.TransfersSent), Money.Format(f.TotalInflows), Money.Format(f.TotalOutflows));
+}
+
+public sealed record AccountFlowsResponse(DateOnly From, DateOnly Through, IReadOnlyList<AccountFlowResponse> Accounts, string ConsolidatedIncome, string ConsolidatedExpense, string InternalTransfers)
+{
+    public static AccountFlowsResponse Create(AccountFlowsDto f) => new(f.From, f.Through, f.Accounts.Select(AccountFlowResponse.From).ToList(), Money.Format(f.ConsolidatedIncome), Money.Format(f.ConsolidatedExpense), Money.Format(f.InternalTransfers));
 }

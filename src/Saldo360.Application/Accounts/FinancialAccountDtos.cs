@@ -70,6 +70,22 @@ public sealed record AccountOpeningBalance(decimal? Amount, DateOnly? Date, stri
 public sealed record AccountTotals(decimal Income, decimal Expense, decimal TransferIn, decimal TransferOut);
 
 /// <summary>
+/// Entradas e saídas de uma conta no período: <c>Income</c>/<c>Expense</c> são receitas e despesas (sem transferências), <c>TransfersReceived</c>/<c>TransfersSent</c> as transferências da
+/// conta, e <c>TotalInflows</c>/<c>TotalOutflows</c> a soma dos dois grupos (mostrados sempre separados). Mesmos movimentos e mesma regra do saldo realizado.
+/// </summary>
+public sealed record AccountFlowDto(Guid AccountId, string Name, bool IsActive, decimal Income, decimal Expense, decimal TransfersReceived, decimal TransfersSent)
+{
+    public decimal TotalInflows => Income + TransfersReceived;
+    public decimal TotalOutflows => Expense + TransfersSent;
+}
+
+/// <summary>
+/// Fluxos do período por conta e do conjunto de todas as contas. No conjunto de todas as contas do orçamento toda transferência é interna
+/// (<see cref="Saldo360.Application.Transfers.TransferPerspective"/>): <c>InternalTransfers</c> é só informativo e não entra em entradas nem saídas.
+/// </summary>
+public sealed record AccountFlowsDto(DateOnly From, DateOnly Through, IReadOnlyList<AccountFlowDto> Accounts, decimal ConsolidatedIncome, decimal ConsolidatedExpense, decimal InternalTransfers);
+
+/// <summary>
 /// Previsões PENDENTES da conta até a data-alvo, por tipo: vencidas (DueDate &lt; data-base) e do período
 /// (data-base ≤ DueDate ≤ data-alvo). Canceladas e realizadas (com lançamento ativo) ficam de fora.
 /// </summary>

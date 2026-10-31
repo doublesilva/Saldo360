@@ -59,6 +59,24 @@ public sealed class FinancialAccountService(
             ? await accounts.ListAsync(workspaceId, includeInactive, cancellationToken)
             : null;
 
+    /// <summary>Entradas e saídas de cada conta no mês (inclusive contas inativas com movimento), calculadas no servidor.</summary>
+    public async Task<AccountFlowsDto?> GetFlowsAsync(Guid workspaceId, Guid userId, DateOnly month, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)) return null;
+        var first = new DateOnly(month.Year, month.Month, 1);
+        var last = first.AddMonths(1).AddDays(-1);
+        var list = await accounts.ListAsync(workspaceId, true, cancellationToken);
+        var flows = new List<AccountFlowDto>();
+        foreach (var account in list)
+        {
+            var totals = await accounts.SumMovementsAsync(workspaceId, account.Id, first, last, cancellationToken);
+            if (!account.IsActive && totals is { Income: 0m, Expense: 0m, TransferIn: 0m, TransferOut: 0m }) continue;
+            flows.Add(new(account.Id, account.Name, account.IsActive, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut));
+        }
+        // Conjunto de todas as contas: cada transferência tem origem e destino dentro dele, então só é informada (cada uma é contada uma vez, no destino).
+        return new(first, last, flows, flows.Sum(f => f.Income), flows.Sum(f => f.Expense), flows.Sum(f => f.TransfersReceived));
+    }
+
     public async Task<FinancialAccountDto?> GetAsync(Guid workspaceId, Guid accountId, Guid userId, CancellationToken cancellationToken) =>
         await IsParticipantAsync(workspaceId, userId, cancellationToken)
             ? await accounts.GetAsync(workspaceId, accountId, cancellationToken)

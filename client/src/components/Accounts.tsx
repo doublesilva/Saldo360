@@ -8,11 +8,14 @@ import {
   isBankAccount,
   setPrimaryAccount,
   getAccountBalance,
+  getAccountFlows,
   getAccountProjection,
   listAccounts,
   toInput,
   updateAccount,
   type AccountBalance,
+  type AccountFlow,
+  type AccountFlows,
   type AccountProjection,
   type AccountInput,
   type AccountType,
@@ -44,10 +47,13 @@ export function Accounts({
   workspaceId,
   members,
   balanceVersion = 0,
+  onOpenStatement,
 }: {
   workspaceId: string
   members: ResponsibleUserOption[]
   balanceVersion?: number
+  /** Abre Lançamentos filtrado (conta, mês e tipo Transferência). */
+  onOpenStatement?: (filters: { from: string; to: string; accountId: string; type: 'Transfer' }) => void
 }) {
   const [list, setList] = useState<ListState>({ kind: 'loading' })
   const [includeInactive, setIncludeInactive] = useState(false)
@@ -61,6 +67,13 @@ export function Accounts({
   // T09.3: origem Pluggy só aparece quando a integração está habilitada para este usuário/orçamento.
   const [integrationAvailable, setIntegrationAvailable] = useState(false)
   const [newOrigin, setNewOrigin] = useState<'Manual' | 'Pluggy'>('Manual')
+  // Entradas e saídas do mês por conta (receitas/despesas e transferências separadas), calculadas na API.
+  const [flows, setFlows] = useState<AccountFlows | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    getAccountFlows(workspaceId, todayInSaoPaulo().slice(0, 7), controller.signal).then((value) => setFlows(Array.isArray(value?.accounts) ? value : null)).catch(() => { if (!controller.signal.aborted) setFlows(null) })
+    return () => controller.abort()
+  }, [workspaceId, reloadKey, balanceVersion])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -227,6 +240,7 @@ export function Accounts({
                 <PluggyAccountPanel workspaceId={workspaceId} linkId={account.integration.linkId} refreshKey={`${reloadKey}:${balanceVersion}`} onChanged={reload} />
               )}
               <RealizedBalance workspaceId={workspaceId} accountId={account.id} refreshKey={`${reloadKey}:${balanceVersion}`} />
+              <MonthFlows flow={flows?.accounts.find((item) => item.accountId === account.id) ?? null} period={flows} onOpenStatement={onOpenStatement} />
               <ProjectedBalance
                 workspaceId={workspaceId}
                 accountId={account.id}
@@ -350,6 +364,29 @@ function ProjectedBalance({
       <p className="meta">
         Vencidas pendentes: receitas {formatBrlDecimal(overdueIncome)} · despesas {formatBrlDecimal(overdueExpense)}
       </p>
+    </div>
+  )
+}
+
+/**
+ * Entradas e saídas do mês da conta (calculadas na API): receitas e despesas separadas das transferências recebidas e enviadas; os totais são a soma dos dois grupos.
+ * Transferências entre contas próprias não são receita nem despesa e movimentam o saldo das duas contas.
+ */
+function MonthFlows({ flow, period, onOpenStatement }: { flow: AccountFlow | null; period: AccountFlows | null; onOpenStatement?: (filters: { from: string; to: string; accountId: string; type: 'Transfer' }) => void }) {
+  if (!flow || !period) return null
+  return (
+    <div className="account__flows" aria-label={`Entradas e saídas de ${flow.name} no mês`}>
+      <p className="meta">
+        No mês ({formatDate(period.from)} a {formatDate(period.through)}): entradas <strong>{formatBrlDecimal(flow.totalInflows)}</strong> (receitas {formatBrlDecimal(flow.income)} + transferências recebidas{' '}
+        {formatBrlDecimal(flow.transfersReceived)}) · saídas <strong>{formatBrlDecimal(flow.totalOutflows)}</strong> (despesas {formatBrlDecimal(flow.expense)} + transferências enviadas{' '}
+        {formatBrlDecimal(flow.transfersSent)})
+      </p>
+      <p className="meta">Transferências entre contas próprias não são receita nem despesa e movimentam o saldo das duas contas.</p>
+      {onOpenStatement && (
+        <button type="button" onClick={() => onOpenStatement({ from: period.from, to: period.through, accountId: flow.accountId, type: 'Transfer' })}>
+          Ver transferências desta conta no extrato
+        </button>
+      )}
     </div>
   )
 }
