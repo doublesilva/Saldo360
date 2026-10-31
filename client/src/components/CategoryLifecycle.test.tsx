@@ -235,7 +235,7 @@ describe('Categories: Adicionar categorias padrão', () => {
     expect(posts).toHaveLength(1)
     expect(posts[0].url).toBe(`${base}/defaults`)
     expect((posts[0].init!.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
-    expect(calls.filter((c) => c.url === base)).toHaveLength(2)
+    await waitFor(() => expect(calls.filter((c) => c.url === base)).toHaveLength(2))
   })
 
   it('sem nada a adicionar, informa e não permite aplicar', async () => {
