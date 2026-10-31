@@ -195,12 +195,13 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { work
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
+  const [pageNumber, setPageNumber] = useState(1)
   useEffect(() => {
     const controller = new AbortController()
-    listReview(workspaceId, 1, controller.signal).then(result => { setPage(result); setError(null) })
+    listReview(workspaceId, pageNumber, controller.signal).then(result => { setPage(result); setError(null) })
       .catch((cause: unknown) => { if (!controller.signal.aborted) setError(errorText(cause)) })
     return () => controller.abort()
-  }, [workspaceId, refreshKey, version])
+  }, [workspaceId, refreshKey, version, pageNumber])
 
   const decide = useCallback(async (postingId: string, resolution: Resolution) => {
     if (resolution === 'Ignore' && !window.confirm('Não contabilizar este movimento? Ele continua guardado, mas não entra em receitas, despesas nem saldos.')) return
@@ -283,6 +284,11 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { work
         </div>}
       </li>)}
     </ul>}
+    {page && page.total > page.pageSize && <p>
+      <button type="button" disabled={pageNumber <= 1} onClick={() => setPageNumber(value => value - 1)}>Anterior</button>{' '}
+      <span className="meta">página {page.page} de {Math.ceil(page.total / page.pageSize)}</span>{' '}
+      <button type="button" disabled={pageNumber >= Math.ceil(page.total / page.pageSize)} onClick={() => setPageNumber(value => value + 1)}>Próxima</button>
+    </p>}
   </section>
 }
 

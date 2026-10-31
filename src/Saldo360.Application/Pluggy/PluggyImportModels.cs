@@ -6,7 +6,38 @@ public sealed record PluggyImportedTransactionView(Guid Id, Guid ConnectionId, s
     string PluggyTransactionId, DateTimeOffset? Date, string? Description, string? DescriptionRaw, string? Amount, string? Currency, string? Type,
     string Status, string? OperationType, string? Category, int? InstallmentNumber, int? TotalInstallments, string? BillId, string? CardLast4,
     string Classification, string ClassificationReason, DateTimeOffset FirstImportedAt, DateTimeOffset LastObservedAt, DateTimeOffset? LastChangedAt,
-    int MissingSyncCount, string? PossibleDuplicateKey, int PossibleDuplicateCount, bool IsNewInLastSync, bool ChangedInLastSync);
+    int MissingSyncCount, string? PossibleDuplicateKey, int PossibleDuplicateCount, bool IsNewInLastSync, bool ChangedInLastSync,
+    string FinancialStatus = PluggyFinancialStatuses.NotIntegrated, string? FinancialReason = null, Guid? PostingId = null);
+
+/// <summary>
+/// Situação financeira de um movimento importado, calculada no servidor a partir do posting (evidência importada x efeito aplicado):
+/// Accounted (lançamento de conta), Transfer, BillPayment, CardPurchase, CardCredit, Refund, Evidence (ponta de outro registro), Waiting (pendente/futuro),
+/// InReview (motivo em FinancialReason; decisão na Revisão), Ignored, OutOfRange (anterior ao início da importação), NotProcessed (ainda sem posting),
+/// NotIntegrated (conta da Pluggy sem vínculo com o Saldo360).
+/// </summary>
+public static class PluggyFinancialStatuses
+{
+    public const string Accounted = "Accounted", Transfer = "Transfer", BillPayment = "BillPayment", CardPurchase = "CardPurchase", CardCredit = "CardCredit", Refund = "Refund",
+        Evidence = "Evidence", Waiting = "Waiting", InReview = "InReview", Ignored = "Ignored", OutOfRange = "OutOfRange", NotProcessed = "NotProcessed", NotIntegrated = "NotIntegrated";
+
+    public static (string Status, string? Reason) Of(PluggyPostingState? state, PluggyPostingKind kind, string? reason, bool linked, DateOnly? importFrom, DateOnly? date)
+    {
+        if (!linked) return (NotIntegrated, null);
+        if (state is null) return importFrom is { } from && date is { } d && d < from ? (OutOfRange, null) : (NotProcessed, null);
+        return state switch
+        {
+            PluggyPostingState.WaitingPosted => (Waiting, reason),
+            PluggyPostingState.NeedsReview => (InReview, reason),
+            PluggyPostingState.Ignored => (Ignored, reason),
+            PluggyPostingState.Covered => (Evidence, null),
+            _ => kind switch
+            {
+                PluggyPostingKind.Transfer => (Transfer, null), PluggyPostingKind.CardBillPayment => (BillPayment, null), PluggyPostingKind.CardPurchase => (CardPurchase, null),
+                PluggyPostingKind.CardCredit => (CardCredit, null), PluggyPostingKind.BankRefund => (Refund, null), _ => (Accounted, null),
+            },
+        };
+    }
+}
 
 public sealed record PluggyImportCounters(int Total, int New, int Updated, int Pending, int Missing, DateTimeOffset? LastSyncAt);
 

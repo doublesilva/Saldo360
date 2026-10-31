@@ -95,6 +95,8 @@ export interface ImportedTransaction {
   billId: string | null; cardLast4: string | null; classification: ImportClass; classificationReason: string; firstImportedAt: string
   lastObservedAt: string; lastChangedAt: string | null; missingSyncCount: number; possibleDuplicateKey: string | null; possibleDuplicateCount: number
   isNewInLastSync: boolean; changedInLastSync: boolean
+  /** Situação financeira calculada no servidor (ver PluggyFinancialStatuses). */
+  financialStatus: string; financialReason: string | null; postingId: string | null
 }
 export interface ImportCounters { total: number; new: number; updated: number; pending: number; missing: number; lastSyncAt: string | null }
 export interface ImportedPage { items: ImportedTransaction[]; total: number; page: number; pageSize: number; counters: ImportCounters }

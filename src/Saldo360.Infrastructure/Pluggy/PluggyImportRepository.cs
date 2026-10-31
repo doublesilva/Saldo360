@@ -115,11 +115,25 @@ internal sealed class PluggyImportRepository(Saldo360DbContext db) : IPluggyImpo
         var duplicates = keys.Count == 0 ? [] : await db.PluggyImportedTransactions.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && keys.Contains(t.PossibleDuplicateKey!))
             .GroupBy(t => t.PossibleDuplicateKey!).Select(g => new { Key = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
 
+        var rowIds = rows.Select(r => r.Id).ToList();
+        var postings = await db.PluggyPostings.AsNoTracking().Where(p => p.WorkspaceId == workspaceId && rowIds.Contains(p.ImportedTransactionId))
+            .Select(p => new { p.Id, p.ImportedTransactionId, p.State, p.Kind, p.Reason }).ToDictionaryAsync(p => p.ImportedTransactionId, ct);
+        var links = (await db.PluggyAccountLinks.AsNoTracking().Where(l => l.WorkspaceId == workspaceId).Select(l => new { l.ConnectionId, l.PluggyAccountId, l.ImportFrom }).ToListAsync(ct))
+            .ToDictionary(l => (l.ConnectionId, l.PluggyAccountId));
+        (string Status, string? Reason, Guid? PostingId) Situation(PluggyImportedTransaction t)
+        {
+            var linked = links.TryGetValue((t.ConnectionId, t.PluggyAccountId), out var link);
+            var has = postings.TryGetValue(t.Id, out var posting);
+            var date = t.Date is { } at ? Saldo360.Application.Pluggy.PluggyFinancialMapper.BusinessDate(at) : (DateOnly?)null;
+            var (status, reason) = PluggyFinancialStatuses.Of(has ? posting!.State : null, has ? posting!.Kind : PluggyPostingKind.None, has ? posting!.Reason : null, linked, link?.ImportFrom, date);
+            return (status, reason, has ? posting!.Id : null);
+        }
         var items = rows.Select(t => new PluggyImportedTransactionView(t.Id, t.ConnectionId, t.PluggyAccountId, t.AccountType, t.AccountLabel, t.PluggyTransactionId, t.Date,
             t.Description, t.DescriptionRaw, Money(t.Amount), t.Currency, t.Type, t.Status.ToString(), t.OperationType, t.Category, t.InstallmentNumber, t.TotalInstallments,
             t.BillId, t.CardLast4, t.Classification.ToString(), t.ClassificationReason, t.FirstImportedAt, t.LastObservedAt, t.LastChangedAt, t.MissingSyncCount,
             t.PossibleDuplicateKey is null ? null : t.PossibleDuplicateKey[..12], t.PossibleDuplicateKey is not null && duplicates.GetValueOrDefault(t.PossibleDuplicateKey) > 1 ? duplicates[t.PossibleDuplicateKey] : 1,
-            latestIds.Contains(t.FirstSeenRunId), t.LastChangedRunId is { } changed && latestIds.Contains(changed) && !latestIds.Contains(t.FirstSeenRunId))).ToArray();
+            latestIds.Contains(t.FirstSeenRunId), t.LastChangedRunId is { } changed && latestIds.Contains(changed) && !latestIds.Contains(t.FirstSeenRunId),
+            Situation(t).Status, Situation(t).Reason, Situation(t).PostingId)).ToArray();
         return new(items, total, f.Page, f.PageSize, counters);
     }
 

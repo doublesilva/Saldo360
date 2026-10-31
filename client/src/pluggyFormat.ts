@@ -116,3 +116,14 @@ export const unavailableReasonLabels: Record<string, string> = {
   CardHasNoCashBalance: 'cartão não tem saldo de caixa', NoObservedBalance: 'o banco não informou o saldo', ObservedBalancePrecision: 'saldo do banco com mais de duas casas',
   NeverSynced: 'a conta ainda não foi sincronizada por completo', NoImportedHistory: 'nenhum movimento foi importado', ReviewPending: 'há movimentos em revisão',
 }
+
+/** Situação financeira de um movimento importado (calculada no servidor): onde ele está, ou por que não aparece em Lançamentos. */
+export const financialStatusLabels: Record<string, string> = {
+  Accounted: 'Contabilizado em Lançamentos', Transfer: 'Contabilizado como transferência (veja Transferências)', BillPayment: 'Contabilizado como pagamento de fatura',
+  CardPurchase: 'Contabilizado como compra de cartão', CardCredit: 'Contabilizado como crédito de cartão', Refund: 'Contabilizado como devolução',
+  Evidence: 'Evidência de outro registro (sem lançamento próprio)', Waiting: 'Aguardando (pendente ou data futura)', InReview: 'Em revisão',
+  Ignored: 'Não contabilizado por decisão', OutOfRange: 'Fora do período de importação da conta', NotProcessed: 'Ainda não processado (reprocesse ou sincronize)',
+  NotIntegrated: 'Conta não integrada ao cadastro',
+}
+export const financialSituationText = (status: string, reason: string | null) =>
+  status === 'InReview' ? `Em revisão: ${reviewReason(reason)}` : status === 'Ignored' && reason === 'UserCancelled' ? 'Lançamento cancelado por você' : financialStatusLabels[status] ?? status

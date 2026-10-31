@@ -13,7 +13,7 @@ const tx = (over: Partial<ImportedTransaction> = {}): ImportedTransaction => ({
   id: 't1', connectionId: 'conn-1', accountId: 'bank-1', accountType: 'BANK', accountLabel: 'Conta corrente ••••6789', pluggyTransactionId: 'ext-1', date: '2026-10-03T12:00:00+00:00',
   description: 'MERCADO', descriptionRaw: 'MERCADO LTDA', amount: '-10.25', currency: 'BRL', type: 'DEBIT', status: 'Pending', operationType: 'PIX', category: null, installmentNumber: null,
   totalInstallments: null, billId: null, cardLast4: null, classification: 'PotentialExpense', classificationReason: 'BankDebit:PIX', firstImportedAt: '2026-10-28T10:00:00+00:00',
-  lastObservedAt: '2026-10-28T11:30:00+00:00', lastChangedAt: null, missingSyncCount: 0, possibleDuplicateKey: null, possibleDuplicateCount: 1, isNewInLastSync: false, changedInLastSync: false, ...over,
+  lastObservedAt: '2026-10-28T11:30:00+00:00', lastChangedAt: null, missingSyncCount: 0, possibleDuplicateKey: null, possibleDuplicateCount: 1, isNewInLastSync: false, changedInLastSync: false, financialStatus: 'Accounted', financialReason: null, postingId: null, ...over,
 })
 const page = (items: ImportedTransaction[], over: Partial<ImportedPage> = {}): ImportedPage => ({
   items, total: items.length, page: 1, pageSize: 25, counters: { total: items.length, new: 1, updated: 2, pending: 3, missing: 0, lastSyncAt: '2026-10-28T11:30:00+00:00' }, ...over,
@@ -46,7 +46,24 @@ describe('PluggyImported', () => {
     expect(within(counters).getByText('Novas na última sincronização: 1')).toBeTruthy()
     expect(within(counters).getByText('Atualizadas na última sincronização: 2')).toBeTruthy()
     expect(within(counters).getByText('Pendentes: 3')).toBeTruthy()
-    expect(screen.getByText(/não criam lançamentos, não atualizam saldos nem geram previsões/)).toBeTruthy()
+    expect(screen.getByText(/A coluna "Situação financeira" diz se cada movimento/)).toBeTruthy()
+  })
+
+  it('mostra a situação financeira calculada no servidor, com o motivo em português quando está em revisão', async () => {
+    api.listImported.mockResolvedValue(page([
+      tx({ id: 'a', pluggyTransactionId: 'a', description: 'ENTRADA GRPQA', financialStatus: 'InReview', financialReason: 'TransferWithoutCounterpart', postingId: 'p1' }),
+      tx({ id: 'b', pluggyTransactionId: 'b', description: 'CREDIARIO', financialStatus: 'InReview', financialReason: 'CreditOperation', postingId: 'p2' }),
+      tx({ id: 'c', pluggyTransactionId: 'c', description: 'LANCADO', financialStatus: 'Accounted' }),
+      tx({ id: 'd', pluggyTransactionId: 'd', description: 'CEDO', financialStatus: 'OutOfRange' }),
+      tx({ id: 'e', pluggyTransactionId: 'e', description: 'PAR', financialStatus: 'Transfer' }),
+    ]))
+    render(<PluggyImported workspaceId="w1" connection={connection} accounts={accounts} />)
+    const situation = async (name: string) => within((await screen.findByText(name)).closest('tr')!).getByTestId('financial-situation').textContent ?? ''
+    expect(await situation('ENTRADA GRPQA')).toContain('Em revisão: Transferência sem a outra ponta em uma conta integrada')
+    expect(await situation('CREDIARIO')).toContain('Em revisão: Operação de crédito ou empréstimo')
+    expect(await situation('LANCADO')).toBe('Contabilizado em Lançamentos')
+    expect(await situation('CEDO')).toBe('Fora do período de importação da conta')
+    expect(await situation('PAR')).toContain('transferência')
   })
 
   it('exibe parcela e rótulos em português para cada classificação', async () => {

@@ -3,12 +3,12 @@ import {
   getStability, listImported, syncConnection, listSyncRuns,
   type ImportedPage, type PluggyAccount, type PluggyConnection, type Stability, type SyncRun,
 } from '../api/pluggyPoc'
-import { classificationLabels, dateTime, day, importStatusLabels, money, NOT_INFORMED, syncStatusLabels, text } from '../pluggyFormat'
+import { classificationLabels, dateTime, day, financialSituationText, importStatusLabels, money, NOT_INFORMED, syncStatusLabels, text } from '../pluggyFormat'
 
 const PAGE_SIZE = 25
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Falha inesperada.')
 
-/** Transações da Pluggy guardadas à parte (T09.2). Informativo: não gera lançamentos, previsões nem altera saldos. */
+/** Transações da Pluggy guardadas à parte (T09.2). A coluna "Situação financeira" diz se cada movimento já virou lançamento, está em revisão, aguardando ou fora do período. */
 export function PluggyImported({ workspaceId, connection, accounts }: { workspaceId: string; connection: PluggyConnection; accounts: PluggyAccount[] }) {
   const [filter, setFilter] = useState({ accountId: '', from: '', to: '', status: '', classification: '' })
   const [applied, setApplied] = useState(filter)
@@ -52,7 +52,7 @@ export function PluggyImported({ workspaceId, connection, accounts }: { workspac
 
   return <section className="card" aria-labelledby="pluggy-imported-title">
     <h4 id="pluggy-imported-title">6. Transações importadas</h4>
-    <p className="meta">Cópia local das transações de {text(connection.institution)}{connection.label ? ` (${connection.label})` : ''}. Contas ainda não integradas ao cadastro ficam só como informação: não criam lançamentos, não atualizam saldos nem geram previsões. Contas integradas (Contas → Nova conta → Pluggy) alimentam o realizado com as transações efetivadas.</p>
+    <p className="meta">Cópia local das transações de {text(connection.institution)}{connection.label ? ` (${connection.label})` : ''}. Contas ainda não integradas ao cadastro ficam só como informação: não criam lançamentos, não atualizam saldos nem geram previsões. Contas integradas (Contas → Nova conta → Pluggy) alimentam o realizado com as transações efetivadas. A coluna "Situação financeira" diz se cada movimento já virou lançamento, está em revisão, aguardando ou fora do período.</p>
     <p><button type="button" onClick={() => void sync()} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar agora'}</button></p>
     {lastRun && <p className="meta" role="status">Última sincronização: {syncStatusLabels[lastRun.status] ?? lastRun.status} em {dateTime(lastRun.startedAt)} — {lastRun.created} novas, {lastRun.updated} atualizadas, {lastRun.unchanged} inalteradas, {lastRun.missing} ausentes, {lastRun.errors} erros ({lastRun.accountsSynced}/{lastRun.accountsTotal} contas){lastRun.errorSummary ? ` · ${lastRun.errorSummary}` : ''}</p>}
     {error && <p role="alert" className="notice notice--error">{error}</p>}
@@ -77,7 +77,7 @@ export function PluggyImported({ workspaceId, connection, accounts }: { workspac
     {data && data.items.length === 0 && <p className="meta">{data.counters.total === 0 ? 'Nenhuma transação importada. Use "Sincronizar agora".' : 'Nenhuma transação para os filtros informados.'}</p>}
     {data && data.items.length > 0 && <div className="planning-table-wrap"><table>
       <caption className="meta">{data.total} transações · página {data.page} de {pages}</caption>
-      <thead><tr>{['Banco e conta', 'Data', 'Descrição', 'Valor', 'Status', 'Classificação sugerida', 'Duplicidade', 'Observada em', 'Sinais'].map(h => <th key={h} scope="col">{h}</th>)}</tr></thead>
+      <thead><tr>{['Banco e conta', 'Data', 'Descrição', 'Valor', 'Status', 'Classificação sugerida', 'Duplicidade', 'Situação financeira', 'Observada em', 'Sinais'].map(h => <th key={h} scope="col">{h}</th>)}</tr></thead>
       <tbody>{data.items.map(t => <tr key={t.id}>
         <td>{text(connection.institution)} · {text(t.accountLabel)}</td>
         <td>{day(t.date)}</td>
@@ -86,6 +86,7 @@ export function PluggyImported({ workspaceId, connection, accounts }: { workspac
         <td>{importStatusLabels[t.status] ?? t.status}</td>
         <td title={t.classificationReason}>{classificationLabels[t.classification] ?? t.classification}</td>
         <td>{t.possibleDuplicateKey && t.possibleDuplicateCount > 1 ? <span title="Mesma conta, dia, valor e descrição que outra transação">Possível duplicidade <code>{t.possibleDuplicateKey}</code> ({t.possibleDuplicateCount})</span> : NOT_INFORMED}</td>
+        <td data-testid="financial-situation">{financialSituationText(t.financialStatus, t.financialReason)}{t.financialStatus === 'InReview' ? <small className="meta"> · decida em "Movimentos para revisar" (Contas → Integração bancária)</small> : null}</td>
         <td>{dateTime(t.lastObservedAt)}</td>
         <td>{[t.isNewInLastSync && 'Nova', t.changedInLastSync && 'Atualizada', t.missingSyncCount > 0 && `Ausente há ${t.missingSyncCount} coleta(s)`].filter(Boolean).join(' · ') || '—'}</td>
       </tr>)}</tbody>
