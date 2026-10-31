@@ -33,7 +33,7 @@ public abstract class PostgresApiTestBase : ApiTestBase
 
     protected Saldo360DbContext Db() => PostgresFixture.CreateDbContext(ConnectionString);
 
-    protected async Task<WorkspaceDto> CreateWorkspaceAsync(string session, string name = "Personal")
+    protected virtual async Task<WorkspaceDto> CreateWorkspaceAsync(string session, string name = "Personal")
     {
         var response = await SendWithCsrfAsync(HttpMethod.Post, "/api/me/financial-workspace", session);
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);

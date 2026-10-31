@@ -57,8 +57,6 @@ public interface IPluggyCategorizationRepository
 {
     Task<IReadOnlyList<PluggyCategorizationCandidate>> ListCandidatesAsync(Guid workspaceId, CancellationToken ct);
     Task<IReadOnlyList<MappableCategory>> ListCategoriesAsync(Guid workspaceId, CancellationToken ct);
-    /// <summary>Cria, numa transação serializada por orçamento, as categorias canônicas que ainda não existem (em nenhum estado). Devolve quantas criou.</summary>
-    Task<int> EnsureCategoriesAsync(Guid workspaceId, Guid userId, IReadOnlyCollection<(string Name, CategoryType Type)> categories, DateTimeOffset now, CancellationToken ct);
     /// <summary>
     /// Persiste as decisões numa transação serializada por orçamento, revalidando cada uma: categoria do usuário ou alterada depois da leitura é
     /// preservada; categoria inexistente, de outro orçamento, inativa ou de tipo incompatível é recusada. Nunca altera valores, datas, contas ou saldos.
@@ -107,15 +105,13 @@ public sealed class PluggyCategorizationService(IPluggyCategorizationRepository 
         var targets = candidates.Where(c => !c.IsManual && (request.Force || !c.HasAutomaticCategory)).ToList();
 
         var categories = await repository.ListCategoriesAsync(workspaceId, ct);
-        var created = 0;
+        const int created = 0; // a categorização nunca cria categorias
         var local = Classify(targets, categories);
-        var proposals = local.Where(o => o.ProposedName is not null).Select(o => (o.ProposedName!, o.ProposedType!.Value)).Distinct().ToList();
-        if (proposals.Count > 0)
-        {
-            created = await repository.EnsureCategoriesAsync(workspaceId, userId, proposals, now, ct);
-            categories = await repository.ListCategoriesAsync(workspaceId, ct);
-            local = Classify(targets, categories);
-        }
+        // Categorizar nunca altera o catálogo: a categoria que a origem aponta e que o orçamento não tem (ou tem inativa) fica só como informação de
+        // origem no movimento importado, e o movimento segue sem categoria local, para revisão. O usuário cria a categoria ou usa "Adicionar categorias padrão".
+        local = local.Select(o => o.CategoryId is null && o.ProposedName is not null
+            ? o with { ProposedName = null, ProposedType = null, NeedsReview = true, Reason = $"Categoria de origem sem correspondente local ativa: {o.ProposedName}" }
+            : o).ToList();
 
         var byKey = targets.ToDictionary(t => t.PostingId.ToString("N"));
         var final = local.ToDictionary(o => o.Key);

@@ -64,9 +64,9 @@ public sealed partial class PluggyFinancialIntegrationTests
         var competence = Today.ToString("yyyy-MM");
         var pendingOverview = (await R05OverviewAsync(c, competence)).GetProperty("classification");
         var review = await JsonGetAsync(c, $"{Integration(c.Workspace)}/classification-review?kind=category");
-        Assert.Equal(1, review.GetProperty("total").GetInt32());
+        Assert.Equal(3, review.GetProperty("total").GetInt32()); // sem categoria local correspondente nada é criado: salário, mercado e "Loja Zeta" ficam em revisão
         Assert.Equal(review.GetProperty("total").GetInt32(), pendingOverview.GetProperty("needsReview").GetInt32());
-        var zeta = review.GetProperty("items")[0];
+        var zeta = review.GetProperty("items").EnumerateArray().Single(i => i.GetProperty("description").GetString() == "Loja Zeta");
         Assert.Equal("Loja Zeta", zeta.GetProperty("description").GetString());
         var recordId = zeta.GetProperty("recordId").GetGuid();
         var food = await CreateCategoryAsync(c, "Mercado e lojas", "Expense");
@@ -82,8 +82,8 @@ public sealed partial class PluggyFinancialIntegrationTests
         Assert.Equal((16m, food, ExpenseNature.Fixed), (kept.Amount, kept.CategoryId, kept.Nature)); // o valor segue o banco; a classificação é do usuário
         Assert.Equal(3, (await CoreAsync(c.Workspace)).Count);
         var after = (await R05OverviewAsync(c, competence)).GetProperty("classification");
-        Assert.Equal(0, after.GetProperty("needsReview").GetInt32()); // o atalho passa a refletir a decisão
-        Assert.Equal(0, (await JsonGetAsync(c, $"{Integration(c.Workspace)}/classification-review?kind=category")).GetProperty("total").GetInt32());
+        Assert.Equal(2, after.GetProperty("needsReview").GetInt32()); // o atalho reflete a decisão; salário e mercado seguem em revisão (sem categoria local)
+        Assert.Equal(2, (await JsonGetAsync(c, $"{Integration(c.Workspace)}/classification-review?kind=category")).GetProperty("total").GetInt32());
     }
 
     // ---- Cenários C e D: despesa fixa no cartão em três perspectivas, compra parcelada e pagamento da fatura ---------------------------------

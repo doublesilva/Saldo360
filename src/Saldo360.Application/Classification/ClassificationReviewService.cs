@@ -76,7 +76,7 @@ public sealed class ClassificationReviewService(IFinancialWorkspaceRepository wo
     /// <summary>Lançamentos e compras importados pela Pluggy que ficaram sem categoria segura (orçamento inteiro, não só um mês).</summary>
     private async Task<ClassificationReviewResult> CategoryAsync(Guid workspaceId, int page, int pageSize, CancellationToken ct)
     {
-        var pending = (await categorization.ListCandidatesAsync(workspaceId, ct)).Where(c => !c.IsManual && c.NeedsReview && c.PostingCategoryId is null && !c.IsIncome)
+        var pending = (await categorization.ListCandidatesAsync(workspaceId, ct)).Where(c => !c.IsManual && c.NeedsReview && c.PostingCategoryId is null)
             .OrderBy(c => c.Date).ThenBy(c => c.Description, StringComparer.CurrentCultureIgnoreCase).ThenBy(c => c.PostingId).ToList();
         var items = pending.Skip((page - 1) * pageSize).Take(pageSize).Select(c => c.IsCardPurchase
             ? new ClassificationReviewItem(ClassificationAction.CardPurchase, c.RecordId ?? c.PostingId, c.CardId, c.Date, c.Description, c.Amount, c.CurrentCategoryId, null, c.Nature, null, null, true, true, true, "Esta compra (uma cobrança do banco)")

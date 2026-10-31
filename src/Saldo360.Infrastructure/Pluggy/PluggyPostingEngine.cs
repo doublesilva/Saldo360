@@ -885,7 +885,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
 
             var target = InvoiceFor(card, link, movement.Date, t.BillId);
             if (target is null) { ToReview(posting, "InvoiceClosed"); return; }
-            var categoryId = ValidCategory(posting, CategoryType.Expense) ?? FallbackCategory();
+            if ((ValidCategory(posting, CategoryType.Expense) ?? FallbackCategory()) is not { } categoryId) { ToReview(posting, "CategoryRequired"); return; }
             var newPurchase = FinancialCreditCardPurchase.CreateImported(workspaceId, card.Id, categoryId, movement.Description, movement.Date, movement.Amount, userId, now);
             foreach (var installment in newPurchase.Installments) installment.AssignInvoice(target.Id);
             db.FinancialCreditCardPurchases.Add(newPurchase);
@@ -909,14 +909,13 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             return invoice.OfficialVersion > 0 ? null : invoice;
         }
 
-        private Guid FallbackCategory()
+        /// <summary>Categoria local "Outros" já existente e disponível, se houver. A integração nunca cria nem reativa categorias.</summary>
+        private Guid? FallbackCategory()
         {
             if (fallbackCategoryId is { } known) return known;
-            var existing = categories.FirstOrDefault(c => c.Type == CategoryType.Expense && !c.IsSubcategory && PluggyFinancialMapper.Normalize(c.Name) == PluggyFinancialMapper.Normalize(FallbackCategoryName));
-            if (existing is not null) return (fallbackCategoryId = existing.Id).Value;
-            var category = FinancialCategory.Create(workspaceId, FallbackCategoryName, CategoryType.Expense, userId, now);
-            db.FinancialCategories.Add(category);
-            return (fallbackCategoryId = category.Id).Value;
+            var existing = categories.FirstOrDefault(c => c.Type == CategoryType.Expense && !c.IsSubcategory && c.IsAvailable
+                && PluggyFinancialMapper.Normalize(c.Name) == PluggyFinancialMapper.Normalize(FallbackCategoryName));
+            return existing is null ? null : (fallbackCategoryId = existing.Id);
         }
 
         // ---- Pares: transferências e pagamentos de fatura -----------------------------------------------------------------

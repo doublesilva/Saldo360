@@ -17,6 +17,18 @@ public abstract class PluggyApiTestBase(PostgresFixture postgres) : PostgresApiT
     internal const string CardA = "a0000000-0000-4000-8000-000000000002";
     internal const string BankB = "b0000000-0000-4000-8000-000000000001";
 
+    /// <summary>
+    /// A integração nunca cria categorias: compras de cartão importadas só têm onde cair se o orçamento já tiver a categoria local "Outros".
+    /// Estes testes partem de um orçamento que a tem (como o que recebeu o catálogo ou o cadastro do usuário).
+    /// </summary>
+    protected override async Task<WorkspaceDto> CreateWorkspaceAsync(string session, string name = "Personal")
+    {
+        var workspace = await base.CreateWorkspaceAsync(session, name);
+        var created = await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspace.Id}/categories", session, new { name = "Outros", type = "Expense" });
+        Assert.Equal(System.Net.HttpStatusCode.Created, created.StatusCode);
+        return workspace;
+    }
+
     internal readonly FakePluggyClient Pluggy = Seeded();
 
     /// <summary>Fallback de IA simulado: o host de testes nunca usa o provider real (nenhuma chamada externa).</summary>

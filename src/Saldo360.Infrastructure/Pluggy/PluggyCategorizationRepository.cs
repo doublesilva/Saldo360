@@ -68,25 +68,6 @@ internal sealed class PluggyCategorizationRepository(Saldo360DbContext db) : IPl
         return list;
     }
 
-    public async Task<int> EnsureCategoriesAsync(Guid workspaceId, Guid userId, IReadOnlyCollection<(string Name, CategoryType Type)> categories, DateTimeOffset now, CancellationToken ct)
-    {
-        return await InTransactionAsync(workspaceId, async () =>
-        {
-            var existing = await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).Select(c => new { c.Name, c.Type }).ToListAsync(ct);
-            var created = 0;
-            foreach (var (name, type) in categories)
-            {
-                if (!FinancialCategory.TryNormalizeName(name, out var normalized, out _)) continue;
-                if (existing.Any(c => c.Type == type && FinancialCategoryMatching.Key(c.Name) == FinancialCategoryMatching.Key(normalized))) continue;
-                db.FinancialCategories.Add(FinancialCategory.Create(workspaceId, normalized, type, userId, now));
-                existing.Add(new { Name = normalized, Type = type });
-                created++;
-            }
-            await db.SaveChangesAsync(ct);
-            return created;
-        }, ct);
-    }
-
     public async Task<PluggyCategorizationApplied> ApplyAsync(Guid workspaceId, Guid userId, IReadOnlyList<PluggyCategoryDecision> decisions, DateTimeOffset now, CancellationToken ct)
     {
         return await InTransactionAsync(workspaceId, async () =>

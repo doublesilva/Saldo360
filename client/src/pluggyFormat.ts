@@ -42,6 +42,7 @@ export const reviewReasonLabels: Record<string, string> = {
   BillPaymentWithoutBankDebit: 'Pagamento de fatura sem débito correspondente em conta integrada',
   NoInvoiceForPayment: 'Pagamento de fatura sem fatura oficial que o comporte (o total do banco não confere com as compras)',
   InvoiceClosed: 'Compra em fatura que já foi fechada oficialmente',
+  CategoryRequired: 'Compra no cartão sem categoria local disponível: crie uma categoria ou use "Adicionar categorias padrão"',
   PossibleRefund: 'Possível estorno',
   CreditOperation: 'Operação de crédito ou empréstimo',
   MissingTypeOrAmount: 'Sem tipo ou valor informado',

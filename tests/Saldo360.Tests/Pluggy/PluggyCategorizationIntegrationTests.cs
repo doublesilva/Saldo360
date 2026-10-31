@@ -36,10 +36,16 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
 
     private static string Integration(Guid workspace) => $"/api/financial-workspaces/{workspace}/pluggy-integration";
 
-    private async Task<Ctx> ArrangeAsync(string user, bool link = true)
+    private async Task<Ctx> ArrangeAsync(string user, bool link = true, bool seedCatalog = false)
     {
         var session = await SignInAsync(user);
         var workspace = await CreateWorkspaceAsync(session);
+        // A categorização só usa categorias locais: o orçamento já tem as que os cenários esperam (nada é criado pela integração).
+        if (seedCatalog)
+        {
+            foreach (var (seedName, seedType) in new[] { ("Alimentação", "Expense"), ("Salário", "Income"), ("Restaurantes", "Expense") })
+                Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"/api/financial-workspaces/{workspace.Id}/categories", session, new { name = seedName, type = seedType })).StatusCode);
+        }
         var client = LabClient();
         var connection = await LinkAsync(client, session, workspace.Id, ItemA, "Itaú PF");
         Pluggy.TransactionPageSize = 50;
@@ -116,7 +122,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     // ---- Local: regras + categoria Pluggy + criação controlada + retroativo ---------------------------------------------------
 
     [Fact]
-    public async Task RetroactiveLocalRunMapsPluggyCategoriesReusesEquivalentOnesCreatesCanonicalOnesAndNeverTouchesMoney()
+    public async Task RetroactiveLocalRunMapsPluggyCategoriesReusesEquivalentOnesNeverCreatesAndNeverTouchesMoney()
     {
         var c = await ArrangeAsync("t931-local");
         await SyncAsync(c);
@@ -129,7 +135,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
         var categories = await CategoriesByImportedAsync(c.Workspace);
         Assert.Equal(("Alimentacao", PluggyCategorySource.Pluggy), categories["g1"]);
         Assert.Equal(("Alimentacao", PluggyCategorySource.Pluggy), categories["g2"]);
-        Assert.Equal(("Salário", PluggyCategorySource.Pluggy), categories["sal"]);
+        Assert.Equal((null, PluggyCategorySource.None), categories["sal"]); // "Salário" não existe localmente: nada é criado, o movimento fica em revisão
         // Movimentos especiais: decididos por regra, sem categoria de consumo.
         Assert.Equal((null, PluggyCategorySource.None), categories["cc"]);
         Assert.Equal((null, PluggyCategorySource.None), categories["sp"]);
@@ -139,7 +145,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
         await using (var db = Db())
         {
             var names = await db.FinancialCategories.AsNoTracking().Where(x => x.WorkspaceId == c.Workspace).Select(x => x.Name).OrderBy(x => x).ToListAsync();
-            Assert.Equal(["Alimentacao", "Salário"], names); // "Alimentação" não foi duplicada; só a ausente foi criada
+            Assert.Equal(["Alimentacao", "Outros"], names); // nada foi criado (nem "Salário"); "Alimentação" não foi duplicada
             Assert.Equal(existingFood, (await db.FinancialCategories.AsNoTracking().SingleAsync(x => x.Name == "Alimentacao")).Id);
         }
         Assert.Equal(before, await MoneySnapshotAsync(c.Workspace)); // valores, datas, contas e saldos intactos
@@ -150,7 +156,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
                                where new[] { "cc", "sp", "pix" }.Contains(i.PluggyTransactionId) select new { p.CategoryMethodVersion, p.CategoryClassifiedAt }).ToListAsync();
             Assert.Equal(3, ruled.Count(r => r.CategoryMethodVersion!.StartsWith("rule:", StringComparison.Ordinal) && r.CategoryClassifiedAt != null));
         }
-        Assert.Equal((3, 0, 1, 1), (result.GetProperty("pluggy").GetInt32(), result.GetProperty("rule").GetInt32(), result.GetProperty("categoriesCreated").GetInt32(), result.GetProperty("unresolved").GetInt32()));
+        Assert.Equal((2, 0, 0, 2), (result.GetProperty("pluggy").GetInt32(), result.GetProperty("rule").GetInt32(), result.GetProperty("categoriesCreated").GetInt32(), result.GetProperty("unresolved").GetInt32()));
         Assert.Equal(0, Ai.Calls); // etapa local nunca consulta a IA
 
         // A API de lançamentos expõe a origem da categoria para a tela: Pluggy para os mapeados, nenhuma para o que ficou sem categoria.
@@ -160,10 +166,35 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
         Assert.Contains(items, i => i.GetProperty("category").ValueKind == JsonValueKind.Null && i.GetProperty("categorySource").GetString() == "None" && i.GetProperty("categoryNeedsReview").GetBoolean());
     }
 
+
+    [Fact]
+    public async Task InactiveOrDeletedLocalCategories_AreNeverReactivatedOrRecreatedByTheSyncOrTheCategorization()
+    {
+        var c = await ArrangeAsync("t931-inativa", seedCatalog: true);
+        await using (var seed = Db())
+        {
+            var food = await seed.FinancialCategories.AsNoTracking().SingleAsync(x => x.Name == "Alimentação");
+            var salary = await seed.FinancialCategories.AsNoTracking().SingleAsync(x => x.Name == "Salário");
+            Assert.Equal(HttpStatusCode.OK, (await Send(c.Client, HttpMethod.Put, $"/api/financial-workspaces/{c.Workspace}/categories/{food.Id}", c.Session, new { name = "Alimentação", isActive = false })).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await Send(c.Client, HttpMethod.Delete, $"/api/financial-workspaces/{c.Workspace}/categories/{salary.Id}", c.Session)).StatusCode);
+        }
+        var before = await Db().FinancialCategories.AsNoTracking().OrderBy(x => x.Name).Select(x => new { x.Id, x.Name, x.IsActive }).ToListAsync();
+
+        await SyncAsync(c);
+        await RunAsync(c);
+        await RunAsync(c);
+
+        var categories = await CategoriesByImportedAsync(c.Workspace);
+        Assert.Equal((null, PluggyCategorySource.None), categories["g1"]); // inativa: não é oferecida, o movimento fica sem categoria local
+        Assert.Equal((null, PluggyCategorySource.None), categories["sal"]); // excluída: não é recriada
+        await using var db = Db();
+        Assert.Equal(before, await db.FinancialCategories.AsNoTracking().OrderBy(x => x.Name).Select(x => new { x.Id, x.Name, x.IsActive }).ToListAsync());
+        Assert.Equal(PluggyCategorySource.None, (await CategoriesByImportedAsync(c.Workspace))["unk"].Source);
+    }
     [Fact]
     public async Task ReRunningIsIdempotentAndDoesNotReprocessWhatWasAlreadyClassified()
     {
-        var c = await ArrangeAsync("t931-idem");
+        var c = await ArrangeAsync("t931-idem", seedCatalog: true);
         await SyncAsync(c);
         await RunAsync(c);
         var before = await MoneySnapshotAsync(c.Workspace);
@@ -176,13 +207,13 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
         Assert.Equal(before, await MoneySnapshotAsync(c.Workspace));
         await using var db2 = Db();
         Assert.Equal(stamps, await db2.PluggyPostings.AsNoTracking().Select(p => new { p.Id, p.CategoryClassifiedAt }).ToDictionaryAsync(p => p.Id, p => p.CategoryClassifiedAt));
-        Assert.Equal(2, await db2.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace)); // nenhuma categoria nova na segunda execução
+        Assert.Equal(4, await db2.FinancialCategories.CountAsync(x => x.WorkspaceId == c.Workspace)); // as 3 semeadas + "Outros"; nenhuma criada pela categorização
     }
 
     [Fact]
     public async Task ManualCategoryIsPreservedByTheRunAndBySubsequentSyncs()
     {
-        var c = await ArrangeAsync("t931-manual");
+        var c = await ArrangeAsync("t931-manual", seedCatalog: true);
         await SyncAsync(c);
         var leisure = await CreateCategoryAsync(c, "Lazer", "Expense");
         await using (var db = Db())
@@ -272,7 +303,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     [Fact]
     public async Task NewImportedMovementsAreClassifiedLocallyDuringSyncWithoutTheModel()
     {
-        var c = await ArrangeAsync("t931-sync");
+        var c = await ArrangeAsync("t931-sync", seedCatalog: true);
         await SyncAsync(c);
         await RunAsync(c); // cria "Alimentação" e "Salário"
         Pluggy.TransactionsByAccount[BankA] = [.. Pluggy.TransactionsByAccount[BankA], Tx("g3", BankA, 1, -7m, description: "Padaria Nova"), Tx("pay", BankA, 2, -9m, "BOLETO", "Debito automatico Y", "Credit card payment")];
@@ -285,9 +316,9 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
         Assert.Equal(0, Ai.Calls); // sincronização nunca depende nem aciona a IA
     }
 
-    private async Task<Ctx> ArrangeCardAsync(string user, decimal billTotal, bool withBill = true)
+    private async Task<Ctx> ArrangeCardAsync(string user, decimal billTotal, bool withBill = true, bool seedCatalog = false)
     {
-        var c = await ArrangeAsync(user, link: false);
+        var c = await ArrangeAsync(user, link: false, seedCatalog: seedCatalog);
         Pluggy.TransactionsByAccount[BankA] = [];
         Pluggy.BillsByAccount[CardA] = withBill ? [new("bill-1", DateTimeOffset.Parse(D(8) + "T00:00:00Z"), billTotal, "BRL", null, null, [], DateTimeOffset.Parse(D(15) + "T00:00:00Z"), [])] : [];
         var billId = withBill ? "bill-1" : null;
@@ -314,6 +345,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     {
         var c = await ArrangeCardAsync("t931-card", billTotal: 999m); // total diferente: a fatura continua aberta
         Assert.Equal(["50.00:Outros", "150.00:Outros"], await PurchaseCategoriesAsync());
+        await CreateCategoryAsync(c, "Restaurantes", "Expense"); // a categorização só reconhece categoria local já existente
 
         var run = await RunAsync(c);
 
@@ -372,7 +404,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     [Fact]
     public async Task PurchasesOfAnInvoiceClosedByTheBankStayEditableSoTheirCategoryCanBeApplied()
     {
-        var c = await ArrangeCardAsync("t931-card-closed", billTotal: 200m); // o banco informou o fechamento (total 200); as compras somam 200
+        var c = await ArrangeCardAsync("t931-card-closed", billTotal: 200m, seedCatalog: true); // o banco informou o fechamento (total 200); as compras somam 200
         await using (var db = Db()) Assert.Equal(1, await db.FinancialCreditCardInvoices.CountAsync(i => i.InstitutionClosedAt != null && i.OfficialVersion == 0));
 
         await RunAsync(c);
@@ -417,7 +449,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     [Fact]
     public async Task AiIsOnlyTheFallbackAndSendsNothingPersonalOrFinancialAboutTheLocallyDecidedItems()
     {
-        var c = await ArrangeAsync("t931-ai");
+        var c = await ArrangeAsync("t931-ai", seedCatalog: true);
         await SyncAsync(c);
         await CreateCategoryAsync(c, "Lazer", "Expense");
         Ai.Available = true;
@@ -475,7 +507,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     [Fact]
     public async Task AProviderFailureKeepsLocalResultsDoesNotBreakTheSyncAndCanBeRetriedLater()
     {
-        var c = await ArrangeAsync("t931-ai-fail");
+        var c = await ArrangeAsync("t931-ai-fail", seedCatalog: true);
         await SyncAsync(c);
         await CreateCategoryAsync(c, "Lazer", "Expense");
         Ai.Available = true;
@@ -498,7 +530,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
     [Fact]
     public async Task MissingCredentialMeansLocalOnlyAndAnExplicitUnavailableMarker()
     {
-        var c = await ArrangeAsync("t931-ai-off");
+        var c = await ArrangeAsync("t931-ai-off", seedCatalog: true);
         await SyncAsync(c);
         Ai.Available = false;
 
