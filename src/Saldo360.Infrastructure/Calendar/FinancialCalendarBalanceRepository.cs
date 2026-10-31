@@ -64,21 +64,20 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         }
 
         var lastRealizedDate = through < today ? through : today;
+        // Receita e despesa pela regra única dos indicadores (devolução bancária: entrada de caixa que reduz a despesa, nunca receita). O saldo não muda:
+        // Receita − Despesa líquida = Entradas − Saídas.
         var transactionRows = await (
-                from movement in db.FinancialTransactions.AsNoTracking()
-                join account in selectedAccounts
-                    on new { movement.WorkspaceId, Id = movement.AccountId }
-                    equals new { account.WorkspaceId, account.Id }
-                where !movement.IsCancelled
-                    && account.OpeningBalanceDate != null
-                    && movement.TransactionDate >= account.OpeningBalanceDate.Value
-                    && movement.TransactionDate <= lastRealizedDate
-                group movement by movement.TransactionDate into daily
+                from movement in Saldo360.Infrastructure.Transactions.FinancialTransactionKpi.Project(
+                    from t in db.FinancialTransactions.AsNoTracking()
+                    join account in selectedAccounts on new { t.WorkspaceId, Id = t.AccountId } equals new { account.WorkspaceId, account.Id }
+                    where !t.IsCancelled && account.OpeningBalanceDate != null && t.TransactionDate >= account.OpeningBalanceDate.Value && t.TransactionDate <= lastRealizedDate
+                    select t)
+                group movement by movement.Date into daily
                 select new
                 {
                     Date = daily.Key,
-                    Income = daily.Sum(item => item.Type == CategoryType.Income ? item.Amount : 0m),
-                    Expense = daily.Sum(item => item.Type == CategoryType.Expense ? item.Amount : 0m),
+                    Income = daily.Sum(item => item.Revenue),
+                    Expense = daily.Sum(item => item.NetExpense),
                 })
             .ToListAsync(cancellationToken);
         var transactionTotals = transactionRows
@@ -183,20 +182,18 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         if (periodFrom is { } firstPeriodDate)
         {
             var periodRows = await (
-                    from movement in db.FinancialTransactions.AsNoTracking()
-                    join account in selectedAccounts
-                        on new { movement.WorkspaceId, Id = movement.AccountId }
-                        equals new { account.WorkspaceId, account.Id }
-                    where !movement.IsCancelled
-                        && movement.TransactionDate >= firstPeriodDate
-                        && movement.TransactionDate <= through
-                    group movement by movement.TransactionDate into daily
+                    from movement in Saldo360.Infrastructure.Transactions.FinancialTransactionKpi.Project(
+                        from t in db.FinancialTransactions.AsNoTracking()
+                        join account in selectedAccounts on new { t.WorkspaceId, Id = t.AccountId } equals new { account.WorkspaceId, account.Id }
+                        where !t.IsCancelled && t.TransactionDate >= firstPeriodDate && t.TransactionDate <= through
+                        select t)
+                    group movement by movement.Date into daily
                     select new
                     {
                         Date = daily.Key,
-                        Income = daily.Sum(item => item.Type == CategoryType.Income ? item.Amount : 0m),
-                        Expense = daily.Sum(item => item.Type == CategoryType.Expense ? item.Amount : 0m),
-                        CardPayments = daily.Sum(item => item.Origin == Saldo360.Domain.Transactions.FinancialTransactionOrigin.CreditCardInvoicePayment ? item.Amount : 0m),
+                        Income = daily.Sum(item => item.Revenue),
+                        Expense = daily.Sum(item => item.NetExpense),
+                        CardPayments = daily.Sum(item => item.CardPayment),
                     })
                 .OrderBy(row => row.Date)
                 .ToListAsync(cancellationToken);

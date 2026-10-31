@@ -41,6 +41,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialCategory> FinancialCategories => Set<FinancialCategory>();
 
     public DbSet<FinancialTransaction> FinancialTransactions => Set<FinancialTransaction>();
+    public DbSet<FinancialBankRefund> FinancialBankRefunds => Set<FinancialBankRefund>();
 
     public DbSet<FinancialTransfer> FinancialTransfers => Set<FinancialTransfer>();
 

@@ -28,7 +28,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
 {
     /// <summary>
     /// Transferência entre contas tem uma única data: a inferência automática só casa pontas do MESMO dia bancário. Pontas com dias diferentes (até
-    /// <see cref="TransferDateMismatchDays"/> de distância) não são pareadas nem recebem uma data comum forçada: vão para revisão.
+    /// <see cref="TransferDateMismatchDays"/> de distância) não são pareadas nem recebem uma data comum forçada: ficam sinalizadas para revisão sem reter os movimentos independentes.
     /// </summary>
     private const int TransferToleranceDays = 0;
     private const int TransferDateMismatchDays = 1;
@@ -67,6 +67,12 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
 
     public Task<PluggyManualResult> UndoTransferAsync(Guid workspaceId, Guid userId, Guid postingId, DateTimeOffset now, CancellationToken ct) =>
         ManualAsync(workspaceId, userId, now, new ManualUndo(postingId), ct);
+
+    public Task<PluggyManualResult> ConfirmRefundAsync(Guid workspaceId, Guid userId, Guid postingId, Guid originalTransactionId, DateTimeOffset now, CancellationToken ct) =>
+        ManualAsync(workspaceId, userId, now, new ManualRefundConfirm(postingId, originalTransactionId), ct);
+
+    public Task<PluggyManualResult> UndoRefundAsync(Guid workspaceId, Guid userId, Guid postingId, DateTimeOffset now, CancellationToken ct) =>
+        ManualAsync(workspaceId, userId, now, new ManualRefundUndo(postingId), ct);
 
     /// <summary>
     /// Ação manual sobre vínculos: com o orçamento travado, valida de novo e executa a MESMA passada do motor (decide, desfaz, pareia, aplica) com a intenção
@@ -137,15 +143,17 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
     private async Task<Dictionary<Guid, PluggyFigures>> MeasureAsync(Guid workspaceId, IReadOnlyList<(Guid LinkId, Guid AccountId)> accounts, CancellationToken ct)
     {
         var accountIds = accounts.Select(a => a.AccountId).ToList();
-        var transactions = await db.FinancialTransactions.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && accountIds.Contains(t.AccountId))
-            .GroupBy(t => new { t.AccountId, t.Type }).Select(g => new { g.Key.AccountId, g.Key.Type, Sum = g.Sum(x => x.Amount) }).ToListAsync(ct);
+        // Receita e despesa pela regra única dos indicadores (devolução bancária: nem receita, e abate a despesa).
+        var transactions = await Saldo360.Infrastructure.Transactions.FinancialTransactionKpi.Project(
+                db.FinancialTransactions.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && accountIds.Contains(t.AccountId)))
+            .GroupBy(t => t.AccountId).Select(g => new { AccountId = g.Key, Revenue = g.Sum(x => x.Revenue), Net = g.Sum(x => x.NetExpense) }).ToListAsync(ct);
         var transfers = await db.FinancialTransfers.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && (accountIds.Contains(t.SourceAccountId) || accountIds.Contains(t.DestinationAccountId)))
             .Select(t => new { t.SourceAccountId, t.DestinationAccountId, t.Amount }).ToListAsync(ct);
         var result = new Dictionary<Guid, PluggyFigures>();
         foreach (var (linkId, accountId) in accounts)
         {
-            var income = transactions.Where(t => t.AccountId == accountId && t.Type == CategoryType.Income).Sum(t => t.Sum);
-            var expense = transactions.Where(t => t.AccountId == accountId && t.Type == CategoryType.Expense).Sum(t => t.Sum);
+            var income = transactions.Where(t => t.AccountId == accountId).Sum(t => t.Revenue);
+            var expense = transactions.Where(t => t.AccountId == accountId).Sum(t => t.Net);
             var transfersIn = transfers.Where(t => t.DestinationAccountId == accountId).Sum(t => t.Amount);
             var transfersOut = transfers.Where(t => t.SourceAccountId == accountId).Sum(t => t.Amount);
             result[linkId] = Figures(income, expense, transfersIn, transfersOut);
@@ -168,6 +176,8 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
     private sealed record ManualConfirm(Guid PostingId, Guid CounterpartPostingId) : ManualIntent;
     private sealed record ManualReject(Guid PostingId, Guid CounterpartPostingId) : ManualIntent;
     private sealed record ManualUndo(Guid PostingId) : ManualIntent;
+    private sealed record ManualRefundConfirm(Guid PostingId, Guid OriginalTransactionId) : ManualIntent;
+    private sealed record ManualRefundUndo(Guid PostingId) : ManualIntent;
 
     /// <summary>Uma execução do motor: carrega tudo do orçamento, decide, aplica e salva.</summary>
     private sealed class Run(Saldo360DbContext db, Guid workspaceId, Guid userId, DateTimeOffset now, ManualIntent? manual)
@@ -179,6 +189,9 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
         private readonly Dictionary<(Guid First, Guid Second), PluggyTransferRejection> rejectionRows = [];
         private readonly HashSet<(Guid Debit, Guid Credit)> forcedTransfers = [];
         private readonly HashSet<Guid> linkFlagged = [];
+        private readonly List<FinancialBankRefund> refundLinks = [];
+        private FinancialTransaction? refundOriginal;
+        private decimal originalRefunded;
         private readonly DateOnly today = BusinessCalendar.Today(now);
         private readonly Dictionary<Guid, PluggyPosting> postings = [];
         private readonly Dictionary<Guid, PluggyAccountLink> links = [];
@@ -228,6 +241,15 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             }
             categories = await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).ToMappable(db).ToListAsync(ct);
             await LoadCoreAsync(ct);
+            refundLinks.AddRange(await db.FinancialBankRefunds.Where(r => r.WorkspaceId == workspaceId).ToListAsync(ct));
+            if (manual is ManualRefundConfirm refundIntent)
+            {
+                refundOriginal = await db.FinancialTransactions.SingleOrDefaultAsync(t => t.WorkspaceId == workspaceId && t.Id == refundIntent.OriginalTransactionId, ct);
+                if (refundOriginal is not null)
+                    originalRefunded = await (from l in db.FinancialBankRefunds join r in db.FinancialTransactions on l.RefundTransactionId equals r.Id
+                                              where l.WorkspaceId == workspaceId && l.OriginalTransactionId == refundOriginal.Id && l.CancelledAt == null && !r.IsCancelled
+                                              select (decimal?)l.Amount).SumAsync(ct) ?? 0m;
+            }
             var billRows = await db.PluggyCardBills.Where(b => b.WorkspaceId == workspaceId).ToListAsync(ct);
             foreach (var group in billRows.GroupBy(b => b.AccountLinkId)) bills[group.Key] = group.ToDictionary(b => b.PluggyBillId, StringComparer.Ordinal);
             foreach (var bill in billRows) billById[bill.Id] = bill;
@@ -403,8 +425,91 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                     AddRejection(a.Id, b.Id);
                     return Succeed(PluggyManualOutcome.Done);
                 }
+                case ManualRefundConfirm refund:
+                {
+                    if (!byPosting.TryGetValue(refund.PostingId, out var credit) || refundOriginal is not { } original) return Fail(PluggyManualOutcome.NotFound, null);
+                    var importedId = importedOf[credit.Id];
+                    if (!decisions.TryGetValue(importedId, out var movement) || !imported.ContainsKey(importedId)) return Fail(PluggyManualOutcome.Invalid, RefundReasons.EndUnavailable);
+                    var creditLink = linkOf[importedId];
+                    // Idempotência: o mesmo crédito já devolve esta despesa. Outra despesa = conflito (um crédito devolve uma única despesa).
+                    if (credit.State == PluggyPostingState.Applied && credit.Kind == PluggyPostingKind.BankRefund)
+                    {
+                        var active = refundLinks.FirstOrDefault(l => l.IsActive && l.RefundTransactionId == credit.FinancialTransactionId);
+                        return active?.OriginalTransactionId == original.Id ? Succeed(PluggyManualOutcome.AlreadyDone) : Fail(PluggyManualOutcome.Conflict, RefundReasons.AlreadyRefund);
+                    }
+                    if (creditLink.Kind != PluggyLinkedAccountKind.Bank || creditLink.FinancialAccountId is null || movement.IsDebit) return Fail(PluggyManualOutcome.Invalid, RefundReasons.NotCredit);
+                    if (credit.Resolution == PluggyResolution.Ignore) return Fail(PluggyManualOutcome.Invalid, PluggyTransferEligibility.Reasons.ManualDecision);
+                    var usable = credit.State == PluggyPostingState.NeedsReview || (credit.State == PluggyPostingState.Applied && credit.Kind == PluggyPostingKind.BankMovement);
+                    if (!usable) return Fail(credit.State is PluggyPostingState.Applied or PluggyPostingState.Covered ? PluggyManualOutcome.Conflict : PluggyManualOutcome.Invalid,
+                        credit.State is PluggyPostingState.Applied or PluggyPostingState.Covered ? PluggyTransferEligibility.Reasons.EndUsedElsewhere : PluggyTransferEligibility.Reasons.EndUnavailable);
+                    var evidence = movement.Disposition is PluggyDisposition.TransferProbe or PluggyDisposition.BankMovement
+                        || (movement.Disposition == PluggyDisposition.Review && movement.Reason is "PossibleRefund" or "PossibleRefundByDescription");
+                    if (!evidence) return Fail(PluggyManualOutcome.Invalid, RefundReasons.NotRefundEvidence);
+                    if (original.Type != CategoryType.Expense || original.Origin is FinancialTransactionOrigin.CreditCardInvoicePayment or FinancialTransactionOrigin.DebtInstallmentPayment
+                        || original.Origin == FinancialTransactionOrigin.PluggyRefund) return Fail(PluggyManualOutcome.Invalid, RefundReasons.OriginalNotConsumption);
+                    if (original.IsCancelled) return Fail(PluggyManualOutcome.Invalid, RefundReasons.OriginalCancelled);
+                    if (movement.Date < original.TransactionDate) return Fail(PluggyManualOutcome.Invalid, RefundReasons.OriginalAfterCredit);
+                    // Limite validado aqui, dentro da transação com o orçamento travado: duas confirmações concorrentes nunca somam mais que o valor da despesa.
+                    if (originalRefunded + movement.Amount > original.Amount) return Fail(PluggyManualOutcome.Invalid, RefundReasons.ExceedsRefundable);
+
+                    if (credit.State == PluggyPostingState.Applied && credit.FinancialTransactionId is { } previous) CancelCore(previous); // era receita: a devolução a substitui
+                    var refundTransaction = FinancialTransaction.CreateBankRefund(workspaceId, creditLink.FinancialAccountId.Value, movement.Description, movement.Amount, movement.Date, userId, now);
+                    db.FinancialTransactions.Add(refundTransaction);
+                    coreTransactions[refundTransaction.Id] = refundTransaction;
+                    credit.ApplyBankRefund(refundTransaction.Id, movement.Amount, movement.Date, now);
+                    var row = FinancialBankRefund.Create(workspaceId, refundTransaction.Id, original.Id, movement.Amount, userId, now);
+                    db.FinancialBankRefunds.Add(row);
+                    refundLinks.Add(row);
+                    return Succeed(PluggyManualOutcome.Done);
+                }
+                case ManualRefundUndo undoRefund:
+                {
+                    if (!byPosting.TryGetValue(undoRefund.PostingId, out var credit)) return Fail(PluggyManualOutcome.NotFound, null);
+                    if (credit.State != PluggyPostingState.Applied || credit.Kind != PluggyPostingKind.BankRefund) return Fail(PluggyManualOutcome.Invalid, RefundReasons.NotRefund);
+                    // Remove só a redução de consumo: o crédito real é preservado. O motor reavalia a evidência na mesma passada (receita comum, ou revisão se a
+                    // descrição ainda sugerir devolução) e NUNCA recria o vínculo sozinho.
+                    CancelRefundEffects(credit);
+                    credit.Review("RefundUndone", now);
+                    return Succeed(PluggyManualOutcome.Done);
+                }
             }
             return true;
+        }
+
+        private void CancelRefundEffects(PluggyPosting credit)
+        {
+            foreach (var link in refundLinks.Where(l => l.IsActive && l.RefundTransactionId == credit.FinancialTransactionId)) link.Cancel(userId, now);
+            if (credit.FinancialTransactionId is { } transactionId) CancelCore(transactionId);
+        }
+
+        /// <returns>Verdadeiro se o crédito-devolução segue estável (nada a fazer); falso se a origem mudou e o vínculo foi desfeito para reavaliação.</returns>
+        private bool RefundStable(PluggyPosting posting, PluggyMovement movement)
+        {
+            var core = posting.FinancialTransactionId is { } id && coreTransactions.TryGetValue(id, out var found) ? found : null;
+            if (core is null || core.IsCancelled)
+            {
+                foreach (var link in refundLinks.Where(l => l.IsActive && l.RefundTransactionId == posting.FinancialTransactionId)) link.Cancel(userId, now);
+                posting.Ignore("UserCancelled", null, now);
+                return true;
+            }
+            if (posting.AppliedAmount == movement.Amount && posting.AppliedDate == movement.Date) { unchanged++; return true; }
+            // O valor ou a data do banco mudaram: o vínculo (que guarda o valor devolvido) deixa de valer. Desfaz e reavalia; nada é apagado.
+            CancelRefundEffects(posting);
+            posting.Review("SourceChanged", now);
+            return false;
+        }
+
+        private static class RefundReasons
+        {
+            public const string EndUnavailable = PluggyTransferEligibility.Reasons.EndUnavailable;
+            public const string AlreadyRefund = "AlreadyRefund";
+            public const string NotCredit = "NotCredit";
+            public const string NotRefundEvidence = "NotRefundEvidence";
+            public const string OriginalNotConsumption = "OriginalNotConsumption";
+            public const string OriginalCancelled = "OriginalCancelled";
+            public const string OriginalAfterCredit = "OriginalAfterCredit";
+            public const string ExceedsRefundable = "ExceedsRefundable";
+            public const string NotRefund = "NotRefund";
         }
 
         // ---- Prévia -----------------------------------------------------------------------------------------------------
@@ -421,6 +526,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 PluggyPostingKind.CardPurchase => "CardExpense",
                 PluggyPostingKind.CardBillPayment => "BillPayment",
                 PluggyPostingKind.CardCredit => "CardCredit",
+                PluggyPostingKind.BankRefund => "Refund",
                 _ => "None",
             };
         }
@@ -555,7 +661,8 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
         private Pairs Pair(Dictionary<Guid, PluggyAccountLink> linkOf)
         {
             PairItem Item(Guid importedId, bool hint) => new(importedId, linkOf[importedId].Id, decisions[importedId].Amount, decisions[importedId].Date, hint);
-            bool Free(Guid importedId) => !Settled(postings[importedId]) && postings[importedId].State != PluggyPostingState.Ignored;
+            // Crédito já confirmado como devolução nunca é ponta de transferência nem de pagamento de fatura.
+            bool Free(Guid importedId) => !Settled(postings[importedId]) && postings[importedId].State != PluggyPostingState.Ignored && postings[importedId].Kind != PluggyPostingKind.BankRefund;
 
             // Transferências só se casam com a mesma operação do banco nas duas pontas (PIX com PIX, TED com TED...), no mesmo dia bancário, com
             // correspondência única e sem par rejeitado pelo usuário; nunca por descrição. Pares confirmados manualmente entram primeiro e saem da disputa.
@@ -638,6 +745,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             var posting = postings[t.Id];
             if (posting.State == PluggyPostingState.Ignored) return;
             if (pairs.BillPaired.Contains(t.Id) || pairs.TransferPaired.Contains(t.Id)) return; // aplicado na fase de pares
+            if (posting.State == PluggyPostingState.Applied && posting.Kind == PluggyPostingKind.BankRefund && RefundStable(posting, movement)) return;
 
             switch (movement.Disposition)
             {
@@ -645,6 +753,10 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                     if (posting.State == PluggyPostingState.Applied || posting.State == PluggyPostingState.Covered) { unchanged++; break; }
                     posting.Wait(movement.Reason ?? "Pending", now); waiting++; break;
                 case PluggyDisposition.Review:
+                    // Crédito já contabilizado como receita que a regra atual leria como possível devolução: o efeito aplicado permanece (nada é removido em silêncio),
+                    // mas a suspeita fica sinalizada para o usuário vincular o crédito à despesa devolvida.
+                    if (posting.State == PluggyPostingState.Applied && posting.Kind == PluggyPostingKind.BankMovement && movement.Reason is "PossibleRefund" or "PossibleRefundByDescription")
+                    { linkFlagged.Add(posting.Id); posting.SetLinkReview(movement.Reason, now); }
                     ToReview(posting, movement.Reason ?? "Unclassified"); break;
                 case PluggyDisposition.BankDebitBillHint:
                     ToReview(posting, pairs.BillAmbiguous.Contains(t.Id) ? "AmbiguousCardBillPayment" : "UnconfirmedCardBillPayment"); break;
@@ -656,9 +768,14 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 case PluggyDisposition.TransferProbe:
                     // Sem ponta oposta numa conta integrada é receita/despesa comum (PIX/TED com terceiros); só a dúvida real vai para revisão.
                     if (pairs.TransferAmbiguous.Contains(t.Id)) LinkDoubt(posting, "AmbiguousTransferCounterpart");
-                    else if (pairs.TransferDateMismatch.Contains(t.Id)) LinkDoubt(posting, "TransferDateMismatch");
                     else if (pairs.BillAmbiguous.Contains(t.Id)) ToReview(posting, "AmbiguousCardBillPayment");
-                    else ApplyBankMovement(t, link, movement, posting);
+                    else
+                    {
+                        // Datas diferentes (mesmo valor em outra conta, a um dia de distância) é só uma suspeita: o movimento independente continua contabilizado
+                        // como receita/despesa e a dúvida fica sinalizada para o usuário. Coincidência de valor em dias próximos nunca retém o movimento.
+                        if (pairs.TransferDateMismatch.Contains(t.Id)) { linkFlagged.Add(posting.Id); posting.SetLinkReview("TransferDateMismatch", now); }
+                        ApplyBankMovement(t, link, movement, posting);
+                    }
                     break;
                 case PluggyDisposition.CardBillPayment:
                     ToReview(posting, pairs.BillAmbiguous.Contains(t.Id) ? "AmbiguousBankDebit" : "BillPaymentWithoutBankDebit"); break;

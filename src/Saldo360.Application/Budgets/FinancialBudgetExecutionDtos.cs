@@ -104,7 +104,8 @@ public sealed record BudgetCompositionItemDto(
     string? CardName,
     string? AccountName,
     string? InvoiceCompetence,
-    bool CompetenceReliable);
+    bool CompetenceReliable,
+    Guid? RelatedRecordId = null);
 
 public sealed record BudgetCompositionCardDto(Guid CardId, string CardName, decimal Consumed, int Count);
 

@@ -199,6 +199,11 @@ public sealed record TransactionResponse(
     bool CategoryNeedsReview = false,
     ExpenseNature ExpenseNature = ExpenseNature.Undefined)
 {
+    /// <summary>Devolução: a despesa devolvida e o rastro do crédito. Nulo para qualquer outro lançamento.</summary>
+    public TransactionRefundOfResponse? RefundOf { get; init; }
+    /// <summary>Despesa: total já devolvido por devoluções ativas (texto decimal exato).</summary>
+    public string RefundedAmount { get; init; } = "0.00";
+
     public static TransactionResponse From(FinancialTransactionDto dto) => new(
         dto.Id,
         dto.Type,
@@ -216,8 +221,14 @@ public sealed record TransactionResponse(
         dto.Origin,
         dto.CategorySource,
         dto.CategoryNeedsReview,
-        dto.Nature);
+        dto.Nature)
+    {
+        RefundOf = dto.RefundOfId is { } original ? new(original, dto.RefundOfDescription ?? string.Empty, dto.RefundOfDate, dto.RefundPostingId) : null,
+        RefundedAmount = Money.Format(dto.RefundedAmount),
+    };
 }
+
+public sealed record TransactionRefundOfResponse(Guid OriginalTransactionId, string OriginalDescription, DateOnly? OriginalDate, Guid? PostingId);
 
 public sealed record TransactionPageResponse(IReadOnlyList<TransactionResponse> Items, int Page, int PageSize, int TotalCount)
 {

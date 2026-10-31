@@ -25,7 +25,14 @@ public sealed record FinancialTransactionDto(
     FinancialTransactionOrigin Origin,
     Saldo360.Domain.Pluggy.PluggyCategorySource? CategorySource = null,
     bool CategoryNeedsReview = false,
-    ExpenseNature Nature = ExpenseNature.Undefined);
+    ExpenseNature Nature = ExpenseNature.Undefined,
+    /// <summary>Devolução (crédito PluggyRefund): a despesa que ela devolve e o rastro do crédito (para desfazer a devolução).</summary>
+    Guid? RefundOfId = null,
+    string? RefundOfDescription = null,
+    DateOnly? RefundOfDate = null,
+    Guid? RefundPostingId = null,
+    /// <summary>Despesa: soma das devoluções ativas vinculadas (informativo; o valor e a data da despesa não mudam).</summary>
+    decimal RefundedAmount = 0m);
 
 /// <summary>Conta ou categoria referenciada. Para uma subcategoria, <c>ParentName</c> é a categoria principal e <c>Path</c> é "Principal / Sub".</summary>
 public sealed record TransactionReferenceDto(Guid Id, string Name, bool IsActive, string? ParentName = null)

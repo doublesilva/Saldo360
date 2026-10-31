@@ -105,6 +105,19 @@ public sealed class FinancialTransaction : Entity
             Amount = amount, TransactionDate = date, Currency = DefaultCurrency,
         };
 
+    /// <summary>
+    /// Crédito confirmado como devolução de uma despesa. Continua um movimento positivo de caixa do tipo receita (o valor segue positivo); a categoria fica vazia
+    /// porque a FK exige categoria do mesmo tipo, e a categoria/natureza efetivas são as da despesa vinculada (ver <see cref="FinancialBankRefund"/>).
+    /// </summary>
+    public static FinancialTransaction CreateBankRefund(Guid workspaceId, Guid accountId, string description, decimal amount, DateOnly date, Guid createdByUserId, DateTimeOffset now) =>
+        new FinancialTransaction
+        {
+            WorkspaceId = workspaceId, CreatedAt = now, CreatedByUserId = createdByUserId,
+            Origin = FinancialTransactionOrigin.PluggyRefund,
+            CategoryId = null, AccountId = accountId, Type = CategoryType.Income, Description = description,
+            Amount = amount, TransactionDate = date, Currency = DefaultCurrency,
+        };
+
     /// <summary>Lançamento efetivo que realiza a previsão <paramref name="plannedTransactionId"/>.</summary>
     public static FinancialTransaction CreateRealization(
         Guid workspaceId, TransactionDetails details, Guid plannedTransactionId, Guid createdByUserId, DateTimeOffset now) =>
@@ -143,10 +156,18 @@ public sealed class FinancialTransaction : Entity
             throw new InvalidOperationException("Lançamento importado da Pluggy só permite alterar a categoria.");
         }
 
+        if (IsBankRefund)
+        {
+            throw new InvalidOperationException("Devolução bancária não é editada: desfaça o vínculo com a despesa ou cancele o lançamento.");
+        }
+
         Apply(details);
         UpdatedAt = now;
         UpdatedByUserId = userId;
     }
+
+    /// <summary>Crédito confirmado como devolução de despesa: entrada de caixa que não é receita.</summary>
+    public bool IsBankRefund => Origin == FinancialTransactionOrigin.PluggyRefund;
 
     /// <summary>Gerado pela integração bancária (T09.3): dados de origem são imutáveis para o usuário.</summary>
     public bool IsImported => Origin == FinancialTransactionOrigin.PluggyImport;
@@ -222,6 +243,12 @@ public enum FinancialTransactionOrigin
 
     /// <summary>Receita ou despesa gerada a partir de transação bancária importada da Pluggy (T09.3).</summary>
     PluggyImport,
+
+    /// <summary>
+    /// Crédito bancário confirmado como devolução de uma despesa (<see cref="FinancialBankRefund"/>): entrada de caixa (soma no saldo, na data do crédito),
+    /// mas NUNCA receita; no consumo do orçamento é um fato negativo com a categoria e a natureza da despesa devolvida.
+    /// </summary>
+    PluggyRefund,
 }
 
 /// <summary>

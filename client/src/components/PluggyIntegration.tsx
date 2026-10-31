@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  applyCardScheduleSuggestion, applyOpeningBalanceSuggestion, confirmTransfer, getCategorizationOverview, getLinkDetail, listLinks, listReview, previewRecovery, rejectTransfer,
+  applyCardScheduleSuggestion, applyOpeningBalanceSuggestion, confirmRefund, confirmTransfer, getCategorizationOverview, getLinkDetail, listLinks, listReview, previewRecovery, rejectTransfer,
   reprocessImported, resolveReview, runCategorization,
   type AccountLink, type AccountLinkDetail, type CategorizationOverview, type CategorizationResult, type RecoveryPreview, type ReviewPage, type Resolution,
 } from '../api/pluggyIntegration'
 import { formatBrlDecimal, formatDate, isNegativeDecimal } from '../money'
-import { aiStopLabels, billCycleLabels, billPaymentLabels, billReconciliationLabels, billReconciliationReasonLabels, candidateBlockLabels, dateTime, recoveryEffectLabels, scheduleReasonLabels, linkStatusLabels, money, NOT_INFORMED, resolutionLabels, reviewReason, unavailableReasonLabels } from '../pluggyFormat'
+import { aiStopLabels, billCycleLabels, billPaymentLabels, billReconciliationLabels, billReconciliationReasonLabels, candidateBlockLabels, dateTime, refundBlockLabels, recoveryEffectLabels, scheduleReasonLabels, linkStatusLabels, money, NOT_INFORMED, resolutionLabels, reviewReason, unavailableReasonLabels } from '../pluggyFormat'
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Falha inesperada.')
 
@@ -218,6 +218,14 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { work
     finally { setBusy(null) }
   }, [workspaceId, onChanged])
 
+  const linkRefund = useCallback(async (postingId: string, originalId: string) => {
+    if (!window.confirm('Vincular este crédito à despesa escolhida como devolução? Ele continua somando no saldo na data do crédito, deixa de contar como receita e reduz a despesa no mês do crédito. A despesa original não muda.')) return
+    setBusy(postingId); setError(null)
+    try { await confirmRefund(workspaceId, postingId, originalId); setVersion(value => value + 1); onChanged?.() }
+    catch (cause) { setError(errorText(cause)) }
+    finally { setBusy(null) }
+  }, [workspaceId, onChanged])
+
   const reject = useCallback(async (postingId: string, counterpartId: string) => {
     if (!window.confirm('Estes movimentos não são a mesma transferência? Cada um segue como receita ou despesa comum e a sugestão não volta nas próximas sincronizações.')) return
     setBusy(postingId); setError(null)
@@ -250,6 +258,19 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { work
             {' '}<button type="button" disabled={busy === item.postingId} onClick={() => void reject(item.postingId, candidate.postingId)}>Não é transferência</button>
           </li>)}
         </ul>}
+        {item.reviewKind === 'Refund' && <>
+          <p className="meta">Possível devolução: a descrição sugere, mas só você diz qual despesa foi devolvida. Escolha abaixo ou deixe como está.</p>
+          {item.refundCandidates && item.refundCandidates.length > 0
+            ? <ul aria-label="Despesas candidatas" className="meta">
+              {item.refundCandidates.map(candidate => <li key={candidate.transactionId}>
+                {candidate.description} — {money(candidate.amount)} em {formatDate(candidate.date)} · {candidate.accountName}{candidate.categoryPath ? ` · ${candidate.categoryPath}` : ''} · ainda devolvível {money(candidate.refundable)}
+                {' '}{candidate.canConfirm
+                  ? <button type="button" disabled={busy === item.postingId} onClick={() => void linkRefund(item.postingId, candidate.transactionId)}>Vincular como devolução</button>
+                  : <span>— não pode ser vinculada: {refundBlockLabels[candidate.blockedReason ?? ''] ?? candidate.blockedReason}.</span>}
+              </li>)}
+            </ul>
+            : <p className="meta">Nenhuma despesa dos últimos 180 dias com saldo devolvível.</p>}
+        </>}
         {item.reviewKind === 'Link' && (!item.candidates || item.candidates.length === 0) && <p className="meta">Nenhuma contraparte elegível encontrada nas contas integradas.</p>}
         {item.allowedResolutions.length > 0 && <div className="form__actions">
           {item.allowedResolutions.map(resolution => <button key={resolution} type="button" disabled={busy === item.postingId} onClick={() => void decide(item.postingId, resolution)}>{resolutionLabels[resolution]}</button>)}

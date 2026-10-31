@@ -224,6 +224,38 @@ describe('Transactions — transferências', () => {
   })
 })
 
+describe('Transactions — devolução bancária', () => {
+  const devolucao: FinancialTransaction = {
+    ...importado, id: 't9', type: 'Income', description: 'Pix devolvido Pix Marketplace', amount: '55.99', transactionDate: '2026-10-23', origin: 'PluggyRefund', category: null,
+    refundOf: { originalTransactionId: 't8', originalDescription: 'Pagamento de Pix QR Code', originalDate: '2026-10-13', postingId: 'post-9' },
+  }
+  const despesa: FinancialTransaction = { ...feira, id: 't8', description: 'Pagamento de Pix QR Code', amount: '55.99', transactionDate: '2026-10-13', refundedAmount: '55.99' }
+
+  it('mostra a devolução como entrada que não é receita, ligada à despesa devolvida, e a despesa com o total devolvido', async () => {
+    mockApi({ page: { items: [devolucao, despesa], totalCount: 2 } })
+    render(<Transactions workspaceId="f1" />)
+
+    const credit = (await screen.findByText('Pix devolvido Pix Marketplace')).closest('li')!
+    expect(within(credit).getByText('Devolução (não é receita)')).toBeTruthy()
+    expect(within(credit).getByText(/Devolve: Pagamento de Pix QR Code \(13\/10\/2026\)/)).toBeTruthy()
+    expect(within(credit).queryByRole('button', { name: 'Editar' })).toBeNull()
+    const expense = screen.getAllByText('Pagamento de Pix QR Code')[0].closest('li')!
+    expect(expense.textContent).toMatch(/Devolvido R\$\s55,99/)
+  })
+
+  it('desfaz a devolução pelo rastro do crédito, depois de confirmar, e recarrega a lista', async () => {
+    const calls = mockApi({ page: { items: [devolucao, despesa], totalCount: 2 } })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const onChanged = vi.fn()
+    render(<Transactions workspaceId="f1" onChanged={onChanged} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Desfazer devolução' }))
+
+    await waitFor(() => expect(writes(calls).some((c) => c.url === '/api/financial-workspaces/f1/pluggy-integration/review/post-9/refund/undo')).toBe(true))
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  })
+})
+
 describe('Transactions — formulário', () => {
   it('cria despesa enviando o valor como texto decimal exato e a data sem horário', async () => {
     const calls = await openNewForm()

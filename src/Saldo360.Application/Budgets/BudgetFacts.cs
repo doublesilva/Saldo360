@@ -20,6 +20,8 @@ public enum BudgetFactOrigin
     CardKnownInstallment,
     /// <summary>Encargo, crédito ou estorno da fatura (crédito reduz o consumo). Saldo anterior e financiado não entram.</summary>
     CardAdjustment,
+    /// <summary>Devolução bancária confirmada: fato NEGATIVO na data do crédito, com a categoria e a natureza da despesa devolvida (que mantém valor e data).</summary>
+    BankRefund,
 }
 
 /// <summary>Como o registro conta: <c>Realized</c> = despesa já efetiva; <c>CardLaunched</c> = compra/parcela já lançada no cartão (consumida mesmo com a fatura em aberto); <c>Pending</c> = compromisso cadastrado ainda não realizado.</summary>
@@ -48,7 +50,9 @@ public sealed record BudgetFact(
     /// <summary>Compra do cartão a que a parcela pertence (somente <see cref="BudgetFactOrigin.CardInstallment"/>): é nela que a classificação é corrigida.</summary>
     Guid? PurchaseId = null,
     /// <summary>Veio da integração bancária (Pluggy): categoria e tipo escolhidos pelo usuário sobrevivem às sincronizações.</summary>
-    bool Imported = false)
+    bool Imported = false,
+    /// <summary>Registro relacionado: para <see cref="BudgetFactOrigin.BankRefund"/>, a despesa original devolvida (navegação devolução ↔ despesa).</summary>
+    Guid? RelatedRecordId = null)
 {
     public bool IsCard => CardId is not null;
 

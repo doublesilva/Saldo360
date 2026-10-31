@@ -61,7 +61,7 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
         b.ToTable("pluggy_postings", t =>
         {
             t.HasCheckConstraint("ck_pluggy_postings_state", "state IN ('WaitingPosted','Applied','NeedsReview','Covered','Ignored')");
-            t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment','CardCredit')");
+            t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment','CardCredit','BankRefund')");
             t.HasCheckConstraint("ck_pluggy_postings_resolution", "resolution IS NULL OR resolution IN ('AsIncome','AsExpense','AsCardPurchase','Ignore')");
             t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User','Pluggy','Rule','AI')");
             t.HasCheckConstraint("ck_pluggy_postings_link_origin", "link_origin IS NULL OR (link_origin IN ('Inferred','UserConfirmed') AND kind = 'Transfer' AND state = 'Applied')");
@@ -70,6 +70,7 @@ internal sealed class PluggyPostingConfiguration : IEntityTypeConfiguration<Plug
                 "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) "
                 + "OR (kind = 'CardPurchase' AND credit_card_purchase_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) "
                 + "OR (kind = 'CardBillPayment' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_payment_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) "
+                + "OR (kind = 'BankRefund' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL AND financial_transfer_id IS NULL) "
                 + "OR (kind = 'CardCredit' AND credit_card_invoice_adjustment_id IS NOT NULL AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL))) "
                 + "OR (state <> 'Applied' AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL AND credit_card_invoice_adjustment_id IS NULL)");
             t.HasCheckConstraint("ck_pluggy_postings_applied_snapshot", "(state = 'Applied') = (applied_amount IS NOT NULL AND applied_date IS NOT NULL)");

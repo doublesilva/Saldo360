@@ -130,5 +130,15 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
             // Origem da categoria (só lançamentos importados têm rastro): Pluggy, Rule, AI ou User.
             db.PluggyPostings.Where(p => p.FinancialTransactionId == t.Id).Select(p => (Saldo360.Domain.Pluggy.PluggyCategorySource?)p.CategorySource).FirstOrDefault(),
             db.PluggyPostings.Where(p => p.FinancialTransactionId == t.Id).Select(p => p.CategoryNeedsReview).FirstOrDefault(),
-            t.Nature);
+            t.Nature,
+            db.FinancialBankRefunds.Where(l => l.RefundTransactionId == t.Id && l.CancelledAt == null).Select(l => (Guid?)l.OriginalTransactionId).FirstOrDefault(),
+            db.FinancialBankRefunds.Where(l => l.RefundTransactionId == t.Id && l.CancelledAt == null)
+                .Join(db.FinancialTransactions, l => l.OriginalTransactionId, o => o.Id, (l, o) => o.Description).FirstOrDefault(),
+            db.FinancialBankRefunds.Where(l => l.RefundTransactionId == t.Id && l.CancelledAt == null)
+                .Join(db.FinancialTransactions, l => l.OriginalTransactionId, o => o.Id, (l, o) => (DateOnly?)o.TransactionDate).FirstOrDefault(),
+            t.Origin == FinancialTransactionOrigin.PluggyRefund ? db.PluggyPostings.Where(p => p.FinancialTransactionId == t.Id).Select(p => (Guid?)p.Id).FirstOrDefault() : null,
+            t.Type == Saldo360.Domain.Categories.CategoryType.Expense
+                ? (db.FinancialBankRefunds.Where(l => l.OriginalTransactionId == t.Id && l.CancelledAt == null)
+                    .Join(db.FinancialTransactions.Where(r => !r.IsCancelled), l => l.RefundTransactionId, r => r.Id, (l, r) => (decimal?)l.Amount).Sum() ?? 0m)
+                : 0m);
 }

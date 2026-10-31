@@ -67,7 +67,11 @@ public sealed record FinancialCalendarSummaryDto(
     decimal PendingIncome,
     decimal PendingExpense,
     decimal OverdueIncome,
-    decimal OverdueExpense);
+    decimal OverdueExpense)
+{
+    /// <summary>Devoluções bancárias do período: entradas de caixa que NÃO são receita e que já estão abatidas da despesa realizada (informativo).</summary>
+    public decimal RealizedRefunds { get; init; }
+}
 
 public sealed record FinancialCalendarSnapshot(
     IReadOnlyList<FinancialCalendarItemDto> Items,

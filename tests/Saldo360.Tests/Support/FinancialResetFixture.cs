@@ -42,6 +42,8 @@ internal static class FinancialResetFixture
         FinancialPlannedTransaction Planned(string description) => FinancialPlannedTransaction.Create(w, PlannedTransactionDetails.TryCreate(account.Id, category.Id, "Expense", description, 10m, date, out _)!, u, now);
         var realized = Planned("Realized"); var recurring = Planned("Recurring"); var invoicePlanned = Planned("Invoice"); var debtPlanned = Planned("Debt");
         var transaction = FinancialTransaction.CreateRealization(w, TransactionDetails.TryCreate(account.Id, category.Id, "Expense", "Realized", 10m, date, date, out _)!, realized.Id, u, now);
+        var refundTransaction = FinancialTransaction.CreateBankRefund(w, account.Id, "Refund", 4m, date, u, now);
+        var bankRefund = FinancialBankRefund.Create(w, refundTransaction.Id, transaction.Id, 4m, u, now);
         var transfer = FinancialTransfer.Create(w, TransferDetails.TryCreate(account.Id, destination.Id, 1m, date, "Transfer", date, out _)!, u, now);
         var recurrence = FinancialRecurrence.Create(w, new(account.Id, category.Id, CategoryType.Expense, "Recurrence", 10m, false, RecurrenceFrequency.Monthly, 1, date, null, 1, 1), now);
         var materialization = FinancialRecurrenceMaterialization.Create(w, recurrence.Id, 1, date, recurring.Id, now);
@@ -96,7 +98,7 @@ internal static class FinancialResetFixture
         var planHistory = FinancialPlanHistoryEntry.Create(w, new DateOnly(date.Year, date.Month, 1), PlanHistorySubject.Line, planLine.Id, PlanHistoryAction.Created, "Synthetic", null, 10m, null, u, now);
         var nonWorkingDay = FinancialNonWorkingDay.Create(w, date, NonWorkingDayKind.Holiday, "Synthetic", u, now);
         var pluggyChange = PluggyTransactionChange.Create(pluggyTransaction, pluggyTransaction.Observe(pluggySnapshot with { Status = PluggyTransactionStatus.Posted }, pluggyRun.Id, now), pluggyRun.Id, now);
-        db.AddRange(account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, transfer,
+        db.AddRange(account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, refundTransaction, bankRefund, transfer,
             recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
             scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyTransaction2, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyPosting2, pluggyRejection, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState, automationSettings, categorizationRun, cardTarget, planLine, planHistory, nonWorkingDay);

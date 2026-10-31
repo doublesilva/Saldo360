@@ -29,6 +29,19 @@ public sealed class PluggyReviewService(IFinancialWorkspaceRepository workspaces
     public Task<PluggyResult<LinkActionView>> RejectTransferAsync(Guid workspaceId, Guid userId, Guid postingId, Guid? counterpartPostingId, CancellationToken ct) =>
         ActAsync(workspaceId, userId, counterpartPostingId, partner => engine.RejectTransferAsync(workspaceId, userId, postingId, partner, time.GetUtcNow(), ct), ct);
 
+    public async Task<PluggyResult<LinkActionView>> ConfirmRefundAsync(Guid workspaceId, Guid userId, Guid postingId, Guid? originalTransactionId, CancellationToken ct)
+    {
+        if (!await CanAccessAsync(workspaceId, userId, ct)) return PluggyResult<LinkActionView>.NotFound();
+        if (originalTransactionId is not { } original || original == Guid.Empty) return PluggyResult<LinkActionView>.Invalid("Informe a despesa devolvida (originalTransactionId).");
+        return Map(await engine.ConfirmRefundAsync(workspaceId, userId, postingId, original, time.GetUtcNow(), ct));
+    }
+
+    public async Task<PluggyResult<LinkActionView>> UndoRefundAsync(Guid workspaceId, Guid userId, Guid postingId, CancellationToken ct)
+    {
+        if (!await CanAccessAsync(workspaceId, userId, ct)) return PluggyResult<LinkActionView>.NotFound();
+        return Map(await engine.UndoRefundAsync(workspaceId, userId, postingId, time.GetUtcNow(), ct));
+    }
+
     public async Task<PluggyResult<LinkActionView>> UndoTransferAsync(Guid workspaceId, Guid userId, Guid postingId, CancellationToken ct)
     {
         if (!await CanAccessAsync(workspaceId, userId, ct)) return PluggyResult<LinkActionView>.NotFound();
@@ -63,6 +76,14 @@ public sealed class PluggyReviewService(IFinancialWorkspaceRepository workspaces
         PluggyTransferEligibility.Reasons.EndUnavailable => "Uma das pontas não está disponível (pendente, ignorada ou sem efeito financeiro).",
         PluggyTransferEligibility.Reasons.EndUsedElsewhere => "Uma das pontas já está usada em outro vínculo.",
         "AlreadyLinked" => "Estas pontas já formam uma transferência: desfaça o vínculo em vez de rejeitá-lo.",
+        "AlreadyRefund" => "Este crédito já devolve outra despesa: desfaça a devolução antes de vinculá-lo a outra.",
+        "NotCredit" => "Só um crédito em conta bancária integrada pode ser a devolução de uma despesa.",
+        "NotRefundEvidence" => "Este movimento não pode ser tratado como devolução.",
+        "OriginalNotConsumption" => "A despesa escolhida não é consumo (pagamento de fatura, de parcela de dívida ou outra devolução).",
+        "OriginalCancelled" => "A despesa escolhida está cancelada.",
+        "OriginalAfterCredit" => "A despesa escolhida é posterior ao crédito.",
+        "ExceedsRefundable" => "O valor do crédito ultrapassa o que ainda pode ser devolvido desta despesa (a soma das devoluções ativas não pode exceder o valor dela).",
+        "NotRefund" => "Este movimento não é uma devolução confirmada.",
         "NotLinked" => "Esta ponta não faz parte de uma transferência aplicada.",
         _ => "Ação não permitida para estas pontas.",
     }) + (reason is null ? string.Empty : $" ({reason})");
@@ -79,7 +100,7 @@ public sealed class PluggyReviewService(IFinancialWorkspaceRepository workspaces
     /// <summary>Para cada item de vínculo, as pontas de mesmo valor (até um dia de distância) em outras contas e se podem ser confirmadas, pelas mesmas regras da confirmação.</summary>
     private async Task<PluggyReviewPage> WithCandidatesAsync(Guid workspaceId, PluggyReviewPage page, CancellationToken ct)
     {
-        if (page.Items.All(i => i.ReviewKind != "Link")) return page;
+        if (page.Items.All(i => i.ReviewKind == "Evidence")) return page;
         var today = Saldo360.Domain.Common.BusinessCalendar.Today(time.GetUtcNow());
         var rejected = await repository.ListRejectedPairsAsync(workspaceId, ct);
         var pool = (await repository.ListTransferPoolAsync(workspaceId, ct)).Select(row =>
@@ -88,8 +109,13 @@ public sealed class PluggyReviewService(IFinancialWorkspaceRepository workspaces
             return (Row: row, Movement: movement, Side: new TransferSide(row.PostingId, row.Facts.LinkId, row.FinancialAccountId, row.Facts.LinkKind, movement.Disposition, movement.IsDebit,
                 movement.Amount, movement.Date, PluggyTransferEligibility.OperationOf(row.Facts.OperationType), row.State, row.Kind, row.CounterpartPostingId, row.Resolution));
         }).ToList();
+        var refundCandidatesByItem = new Dictionary<Guid, IReadOnlyList<PluggyRefundCandidateView>>();
+        foreach (var item in page.Items.Where(i => i.ReviewKind == "Refund" && i.Direction == "Income" && i.Date is not null && i.Amount is not null))
+            refundCandidatesByItem[item.PostingId] = await repository.ListRefundCandidatesAsync(workspaceId, item.Date!.Value,
+                decimal.Parse(item.Amount!, System.Globalization.CultureInfo.InvariantCulture), ct);
         var items = page.Items.Select(item =>
         {
+            if (refundCandidatesByItem.TryGetValue(item.PostingId, out var refundCandidates)) return item with { RefundCandidates = refundCandidates };
             var ownIndex = pool.FindIndex(p => p.Row.PostingId == item.PostingId);
             if (item.ReviewKind != "Link" || ownIndex < 0) return item;
             var own = pool[ownIndex];

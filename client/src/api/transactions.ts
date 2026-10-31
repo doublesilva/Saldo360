@@ -37,7 +37,11 @@ export interface FinancialTransaction {
   /** Previsão que este lançamento realiza (não editável; cancelar reabre a previsão). null = avulso. */
   plannedTransactionId: string | null
   /** 'PluggyImport' = importado do banco (T09.3): só a categoria pode ser corrigida. */
-  origin?: 'Manual' | 'PlannedRealization' | 'CreditCardInvoicePayment' | 'DebtInstallmentPayment' | 'PluggyImport'
+  origin?: 'Manual' | 'PlannedRealization' | 'CreditCardInvoicePayment' | 'DebtInstallmentPayment' | 'PluggyImport' | 'PluggyRefund'
+  /** Devolução bancária (origin 'PluggyRefund'): entrada de caixa que NÃO é receita; a despesa devolvida e o rastro do crédito (para desfazer). */
+  refundOf?: { originalTransactionId: string; originalDescription: string; originalDate: string | null; postingId: string | null } | null
+  /** Despesa: total já devolvido por devoluções ativas (texto decimal exato). */
+  refundedAmount?: string
   /** Quem definiu a categoria de um lançamento importado: banco (Pluggy/Mapped), regra, IA ou o próprio usuário. */
   categorySource?: 'None' | 'Mapped' | 'User' | 'Pluggy' | 'Rule' | 'AI' | null
   /** A classificação automática não chegou a uma categoria segura: o usuário precisa decidir. */

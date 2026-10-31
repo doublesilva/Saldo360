@@ -18,6 +18,8 @@ public enum PluggyPostingKind
     CardBillPayment,
     /// <summary>Crédito no cartão (estorno, cashback, devolução): vira crédito da fatura correspondente, nunca receita.</summary>
     CardCredit,
+    /// <summary>Crédito bancário confirmado como devolução de uma despesa (lançamento de origem PluggyRefund + vínculo auditável): entrada de caixa, nunca receita.</summary>
+    BankRefund,
 }
 
 public enum PluggyPostingState
@@ -147,6 +149,13 @@ public sealed class PluggyPosting : Entity
         Move(PluggyPostingState.Applied, PluggyPostingKind.BankMovement, null, now);
         FinancialTransactionId = financialTransactionId; FinancialTransferId = null; CreditCardPurchaseId = null; CreditCardInvoicePaymentId = null; CreditCardInvoiceAdjustmentId = null;
         Snapshot(amount, date, type);
+    }
+
+    public void ApplyBankRefund(Guid financialTransactionId, decimal amount, DateOnly date, DateTimeOffset now)
+    {
+        Move(PluggyPostingState.Applied, PluggyPostingKind.BankRefund, null, now);
+        FinancialTransactionId = financialTransactionId; FinancialTransferId = null; CreditCardPurchaseId = null; CreditCardInvoicePaymentId = null; CreditCardInvoiceAdjustmentId = null;
+        Snapshot(amount, date, CategoryType.Income);
     }
 
     public void ApplyTransfer(Guid financialTransferId, Guid counterpartPostingId, decimal amount, DateOnly date, DateTimeOffset now,

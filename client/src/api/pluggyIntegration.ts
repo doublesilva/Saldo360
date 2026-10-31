@@ -72,8 +72,13 @@ export interface ReviewItem {
   /** Já contabilizado (efeito nos totais e saldos) x ainda fora dos totais. Independe da categoria. */
   accounted?: boolean; impact?: 'InTotals' | 'OutOfTotals'
   /** `Evidence` = revisão financeira de evidência não aplicada; `Link` = revisão do vínculo entre movimentos (transferência). */
-  reviewKind?: 'Evidence' | 'Link'; linkReviewReason?: string | null; linkOrigin?: 'Inferred' | 'UserConfirmed' | null; linkRuleVersion?: string | null
+  reviewKind?: 'Evidence' | 'Link' | 'Refund'; linkReviewReason?: string | null; linkOrigin?: 'Inferred' | 'UserConfirmed' | null; linkRuleVersion?: string | null
   counterpartPostingId?: string | null; canUndoLink?: boolean; candidates?: TransferCandidate[]
+  /** Possível devolução: despesas que o crédito poderia ter devolvido (o usuário escolhe; a descrição nunca vincula sozinha). */
+  refundCandidates?: RefundCandidate[]
+}
+export interface RefundCandidate {
+  transactionId: string; date: string; amount: string; description: string; accountName: string; categoryPath: string | null; refundable: string; canConfirm: boolean; blockedReason: string | null
 }
 export interface ReviewPage { items: ReviewItem[]; total: number; page: number; pageSize: number; counts: PostingCounts; accountedInReview?: number }
 
@@ -147,6 +152,13 @@ export const confirmTransfer = (workspaceId: string, postingId: string, counterp
 
 export const rejectTransfer = (workspaceId: string, postingId: string, counterpartPostingId: string) =>
   post<LinkActionResult>(`${base(workspaceId)}/review/${encodeURIComponent(postingId)}/transfer/reject`, { counterpartPostingId }, 'Falha ao rejeitar a sugestão.')
+
+/** Vincula o crédito à despesa devolvida (entrada de caixa que não é receita e abate o consumo no mês do crédito) ou desfaz a devolução. */
+export const confirmRefund = (workspaceId: string, postingId: string, originalTransactionId: string) =>
+  post<LinkActionResult>(`${base(workspaceId)}/review/${encodeURIComponent(postingId)}/refund/confirm`, { originalTransactionId }, 'Falha ao vincular a devolução.')
+
+export const undoRefund = (workspaceId: string, postingId: string) =>
+  post<LinkActionResult>(`${base(workspaceId)}/review/${encodeURIComponent(postingId)}/refund/undo`, {}, 'Falha ao desfazer a devolução.')
 
 export const undoTransfer = (workspaceId: string, postingId: string) =>
   post<LinkActionResult>(`${base(workspaceId)}/review/${encodeURIComponent(postingId)}/transfer/undo`, {}, 'Falha ao desfazer o vínculo da transferência.')

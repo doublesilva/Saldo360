@@ -4053,11 +4053,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_pluggy_postings_applied_snapshot", "(state = 'Applied') = (applied_amount IS NOT NULL AND applied_date IS NOT NULL)");
 
-                            t.HasCheckConstraint("ck_pluggy_postings_applied_targets", "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'CardPurchase' AND credit_card_purchase_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'CardBillPayment' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_payment_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'CardCredit' AND credit_card_invoice_adjustment_id IS NOT NULL AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL))) OR (state <> 'Applied' AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL AND credit_card_invoice_adjustment_id IS NULL)");
+                            t.HasCheckConstraint("ck_pluggy_postings_applied_targets", "(state = 'Applied' AND ((kind = 'BankMovement' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'Transfer' AND financial_transfer_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'CardPurchase' AND credit_card_purchase_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'CardBillPayment' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_payment_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL) OR (kind = 'BankRefund' AND financial_transaction_id IS NOT NULL AND credit_card_invoice_adjustment_id IS NULL AND financial_transfer_id IS NULL) OR (kind = 'CardCredit' AND credit_card_invoice_adjustment_id IS NOT NULL AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL))) OR (state <> 'Applied' AND financial_transaction_id IS NULL AND financial_transfer_id IS NULL AND credit_card_purchase_id IS NULL AND credit_card_invoice_payment_id IS NULL AND credit_card_invoice_adjustment_id IS NULL)");
 
                             t.HasCheckConstraint("ck_pluggy_postings_category_source", "category_source IN ('None','Mapped','User','Pluggy','Rule','AI')");
 
-                            t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment','CardCredit')");
+                            t.HasCheckConstraint("ck_pluggy_postings_kind", "kind IN ('None','BankMovement','Transfer','CardPurchase','CardBillPayment','CardCredit','BankRefund')");
 
                             t.HasCheckConstraint("ck_pluggy_postings_link_origin", "link_origin IS NULL OR (link_origin IN ('Inferred','UserConfirmed') AND kind = 'Transfer' AND state = 'Applied')");
 
@@ -4700,6 +4700,74 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_service_identifiers_protection", "octet_length(protected_normalized_value) > 0 AND lookup_hash ~ '^[0-9a-f]{64}$' AND btrim(masked_value) <> ''");
 
                             t.HasCheckConstraint("ck_service_identifiers_type", "type IN ('UtilityCustomerNumber','CustomerCode','InstallationNumber','ContractNumber','Keyword')");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialBankRefund", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<Guid?>("CancelledByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cancelled_by_user_id");
+
+                    b.Property<DateTimeOffset>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<Guid>("ConfirmedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("confirmed_by_user_id");
+
+                    b.Property<Guid>("OriginalTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("original_transaction_id");
+
+                    b.Property<Guid>("RefundTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("refund_transaction_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_bank_refunds");
+
+                    b.HasIndex("CancelledByUserId")
+                        .HasDatabaseName("ix_financial_bank_refunds_cancelled_by_user_id");
+
+                    b.HasIndex("ConfirmedByUserId")
+                        .HasDatabaseName("ix_financial_bank_refunds_confirmed_by_user_id");
+
+                    b.HasIndex("RefundTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_financial_bank_refunds_active_refund")
+                        .HasFilter("cancelled_at IS NULL");
+
+                    b.HasIndex("WorkspaceId", "OriginalTransactionId")
+                        .HasDatabaseName("ix_financial_bank_refunds_workspace_id_original_transaction_id");
+
+                    b.HasIndex("WorkspaceId", "RefundTransactionId")
+                        .HasDatabaseName("ix_financial_bank_refunds_workspace_id_refund_transaction_id");
+
+                    b.ToTable("financial_bank_refunds", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_bank_refunds_amount_positive", "amount > 0");
+
+                            t.HasCheckConstraint("ck_financial_bank_refunds_cancelled_pair", "(cancelled_at IS NULL) = (cancelled_by_user_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_financial_bank_refunds_distinct", "refund_transaction_id <> original_transaction_id");
                         });
                 });
 
@@ -6442,6 +6510,45 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_service_account_identifiers_service_accounts_service_accoun");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialBankRefund", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CancelledByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_bank_refunds_application_users_cancelled_by_user_");
+
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ConfirmedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_bank_refunds_application_users_confirmed_by_user_");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_bank_refunds_financial_workspaces_workspace_id");
+
+                    b.HasOne("Saldo360.Domain.Transactions.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "OriginalTransactionId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_bank_refunds_original_same_workspace");
+
+                    b.HasOne("Saldo360.Domain.Transactions.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "RefundTransactionId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_bank_refunds_refund_same_workspace");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Transactions.FinancialTransaction", b =>

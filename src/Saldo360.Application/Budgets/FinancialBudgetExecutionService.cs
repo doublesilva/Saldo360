@@ -64,7 +64,7 @@ public sealed class FinancialBudgetExecutionService(
         var items = source.Facts.Skip((number - 1) * size).Take(size)
             .Select(f => new BudgetCompositionItemDto(f.Origin, f.RecordId, f.Date, f.Amount, f.State, f.CategoryId,
                 f.CategoryId is { } c && source.CategoryPaths.TryGetValue(c, out var path) ? path : null, f.Nature, f.Description,
-                f.CardId, f.CardName, f.AccountName, f.InvoiceCompetence, f.CompetenceReliable)).ToList();
+                f.CardId, f.CardName, f.AccountName, f.InvoiceCompetence, f.CompetenceReliable, f.RelatedRecordId)).ToList();
         // Participação de cada cartão: só informativa (não há teto individual).
         var cards = source.Facts.Where(f => f.CardId is not null && f.State == BudgetFactState.CardLaunched).GroupBy(f => f.CardId!.Value)
             .Select(g => new BudgetCompositionCardDto(g.Key, g.First().CardName ?? string.Empty, g.Sum(f => f.Amount), g.Count()))

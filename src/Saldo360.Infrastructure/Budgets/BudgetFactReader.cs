@@ -35,6 +35,18 @@ internal static class BudgetFactReader
         facts.AddRange(transactions.Select(t => new BudgetFact(BudgetFactOrigin.Transaction, t.Id, t.TransactionDate, t.Amount, BudgetFactState.Realized, t.CategoryId, t.Nature,
             t.Description, AccountId: t.AccountId, AccountName: t.AccountName, Imported: t.Imported)));
 
+        // 1b. Devoluções bancárias confirmadas: UM fato negativo por vínculo ativo, na data do crédito, com a categoria e a natureza da despesa devolvida (que mantém o
+        // valor e a data originais). Vínculo cancelado, crédito cancelado ou despesa original cancelada não reduz o consumo.
+        var refunds = await (from link in db.FinancialBankRefunds.AsNoTracking()
+                             join refund in db.FinancialTransactions.AsNoTracking() on new { link.WorkspaceId, Id = link.RefundTransactionId } equals new { refund.WorkspaceId, refund.Id }
+                             join original in db.FinancialTransactions.AsNoTracking() on new { link.WorkspaceId, Id = link.OriginalTransactionId } equals new { original.WorkspaceId, original.Id }
+                             join a in db.FinancialAccounts.AsNoTracking() on refund.AccountId equals a.Id
+                             where link.WorkspaceId == workspaceId && link.CancelledAt == null && !refund.IsCancelled && !original.IsCancelled
+                                 && refund.TransactionDate >= first && refund.TransactionDate < through
+                             select new { link.Id, link.OriginalTransactionId, refund.TransactionDate, link.Amount, original.CategoryId, original.Nature, refund.Description, refund.AccountId, AccountName = a.Name }).ToListAsync(ct);
+        facts.AddRange(refunds.Select(r => new BudgetFact(BudgetFactOrigin.BankRefund, r.Id, r.TransactionDate, -r.Amount, BudgetFactState.Realized, r.CategoryId, r.Nature,
+            "Devolução: " + r.Description, AccountId: r.AccountId, AccountName: r.AccountName, Imported: true, RelatedRecordId: r.OriginalTransactionId)));
+
         // 2. Previsões pendentes (previsto adicional).
         var planned = await (from p in db.FinancialPlannedTransactions.AsNoTracking()
                              join a in db.FinancialAccounts.AsNoTracking() on p.AccountId equals a.Id

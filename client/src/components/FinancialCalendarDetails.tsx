@@ -182,6 +182,7 @@ export function FinancialCalendarDetails({
             {detail.kind === 'loading' && item.source !== 'DebtInstallment' && <p className="status status--pending" role="status">Carregando detalhes…</p>}
             {item.source === 'DebtInstallment' && <p className="notice">Parcela de dívida: consulte e altere pelo fluxo de Dívidas.</p>}
             {item.origin === 'CreditCardInvoicePayment' && <p className="notice">Pagamento de fatura: correções pertencem ao fluxo de Cartões, não ao cancelamento de lançamento avulso.</p>}
+            {item.origin === 'PluggyRefund' && item.source === 'Transaction' && <p className="notice">Devolução bancária: entrada de caixa que não é receita e que abate a despesa devolvida. Para desfazer o vínculo, use Lançamentos.</p>}
             {item.origin === 'DebtInstallmentPayment' && item.source === 'Transaction' && <p className="notice">Pagamento de dívida: correções pertencem ao fluxo de Dívidas.</p>}
             {detail.kind === 'error' && <p className="status status--down" role="alert">{detail.message}</p>}
             {loaded?.source === 'Transaction' && loaded.value.plannedTransactionId && (

@@ -13,7 +13,7 @@ import {
   type FinancialCalendarStatus,
 } from '../api/financialCalendar'
 import { addCalendarMonths, endOfMonth, formatMonthYear, startOfMonth, todayInSaoPaulo } from '../dates'
-import { formatBrlDecimal, formatDate } from '../money'
+import { formatBrlDecimal, formatDate, isZeroDecimal } from '../money'
 import { FinancialCalendarDetails } from './FinancialCalendarDetails'
 import { FinancialCalendarCardInvoices } from './FinancialCalendarCardInvoices'
 import { FinancialCalendarBudgetSummary } from './FinancialCalendarBudgetSummary'
@@ -601,6 +601,7 @@ export function FinancialCalendarSummary({ summary }: { summary: FinancialCalend
     <section className="calendar-summary" aria-label="Resumo financeiro do mês">
       <SummaryValue label="Receitas realizadas" value={summary.realizedIncome} kind="income" />
       <SummaryValue label="Despesas realizadas" value={summary.realizedExpense} kind="expense" />
+      {summary.realizedRefunds && !isZeroDecimal(summary.realizedRefunds) && <SummaryValue label="Devoluções (já abatidas das despesas, fora das receitas)" value={summary.realizedRefunds} kind="income" />}
       <SummaryValue label="Receitas pendentes" value={summary.pendingIncome} kind="income" planned />
       <SummaryValue label="Despesas pendentes" value={summary.pendingExpense} kind="expense" planned />
       <SummaryValue label="Receitas vencidas" value={summary.overdueIncome} kind="income" overdue />

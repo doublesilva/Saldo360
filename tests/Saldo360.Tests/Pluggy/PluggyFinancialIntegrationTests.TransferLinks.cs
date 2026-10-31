@@ -163,7 +163,7 @@ public sealed partial class PluggyFinancialIntegrationTests
     // ---- Datas diferentes -------------------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task EndsWithDifferentDatesAreNeverForcedIntoACommonDateAndTheAccountedEndStaysInTheTotalsUntilTheDecision()
+    public async Task EndsWithDifferentDatesAreNeverForcedIntoACommonDateNorHeldOutOfTheTotalsJustForSimilarValues()
     {
         var p = await ArrangePairAsync("t-link-dates", [Tx("pf-in", BankA, 4, 300m, operation: "PIX", description: "Pix recebido", category: "Transfer - PIX")],
             [Tx("pj-out", BankB, 5, -300m, operation: "PIX", description: "Pix enviado", category: "Transfer - PIX")], linkBusiness: false);
@@ -173,16 +173,15 @@ public sealed partial class PluggyFinancialIntegrationTests
 
         await SyncBothAsync(p);
 
+        // Mesmo valor em dias diferentes é só suspeita: nenhuma transferência é criada, e NENHUM dos dois movimentos independentes fica fora dos totais.
         Assert.Equal(0, await ActiveTransfersAsync());
+        Assert.Equal((300m, 300m), await RealizedAsync(p.C));
         var review = await ReviewAsync(p.C);
         Assert.Equal(["TransferDateMismatch", "TransferDateMismatch"], Reasons(review));
         var items = review.GetProperty("items").EnumerateArray().ToList();
-        var accounted = items.Single(i => i.GetProperty("accounted").GetBoolean());
-        var notAccounted = items.Single(i => !i.GetProperty("accounted").GetBoolean());
-        Assert.Equal(("InTotals", "Income"), (accounted.GetProperty("impact").GetString(), accounted.GetProperty("direction").GetString()));
-        Assert.Equal(("OutOfTotals", "Expense"), (notAccounted.GetProperty("impact").GetString(), notAccounted.GetProperty("direction").GetString()));
-        Assert.Equal((300m, 0m), await RealizedAsync(p.C)); // a despesa da ponta nova ainda não conta; a receita já contabilizada não foi removida em silêncio
-        var candidate = notAccounted.GetProperty("candidates").EnumerateArray().Single();
+        Assert.All(items, i => Assert.Equal(("InTotals", true, "Link"), (i.GetProperty("impact").GetString(), i.GetProperty("accounted").GetBoolean(), i.GetProperty("reviewKind").GetString())));
+        var expenseSide = items.Single(i => i.GetProperty("direction").GetString() == "Expense");
+        var candidate = expenseSide.GetProperty("candidates").EnumerateArray().Single();
         Assert.Equal((false, false, "DifferentDate"), (candidate.GetProperty("sameDay").GetBoolean(), candidate.GetProperty("canConfirm").GetBoolean(), candidate.GetProperty("blockedReason").GetString()));
 
         // Confirmar um par de datas diferentes é recusado (não há data comum a gravar).
@@ -191,13 +190,14 @@ public sealed partial class PluggyFinancialIntegrationTests
         Assert.Contains("DifferentDate", await refused.Content.ReadAsStringAsync());
         Assert.Equal(0, await ActiveTransfersAsync());
 
-        // Rejeitar a sugestão: cada ponta segue como o movimento comum que é, e a rejeição sobrevive às sincronizações.
+        // Rejeitar a sugestão limpa a dúvida; a rejeição sobrevive às sincronizações e os totais não mudam.
         var reject = await LinkActionAsync(p.C, "reject", await PostingIdAsync("pj-out"), await PostingIdAsync("pf-in"));
         Assert.Equal(HttpStatusCode.OK, reject.StatusCode);
         Assert.Equal((300m, 300m), await RealizedAsync(p.C));
         Assert.Empty(Reasons(await ReviewAsync(p.C)));
         await SyncBothAsync(p);
         Assert.Equal((300m, 300m), await RealizedAsync(p.C));
+        Assert.Empty(Reasons(await ReviewAsync(p.C)));
         Assert.Equal(0, await ActiveTransfersAsync());
     }
 
@@ -275,7 +275,7 @@ public sealed partial class PluggyFinancialIntegrationTests
         var review = await ReviewAsync(p.C);
         Assert.Equal(["PossibleRefundByDescription"], Reasons(review));
         var item = review.GetProperty("items")[0];
-        Assert.Equal(("Evidence", "OutOfTotals", false), (item.GetProperty("reviewKind").GetString(), item.GetProperty("impact").GetString(), item.GetProperty("accounted").GetBoolean()));
+        Assert.Equal(("Refund", "OutOfTotals", false), (item.GetProperty("reviewKind").GetString(), item.GetProperty("impact").GetString(), item.GetProperty("accounted").GetBoolean()));
     }
 
     [Fact]
@@ -298,7 +298,7 @@ public sealed partial class PluggyFinancialIntegrationTests
         var preview = await JsonOf(response);
         Assert.False(preview.GetProperty("persisted").GetBoolean());
         var decision = preview.GetProperty("items").EnumerateArray().Single(i => i.GetProperty("outcome").GetString() == "NeedsDecision");
-        Assert.Equal(("Income", "Rule:PossibleRefundByDescription", "55.99"), (decision.GetProperty("current").GetProperty("effect").GetString(), decision.GetProperty("note").GetString(), decision.GetProperty("amount").GetString()));
+        Assert.Equal(("Income", "PossibleRefundByDescription", "55.99"), (decision.GetProperty("current").GetProperty("effect").GetString(), decision.GetProperty("note").GetString(), decision.GetProperty("amount").GetString()));
         Assert.Equal(1, preview.GetProperty("needsDecision").GetInt32());
         Assert.Equal(before, (await db.FinancialTransactions.CountAsync(), await db.PluggyPostings.CountAsync(), await db.FinancialTransfers.CountAsync(), await db.PluggyTransferRejections.CountAsync()));
         Assert.Equal((55.99m, 55.99m), await RealizedAsync(p.C)); // nada mudou

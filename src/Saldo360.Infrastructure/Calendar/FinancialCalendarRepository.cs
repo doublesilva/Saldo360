@@ -114,12 +114,11 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
             x.a == null ? null : new TransactionReferenceDto(x.a.Id, x.a.Name, x.a.IsActive), null,
             FinancialTransaction.DefaultCurrency, null, FinancialTransactionOrigin.DebtInstallmentPayment,
             null, null, x.i.DueDate)).ToList();
-        var effectiveTotals = await effectiveTransactions
+        // Regra única dos indicadores: devolução bancária não é receita e reduz a despesa realizada (ver FinancialTransactionKpi).
+        var effectiveTotals = await Saldo360.Infrastructure.Transactions.FinancialTransactionKpi.Project(effectiveTransactions)
             .GroupBy(_ => 1)
-            .Select(group => new TypeTotals(
-                group.Sum(item => item.Type == CategoryType.Income ? item.Amount : 0m),
-                group.Sum(item => item.Type == CategoryType.Expense ? item.Amount : 0m)))
-            .SingleOrDefaultAsync(cancellationToken) ?? new TypeTotals(0m, 0m);
+            .Select(group => new TypeTotals(group.Sum(item => item.Revenue), filter.Type == CategoryType.Income ? 0m : group.Sum(item => item.NetExpense), group.Sum(item => item.Refund)))
+            .SingleOrDefaultAsync(cancellationToken) ?? new TypeTotals(0m, 0m, 0m);
         var pendingTotals = await pendingPlannedTransactions
             .GroupBy(_ => 1)
             .Select(group => new PendingTotals(
@@ -148,9 +147,10 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
                 pendingTotals.Income,
                 pendingTotals.Expense + debtPending,
                 pendingTotals.OverdueIncome,
-                pendingTotals.OverdueExpense + debtOverdue));
+                pendingTotals.OverdueExpense + debtOverdue)
+            { RealizedRefunds = effectiveTotals.Refunds });
     }
 
-    private sealed record TypeTotals(decimal Income, decimal Expense);
+    private sealed record TypeTotals(decimal Income, decimal Expense, decimal Refunds);
     private sealed record PendingTotals(decimal Income, decimal Expense, decimal OverdueIncome, decimal OverdueExpense);
 }

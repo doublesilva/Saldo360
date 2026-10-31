@@ -16,6 +16,7 @@ import {
 } from '../api/transactions'
 import { todayInSaoPaulo } from '../dates'
 import { decimalToInput, formatBrlDecimal, formatDate, isZeroDecimal, parseAmount } from '../money'
+import { undoRefund } from '../api/pluggyIntegration'
 import { categorySourceLabels } from '../pluggyFormat'
 import { expenseNatureLabels, expenseNatures, type ExpenseNature } from '../api/expenseNature'
 import { categoryPath, hasAvailableCategory } from '../categoryTree'
@@ -126,6 +127,23 @@ export function Transactions({
       setActionError(errorMessage(error))
     } finally {
       setRecategorizingId(null)
+    }
+  }
+
+  /** Desfaz a devolução: remove só a redução de consumo; o crédito real continua (receita comum ou revisão) e o vínculo não é recriado sozinho. */
+  const handleUndoRefund = async (transaction: FinancialTransaction) => {
+    if (!transaction.refundOf?.postingId) return
+    if (!window.confirm(`Desfazer a devolução de "${transaction.refundOf.originalDescription}"? O dinheiro recebido continua na conta, mas deixa de reduzir a despesa.`)) return
+    setCancellingId(transaction.id)
+    setActionError(null)
+    try {
+      await undoRefund(workspaceId, transaction.refundOf.postingId)
+      reload()
+      onChanged?.()
+    } catch (error: unknown) {
+      setActionError(errorMessage(error))
+    } finally {
+      setCancellingId(null)
     }
   }
 
@@ -300,6 +318,16 @@ export function Transactions({
                   </span>
                   {transaction.plannedTransactionId && <span className="badge badge--realization">Realiza previsão</span>}
                   {transaction.origin === 'PluggyImport' && <span className="badge badge--realization">Importado da Pluggy</span>}
+                  {transaction.origin === 'PluggyRefund' && <span className="badge badge--realization">Devolução (não é receita)</span>}
+                  {transaction.refundOf && (
+                    <span>
+                      Devolve: {transaction.refundOf.originalDescription}
+                      {transaction.refundOf.originalDate ? ` (${formatDate(transaction.refundOf.originalDate)})` : ''}
+                    </span>
+                  )}
+                  {transaction.type === 'Expense' && transaction.refundedAmount && !isZeroDecimal(transaction.refundedAmount) && (
+                    <span className="badge">Devolvido {formatBrlDecimal(transaction.refundedAmount)}</span>
+                  )}
                   {transaction.origin === 'PluggyImport' && transaction.category && transaction.categorySource && categorySourceLabels[transaction.categorySource] && (
                     <span className="badge">Categoria: {categorySourceLabels[transaction.categorySource]}</span>
                   )}
@@ -341,7 +369,12 @@ export function Transactions({
                       </label>
                     )}
                     {/* Vinculado a previsão ou importado do banco não se edita: previsão se cancela e realiza de novo; importado só troca a categoria. */}
-                    {!transaction.plannedTransactionId && transaction.origin !== 'PluggyImport' && (
+                    {transaction.origin === 'PluggyRefund' && transaction.refundOf?.postingId && (
+                      <button type="button" onClick={() => void handleUndoRefund(transaction)} disabled={cancellingId === transaction.id}>
+                        Desfazer devolução
+                      </button>
+                    )}
+                    {!transaction.plannedTransactionId && transaction.origin !== 'PluggyImport' && transaction.origin !== 'PluggyRefund' && (
                       <button type="button" onClick={() => setEditing(transaction)}>
                         Editar
                       </button>

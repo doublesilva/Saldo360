@@ -9,7 +9,7 @@ import { PluggyAccountPanel, PluggyCategorizationPanel, PluggyRecoveryPanel, Plu
 const api = vi.hoisted(() => ({
   listIntegrationConnections: vi.fn(), listAvailableAccounts: vi.fn(), linkAccount: vi.fn(), getLinkDetail: vi.fn(), applyOpeningBalanceSuggestion: vi.fn(),
   reprocessImported: vi.fn(), listReview: vi.fn(), resolveReview: vi.fn(), listLinks: vi.fn(), getCategorizationOverview: vi.fn(), runCategorization: vi.fn(), applyCardScheduleSuggestion: vi.fn(),
-  confirmTransfer: vi.fn(), rejectTransfer: vi.fn(), previewRecovery: vi.fn(),
+  confirmTransfer: vi.fn(), rejectTransfer: vi.fn(), previewRecovery: vi.fn(), confirmRefund: vi.fn(),
 }))
 vi.mock('../api/pluggyIntegration', () => api)
 
@@ -498,5 +498,43 @@ describe('PluggyRecoveryPanel', () => {
 
     await waitFor(() => expect(api.reprocessImported).toHaveBeenCalledWith('w1'))
     expect(await screen.findByText(/Reprocessamento aplicado/)).toBeTruthy()
+  })
+})
+
+describe('PluggyReviewPanel — devolução bancária', () => {
+  const page = (): ReviewPage => ({
+    items: [{
+      postingId: 'c1', importedTransactionId: 't', linkId: 'l1', linkDisplayName: 'Itaú PF', linkKind: 'Bank', state: 'Applied', reason: 'PossibleRefundByDescription', date: '2026-10-23', amount: '55.99',
+      direction: 'Income', description: 'Pix devolvido Pix Marketplace', pluggyCategory: null, pluggyStatus: 'Posted', operationType: 'PIX', allowedResolutions: [], resolution: null,
+      accounted: true, impact: 'InTotals', reviewKind: 'Refund', linkReviewReason: 'PossibleRefundByDescription',
+      refundCandidates: [
+        { transactionId: 'e1', date: '2026-10-13', amount: '55.99', description: 'Pagamento de Pix QR Code Pix Marketplace', accountName: 'Itaú PF', categoryPath: 'Compras', refundable: '55.99', canConfirm: true, blockedReason: null },
+        { transactionId: 'e2', date: '2026-10-01', amount: '30.00', description: 'Outra compra', accountName: 'Itaú PF', categoryPath: null, refundable: '10.00', canConfirm: false, blockedReason: 'ExceedsRefundable' },
+      ],
+    }],
+    total: 1, page: 1, pageSize: 25, counts: { applied: 1, waiting: 0, needsReview: 0, covered: 0, ignored: 0 }, accountedInReview: 1,
+  })
+
+  it('oferece as despesas candidatas, deixa claro que a descrição não vincula e vincula só com a escolha do usuário', async () => {
+    api.listReview.mockResolvedValue(page())
+    api.confirmRefund.mockResolvedValue({ outcome: 'Done', summary: null })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
+    const onChanged = vi.fn()
+    render(<PluggyReviewPanel workspaceId="w1" refreshKey="0" onChanged={onChanged} />)
+
+    const item = (await screen.findByText('Pix devolvido Pix Marketplace')).closest('li')!
+    expect(within(item).getByText(/Já contabilizado — continua nos totais até a decisão/)).toBeTruthy()
+    expect(within(item).getByText(/só você diz qual despesa foi devolvida/)).toBeTruthy()
+    const candidates = within(item).getByLabelText('Despesas candidatas')
+    expect(within(candidates).getAllByRole('button', { name: 'Vincular como devolução' })).toHaveLength(1)
+    expect(within(candidates).getByText(/O crédito é maior que o saldo ainda devolvível desta despesa/)).toBeTruthy()
+
+    fireEvent.click(within(candidates).getByRole('button', { name: 'Vincular como devolução' }))
+    expect(api.confirmRefund).not.toHaveBeenCalled()
+    fireEvent.click(within(candidates).getByRole('button', { name: 'Vincular como devolução' }))
+
+    await waitFor(() => expect(api.confirmRefund).toHaveBeenCalledWith('w1', 'c1', 'e1'))
+    expect(confirm).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
   })
 })

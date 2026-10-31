@@ -224,7 +224,7 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
     {
         await ArrangeAsync();
         var account = await CreateAccountAsync("Concorrente", "1000.00", ThisMonth.AddMonths(-1));
-        var planned = await CreatePlannedAsync(account, _expense, "Expense", "200.00", Today.AddDays(1), "Aluguel");
+        var planned = await CreatePlannedAsync(account, _expense, "Expense", "200.00", WithinThisMonth(Today.AddDays(1)), "Aluguel");
 
         var writer = Task.Run(async () =>
         {

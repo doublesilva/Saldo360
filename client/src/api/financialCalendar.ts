@@ -34,6 +34,8 @@ export interface FinancialCalendarSummary {
   pendingExpense: string
   overdueIncome: string
   overdueExpense: string
+  /** Devoluções bancárias do período: não são receita e já estão abatidas de realizedExpense. */
+  realizedRefunds?: string
 }
 
 export interface FinancialCalendarResponse {

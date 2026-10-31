@@ -36,6 +36,9 @@ public static class PluggyFinancialEndpoints
         group.MapPost("/review/{postingId:guid}/transfer/confirm", ConfirmTransfer).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/review/{postingId:guid}/transfer/reject", RejectTransfer).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/review/{postingId:guid}/transfer/undo", UndoTransfer).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        // Devolução bancária: vincular o crédito à despesa devolvida e desfazer.
+        group.MapPost("/review/{postingId:guid}/refund/confirm", ConfirmRefund).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPost("/review/{postingId:guid}/refund/undo", UndoRefund).AddEndpointFilter<ValidateCsrfTokenFilter>();
         // Prévia do reprocessamento (e rastreio por valor/período). Roda o motor numa transação sempre desfeita: nunca persiste.
         group.MapPost("/recovery/preview", RecoveryPreview).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/categorization", CategorizationOverview);
@@ -198,6 +201,14 @@ public static class PluggyFinancialEndpoints
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
         : PluggyPocEndpoints.Map(await service.UndoTransferAsync(workspaceId, userId, postingId, ct), Results.Ok);
 
+    private static async Task<IResult> ConfirmRefund(Guid workspaceId, Guid postingId, RefundLinkRequest? request, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : PluggyPocEndpoints.Map(await service.ConfirmRefundAsync(workspaceId, userId, postingId, request?.OriginalTransactionId, ct), Results.Ok);
+
+    private static async Task<IResult> UndoRefund(Guid workspaceId, Guid postingId, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
+        : PluggyPocEndpoints.Map(await service.UndoRefundAsync(workspaceId, userId, postingId, ct), Results.Ok);
+
     private static async Task<IResult> RecoveryPreview(Guid workspaceId, RecoveryPreviewRequest? request, CurrentUser user, PluggyReviewService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
         : PluggyPocEndpoints.Map(await service.PreviewAsync(workspaceId, userId, request?.Amount, request?.From, request?.To, request?.Take, ct), Results.Ok);
@@ -220,6 +231,9 @@ public sealed record ResolveRequest(string? Resolution);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record TransferLinkRequest(Guid? CounterpartPostingId);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record RefundLinkRequest(Guid? OriginalTransactionId);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RecoveryPreviewRequest(decimal? Amount, DateOnly? From, DateOnly? To, int? Take);

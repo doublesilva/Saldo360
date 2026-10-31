@@ -89,7 +89,13 @@ public sealed record PluggyReviewItemView(Guid PostingId, Guid ImportedTransacti
     public bool CanUndoLink { get; init; }
     /// <summary>Possíveis contrapartes (revisão de vínculo): outras pontas de mesmo valor em outra conta, com o motivo quando não podem ser confirmadas.</summary>
     public IReadOnlyList<PluggyTransferCandidateView> Candidates { get; init; } = [];
+    /// <summary>Revisão de possível devolução: despesas que o crédito poderia ter devolvido (o usuário escolhe; a descrição nunca vincula sozinha).</summary>
+    public IReadOnlyList<PluggyRefundCandidateView> RefundCandidates { get; init; } = [];
 }
+
+/// <summary>Despesa candidata a ter sido devolvida por um crédito. <c>Refundable</c> é o saldo ainda devolvível; só <c>CanConfirm</c> permite vincular.</summary>
+public sealed record PluggyRefundCandidateView(Guid TransactionId, DateOnly Date, string Amount, string Description, string AccountName, string? CategoryPath, string Refundable,
+    bool CanConfirm, string? BlockedReason);
 
 /// <summary>Possível contraparte de uma transferência. <c>CanConfirm</c> só é verdadeiro quando as regras de elegibilidade (mesmo dia, operação, contas distintas...) são atendidas.</summary>
 public sealed record PluggyTransferCandidateView(Guid PostingId, Guid LinkId, string LinkDisplayName, DateOnly Date, string Amount, string Direction, string Description,
@@ -191,6 +197,8 @@ public interface IPluggyFinancialRepository
     Task SaveResolutionAsync(Guid workspaceId, Guid postingId, PluggyResolution resolution, Guid userId, DateTimeOffset now, CancellationToken ct);
     Task<PluggyReviewItemView?> GetReviewItemAsync(Guid workspaceId, Guid postingId, CancellationToken ct);
     Task<IReadOnlyList<MappableCategory>> ListCategoriesAsync(Guid workspaceId, CancellationToken ct);
+    /// <summary>Despesas dos 180 dias anteriores ao crédito (não canceladas, que são consumo) com saldo devolvível, as de mesmo valor primeiro.</summary>
+    Task<IReadOnlyList<PluggyRefundCandidateView>> ListRefundCandidatesAsync(Guid workspaceId, DateOnly creditDate, decimal creditAmount, CancellationToken ct);
     /// <summary>Todas as pontas bancárias do orçamento (com a decisão do mapper) para listar possíveis contrapartes de uma transferência.</summary>
     Task<IReadOnlyList<PluggyTransferPoolRow>> ListTransferPoolAsync(Guid workspaceId, CancellationToken ct);
     /// <summary>Pares que o usuário rejeitou (ordem canônica), para a revisão não os oferecer como confirmáveis.</summary>
@@ -219,6 +227,15 @@ public interface IPluggyPostingEngine
 
     /// <summary>Desfaz uma transferência aplicada (a inferida ou a confirmada): cancela a transferência, preserva os movimentos reais e impede o motor de recriar o mesmo par.</summary>
     Task<PluggyManualResult> UndoTransferAsync(Guid workspaceId, Guid userId, Guid postingId, DateTimeOffset now, CancellationToken ct);
+
+    /// <summary>
+    /// Confirma que o crédito (rastro) devolve uma despesa: substitui atomicamente o lançamento de receita (se existir) por uma entrada de caixa de origem PluggyRefund,
+    /// registra o vínculo auditável (valor, usuário, data) e passa a abater o consumo na data do crédito. Valida o limite devolvível dentro da transação.
+    /// </summary>
+    Task<PluggyManualResult> ConfirmRefundAsync(Guid workspaceId, Guid userId, Guid postingId, Guid originalTransactionId, DateTimeOffset now, CancellationToken ct);
+
+    /// <summary>Desfaz a devolução: cancela o vínculo e a redução de consumo, preserva o crédito real (volta a receita comum ou a revisão) e não recria o vínculo sozinho.</summary>
+    Task<PluggyManualResult> UndoRefundAsync(Guid workspaceId, Guid userId, Guid postingId, DateTimeOffset now, CancellationToken ct);
 
     /// <summary>Prévia do reprocessamento: roda o motor numa transação sempre desfeita e compara antes e depois. Nunca persiste.</summary>
     Task<PluggyRecoveryPreview> PreviewAsync(Guid workspaceId, Guid userId, DateTimeOffset now, PluggyRecoveryFilter filter, CancellationToken ct);

@@ -71,11 +71,11 @@ public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture pos
 
         Assert.Equal(IsolationLevel.RepeatableRead, Assert.Single(capture.IsolationLevels));
         Assert.Contains(capture.Commands, command => command.Contains("SET TRANSACTION READ ONLY", StringComparison.OrdinalIgnoreCase));
-        // R03: uma leitura por origem (despesas, previsões, dívidas, cartões e ajustes) mais metas, subcategorias e cartões, todas em lote sobre a mesma lista de
+        // R03: uma leitura por origem (despesas, devoluções bancárias, previsões, dívidas, cartões e ajustes) mais metas, subcategorias e cartões, todas em lote sobre a mesma lista de
         // registros. O total de consultas é constante: não cresce com o número de lançamentos (sem N+1), e o resumo e a composição usam essa mesma lista.
         int Selects(Capture c) => c.Commands.Count(command => command.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase));
         var baseline = Selects(capture);
-        Assert.Equal(11, baseline);
+        Assert.Equal(12, baseline); // 11 + a leitura em lote das devoluções bancárias confirmadas (uma consulta por origem, constante)
         Assert.Empty(context.ChangeTracker.Entries());
         await using (var db = Db())
         {

@@ -238,6 +238,29 @@ internal sealed class PluggyFinancialRepository(Saldo360DbContext db) : IPluggyF
         (await db.PluggyTransferRejections.AsNoTracking().Where(r => r.WorkspaceId == workspaceId).Select(r => new { r.FirstPostingId, r.SecondPostingId }).ToListAsync(ct))
         .Select(r => (r.FirstPostingId, r.SecondPostingId)).ToHashSet();
 
+    public async Task<IReadOnlyList<PluggyRefundCandidateView>> ListRefundCandidatesAsync(Guid workspaceId, DateOnly creditDate, decimal creditAmount, CancellationToken ct)
+    {
+        var since = creditDate.AddDays(-180);
+        var rows = await (from t in db.FinancialTransactions.AsNoTracking()
+                          join a in db.FinancialAccounts.AsNoTracking() on t.AccountId equals a.Id
+                          join c0 in db.FinancialCategories.AsNoTracking() on t.CategoryId equals (Guid?)c0.Id into categories
+                          from c in categories.DefaultIfEmpty()
+                          where t.WorkspaceId == workspaceId && t.Type == Saldo360.Domain.Categories.CategoryType.Expense && !t.IsCancelled
+                              && t.Origin != Saldo360.Domain.Transactions.FinancialTransactionOrigin.CreditCardInvoicePayment && t.Origin != Saldo360.Domain.Transactions.FinancialTransactionOrigin.DebtInstallmentPayment
+                              && t.TransactionDate <= creditDate && t.TransactionDate >= since
+                          let refunded = db.FinancialBankRefunds.Where(l => l.WorkspaceId == workspaceId && l.OriginalTransactionId == t.Id && l.CancelledAt == null
+                              && db.FinancialTransactions.Any(r => r.Id == l.RefundTransactionId && !r.IsCancelled)).Sum(l => (decimal?)l.Amount) ?? 0m
+                          where t.Amount - refunded > 0m
+                          orderby t.Amount == creditAmount ? 0 : 1, t.TransactionDate descending, t.Id
+                          select new { t.Id, t.TransactionDate, t.Amount, t.Description, AccountName = a.Name, CategoryName = c == null ? null : c.Name,
+                              ParentName = c == null ? null : db.FinancialCategories.Where(p => p.Id == c.ParentCategoryId).Select(p => p.Name).FirstOrDefault(), Remaining = t.Amount - refunded })
+            .Take(10).ToListAsync(ct);
+        static string F(decimal v) => decimal.Round(v, 2, MidpointRounding.AwayFromZero).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+        return rows.Select(r => new PluggyRefundCandidateView(r.Id, r.TransactionDate, F(r.Amount), r.Description, r.AccountName,
+            r.CategoryName is null ? null : r.ParentName is null ? r.CategoryName : r.ParentName + " / " + r.CategoryName, F(r.Remaining), r.Remaining >= creditAmount,
+            r.Remaining >= creditAmount ? null : "ExceedsRefundable")).ToList();
+    }
+
     public async Task<IReadOnlyList<MappableCategory>> ListCategoriesAsync(Guid workspaceId, CancellationToken ct) =>
         await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).ToMappable(db).ToListAsync(ct);
 
@@ -259,14 +282,15 @@ internal sealed class PluggyFinancialRepository(Saldo360DbContext db) : IPluggyF
         var amount = r.Transaction.Amount is { } value ? decimal.Round(Math.Abs(value), 2, MidpointRounding.AwayFromZero).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : null;
         var accounted = r.Posting.State is PluggyPostingState.Applied or PluggyPostingState.Covered;
         var reason = r.Posting.Reason ?? r.Posting.LinkReviewReason;
-        var isLink = r.Posting.LinkReviewReason is not null || (reason is not null && LinkReasons.Contains(reason));
+        var isRefund = r.Posting.Kind == PluggyPostingKind.BankRefund || (reason is "PossibleRefund" or "PossibleRefundByDescription");
+        var isLink = !isRefund && (r.Posting.LinkReviewReason is not null || (reason is not null && LinkReasons.Contains(reason)));
         return new(r.Posting.Id, r.Transaction.Id, r.Link.Id, r.Link.DisplayName, r.Link.Kind.ToString(), r.Posting.State.ToString(), reason,
             r.Transaction.Date is { } d ? PluggyFinancialMapper.BusinessDate(d) : null, amount, isDebit ? "Expense" : isCredit ? "Income" : null,
             PluggyFinancialMapper.Describe(r.Transaction.Description, r.Transaction.DescriptionRaw), r.Transaction.Category, r.Transaction.Status.ToString(), r.Transaction.OperationType,
             // Só o que ainda não foi aplicado aceita decisão financeira; uma ponta contabilizada com dúvida de vínculo se resolve pelas ações do vínculo.
             r.Posting.State == PluggyPostingState.NeedsReview ? PluggyReviewService.AllowedResolutions(r.Link.Kind, r.Transaction.Type) : [], r.Posting.Resolution?.ToString())
         {
-            Accounted = accounted, Impact = accounted ? "InTotals" : "OutOfTotals", ReviewKind = isLink ? "Link" : "Evidence",
+            Accounted = accounted, Impact = accounted ? "InTotals" : "OutOfTotals", ReviewKind = isRefund ? "Refund" : isLink ? "Link" : "Evidence",
             LinkReviewReason = r.Posting.LinkReviewReason,
             // Vínculos aplicados antes do registro de origem (legado) foram inferidos pela regra automática, sem versão registrada.
             LinkOrigin = r.Posting.LinkOrigin?.ToString() ?? (r.Posting.State == PluggyPostingState.Applied && r.Posting.Kind == PluggyPostingKind.Transfer ? nameof(PluggyLinkOrigin.Inferred) : null),

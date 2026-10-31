@@ -320,7 +320,8 @@ public sealed record BudgetCompositionItemResponse(
     string? CardName,
     string? AccountName,
     string? InvoiceCompetence,
-    bool CompetenceReliable);
+    bool CompetenceReliable,
+    Guid? RelatedRecordId = null);
 
 public sealed record BudgetCompositionCardResponse(Guid CardId, string CardName, string Consumed, int Count);
 
@@ -342,6 +343,6 @@ public sealed record BudgetCompositionResponse(
         dto.BudgetId, dto.Competence.ToString("yyyy-MM", CultureInfo.InvariantCulture), dto.TargetId, dto.GroupingType,
         FinancialBudgetExecutionAmountsResponse.From(dto.Amounts), dto.Status, BudgetCoverageResponse.From(dto.Coverage), dto.Page, dto.PageSize, dto.TotalCount,
         dto.Items.Select(item => new BudgetCompositionItemResponse(item.Origin, item.RecordId, item.Date, Money.Format(item.Amount), item.State, item.CategoryId, item.CategoryPath,
-            item.Nature, item.Description, item.CardId, item.CardName, item.AccountName, item.InvoiceCompetence, item.CompetenceReliable)).ToList(),
+            item.Nature, item.Description, item.CardId, item.CardName, item.AccountName, item.InvoiceCompetence, item.CompetenceReliable, item.RelatedRecordId)).ToList(),
         dto.Cards.Select(card => new BudgetCompositionCardResponse(card.CardId, card.CardName, Money.Format(card.Consumed), card.Count)).ToList());
 }

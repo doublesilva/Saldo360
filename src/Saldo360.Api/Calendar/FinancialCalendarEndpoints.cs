@@ -205,13 +205,17 @@ public sealed record FinancialCalendarSummaryResponse(
     string OverdueIncome,
     string OverdueExpense)
 {
+    /// <summary>Devoluções bancárias do período, já abatidas de <c>RealizedExpense</c> e fora de <c>RealizedIncome</c>.</summary>
+    public string RealizedRefunds { get; init; } = "0.00";
+
     public static FinancialCalendarSummaryResponse From(FinancialCalendarSummaryDto summary) => new(
         Money.Format(summary.RealizedIncome),
         Money.Format(summary.RealizedExpense),
         Money.Format(summary.PendingIncome),
         Money.Format(summary.PendingExpense),
         Money.Format(summary.OverdueIncome),
-        Money.Format(summary.OverdueExpense));
+        Money.Format(summary.OverdueExpense))
+    { RealizedRefunds = Money.Format(summary.RealizedRefunds) };
 }
 
 public sealed record FinancialCalendarBalancesResponse(
