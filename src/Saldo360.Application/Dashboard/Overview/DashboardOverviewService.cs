@@ -69,7 +69,13 @@ public sealed record OverviewClassificationDto(string State, int NeedsReview, in
 /// </summary>
 public sealed record OverviewTransferLineDto(string Direction, string Counterpart, string? Counterpart2, string Amount, int Count);
 
-public sealed record OverviewTransfersDto(string State, string Received, string Sent, string Net, int Count, IReadOnlyList<OverviewTransferLineDto> Items);
+/// <summary>
+/// <c>ExternalIncome</c>/<c>ExternalExpenses</c> = Receitas e Despesas do mês (o mesmo realizado dos indicadores, sem transferências). <c>TotalInflows</c> = ExternalIncome + Received e
+/// <c>TotalOutflows</c> = ExternalExpenses + Sent, mostrados sempre separados dos componentes. <c>Available</c> = soma dos saldos conhecidos das contas do escopo (nulo se nenhum é conhecido).
+/// No consolidado Received = Sent, então as transferências internas não alteram o fluxo líquido (TotalInflows - TotalOutflows = ExternalIncome - ExternalExpenses).
+/// </summary>
+public sealed record OverviewTransfersDto(string State, string Received, string Sent, string Net, int Count, IReadOnlyList<OverviewTransferLineDto> Items,
+    string? ExternalIncome = null, string? ExternalExpenses = null, string? TotalInflows = null, string? TotalOutflows = null, string? Available = null, string? InternalMoved = null);
 
 public sealed record DashboardOverviewDto(string Competence, DateOnly AsOf, string ScopeKind, Guid? ScopeAccountId, OverviewAccountsDto Accounts, OverviewCommitmentsDto Commitments, OverviewGoalsDto Goals,
     OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null);
@@ -84,6 +90,7 @@ public sealed class DashboardOverviewService(
     FinancialBudgetExecutionService budgetExecution,
     Saldo360.Application.CreditCards.Projection.CardProjectionService cardProjection,
     FinancialTransactionService transactionService,
+    Saldo360.Application.Dashboard.PlanActual.PlanActualService planActual,
     IPluggyCategorizationService categorization,
     IFinancialTransferRepository transferRepository,
     TimeProvider time)
@@ -129,11 +136,38 @@ public sealed class DashboardOverviewService(
         var budget = await BuildBudgetAsync(workspaceId, userId, month, ct);
         var recent = await BuildRecentAsync(workspaceId, userId, month, selected?.Id, today, ct);
         var classification = await BuildClassificationAsync(workspaceId, ct);
-        var transfers = await BuildTransfersAsync(workspaceId, month, selected?.Id, ct);
+        var transfers = await BuildTransfersAsync(workspaceId, userId, month, requested, selected?.Id, accounts, ct);
         return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers));
     }
 
-    private async Task<OverviewTransfersDto> BuildTransfersAsync(Guid workspaceId, string month, Guid? accountId, CancellationToken ct)
+    private async Task<OverviewTransfersDto> BuildTransfersAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, OverviewAccountsDto accounts, CancellationToken ct)
+    {
+        var selected = accounts.Items.Where(a => a.InScope).Select(a => a.AccountId).ToHashSet();
+        var flows = await BuildTransferFlowsAsync(workspaceId, month, selected, ct);
+        if (flows.State != "Complete") return flows;
+        string? external = null, expenses = null, inflows = null, outflows = null, available = null;
+        var inScope = accounts.Items.Where(a => a.InScope && a.BalanceAvailable && a.Balance is not null).ToList();
+        if (inScope.Count > 0) available = Money.Format(inScope.Sum(a => decimal.Parse(a.Balance!, System.Globalization.CultureInfo.InvariantCulture)));
+        try
+        {
+            var plan = await planActual.GetAsync(workspaceId, userId, month, requestedScope, accountId, ct);
+            if (plan.Value is { } dashboard)
+            {
+                var parse = (string v) => decimal.Parse(v, System.Globalization.CultureInfo.InvariantCulture);
+                var income = parse(dashboard.Income.Realized); var expense = parse(dashboard.Expenses.Consumption.Realized);
+                external = Money.Format(income); expenses = Money.Format(expense);
+                inflows = Money.Format(income + parse(flows.Received)); outflows = Money.Format(expense + parse(flows.Sent));
+            }
+        }
+        catch (Exception) when (!ct.IsCancellationRequested) { /* os totais externos ficam nulos; as transferências continuam exibidas */ }
+        return flows with { ExternalIncome = external, ExternalExpenses = expenses, TotalInflows = inflows, TotalOutflows = outflows, Available = available };
+    }
+
+    /// <summary>
+    /// Transferências do mês pela perspectiva do conjunto de contas selecionado (<see cref="TransferPerspective"/>): as que entram no conjunto são ENTRADAS, as que saem são SAÍDAS e as que
+    /// ficam dentro dele são neutralizadas (só informativas em <c>InternalMoved</c>). Receitas e despesas externas nunca incluem transferências.
+    /// </summary>
+    private async Task<OverviewTransfersDto> BuildTransferFlowsAsync(Guid workspaceId, string month, IReadOnlySet<Guid> selected, CancellationToken ct)
     {
         var zero = Money.Format(0m);
         try
@@ -142,25 +176,22 @@ public sealed class DashboardOverviewService(
             var items = new List<FinancialTransferDto>();
             for (var page = 1; page <= 20; page++)
             {
-                var result = await transferRepository.ListAsync(workspaceId, new(first, first.AddMonths(1).AddDays(-1), accountId, false, page, 100), ct);
+                var result = await transferRepository.ListAsync(workspaceId, new(first, first.AddMonths(1).AddDays(-1), null, false, page, 100), ct);
                 items.AddRange(result.Items);
                 if (items.Count >= result.TotalCount || result.Items.Count == 0) break;
             }
-            if (accountId is { } id)
-            {
-                var received = items.Where(t => t.DestinationAccount.Id == id).ToList();
-                var sent = items.Where(t => t.SourceAccount.Id == id).ToList();
-                var lines = received.GroupBy(t => t.SourceAccount.Name).Select(g => new OverviewTransferLineDto("Received", g.Key, null, Money.Format(g.Sum(t => t.Amount)), g.Count()))
-                    .Concat(sent.GroupBy(t => t.DestinationAccount.Name).Select(g => new OverviewTransferLineDto("Sent", g.Key, null, Money.Format(g.Sum(t => t.Amount)), g.Count())))
-                    .OrderBy(l => l.Direction).ThenBy(l => l.Counterpart, StringComparer.CurrentCultureIgnoreCase).ToList();
-                var receivedTotal = received.Sum(t => t.Amount); var sentTotal = sent.Sum(t => t.Amount);
-                return new("Complete", Money.Format(receivedTotal), Money.Format(sentTotal), Money.Format(receivedTotal - sentTotal), received.Count + sent.Count, lines);
-            }
-            var total = items.Sum(t => t.Amount);
-            var pairs = items.GroupBy(t => (From: t.SourceAccount.Name, To: t.DestinationAccount.Name))
-                .Select(g => new OverviewTransferLineDto("Between", g.Key.From, g.Key.To, Money.Format(g.Sum(t => t.Amount)), g.Count()))
-                .OrderBy(l => l.Counterpart, StringComparer.CurrentCultureIgnoreCase).ThenBy(l => l.Counterpart2, StringComparer.CurrentCultureIgnoreCase).ToList();
-            return new("Complete", Money.Format(total), Money.Format(total), zero, items.Count, pairs);
+            var classified = items.Select(t => (Transfer: t, Relation: TransferPerspective.Classify(t.SourceAccount.Id, t.DestinationAccount.Id, selected)))
+                .Where(x => x.Relation != TransferRelation.Outside).ToList();
+            var inbound = classified.Where(x => x.Relation == TransferRelation.Inbound).Select(x => x.Transfer).ToList();
+            var outbound = classified.Where(x => x.Relation == TransferRelation.Outbound).Select(x => x.Transfer).ToList();
+            var internalMoves = classified.Where(x => x.Relation == TransferRelation.Internal).Select(x => x.Transfer).ToList();
+            var lines = inbound.GroupBy(t => t.SourceAccount.Name).Select(g => new OverviewTransferLineDto("Received", g.Key, null, Money.Format(g.Sum(t => t.Amount)), g.Count()))
+                .Concat(outbound.GroupBy(t => t.DestinationAccount.Name).Select(g => new OverviewTransferLineDto("Sent", g.Key, null, Money.Format(g.Sum(t => t.Amount)), g.Count())))
+                .Concat(internalMoves.GroupBy(t => (From: t.SourceAccount.Name, To: t.DestinationAccount.Name))
+                    .Select(g => new OverviewTransferLineDto("Between", g.Key.From, g.Key.To, Money.Format(g.Sum(t => t.Amount)), g.Count())))
+                .OrderBy(l => l.Direction, StringComparer.Ordinal).ThenBy(l => l.Counterpart, StringComparer.CurrentCultureIgnoreCase).ThenBy(l => l.Counterpart2, StringComparer.CurrentCultureIgnoreCase).ToList();
+            var received = inbound.Sum(t => t.Amount); var sent = outbound.Sum(t => t.Amount);
+            return new("Complete", Money.Format(received), Money.Format(sent), Money.Format(received - sent), classified.Count, lines, InternalMoved: Money.Format(internalMoves.Sum(t => t.Amount)));
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {

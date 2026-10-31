@@ -42,6 +42,10 @@ export interface FinancialTransaction {
   refundOf?: { originalTransactionId: string; originalDescription: string; originalDate: string | null; postingId: string | null } | null
   /** Despesa: total já devolvido por devoluções ativas (texto decimal exato). */
   refundedAmount?: string
+  /** 'Transaction' (receita/despesa), 'TransferIn' ou 'TransferOut': pontas de transferência entre contas próprias projetadas no extrato. */
+  kind?: 'Transaction' | 'TransferIn' | 'TransferOut'
+  transferId?: string | null
+  counterpartAccountName?: string | null
   /** Quem definiu a categoria de um lançamento importado: banco (Pluggy/Mapped), regra, IA ou o próprio usuário. */
   categorySource?: 'None' | 'Mapped' | 'User' | 'Pluggy' | 'Rule' | 'AI' | null
   /** A classificação automática não chegou a uma categoria segura: o usuário precisa decidir. */
@@ -74,7 +78,7 @@ export interface TransactionFilters {
   to: string
   accountId: string
   categoryId: string
-  type: CategoryType | ''
+  type: CategoryType | 'Transfer' | ''
   expenseNature: ExpenseNature | ''
   includeCancelled: boolean
 }
@@ -106,7 +110,7 @@ export async function listTransactions(
   page: number,
   signal?: AbortSignal,
 ): Promise<TransactionPage> {
-  const query = new URLSearchParams({ page: String(page), pageSize: String(TRANSACTIONS_PAGE_SIZE) })
+  const query = new URLSearchParams({ page: String(page), pageSize: String(TRANSACTIONS_PAGE_SIZE), includeTransfers: 'true' })
   if (filters.from) query.set('from', filters.from)
   if (filters.to) query.set('to', filters.to)
   if (filters.accountId) query.set('accountId', filters.accountId)

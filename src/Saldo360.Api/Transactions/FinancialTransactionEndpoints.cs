@@ -38,11 +38,11 @@ public static class FinancialTransactionEndpoints
     /// <summary>
     /// Página de lançamentos (data decrescente, Id decrescente). Filtros opcionais: from/to (yyyy-MM-dd, inclusivos),
     /// accountId, categoryId (uma categoria principal inclui as suas subcategorias; uma subcategoria, só ela), type (Income/Expense) e expenseNature
-    /// (Fixed, Variable ou Undefined, que são as despesas ainda não classificadas). Cancelados só com includeCancelled=true. excludeInvoicePayments=true omite os pagamentos de fatura. pageSize até 100.
+    /// (Fixed, Variable ou Undefined, que são as despesas ainda não classificadas). Cancelados só com includeCancelled=true. excludeInvoicePayments=true omite os pagamentos de fatura. includeTransfers=true (opt-in, aditivo) projeta as duas pontas de cada transferência entre contas próprias como entradas do extrato (Kind TransferIn/TransferOut; type=Transfer filtra só elas). pageSize até 100.
     /// </summary>
     private static async Task<IResult> List(
         Guid workspaceId, string? from, string? to, Guid? accountId, Guid? categoryId, string? type,
-        bool? includeCancelled, int? page, int? pageSize, bool? excludeInvoicePayments, string? expenseNature, CurrentUser currentUser,
+        bool? includeCancelled, int? page, int? pageSize, bool? excludeInvoicePayments, string? expenseNature, bool? includeTransfers, CurrentUser currentUser,
         FinancialTransactionService transactions, CancellationToken cancellationToken)
     {
         if (await currentUser.GetUserIdAsync(cancellationToken) is not { } userId)
@@ -58,7 +58,7 @@ public static class FinancialTransactionEndpoints
             return Results.ValidationProblem(dateErrors);
         }
 
-        var query = new TransactionQuery(fromDate, toDate, accountId, categoryId, type, includeCancelled ?? false, page, pageSize, excludeInvoicePayments ?? false, expenseNature);
+        var query = new TransactionQuery(fromDate, toDate, accountId, categoryId, type, includeCancelled ?? false, page, pageSize, excludeInvoicePayments ?? false, expenseNature, includeTransfers ?? false);
         var result = await transactions.ListAsync(workspaceId, userId, query, cancellationToken);
         return result switch
         {
@@ -199,6 +199,10 @@ public sealed record TransactionResponse(
     bool CategoryNeedsReview = false,
     ExpenseNature ExpenseNature = ExpenseNature.Undefined)
 {
+    /// <summary>Transaction, TransferIn ou TransferOut. Só vem diferente de Transaction com includeTransfers=true.</summary>
+    public string Kind { get; init; } = "Transaction";
+    public Guid? TransferId { get; init; }
+    public string? CounterpartAccountName { get; init; }
     /// <summary>Devolução: a despesa devolvida e o rastro do crédito. Nulo para qualquer outro lançamento.</summary>
     public TransactionRefundOfResponse? RefundOf { get; init; }
     /// <summary>Despesa: total já devolvido por devoluções ativas (texto decimal exato).</summary>
@@ -225,6 +229,7 @@ public sealed record TransactionResponse(
     {
         RefundOf = dto.RefundOfId is { } original ? new(original, dto.RefundOfDescription ?? string.Empty, dto.RefundOfDate, dto.RefundPostingId) : null,
         RefundedAmount = Money.Format(dto.RefundedAmount),
+        Kind = dto.Kind, TransferId = dto.TransferId, CounterpartAccountName = dto.CounterpartAccountName,
     };
 }
 

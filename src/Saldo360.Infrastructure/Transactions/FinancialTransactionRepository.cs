@@ -25,6 +25,7 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
 
     public async Task<TransactionPage> ListAsync(Guid workspaceId, TransactionFilter filter, CancellationToken cancellationToken)
     {
+        if (filter.IncludeTransfers) return await ListWithTransfersAsync(workspaceId, filter, cancellationToken);
         var query = db.FinancialTransactions.Where(t => t.WorkspaceId == workspaceId);
         if (!filter.IncludeCancelled)
         {
@@ -75,6 +76,61 @@ internal sealed class FinancialTransactionRepository(Saldo360DbContext db) : IFi
             .Skip((filter.Page - 1) * filter.PageSize)
             .Take(filter.PageSize)
             .ToListAsync(cancellationToken);
+        return new TransactionPage(items, filter.Page, filter.PageSize, total);
+    }
+
+    /// <summary>
+    /// Extrato com as transferências como lançamentos (opt-in): cada transferência entre contas próprias aparece duas vezes, saída na origem e entrada no destino, lidas direto
+    /// do registro canônico <c>FinancialTransfer</c> (nada é duplicado no banco). Receita/Despesa continuam só no que já eram; categoria e natureza não se aplicam a transferência.
+    /// Paginação por mescla: cada fonte entrega até page*pageSize linhas na ordem comum (data, Id decrescentes) e a página é o recorte da mescla.
+    /// </summary>
+    private async Task<TransactionPage> ListWithTransfersAsync(Guid workspaceId, TransactionFilter filter, CancellationToken ct)
+    {
+        var take = filter.Page * filter.PageSize;
+        var plain = filter with { IncludeTransfers = false, Page = 1, PageSize = take };
+        var includeTransferEnds = filter.TransfersOnly || (filter.Type is null && filter.CategoryId is null && filter.Nature is null && !filter.ExcludeInvoicePayments);
+        var total = 0;
+        var merged = new List<FinancialTransactionDto>();
+        if (!filter.TransfersOnly)
+        {
+            var page = await ListAsync(workspaceId, plain, ct);
+            merged.AddRange(page.Items);
+            total += page.TotalCount;
+        }
+        if (includeTransferEnds)
+        {
+            var transfers = db.FinancialTransfers.AsNoTracking().Where(t => t.WorkspaceId == workspaceId);
+            if (!filter.IncludeCancelled) transfers = transfers.Where(t => !t.IsCancelled);
+            if (filter.From is { } from) transfers = transfers.Where(t => t.TransferDate >= from);
+            if (filter.To is { } to) transfers = transfers.Where(t => t.TransferDate <= to);
+            if (filter.AccountId is { } accountId) transfers = transfers.Where(t => t.SourceAccountId == accountId || t.DestinationAccountId == accountId);
+            var count = await transfers.CountAsync(ct);
+            total += filter.AccountId is null ? count * 2 : count;
+            var rows = await (from t in transfers.OrderByDescending(t => t.TransferDate).ThenByDescending(t => t.Id).Take(take)
+                              join s in db.FinancialAccounts on new { t.WorkspaceId, Id = t.SourceAccountId } equals new { s.WorkspaceId, s.Id }
+                              join d in db.FinancialAccounts on new { t.WorkspaceId, Id = t.DestinationAccountId } equals new { d.WorkspaceId, d.Id }
+                              select new
+                              {
+                                  t.Id, t.Amount, t.TransferDate, t.Description, t.IsCancelled, t.Currency, t.CreatedAt, t.CancelledAt,
+                                  SourceId = s.Id, SourceName = s.Name, SourceActive = s.IsActive, DestinationId = d.Id, DestinationName = d.Name, DestinationActive = d.IsActive,
+                                  FromBank = db.PluggyPostings.Any(p => p.FinancialTransferId == t.Id),
+                              }).ToListAsync(ct);
+            foreach (var r in rows)
+            {
+                var origin = r.FromBank ? FinancialTransactionOrigin.PluggyImport : FinancialTransactionOrigin.Manual;
+                var tail = string.IsNullOrWhiteSpace(r.Description) ? string.Empty : $" · {r.Description}";
+                if (filter.AccountId is null || filter.AccountId == r.DestinationId)
+                    merged.Add(new(r.Id, Saldo360.Domain.Categories.CategoryType.Income, r.Amount, r.TransferDate, $"Transferência recebida de {r.SourceName}{tail}",
+                        new TransactionReferenceDto(r.DestinationId, r.DestinationName, r.DestinationActive), null, r.IsCancelled, r.Currency, r.CreatedAt, null, r.CancelledAt, null, origin,
+                        Kind: "TransferIn", TransferId: r.Id, CounterpartAccountName: r.SourceName));
+                if (filter.AccountId is null || filter.AccountId == r.SourceId)
+                    merged.Add(new(r.Id, Saldo360.Domain.Categories.CategoryType.Expense, r.Amount, r.TransferDate, $"Transferência enviada para {r.DestinationName}{tail}",
+                        new TransactionReferenceDto(r.SourceId, r.SourceName, r.SourceActive), null, r.IsCancelled, r.Currency, r.CreatedAt, null, r.CancelledAt, null, origin,
+                        Kind: "TransferOut", TransferId: r.Id, CounterpartAccountName: r.DestinationName));
+            }
+        }
+        var items = merged.OrderByDescending(i => i.TransactionDate).ThenByDescending(i => i.Id).ThenBy(i => i.Kind, StringComparer.Ordinal)
+            .Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize).ToList();
         return new TransactionPage(items, filter.Page, filter.PageSize, total);
     }
 

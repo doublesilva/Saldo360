@@ -58,7 +58,7 @@ public sealed partial class PluggyFinancialIntegrationTests
         var pj = (await TransferOverviewAsync(p.C, "account", p.BusinessAccount)).GetProperty("transfers");
         Assert.Equal(("0.00", "12692.00", "-12692.00"), (pj.GetProperty("received").GetString(), pj.GetProperty("sent").GetString(), pj.GetProperty("net").GetString()));
         var consolidated = (await TransferOverviewAsync(p.C, "all")).GetProperty("transfers");
-        Assert.Equal(("12692.00", "12692.00", "0.00"), (consolidated.GetProperty("received").GetString(), consolidated.GetProperty("sent").GetString(), consolidated.GetProperty("net").GetString()));
+        Assert.Equal(("0.00", "0.00", "0.00", "12692.00"), (consolidated.GetProperty("received").GetString(), consolidated.GetProperty("sent").GetString(), consolidated.GetProperty("net").GetString(), consolidated.GetProperty("internalMoved").GetString())); // neutralizada no conjunto PF+PJ
         Assert.Equal(("Between", "Itaú PJ", "Itaú PF"), (consolidated.GetProperty("items")[0].GetProperty("direction").GetString(), consolidated.GetProperty("items")[0].GetProperty("counterpart").GetString(), consolidated.GetProperty("items")[0].GetProperty("counterpart2").GetString()));
 
         // A decisao do usuario: "Desfazer vinculo" devolve o credito como receita da PF e o debito como despesa da PJ, e o par nao e recriado.

@@ -28,6 +28,7 @@ function errorMessage(error: unknown): string {
 }
 
 const typeLabels: Record<CategoryType, string> = { Income: 'Receita', Expense: 'Despesa' }
+const isTransfer = (transaction: { kind?: string }) => transaction.kind === 'TransferIn' || transaction.kind === 'TransferOut'
 
 type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'error'; message: string }
 
@@ -229,11 +230,12 @@ export function Transactions({
           Tipo
           <select
             value={filters.type}
-            onChange={(event) => changeFilter('type', event.target.value as CategoryType | '')}
+            onChange={(event) => changeFilter('type', event.target.value as CategoryType | 'Transfer' | '')}
           >
             <option value="">Todos</option>
             <option value="Income">Receitas</option>
             <option value="Expense">Despesas</option>
+            <option value="Transfer">Transferências</option>
           </select>
         </label>
         {filters.type !== 'Income' && (
@@ -268,7 +270,7 @@ export function Transactions({
           Categoria
           <select value={filters.categoryId} onChange={(event) => changeFilter('categoryId', event.target.value)}>
             <option value="">Todas</option>
-            <CategoryFilterOptions categories={categories} type={filters.type} />
+            <CategoryFilterOptions categories={categories} type={filters.type === 'Transfer' ? '' : filters.type} />
           </select>
         </label>
         <label className="checkbox">
@@ -306,12 +308,14 @@ export function Transactions({
                 </div>
                 <div className="transaction__meta meta">
                   <span>{formatDate(transaction.transactionDate)}</span>
-                  <span>{typeLabels[transaction.type]}</span>
-                  <span>
-                    {transaction.category ? categoryPath(transaction.category) : 'Sem categoria'}
-                    {transaction.category && !transaction.category.isActive ? ' (inativa)' : ''}
-                  </span>
-                  {transaction.type === 'Expense' && <ExpenseNatureBadge nature={transaction.expenseNature} />}
+                  <span>{isTransfer(transaction) ? (transaction.kind === 'TransferIn' ? 'Transferência recebida' : 'Transferência enviada') : typeLabels[transaction.type]}</span>
+                  {!isTransfer(transaction) && (
+                    <span>
+                      {transaction.category ? categoryPath(transaction.category) : 'Sem categoria'}
+                      {transaction.category && !transaction.category.isActive ? ' (inativa)' : ''}
+                    </span>
+                  )}
+                  {!isTransfer(transaction) && transaction.type === 'Expense' && <ExpenseNatureBadge nature={transaction.expenseNature} />}
                   <span>
                     {transaction.account.name}
                     {transaction.account.isActive ? '' : ' (inativa)'}
@@ -334,7 +338,10 @@ export function Transactions({
                   {transaction.origin === 'PluggyImport' && !transaction.category && transaction.categoryNeedsReview && <span className="badge badge--cancelled">Sem categoria segura: revisar</span>}
                   {transaction.isCancelled && <span className="badge badge--cancelled">Cancelado</span>}
                 </div>
-                {!transaction.isCancelled && (
+                {isTransfer(transaction) && !transaction.isCancelled && (
+                  <p className="meta">Transferência entre contas próprias: não é receita nem despesa e movimenta o saldo das duas contas. Para corrigir um pareamento incorreto, use Transferências → Desfazer vínculo.</p>
+                )}
+                {!isTransfer(transaction) && !transaction.isCancelled && (
                   <div className="form__actions">
                     {transaction.origin === 'PluggyImport' && (
                       <label>

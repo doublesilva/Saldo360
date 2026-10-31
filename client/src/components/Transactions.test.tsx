@@ -135,7 +135,7 @@ describe('Transactions — lista', () => {
     expect(within(item).getByText('Conta antiga (inativa)')).toBeTruthy()
     expect(screen.getByText('Salário setembro').closest('li')!.textContent).toMatch(/\+R\$\s5\.000,00/)
     expect(screen.getByText(/já aconteceram/)).toBeTruthy()
-    expect(listCalls(calls)[0].url).toBe('/api/financial-workspaces/f1/transactions?page=1&pageSize=20')
+    expect(listCalls(calls)[0].url).toBe('/api/financial-workspaces/f1/transactions?page=1&pageSize=20&includeTransfers=true')
   })
 
   it('mostra cancelados só sob pedido, sem ações de edição', async () => {
@@ -171,6 +171,7 @@ describe('Transactions — lista', () => {
     expect(Object.fromEntries(query)).toEqual({
       page: '1',
       pageSize: '20',
+      includeTransfers: 'true',
       from: '2026-09-01',
       to: '2026-09-30',
       accountId: itau.id,

@@ -46,7 +46,10 @@ export interface OverviewRecent { state: BlockState; from: string; through: stri
 export interface OverviewClassification { state: BlockState; needsReview: number; notEvaluated: number }
 
 export interface OverviewTransferLine { direction: 'Received' | 'Sent' | 'Between'; counterpart: string; counterpart2: string | null; amount: string; count: number }
-export interface OverviewTransfers { state: BlockState; received: string; sent: string; net: string; count: number; items: OverviewTransferLine[] }
+export interface OverviewTransfers {
+  state: BlockState; received: string; sent: string; net: string; count: number; items: OverviewTransferLine[]
+  externalIncome?: string | null; externalExpenses?: string | null; totalInflows?: string | null; totalOutflows?: string | null; available?: string | null; internalMoved?: string | null
+}
 
 export interface DashboardOverview {
   competence: string; asOf: string; scopeKind: 'primary' | 'all' | 'account'; scopeAccountId: string | null

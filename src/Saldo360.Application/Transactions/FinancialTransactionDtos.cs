@@ -32,7 +32,11 @@ public sealed record FinancialTransactionDto(
     DateOnly? RefundOfDate = null,
     Guid? RefundPostingId = null,
     /// <summary>Despesa: soma das devoluções ativas vinculadas (informativo; o valor e a data da despesa não mudam).</summary>
-    decimal RefundedAmount = 0m);
+    decimal RefundedAmount = 0m,
+    /// <summary>Transaction (receita/despesa), TransferIn ou TransferOut (uma ponta de transferencia entre contas proprias, projetada no extrato).</summary>
+    string Kind = "Transaction",
+    Guid? TransferId = null,
+    string? CounterpartAccountName = null);
 
 /// <summary>Conta ou categoria referenciada. Para uma subcategoria, <c>ParentName</c> é a categoria principal e <c>Path</c> é "Principal / Sub".</summary>
 public sealed record TransactionReferenceDto(Guid Id, string Name, bool IsActive, string? ParentName = null)
@@ -61,7 +65,8 @@ public sealed record TransactionQuery(
     int? Page,
     int? PageSize,
     bool ExcludeInvoicePayments = false,
-    string? ExpenseNature = null);
+    string? ExpenseNature = null,
+    bool IncludeTransfers = false);
 
 /// <summary>Filtros já validados.</summary>
 public sealed record TransactionFilter(
@@ -74,7 +79,9 @@ public sealed record TransactionFilter(
     int Page,
     int PageSize,
     bool ExcludeInvoicePayments = false,
-    ExpenseNature? Nature = null);
+    ExpenseNature? Nature = null,
+    bool IncludeTransfers = false,
+    bool TransfersOnly = false);
 
 /// <summary>Uma página, ordenada por data decrescente e Id decrescente.</summary>
 public sealed record TransactionPage(IReadOnlyList<FinancialTransactionDto> Items, int Page, int PageSize, int TotalCount);

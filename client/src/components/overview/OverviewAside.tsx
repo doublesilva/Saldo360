@@ -107,24 +107,30 @@ export function OverviewRecentBlock({ recent, competence, scopeText, onOpenAll }
 }
 
 /**
- * Transferências entre contas no mês, sempre à parte de Receitas e Despesas (valores calculados no servidor). Com uma conta no escopo mostra o recebido e o enviado
- * por conta; no consolidado o total movimentado e o líquido zero.
+ * Entradas e saídas do mês, com as transferências entre contas próprias sempre à parte de Receitas e Despesas (todos os valores calculados no servidor). Com uma conta no
+ * escopo mostra o recebido/enviado por conta; no consolidado, o total movimentado e o líquido zero.
  */
 export function OverviewTransfersBlock({ transfers, scopeKind, onOpen }: { transfers: OverviewTransfers; scopeKind: string; onOpen: () => void }) {
-  if (transfers.state === 'Unavailable') return <section className="ov-card" aria-labelledby="ov-transfers-title"><h3 id="ov-transfers-title">Transferências entre contas</h3><Unavailable>Não foi possível carregar as transferências.</Unavailable></section>
+  if (transfers.state === 'Unavailable') return <section className="ov-card" aria-labelledby="ov-transfers-title"><h3 id="ov-transfers-title">Entradas e saídas do mês</h3><Unavailable>Não foi possível carregar as transferências.</Unavailable></section>
   const consolidated = scopeKind === 'all'
   return <section className="ov-card" aria-labelledby="ov-transfers-title">
-    <header><div><h3 id="ov-transfers-title">Transferências entre contas</h3>
-      <p className="ov-meta">No mês · não entram em Receitas nem em Despesas{consolidated ? ' · no consolidado o líquido é zero' : ''}</p></div><button type="button" onClick={onOpen}>Abrir Transferências</button></header>
-    {transfers.count === 0 ? <p className="ov-empty">Nenhuma transferência entre contas neste mês.</p> : <>
-      <dl className="ov-meta">
-        {consolidated ? <div><dt>Movimentado entre contas</dt><dd>{money(transfers.received)} · líquido {money(transfers.net)}</dd></div>
-          : <><div><dt>Transferências recebidas</dt><dd>{money(transfers.received)}</dd></div><div><dt>Transferências enviadas</dt><dd>{money(transfers.sent)}</dd></div></>}
-      </dl>
-      <ul className="ov-list">{transfers.items.map(line => <li key={`${line.direction}:${line.counterpart}:${line.counterpart2 ?? ''}`}><span className="ov-row">
+    <header><div><h3 id="ov-transfers-title">Entradas e saídas do mês</h3>
+      <p className="ov-meta">Transferências entre contas próprias não são receita nem despesa e movimentam o saldo das duas contas{consolidated ? '; entre as contas do consolidado elas são neutralizadas (líquido zero) e continuam nos extratos' : ''}.</p></div>
+      <button type="button" onClick={onOpen}>Abrir Transferências</button></header>
+    <dl className="ov-meta">
+      {transfers.externalIncome != null && <div><dt>Receitas de fontes externas</dt><dd>{money(transfers.externalIncome)}</dd></div>}
+      <div><dt>Transferências recebidas</dt><dd>{money(transfers.received)}</dd></div>
+      <div><dt>Transferências enviadas</dt><dd>{money(transfers.sent)}</dd></div>
+      {transfers.internalMoved != null && transfers.internalMoved !== '0.00' && <div><dt>Entre as contas deste conjunto (neutralizado)</dt><dd>{money(transfers.internalMoved)} · líquido {money(transfers.net)}</dd></div>}
+      {transfers.externalExpenses != null && <div><dt>Despesas</dt><dd>{money(transfers.externalExpenses)}</dd></div>}
+      {transfers.available != null && <div><dt>Disponível (saldo das contas)</dt><dd>{money(transfers.available)}</dd></div>}
+      {transfers.totalInflows != null && <div><dt>Total de entradas (receitas + transferências recebidas)</dt><dd>{money(transfers.totalInflows)}</dd></div>}
+      {transfers.totalOutflows != null && <div><dt>Total de saídas (despesas + transferências enviadas)</dt><dd>{money(transfers.totalOutflows)}</dd></div>}
+    </dl>
+    {transfers.count === 0 ? <p className="ov-empty">Nenhuma transferência neste mês.</p>
+      : <ul className="ov-list">{transfers.items.map(line => <li key={`${line.direction}:${line.counterpart}:${line.counterpart2 ?? ''}`}><span className="ov-row">
         <span className="ov-row__main"><strong>{line.direction === 'Received' ? `Recebida de ${line.counterpart}` : line.direction === 'Sent' ? `Enviada para ${line.counterpart}` : `${line.counterpart} → ${line.counterpart2}`}</strong><small>{line.count} transferência(s)</small></span>
-        <span className="ov-amount">{money(line.amount)}</span></span></li>)}</ul>
-      <p className="ov-meta">Se uma entrada desta lista não é transferência para você (por exemplo, pró-labore ou distribuição que você considera receita), abra Transferências e use "Desfazer vínculo": o crédito volta como receita desta conta e o débito como despesa da outra, e o par não é recriado nas próximas sincronizações.</p>
-    </>}
+        <span className="ov-amount">{money(line.amount)}</span></span></li>)}</ul>}
+    <p className="ov-meta">Cada transferência aparece como lançamento nas duas contas (Lançamentos, com “Incluir transferências”). “Desfazer vínculo” em Transferências serve apenas para corrigir um pareamento incorreto.</p>
   </section>
 }

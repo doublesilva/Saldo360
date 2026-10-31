@@ -73,7 +73,8 @@ public sealed class FinancialTransactionService(
         }
 
         CategoryType? type = null;
-        if (query.Type is not null)
+        var transfersOnly = query.IncludeTransfers && string.Equals(query.Type, "Transfer", StringComparison.OrdinalIgnoreCase);
+        if (query.Type is not null && !transfersOnly)
         {
             if (CategoryTypes.TryParse(query.Type, out var parsed))
             {
@@ -81,7 +82,7 @@ public sealed class FinancialTransactionService(
             }
             else
             {
-                errors["type"] = ["Tipo inválido. Use Income ou Expense."];
+                errors["type"] = [query.IncludeTransfers ? "Tipo inválido. Use Income, Expense ou Transfer." : "Tipo inválido. Use Income ou Expense."];
             }
         }
 
@@ -105,7 +106,7 @@ public sealed class FinancialTransactionService(
 
         // categoryId de uma categoria principal inclui as suas subcategorias; o de uma subcategoria traz só os dela (a expansão é feita pelo repositório).
         var filter = new TransactionFilter(
-            query.From, query.To, query.AccountId, query.CategoryId, type, query.IncludeCancelled, page, pageSize, query.ExcludeInvoicePayments, nature);
+            query.From, query.To, query.AccountId, query.CategoryId, type, query.IncludeCancelled, page, pageSize, query.ExcludeInvoicePayments, nature, query.IncludeTransfers, transfersOnly);
         return new TransactionListResult(await transactions.ListAsync(workspaceId, filter, cancellationToken), null, false);
     }
 
