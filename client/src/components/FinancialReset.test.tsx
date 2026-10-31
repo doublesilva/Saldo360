@@ -46,7 +46,8 @@ it('remounts financial state after success, keeps workspace and reconsults the e
   const before = calls.filter(c => c.url.includes('/financial-dashboard/overview?')).length
   fireEvent.click(screen.getByRole('button', { name: 'Apagar dados financeiros' }))
   await screen.findByText(/Orçamento reiniciado/)
-  expect(screen.getByText(/Adicionar categorias padrão/)).toBeTruthy()
+  expect(screen.getByText(/categorias e subcategorias padrão foram recriadas do zero/)).toBeTruthy()
+  expect(screen.getByText(/reconecte-o/)).toBeTruthy()
   await waitFor(() => expect(calls.filter(c => c.url.includes('/financial-dashboard/overview?')).length).toBeGreaterThan(before))
   expect(calls.filter(c => c.url === '/api/me/financial-workspace')).toHaveLength(1)
   expect(calls.some(c => c.url.includes('/auth/logout'))).toBe(false)
@@ -85,4 +86,13 @@ it('keeps reset disabled when preview fails and permits an explicit read-only re
   fireEvent.click(screen.getByRole('button', { name: 'Recarregar prévia' }))
   await screen.findByRole('textbox', { name: 'Digite APAGAR ORÇAMENTO' })
   expect(previews).toBe(2)
+})
+
+it('states that the reset is irreversible, erases imported bank evidence and recreates the default categories', async () => {
+  api(); render(<FinancialReset workspaceId="w" onReset={vi.fn()} />)
+  await open()
+  expect(screen.getByText(/Ela não pode ser desfeita/)).toBeTruthy()
+  expect(screen.getByText(/será preciso reconectar o banco/)).toBeTruthy()
+  expect(screen.getByText(/voltam ao catálogo padrão \(10 de despesa e 4 de receita/)).toBeTruthy()
+  expect(screen.queryByText(/não são reinstaladas/)).toBeNull()
 })

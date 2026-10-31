@@ -33,7 +33,7 @@ export function PersonalFinance({ userArea }: { userArea?: ReactNode }) {
       .catch((cause: unknown) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Falha ao abrir orçamento.') })
     return () => controller.abort()
   }, [retry])
-  if (workspace) return <>{resetResult && <div role="status" className="workspace-reset-result"><p>Orçamento reiniciado. Todos os dados financeiros deste orçamento foram removidos. Sua conta continua ativa. Em Categorias, use "Adicionar categorias padrão" para carregar novamente o catálogo sugerido.</p>
+  if (workspace) return <>{resetResult && <div role="status" className="workspace-reset-result"><p>Orçamento reiniciado. Todos os dados financeiros deste orçamento foram removidos. Sua conta continua ativa. As categorias e subcategorias padrão foram recriadas do zero. Para voltar a usar o banco, reconecte-o: as conexões e os dados importados da Pluggy foram apagados.</p>
     {error && <p role="alert">{error}</p>}</div>}
     <WorkspaceArea key={`${workspace.id}:${generation}`} workspace={workspace} userArea={userArea} onReset={value => { setResetResult(value); setGeneration(old => old + 1) }} /></>
   return <div className="bootstrap-state"><div className="bootstrap-state__user">{userArea}</div><section className="card">{error ? <><p role="alert">{error}</p><button type="button" onClick={() => { setError(null); setRetry(value => value + 1) }}>Tentar novamente</button></> : <p role="status">Abrindo seu orçamento pessoal…</p>}</section></div>

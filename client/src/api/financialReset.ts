@@ -1,7 +1,7 @@
 import { CSRF_HEADER, getCsrfToken } from './csrf'
 
 export interface ResetPreview { workspaceId: string; status: string; counts: Record<string, number> }
-export interface ResetResult { workspaceId: string; status: 'ResetCompleted' | 'AlreadyEmpty'; deleted: Record<string, number> }
+export interface ResetResult { workspaceId: string; status: 'ResetCompleted' | 'AlreadyEmpty'; deleted: Record<string, number>; categoriesRecreated?: number }
 const path = (id: string) => `/api/financial-workspaces/${encodeURIComponent(id)}/financial-reset`
 async function result<T>(response: Response): Promise<T> {
   if (!response.ok) {
