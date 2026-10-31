@@ -4,6 +4,8 @@ using Saldo360.Domain.Pluggy;
 namespace Saldo360.Tests.Pluggy;
 
 /// <summary>Decisao exata do classificador e do mapper para um debito/credito efetivado de conta bancaria, por operationType (Pluggy simulada).</summary>
+[Trait("Category", "CORE")]
+[Trait("Area", "Pluggy")]
 public sealed class PluggyDecisionMatrixTests
 {
     private static (PluggyTransactionClass Class, string ClassReason, PluggyDisposition Disposition, string? Reason) Run(string type, string? operation)
