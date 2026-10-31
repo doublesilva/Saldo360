@@ -115,6 +115,7 @@
   .ov-main, .ov-aside { display: contents; }
   .ov-slot--commitments { order: 1; }
   .ov-slot--accounts { order: 2; }
+  .ov-slot--transfers { order: 3; }
   .ov-slot--evolution { order: 3; }
   .ov-slot--budget { order: 4; }
   .ov-slot--recent { order: 5; }

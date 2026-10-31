@@ -1,4 +1,4 @@
-import type { OverviewAccounts, OverviewCardPayments, OverviewCommitment, OverviewCommitments, OverviewGoals, OverviewRecent } from '../../api/overview'
+import type { OverviewTransfers, OverviewAccounts, OverviewCardPayments, OverviewCommitment, OverviewCommitments, OverviewGoals, OverviewRecent } from '../../api/overview'
 import { formatDate } from '../../money'
 import { todayInSaoPaulo } from '../../dates'
 import { barWidth, percentNow, dayDistance, exceedsHundred, isNegative, isPositiveAmount, money, monthTitle, percentText, unavailableBalanceReasons } from './overviewText'
@@ -103,5 +103,28 @@ export function OverviewRecentBlock({ recent, competence, scopeText, onOpenAll }
             <small>{formatDate(item.date)} · {item.categoryName ?? 'Sem categoria'}{item.awaitingClassification && <> · <span className="ov-tag ov-tag--warning">Aguardando classificação</span></>} · {item.accountName}</small></span>
           <span className={`ov-amount ov-amount--${item.type === 'Income' ? 'income' : 'expense'}`}><span className="visually-hidden">{item.type === 'Income' ? 'Receita ' : 'Despesa '}</span>{item.type === 'Income' ? '+' : '−'} {money(item.amount)}</span></div></li>)}</ul>}
     {recent.state === 'Complete' && recent.totalCount > recent.items.length && <p className="ov-meta">Mostrando {recent.items.length} de {recent.totalCount} lançamentos do período.</p>}
+  </section>
+}
+
+/**
+ * Transferências entre contas no mês, sempre à parte de Receitas e Despesas (valores calculados no servidor). Com uma conta no escopo mostra o recebido e o enviado
+ * por conta; no consolidado o total movimentado e o líquido zero.
+ */
+export function OverviewTransfersBlock({ transfers, scopeKind, onOpen }: { transfers: OverviewTransfers; scopeKind: string; onOpen: () => void }) {
+  if (transfers.state === 'Unavailable') return <section className="ov-card" aria-labelledby="ov-transfers-title"><h3 id="ov-transfers-title">Transferências entre contas</h3><Unavailable>Não foi possível carregar as transferências.</Unavailable></section>
+  const consolidated = scopeKind === 'all'
+  return <section className="ov-card" aria-labelledby="ov-transfers-title">
+    <header><div><h3 id="ov-transfers-title">Transferências entre contas</h3>
+      <p className="ov-meta">No mês · não entram em Receitas nem em Despesas{consolidated ? ' · no consolidado o líquido é zero' : ''}</p></div><button type="button" onClick={onOpen}>Abrir Transferências</button></header>
+    {transfers.count === 0 ? <p className="ov-empty">Nenhuma transferência entre contas neste mês.</p> : <>
+      <dl className="ov-meta">
+        {consolidated ? <div><dt>Movimentado entre contas</dt><dd>{money(transfers.received)} · líquido {money(transfers.net)}</dd></div>
+          : <><div><dt>Transferências recebidas</dt><dd>{money(transfers.received)}</dd></div><div><dt>Transferências enviadas</dt><dd>{money(transfers.sent)}</dd></div></>}
+      </dl>
+      <ul className="ov-list">{transfers.items.map(line => <li key={`${line.direction}:${line.counterpart}:${line.counterpart2 ?? ''}`}><span className="ov-row">
+        <span className="ov-row__main"><strong>{line.direction === 'Received' ? `Recebida de ${line.counterpart}` : line.direction === 'Sent' ? `Enviada para ${line.counterpart}` : `${line.counterpart} → ${line.counterpart2}`}</strong><small>{line.count} transferência(s)</small></span>
+        <span className="ov-amount">{money(line.amount)}</span></span></li>)}</ul>
+      <p className="ov-meta">Se uma entrada desta lista não é transferência para você (por exemplo, pró-labore ou distribuição que você considera receita), abra Transferências e use "Desfazer vínculo": o crédito volta como receita desta conta e o débito como despesa da outra, e o par não é recriado nas próximas sincronizações.</p>
+    </>}
   </section>
 }

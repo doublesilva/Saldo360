@@ -38,6 +38,30 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const plan = (changes: Partial<PlanActualDashboard>): PlanActualDashboard => ({ ...planActual, ...changes })
 
+describe('Visão Geral — transferências entre contas', () => {
+  it('mostra o recebido por transferência à parte (de qual conta) e a frase para desfazer o vínculo, sem mexer nos indicadores', async () => {
+    mockApi({ overview: { ...overview, scopeKind: 'account', transfers: { state: 'Complete', received: '12692.00', sent: '0.00', net: '12692.00', count: 1, items: [{ direction: 'Received', counterpart: 'Itaú PJ', counterpart2: null, amount: '12692.00', count: 1 }] } } })
+    renderPage()
+    const card = await screen.findByRole('region', { name: 'Transferências entre contas' })
+    expect(within(card).getByText('Recebida de Itaú PJ')).toBeTruthy()
+    expect(within(card).getByText('Transferências recebidas')).toBeTruthy()
+    expect(within(card).getAllByText('R$ 12.692,00').length).toBeGreaterThan(0)
+    expect(within(card).getByText(/não entram em Receitas nem em Despesas/)).toBeTruthy()
+    expect(within(card).getByText(/Desfazer vínculo/)).toBeTruthy()
+    expect(within(indicators().getByRole('article', { name: 'Receitas do mês' })).getByText('R$ 450,00')).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: 'Abrir Transferências' }))
+    expect(navigations.at(-1)?.section).toBe('transfers')
+  })
+
+  it('no consolidado mostra o total movimentado e o líquido zero', async () => {
+    mockApi({ overview: { ...overview, scopeKind: 'all', transfers: { state: 'Complete', received: '500.00', sent: '500.00', net: '0.00', count: 1, items: [{ direction: 'Between', counterpart: 'Itaú PJ', counterpart2: 'Itaú PF', amount: '500.00', count: 1 }] } } })
+    renderPage()
+    const card = await screen.findByRole('region', { name: 'Transferências entre contas' })
+    expect(within(card).getByText('Itaú PJ → Itaú PF')).toBeTruthy()
+    expect(within(card).getByText(/líquido R\$ 0,00/)).toBeTruthy()
+  })
+})
+
 describe('Visão Geral — indicadores', () => {
   it('mostra um único conjunto de quatro indicadores, cada um com o seu significado e a sua referência de tempo', async () => {
     mockApi(); renderPage()
@@ -105,7 +129,7 @@ describe('Visão Geral — avisos', () => {
     }) })
     renderPage()
     expect(await screen.findByText(/A última sincronização com o banco falhou/)).toBeTruthy()
-    expect(screen.getByText(/2 movimentação\(ões\) do banco aguardam revisão/)).toBeTruthy()
+    expect(screen.getByText(/2 movimentação\(ões\) do banco aguardam sua decisão/)).toBeTruthy()
     expect(screen.getByText(/Projeção incompleta/)).toBeTruthy()
     const details = screen.getByText('Por que alguns valores são parciais').closest('details')!
     expect(details.open).toBe(false)

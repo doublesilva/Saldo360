@@ -45,9 +45,14 @@ export interface OverviewRecent { state: BlockState; from: string; through: stri
 
 export interface OverviewClassification { state: BlockState; needsReview: number; notEvaluated: number }
 
+export interface OverviewTransferLine { direction: 'Received' | 'Sent' | 'Between'; counterpart: string; counterpart2: string | null; amount: string; count: number }
+export interface OverviewTransfers { state: BlockState; received: string; sent: string; net: string; count: number; items: OverviewTransferLine[] }
+
 export interface DashboardOverview {
   competence: string; asOf: string; scopeKind: 'primary' | 'all' | 'account'; scopeAccountId: string | null
   accounts: OverviewAccounts; commitments: OverviewCommitments; goals: OverviewGoals; budget: OverviewBudget; recent: OverviewRecent; classification: OverviewClassification
+  /** Aditivo: servidores antigos não enviam. */
+  transfers?: OverviewTransfers | null
 }
 
 export function getDashboardOverview(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<DashboardOverview> {

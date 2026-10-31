@@ -5,6 +5,7 @@ using Saldo360.Application.Dashboard.PlanActual;
 using Saldo360.Application.Goals;
 using Saldo360.Application.Pluggy;
 using Saldo360.Application.Transactions;
+using Saldo360.Application.Transfers;
 using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Common;
@@ -61,8 +62,17 @@ public sealed record OverviewRecentDto(string State, DateOnly From, DateOnly Thr
 /// <summary>Lançamentos do banco ainda sem categoria definida. Não tem relação com a sincronização: é uma fila de classificação.</summary>
 public sealed record OverviewClassificationDto(string State, int NeedsReview, int NotEvaluated);
 
+/// <summary>
+/// Transferências entre contas do orçamento no mês (R: manter separados Receitas, Entradas por transferência, Saídas por transferência e Devoluções). Nunca entram em receitas
+/// nem em despesas. Com uma conta no escopo: <c>Received</c>/<c>Sent</c> daquela conta, linhas por conta de origem/destino (<c>Direction</c> Received ou Sent). No consolidado:
+/// <c>Received</c> = <c>Sent</c> = total movimentado entre contas, <c>Net</c> = 0, linhas por par (<c>Direction</c> Between).
+/// </summary>
+public sealed record OverviewTransferLineDto(string Direction, string Counterpart, string? Counterpart2, string Amount, int Count);
+
+public sealed record OverviewTransfersDto(string State, string Received, string Sent, string Net, int Count, IReadOnlyList<OverviewTransferLineDto> Items);
+
 public sealed record DashboardOverviewDto(string Competence, DateOnly AsOf, string ScopeKind, Guid? ScopeAccountId, OverviewAccountsDto Accounts, OverviewCommitmentsDto Commitments, OverviewGoalsDto Goals,
-    OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification);
+    OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null);
 
 public sealed class DashboardOverviewService(
     IFinancialWorkspaceRepository workspaces,
@@ -75,6 +85,7 @@ public sealed class DashboardOverviewService(
     Saldo360.Application.CreditCards.Projection.CardProjectionService cardProjection,
     FinancialTransactionService transactionService,
     IPluggyCategorizationService categorization,
+    IFinancialTransferRepository transferRepository,
     TimeProvider time)
 {
     public const int HorizonDays = 30;
@@ -118,7 +129,43 @@ public sealed class DashboardOverviewService(
         var budget = await BuildBudgetAsync(workspaceId, userId, month, ct);
         var recent = await BuildRecentAsync(workspaceId, userId, month, selected?.Id, today, ct);
         var classification = await BuildClassificationAsync(workspaceId, ct);
-        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification));
+        var transfers = await BuildTransfersAsync(workspaceId, month, selected?.Id, ct);
+        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers));
+    }
+
+    private async Task<OverviewTransfersDto> BuildTransfersAsync(Guid workspaceId, string month, Guid? accountId, CancellationToken ct)
+    {
+        var zero = Money.Format(0m);
+        try
+        {
+            var first = new DateOnly(int.Parse(month[..4]), int.Parse(month[5..]), 1);
+            var items = new List<FinancialTransferDto>();
+            for (var page = 1; page <= 20; page++)
+            {
+                var result = await transferRepository.ListAsync(workspaceId, new(first, first.AddMonths(1).AddDays(-1), accountId, false, page, 100), ct);
+                items.AddRange(result.Items);
+                if (items.Count >= result.TotalCount || result.Items.Count == 0) break;
+            }
+            if (accountId is { } id)
+            {
+                var received = items.Where(t => t.DestinationAccount.Id == id).ToList();
+                var sent = items.Where(t => t.SourceAccount.Id == id).ToList();
+                var lines = received.GroupBy(t => t.SourceAccount.Name).Select(g => new OverviewTransferLineDto("Received", g.Key, null, Money.Format(g.Sum(t => t.Amount)), g.Count()))
+                    .Concat(sent.GroupBy(t => t.DestinationAccount.Name).Select(g => new OverviewTransferLineDto("Sent", g.Key, null, Money.Format(g.Sum(t => t.Amount)), g.Count())))
+                    .OrderBy(l => l.Direction).ThenBy(l => l.Counterpart, StringComparer.CurrentCultureIgnoreCase).ToList();
+                var receivedTotal = received.Sum(t => t.Amount); var sentTotal = sent.Sum(t => t.Amount);
+                return new("Complete", Money.Format(receivedTotal), Money.Format(sentTotal), Money.Format(receivedTotal - sentTotal), received.Count + sent.Count, lines);
+            }
+            var total = items.Sum(t => t.Amount);
+            var pairs = items.GroupBy(t => (From: t.SourceAccount.Name, To: t.DestinationAccount.Name))
+                .Select(g => new OverviewTransferLineDto("Between", g.Key.From, g.Key.To, Money.Format(g.Sum(t => t.Amount)), g.Count()))
+                .OrderBy(l => l.Counterpart, StringComparer.CurrentCultureIgnoreCase).ThenBy(l => l.Counterpart2, StringComparer.CurrentCultureIgnoreCase).ToList();
+            return new("Complete", Money.Format(total), Money.Format(total), zero, items.Count, pairs);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return new("Unavailable", zero, zero, zero, 0, []);
+        }
     }
 
     private static PlanActualResult<DashboardOverviewDto> Invalid(string field, string message) =>
