@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { listAccounts, primaryAccountOf, type FinancialAccount } from '../api/accounts'
 import type { CategoryType } from '../api/categories'
+import { cancelPlannedTransfer } from '../api/plannedTransfers'
 import {
   getFinancialCalendar,
   getFinancialCalendarBalances,
@@ -169,6 +170,7 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
               date={selectedDate}
               items={selectedItems}
               onOpen={(item, trigger) => setOpened({ item, trigger })}
+              onCancelPlannedTransfer={(plannedId) => { void cancelPlannedTransfer(workspaceId, plannedId).then(handleFinancialChange).catch(() => undefined) }}
             />
           </div>
           <FinancialCalendarCardInvoices workspaceId={workspaceId} month={month} accountId={accountId} selectedDate={selectedDate} refreshKey={refreshKey} onOpenCards={onNavigateToCards} />
@@ -728,10 +730,12 @@ export function FinancialCalendarEvents({
   date,
   items,
   onOpen,
+  onCancelPlannedTransfer,
 }: {
   date: string
   items: FinancialCalendarItem[]
   onOpen: (item: FinancialCalendarItem, trigger: HTMLButtonElement) => void
+  onCancelPlannedTransfer?: (plannedTransferId: string) => void
 }) {
   return (
     <section className="calendar-events" aria-live="polite" aria-labelledby="calendar-events-title">
@@ -754,6 +758,9 @@ export function FinancialCalendarEvents({
                 {item.category && <span>{item.category.name}{item.category.isActive ? '' : ' (inativa)'}</span>}
               </div>
               <span className={`badge badge--calendar-${item.status.toLowerCase()}`}>{statusLabels[item.status]}</span>
+              {item.source === 'Transfer' && item.plannedTransferId && item.allowedActions?.includes('CancelPlannedTransfer') && onCancelPlannedTransfer && (
+                <button type="button" onClick={() => onCancelPlannedTransfer(item.plannedTransferId!)}>Cancelar previsão de transferência</button>
+              )}
               {item.source !== 'Transfer' && <button
                 type="button"
                 className="button--link calendar-event__details"

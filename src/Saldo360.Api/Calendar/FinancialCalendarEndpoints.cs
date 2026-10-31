@@ -212,6 +212,9 @@ public sealed record FinancialCalendarSummaryResponse(
     public string TransfersReceived { get; init; } = "0.00";
     public string TransfersSent { get; init; } = "0.00";
     public string TransfersInternal { get; init; } = "0.00";
+    /// <summary>Transferências previstas pendentes da conta no período (aditivo).</summary>
+    public string PlannedTransfersReceived { get; init; } = "0.00";
+    public string PlannedTransfersSent { get; init; } = "0.00";
 
     public static FinancialCalendarSummaryResponse From(FinancialCalendarSummaryDto summary) => new(
         Money.Format(summary.RealizedIncome),
@@ -220,7 +223,7 @@ public sealed record FinancialCalendarSummaryResponse(
         Money.Format(summary.PendingExpense),
         Money.Format(summary.OverdueIncome),
         Money.Format(summary.OverdueExpense))
-    { RealizedRefunds = Money.Format(summary.RealizedRefunds), TransfersReceived = Money.Format(summary.TransfersReceived), TransfersSent = Money.Format(summary.TransfersSent), TransfersInternal = Money.Format(summary.TransfersInternal) };
+    { RealizedRefunds = Money.Format(summary.RealizedRefunds), TransfersReceived = Money.Format(summary.TransfersReceived), TransfersSent = Money.Format(summary.TransfersSent), TransfersInternal = Money.Format(summary.TransfersInternal), PlannedTransfersReceived = Money.Format(summary.PlannedTransfersReceived), PlannedTransfersSent = Money.Format(summary.PlannedTransfersSent) };
 }
 
 public sealed record FinancialCalendarBalancesResponse(
@@ -374,6 +377,9 @@ public sealed record FinancialCalendarItemResponse(
     DateOnly? ScheduledDate,
     IReadOnlyList<string> AllowedActions)
 {
+    /// <summary>Transferência prevista que originou o item (Source Transfer, Pendente/Vencido). Nulo nos demais.</summary>
+    public Guid? PlannedTransferId { get; init; }
+
     public static FinancialCalendarItemResponse From(FinancialCalendarItemDto item) => new(
         item.Id,
         item.Source,
@@ -390,5 +396,5 @@ public sealed record FinancialCalendarItemResponse(
         item.RecurrenceId,
         item.OccurrenceNumber,
         item.ScheduledDate,
-        item.AllowedActions);
+        item.AllowedActions) { PlannedTransferId = item.PlannedTransferId };
 }

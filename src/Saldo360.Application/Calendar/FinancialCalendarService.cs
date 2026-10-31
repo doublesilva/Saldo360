@@ -9,6 +9,7 @@ public sealed class FinancialCalendarService(
     IFinancialWorkspaceRepository workspaces,
     IFinancialCalendarRepository calendar,
     Saldo360.Application.Transfers.IFinancialTransferRepository transferRepository,
+    Saldo360.Application.Transfers.IFinancialPlannedTransferRepository plannedTransferRepository,
     TimeProvider timeProvider)
 {
     public async Task<FinancialCalendarResult> ListAsync(
@@ -79,16 +80,33 @@ public sealed class FinancialCalendarService(
                 extra.Add(Item(t, false));
             }
         }
-        summary = summary with { TransfersReceived = received, TransfersSent = sent, TransfersInternal = internalMoved };
+        // Transferências previstas pendentes (ainda não realizadas): as duas pontas na Agenda, separadas da transferência realizada.
+        var plannedItems = new List<FinancialCalendarItemDto>();
+        decimal plannedReceived = 0m, plannedSent = 0m;
+        foreach (var p in (await plannedTransferRepository.ListAsync(workspaceId, query.From, query.Through, false, filter.Today, cancellationToken))
+                     .Where(p => p.Status is Saldo360.Application.Transfers.PlannedTransferStatus.Planned or Saldo360.Application.Transfers.PlannedTransferStatus.Overdue))
+        {
+            var status = p.Status == Saldo360.Application.Transfers.PlannedTransferStatus.Overdue ? FinancialCalendarStatus.Overdue : FinancialCalendarStatus.Pending;
+            if (query.AccountId is null || query.AccountId == p.DestinationAccount.Id) { plannedItems.Add(PlannedItem(p, status, true)); if (query.AccountId is not null) plannedReceived += p.Amount; }
+            if (query.AccountId is null || query.AccountId == p.SourceAccount.Id) { plannedItems.Add(PlannedItem(p, status, false)); if (query.AccountId is not null) plannedSent += p.Amount; }
+        }
+        summary = summary with { TransfersReceived = received, TransfersSent = sent, TransfersInternal = internalMoved, PlannedTransfersReceived = plannedReceived, PlannedTransfersSent = plannedSent };
         if (query.IncludeTransfers && type is null)
         {
-            items = items.Concat(extra).OrderBy(i => i.Date).ThenBy(i => i.Source == FinancialCalendarSource.Transfer ? 1 : 0).ThenBy(i => i.Id).ToList();
+            items = items.Concat(extra).Concat(plannedItems).OrderBy(i => i.Date).ThenBy(i => i.Source == FinancialCalendarSource.Transfer ? 1 : 0).ThenBy(i => i.Id).ToList();
         }
 
         return new FinancialCalendarResult(
             new FinancialCalendar(query.From, query.Through, items, summary),
             null,
             false);
+
+        static FinancialCalendarItemDto PlannedItem(Saldo360.Application.Transfers.PlannedTransferDto p, FinancialCalendarStatus status, bool incoming) => new(
+            p.Id, FinancialCalendarSource.Transfer, status, incoming ? CategoryType.Income : CategoryType.Expense, p.Amount, p.DueDate,
+            incoming ? $"Transferência prevista recebida de {p.SourceAccount.Name}" : $"Transferência prevista enviada para {p.DestinationAccount.Name}",
+            incoming ? new Saldo360.Application.Transactions.TransactionReferenceDto(p.DestinationAccount.Id, p.DestinationAccount.Name, p.DestinationAccount.IsActive)
+                     : new Saldo360.Application.Transactions.TransactionReferenceDto(p.SourceAccount.Id, p.SourceAccount.Name, p.SourceAccount.IsActive),
+            null, "BRL", null, PlannedTransferId: p.Id);
 
         static FinancialCalendarItemDto Item(Saldo360.Application.Transfers.FinancialTransferDto t, bool incoming) => new(
             t.Id, FinancialCalendarSource.Transfer, FinancialCalendarStatus.Realized, incoming ? CategoryType.Income : CategoryType.Expense, t.Amount, t.TransferDate,

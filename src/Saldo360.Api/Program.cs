@@ -80,6 +80,7 @@ app.MapFinancialResetEndpoints();
 app.MapFinancialCategoryEndpoints();
 app.MapFinancialTransactionEndpoints();
 app.MapFinancialTransferEndpoints();
+app.MapFinancialPlannedTransferEndpoints();
 app.MapFinancialPlannedTransactionEndpoints();
 app.MapFinancialCalendarEndpoints();
 app.MapFinancialBudgetEndpoints();

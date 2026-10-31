@@ -44,7 +44,8 @@ public sealed record FinancialCalendarItemDto(
     FinancialTransactionOrigin Origin = FinancialTransactionOrigin.Manual,
     Guid? RecurrenceId = null,
     int? OccurrenceNumber = null,
-    DateOnly? ScheduledDate = null)
+    DateOnly? ScheduledDate = null,
+    Guid? PlannedTransferId = null)
 {
     // Advisory capabilities only. Existing commands revalidate state under their own locks.
     public IReadOnlyList<string> AllowedActions => Source switch
@@ -53,6 +54,7 @@ public sealed record FinancialCalendarItemDto(
             => ["Realize", "Edit", "Cancel"],
         FinancialCalendarSource.Transaction when Origin is FinancialTransactionOrigin.Manual or FinancialTransactionOrigin.PlannedRealization
             => PlannedTransactionId is null ? ["Edit", "Cancel"] : ["UndoRealization", "ViewOrigin"],
+        FinancialCalendarSource.Transfer when PlannedTransferId is not null && Status is FinancialCalendarStatus.Pending or FinancialCalendarStatus.Overdue => ["CancelPlannedTransfer"],
         _ => [],
     };
 }
@@ -82,6 +84,10 @@ public sealed record FinancialCalendarSummaryDto(
     public decimal TransfersReceived { get; init; }
     public decimal TransfersSent { get; init; }
     public decimal TransfersInternal { get; init; }
+
+    /// <summary>Transferências PREVISTAS pendentes do período (ainda não realizadas), separadas de receitas e despesas previstas.</summary>
+    public decimal PlannedTransfersReceived { get; init; }
+    public decimal PlannedTransfersSent { get; init; }
 }
 
 public sealed record FinancialCalendarSnapshot(

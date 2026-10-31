@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { listAccounts, type FinancialAccount } from '../api/accounts'
+import { PlannedTransfers } from './PlannedTransfers'
 import {
   TRANSFER_DESCRIPTION_MAX_LENGTH,
   cancelTransfer,
@@ -241,6 +242,7 @@ export function Transfers({ workspaceId, onChanged }: { workspaceId: string; onC
           </nav>
         </>
       )}
+      {accounts.kind === 'loaded' && <PlannedTransfers workspaceId={workspaceId} accounts={accounts.data} onChanged={onChanged} />}
     </div>
   )
 }

@@ -106,7 +106,7 @@ public sealed record TransferDetails
     /// </summary>
     public static TransferDetails? TryCreate(
         Guid? sourceAccountId, Guid? destinationAccountId, decimal? amount, DateOnly? transferDate, string? description,
-        DateOnly today, out Dictionary<string, string[]> errors)
+        DateOnly today, out Dictionary<string, string[]> errors, bool allowFutureDate = false)
     {
         errors = [];
         var trimmedDescription = description?.Trim() ?? string.Empty;
@@ -142,7 +142,7 @@ public sealed record TransferDetails
         {
             errors["transferDate"] = ["Informe a data da transferência."];
         }
-        else if (transferDate > today)
+        else if (transferDate > today && !allowFutureDate)
         {
             errors["transferDate"] = ["A data não pode ser futura: registre só transferências já realizadas."];
         }

@@ -72,7 +72,9 @@ public sealed class FinancialCalendarBalanceService(
         var pendingByDate = allPending.ToDictionary(row => row.Date);
         var openingTotal = snapshot.Accounts.Sum(account => account.OpeningBalance ?? 0m);
         var overdue = Sum(allPending.Where(row => row.Date < today));
-        var hasOverdue = overdue.Income != 0m || overdue.Expense != 0m;
+        // Transferências previstas pendentes (saída na origem/entrada no destino) entram na projeção como as demais previsões; as atrasadas são tratadas como as de hoje.
+        var overdueTransfers = SumTransfers(allPending.Where(row => row.Date < today));
+        var hasOverdue = overdue.Income != 0m || overdue.Expense != 0m || overdueTransfers.In != 0m || overdueTransfers.Out != 0m;
 
         decimal CurrentActualBefore(DateOnly date) => snapshot.Realized
             .Where(row => row.Date < date)
@@ -89,10 +91,13 @@ public sealed class FinancialCalendarBalanceService(
                 .Where(row => row.Date <= today)
                 .Aggregate(openingTotal, (balance, row) => Apply(balance, row));
             var plannedBefore = Sum(allPending.Where(row => row.Date >= today && row.Date < query.From));
+            var plannedBeforeTransfers = SumTransfers(allPending.Where(row => row.Date >= today && row.Date < query.From));
             current = FinancialBalanceCalculator.ApplyMovements(
                 realizedToday,
                 overdue.Income + plannedBefore.Income,
-                overdue.Expense + plannedBefore.Expense);
+                overdue.Expense + plannedBefore.Expense,
+                overdueTransfers.In + plannedBeforeTransfers.In,
+                overdueTransfers.Out + plannedBeforeTransfers.Out);
         }
 
         var openingBalance = current;
@@ -129,14 +134,17 @@ public sealed class FinancialCalendarBalanceService(
                     overdue.Expense,
                     pending?.Income ?? 0m,
                     pending?.Expense ?? 0m);
+                var todayTransferIn = transferIn + overdueTransfers.In + (pending?.TransferIn ?? 0m);
+                var todayTransferOut = transferOut + overdueTransfers.Out + (pending?.TransferOut ?? 0m);
                 current = FinancialBalanceCalculator.Project(realizedClosing, todayPending);
+                current = FinancialBalanceCalculator.ApplyMovements(current, 0m, 0m, todayTransferIn - transferIn, todayTransferOut - transferOut);
                 days.Add(AvailableDay(
                     date,
                     FinancialCalendarBalanceKind.Projected,
                     realizedIncome + todayPending.PlannedIncome,
                     realizedExpense + todayPending.PlannedExpense,
-                    transferIn,
-                    transferOut,
+                    todayTransferIn,
+                    todayTransferOut,
                     current,
                     hasOverdue));
             }
@@ -144,14 +152,16 @@ public sealed class FinancialCalendarBalanceService(
             {
                 var pendingIncome = pending?.Income ?? 0m;
                 var pendingExpense = pending?.Expense ?? 0m;
-                current = FinancialBalanceCalculator.ApplyMovements(current, pendingIncome, pendingExpense);
+                var pendingTransferIn = pending?.TransferIn ?? 0m;
+                var pendingTransferOut = pending?.TransferOut ?? 0m;
+                current = FinancialBalanceCalculator.ApplyMovements(current, pendingIncome, pendingExpense, pendingTransferIn, pendingTransferOut);
                 days.Add(AvailableDay(
                     date,
                     FinancialCalendarBalanceKind.Projected,
                     pendingIncome,
                     pendingExpense,
-                    0m,
-                    0m,
+                    pendingTransferIn,
+                    pendingTransferOut,
                     current,
                     hasOverdue));
             }
@@ -255,6 +265,9 @@ public sealed class FinancialCalendarBalanceService(
     private static decimal Apply(decimal balance, FinancialCalendarDailyTotals row) =>
         FinancialBalanceCalculator.ApplyMovements(
             balance, row.Income, row.Expense, row.TransferIn, row.TransferOut);
+
+    private static (decimal In, decimal Out) SumTransfers(IEnumerable<FinancialCalendarDailyTotals> rows) =>
+        rows.Aggregate((In: 0m, Out: 0m), (totals, row) => (totals.In + row.TransferIn, totals.Out + row.TransferOut));
 
     private static (decimal Income, decimal Expense) Sum(IEnumerable<FinancialCalendarDailyTotals> rows) =>
         rows.Aggregate((Income: 0m, Expense: 0m), (totals, row) =>

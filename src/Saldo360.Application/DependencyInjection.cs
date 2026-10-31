@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialCategoryService>();
         services.AddScoped<FinancialTransactionService>();
         services.AddScoped<FinancialTransferService>();
+        services.AddScoped<FinancialPlannedTransferService>();
         services.AddScoped<FinancialPlannedTransactionService>();
         services.AddScoped<FinancialCalendarService>();
         services.AddScoped<FinancialCalendarBalanceService>();

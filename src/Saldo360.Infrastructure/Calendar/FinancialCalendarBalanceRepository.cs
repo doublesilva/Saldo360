@@ -151,6 +151,21 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             .Select(row => new FinancialCalendarDailyTotals(row.Date, row.Income, row.Expense, 0m, 0m))
             .ToList();
 
+        // Transferências PREVISTAS (pendentes: não canceladas e ainda sem transferência realizada associada): saída na origem e entrada no destino. Numa conta, só a ponta dela; no
+        // consolidado, o líquido por dia (as duas pontas dentro do conjunto se anulam). Associada, a previsão deixa de projetar: o realizado já conta a transferência uma única vez.
+        var plannedTransfers = await (from item in db.FinancialPlannedTransfers.AsNoTracking()
+                                      where item.WorkspaceId == workspaceId && !item.IsCancelled && item.RealizedTransferId == null && item.DueDate <= through
+                                      select new { item.DueDate, item.SourceAccountId, item.DestinationAccountId, item.Amount }).ToListAsync(cancellationToken);
+        var selectedIds = await selectedAccounts.Select(account => account.Id).ToListAsync(cancellationToken);
+        var plannedTransferRows = plannedTransfers
+            .Select(item => new { item.DueDate, In = selectedIds.Contains(item.DestinationAccountId) ? item.Amount : 0m, Out = selectedIds.Contains(item.SourceAccountId) ? item.Amount : 0m })
+            .GroupBy(item => item.DueDate)
+            .Select(daily => new { Date = daily.Key, In = daily.Sum(item => item.In), Out = daily.Sum(item => item.Out) })
+            .Where(row => row.In != 0m || row.Out != 0m)
+            .Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, 0m, accountId is null ? Math.Max(0m, row.In - row.Out) : row.In, accountId is null ? Math.Max(0m, row.Out - row.In) : row.Out))
+            .ToList();
+        pending = pending.Concat(plannedTransferRows).ToList();
+
         var selectedAccountIds = await selectedAccounts.Select(account => account.Id).ToListAsync(cancellationToken);
         var debtRows = await (from installment in db.FinancialDebtInstallments.AsNoTracking()
                               join debt in db.FinancialDebts.AsNoTracking() on new { installment.WorkspaceId, DebtId = installment.DebtId } equals new { debt.WorkspaceId, DebtId = debt.Id }

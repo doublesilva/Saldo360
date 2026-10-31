@@ -45,6 +45,7 @@ internal static class FinancialResetFixture
         var refundTransaction = FinancialTransaction.CreateBankRefund(w, account.Id, "Refund", 4m, date, u, now);
         var bankRefund = FinancialBankRefund.Create(w, refundTransaction.Id, transaction.Id, 4m, u, now);
         var transfer = FinancialTransfer.Create(w, TransferDetails.TryCreate(account.Id, destination.Id, 1m, date, "Transfer", date, out _)!, u, now);
+        var plannedTransfer = FinancialPlannedTransfer.Create(w, TransferDetails.TryCreate(account.Id, destination.Id, 2m, date, "Planned transfer", date, out _, allowFutureDate: true)!, u, now);
         var recurrence = FinancialRecurrence.Create(w, new(account.Id, category.Id, CategoryType.Expense, "Recurrence", 10m, false, RecurrenceFrequency.Monthly, 1, date, null, 1, 1), now);
         var materialization = FinancialRecurrenceMaterialization.Create(w, recurrence.Id, 1, date, recurring.Id, now);
         var budget = FinancialBudget.Create(w, date, null, u, now);
@@ -99,7 +100,7 @@ internal static class FinancialResetFixture
         var nonWorkingDay = FinancialNonWorkingDay.Create(w, date, NonWorkingDayKind.Holiday, "Synthetic", u, now);
         var pluggyChange = PluggyTransactionChange.Create(pluggyTransaction, pluggyTransaction.Observe(pluggySnapshot with { Status = PluggyTransactionStatus.Posted }, pluggyRun.Id, now), pluggyRun.Id, now);
         var recoverySnapshot = OverdraftRecoverySnapshot.Create(w, account.Id, new DateOnly(date.Year, date.Month, 1), -100m, date, 0m, 0m, -50m, "Complete", string.Empty, now);
-        db.AddRange(recoverySnapshot, account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, refundTransaction, bankRefund, transfer,
+        db.AddRange(recoverySnapshot, account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, refundTransaction, bankRefund, transfer, plannedTransfer,
             recurrence, materialization, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
             scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyTransaction2, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyPosting2, pluggyRejection, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState, automationSettings, categorizationRun, cardTarget, planLine, planHistory, nonWorkingDay);

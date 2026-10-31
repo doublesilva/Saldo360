@@ -11,12 +11,20 @@ internal sealed class FinancialTransferRepository(Saldo360DbContext db) : IFinan
     {
         db.FinancialTransfers.Add(transfer);
         await db.SaveChangesAsync(cancellationToken);
+        // Previsão de transferência cumprida por esta transferência (só quando inequívoco).
+        await PlannedTransferReconciler.ReconcileAsync(db, transfer.WorkspaceId, DateTimeOffset.UtcNow, cancellationToken);
     }
 
     public Task<FinancialTransfer?> FindAsync(Guid workspaceId, Guid transferId, CancellationToken cancellationToken) =>
         db.FinancialTransfers.SingleOrDefaultAsync(t => t.Id == transferId && t.WorkspaceId == workspaceId, cancellationToken);
 
-    public Task SaveChangesAsync(CancellationToken cancellationToken) => db.SaveChangesAsync(cancellationToken);
+    public async Task SaveChangesAsync(CancellationToken cancellationToken)
+    {
+        var touched = db.ChangeTracker.Entries<FinancialTransfer>().Where(e => e.State == EntityState.Modified).Select(e => e.Entity.WorkspaceId).Distinct().ToList();
+        await db.SaveChangesAsync(cancellationToken);
+        // Transferência cancelada libera a previsão que ela cumpria (volta a projetar).
+        foreach (var workspaceId in touched) await PlannedTransferReconciler.ReconcileAsync(db, workspaceId, DateTimeOffset.UtcNow, cancellationToken);
+    }
 
     public Task<FinancialTransferDto?> GetAsync(Guid workspaceId, Guid transferId, CancellationToken cancellationToken) =>
         Project(db.FinancialTransfers.Where(t => t.WorkspaceId == workspaceId && t.Id == transferId)).SingleOrDefaultAsync(cancellationToken);

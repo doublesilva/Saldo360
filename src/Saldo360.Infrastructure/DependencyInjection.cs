@@ -88,6 +88,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialCategoryRepository, FinancialCategoryRepository>();
         services.AddScoped<IFinancialTransactionRepository, FinancialTransactionRepository>();
         services.AddScoped<IFinancialTransferRepository, FinancialTransferRepository>();
+        services.AddScoped<IFinancialPlannedTransferRepository, FinancialPlannedTransferRepository>();
         services.AddScoped<IFinancialPlannedTransactionRepository, FinancialPlannedTransactionRepository>();
         services.AddScoped<IReferenceLookup>(sp => sp.GetRequiredService<IFinancialPlannedTransactionRepository>());
         services.AddScoped<IFinancialCalendarRepository, FinancialCalendarRepository>();

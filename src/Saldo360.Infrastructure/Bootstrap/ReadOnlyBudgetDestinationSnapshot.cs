@@ -60,6 +60,7 @@ public sealed record ReadOnlyBudgetDestinationSnapshot(int SchemaVersion, Guid W
         if (AppliedMigrations.Contains("20261031114044_AddPluggyTransferLinkAudit", StringComparer.Ordinal)) expected.Add("pluggy_transfer_rejections");
         if (AppliedMigrations.Contains("20261031125016_AddBankRefunds", StringComparer.Ordinal)) expected.Add("financial_bank_refunds");
         if (AppliedMigrations.Contains("20261031165952_AddOverdraftRecovery", StringComparer.Ordinal)) expected.Add("overdraft_recovery_snapshots");
+        if (AppliedMigrations.Contains("20261031213935_AddPlannedTransfers", StringComparer.Ordinal)) expected.Add("financial_planned_transfers");
         if (AppliedMigrations.Contains("20261029214648_AddMonthlyPlanning", StringComparer.Ordinal))
             foreach (var table in new[] { "financial_plan_lines", "financial_plan_history", "financial_non_working_days" }) expected.Add(table);
         if (Baseline.Split(' ').Any(t => !Counts.ContainsKey(t)) || Counts.Keys.Any(t => !expected.Contains(t)) || Counts.Values.Any(n => n < 0)) Invalid("IncompleteDestinationInventoryRequiresDirectPreflight");

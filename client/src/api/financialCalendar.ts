@@ -19,7 +19,9 @@ export interface FinancialCalendarItem {
   category: TransactionReference | null
   currency: string
   plannedTransactionId: string | null
-  allowedActions?: ('Realize' | 'Edit' | 'Cancel' | 'UndoRealization' | 'ViewOrigin')[]
+  allowedActions?: ('Realize' | 'Edit' | 'Cancel' | 'UndoRealization' | 'ViewOrigin' | 'CancelPlannedTransfer')[]
+  /** Transferência prevista que originou o item (source 'Transfer', pendente/vencido). */
+  plannedTransferId?: string | null
   origin?: string
   recurrenceId?: string | null
   occurrenceNumber?: number | null
