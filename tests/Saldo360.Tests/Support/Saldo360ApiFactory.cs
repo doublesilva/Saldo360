@@ -49,6 +49,9 @@ public sealed class Saldo360ApiFactory(
 
     public CapturingLoggerProvider Logs { get; } = new();
 
+    /// <summary>Usa o catálogo padrão de categorias real em vez do vazio. Definir antes de a API subir (a primeira requisição).</summary>
+    public bool UseStandardCategoryCatalog { get; set; }
+
     public FakeOidcProvider OidcProvider { get; } = new();
     public FakeProfileGateway ProfileGateway { get; } = new();
 
@@ -82,6 +85,12 @@ public sealed class Saldo360ApiFactory(
             });
 
             services.AddSingleton<IStartupFilter, TestSignInStartupFilter>();
+
+            // Os testes montam o próprio cadastro: sem o catálogo padrão, um orçamento novo nasce sem categorias. Os testes do catálogo
+            // (DefaultCategoryCatalogTests) ligam o catálogo real antes de a API subir, com UseStandardCategoryCatalog.
+            services.AddSingleton<Saldo360.Application.Categories.IDefaultCategoryCatalog>(UseStandardCategoryCatalog
+                ? Saldo360.Application.Categories.StandardDefaultCategoryCatalog.Instance
+                : Saldo360.Application.Categories.EmptyDefaultCategoryCatalog.Instance);
 
             if (connectionString is null)
             {

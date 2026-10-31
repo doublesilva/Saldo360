@@ -17,6 +17,23 @@ public sealed class FinancialWorkspace : Entity
     public uint Version { get; private set; }
     public DateTimeOffset? LastFinancialResetAt { get; private set; }
 
+    /// <summary>
+    /// Quando o catálogo padrão de categorias foi carregado na criação deste orçamento; nulo = nunca (orçamentos anteriores ao catálogo, que só o
+    /// recebem pela ação explícita do usuário). É o registro de que a inicialização aconteceu: a ausência de categorias nunca é sinal para reinicializar.
+    /// </summary>
+    public DateTimeOffset? DefaultCategoriesInitializedAt { get; private set; }
+
+    /// <summary>Versão do catálogo padrão usada na inicialização (informativa; alterações futuras do catálogo valem só para novos orçamentos).</summary>
+    public int? DefaultCategoriesCatalogVersion { get; private set; }
+
+    /// <summary>Registra a inicialização, uma única vez: repetir não altera o registro original.</summary>
+    public void MarkDefaultCategoriesInitialized(int catalogVersion, DateTimeOffset now)
+    {
+        if (DefaultCategoriesInitializedAt is not null) return;
+        DefaultCategoriesInitializedAt = now;
+        DefaultCategoriesCatalogVersion = catalogVersion;
+    }
+
     public static FinancialWorkspace CreatePersonal(Guid owner, DateTimeOffset now)
     {
         if (owner == Guid.Empty) throw new ArgumentException("Proprietário obrigatório.");

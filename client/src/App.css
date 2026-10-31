@@ -1855,3 +1855,35 @@ button.calendar-day--selected {
 .recurrence-summary > div { padding: .6rem; border-radius: .4rem; background: var(--surface-muted, #f7f8fa); }
 .recurrence-summary dt { color: var(--muted); font-size: .8rem; }.recurrence-summary dd { margin: .2rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
 @media (max-width: 48rem) { .recurrence-layout { grid-template-columns: 1fr; }.recurrence-card { min-width: 0; } }
+
+/* Categorias padrão (ação explícita) e mensagens sobre vínculos ao excluir/inativar. */
+.category-defaults {
+  margin: 0.75rem 0;
+}
+
+.category-defaults__preview {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.category-defaults__preview h5 {
+  margin: 0.75rem 0 0.25rem;
+}
+
+.category-defaults__list,
+.category-defaults__list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 1rem;
+}
+
+.category-feedback p {
+  margin: 0 0 0.25rem;
+}
+
+.category-feedback ul {
+  margin: 0 0 0.5rem;
+  padding-left: 1.25rem;
+}

@@ -9,7 +9,12 @@ internal sealed class FinancialWorkspaceConfiguration : IEntityTypeConfiguration
 {
     public void Configure(EntityTypeBuilder<FinancialWorkspace> b)
     {
-        b.ToTable("financial_workspaces", t => t.HasCheckConstraint("ck_workspace_type", "type IN ('Personal', 'Shared')"));
+        b.ToTable("financial_workspaces", t =>
+        {
+            t.HasCheckConstraint("ck_workspace_type", "type IN ('Personal', 'Shared')");
+            // Registro da inicialização do catálogo padrão: data e versão andam juntas.
+            t.HasCheckConstraint("ck_workspace_default_categories_initialization", "(default_categories_initialized_at IS NULL) = (default_categories_catalog_version IS NULL)");
+        });
         b.HasKey(x => x.Id);
         b.HasAlternateKey(x => new { x.Id, x.OwnerUserId });
         b.Property(x => x.Id).ValueGeneratedNever();

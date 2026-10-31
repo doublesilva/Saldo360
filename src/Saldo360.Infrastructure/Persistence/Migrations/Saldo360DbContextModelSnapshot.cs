@@ -5141,6 +5141,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<int?>("DefaultCategoriesCatalogVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("default_categories_catalog_version");
+
+                    b.Property<DateTimeOffset?>("DefaultCategoriesInitializedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("default_categories_initialized_at");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
@@ -5188,6 +5196,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                     b.ToTable("financial_workspaces", null, t =>
                         {
+                            t.HasCheckConstraint("ck_workspace_default_categories_initialization", "(default_categories_initialized_at IS NULL) = (default_categories_catalog_version IS NULL)");
+
                             t.HasCheckConstraint("ck_workspace_type", "type IN ('Personal', 'Shared')");
                         });
                 });

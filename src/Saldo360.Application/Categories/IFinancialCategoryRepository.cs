@@ -24,4 +24,23 @@ public interface IFinancialCategoryRepository
     Task<IReadOnlyList<FinancialCategoryDto>> ListAsync(Guid workspaceId, bool includeInactive, CancellationToken cancellationToken);
 
     Task<FinancialCategoryDto?> GetAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// O que usa a categoria (e, numa principal, as suas subcategorias): quantidade de registros por origem e as configurações ativas dependentes
+    /// (recorrências ativas ou pausadas). Nulo se a categoria não for do orçamento.
+    /// </summary>
+    Task<CategoryImpactDto?> GetImpactAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Exclui fisicamente a categoria e as suas subcategorias, numa transação e somente se nada as referenciar. False, sem apagar nada, se houver
+    /// vínculos (verificados de novo dentro da transação; as chaves estrangeiras do banco são a garantia final). Nunca apaga registros financeiros.
+    /// </summary>
+    Task<bool> TryDeleteAsync(Guid workspaceId, Guid categoryId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Adiciona ao orçamento o que falta do catálogo, numa transação serializada por orçamento (aplicações concorrentes ou repetidas não duplicam).
+    /// Devolve o plano efetivamente aplicado. Não altera nem reativa categorias existentes.
+    /// </summary>
+    Task<DefaultCategoriesPlan> ApplyDefaultCategoriesAsync(
+        Guid workspaceId, Guid userId, IDefaultCategoryCatalog catalog, DateTimeOffset now, CancellationToken cancellationToken);
 }

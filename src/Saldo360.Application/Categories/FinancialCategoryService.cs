@@ -7,10 +7,13 @@ namespace Saldo360.Application.Categories;
 /// Categorias e subcategorias de receita e despesa (no máximo dois níveis). O dono do orçamento tem acesso; o orçamento vem da rota e o criador, da
 /// sessão. Nome duplicado no mesmo nível (principal: por tipo; subcategoria: dentro da principal, sem diferenciar caixa) dá 409, inclusive em corrida.
 /// Uma subcategoria herda o tipo da principal, que precisa ser do mesmo orçamento, estar ativa e não ser subcategoria.
+/// Excluir só é possível sem vínculos (senão, 409 com o impacto e a alternativa de inativar); inativar exige antes resolver as configurações ativas
+/// que dependem da categoria. O catálogo padrão pode ser acrescentado a um orçamento existente por ação explícita, sempre sem alterar o que já existe.
 /// </summary>
 public sealed class FinancialCategoryService(
     IFinancialWorkspaceRepository workspaces,
     IFinancialCategoryRepository categories,
+    IDefaultCategoryCatalog catalog,
     TimeProvider timeProvider)
 {
     private const string NameField = "name";
@@ -124,11 +127,81 @@ public sealed class FinancialCategoryService(
             return CategoryResult.Conflict;
         }
 
+        if (category.IsActive && !isActive!.Value
+            && await categories.GetImpactAsync(workspaceId, category.Id, cancellationToken) is { CanDeactivate: false } impact)
+        {
+            return CategoryResult.Blocked(impact);
+        }
+
         category.Update(normalized, isActive!.Value);
         return await categories.TrySaveChangesAsync(cancellationToken)
             ? CategoryResult.Ok((await categories.GetAsync(workspaceId, category.Id, cancellationToken))!)
             : CategoryResult.Conflict;
     }
+
+    /// <summary>Efeito de excluir ou inativar: o que usa a categoria (e as suas subcategorias) e o que ainda depende dela. Nulo se não for do orçamento.</summary>
+    public async Task<CategoryImpactDto?> GetImpactAsync(Guid workspaceId, Guid categoryId, Guid userId, CancellationToken cancellationToken) =>
+        await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            ? await categories.GetImpactAsync(workspaceId, categoryId, cancellationToken)
+            : null;
+
+    /// <summary>
+    /// Exclui a categoria (e as subcategorias dela) somente se nada a referenciar. Com subcategorias, exige <paramref name="confirmSubcategories"/>, que
+    /// o cliente só envia depois de mostrar o impacto. Com vínculos nada é apagado e a resposta traz o impacto; registros financeiros nunca são
+    /// excluídos em cascata nem reclassificados.
+    /// </summary>
+    public async Task<CategoryDeleteResult> DeleteAsync(
+        Guid workspaceId, Guid categoryId, Guid userId, bool confirmSubcategories, CancellationToken cancellationToken)
+    {
+        if (await GetImpactAsync(workspaceId, categoryId, userId, cancellationToken) is not { } impact)
+        {
+            return CategoryDeleteResult.NotFound;
+        }
+
+        if (!impact.CanDelete)
+        {
+            return new CategoryDeleteResult(CategoryDeleteOutcome.InUse, impact);
+        }
+
+        if (impact.SubcategoryCount > 0 && !confirmSubcategories)
+        {
+            return new CategoryDeleteResult(CategoryDeleteOutcome.ConfirmationRequired, impact);
+        }
+
+        if (await categories.TryDeleteAsync(workspaceId, categoryId, cancellationToken))
+        {
+            return new CategoryDeleteResult(CategoryDeleteOutcome.Deleted, impact);
+        }
+
+        // Vínculo surgido durante a exclusão (ou categoria removida por outra requisição): reavalia para responder com o impacto atual.
+        return await GetImpactAsync(workspaceId, categoryId, userId, cancellationToken) is { } current
+            ? new CategoryDeleteResult(CategoryDeleteOutcome.InUse, current)
+            : CategoryDeleteResult.NotFound;
+    }
+
+    /// <summary>Pré-visualização de "Adicionar categorias padrão": o que seria criado e o que já existe (sem alterar nada).</summary>
+    public async Task<DefaultCategoriesPreviewDto?> PreviewDefaultsAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>
+        await IsParticipantAsync(workspaceId, userId, cancellationToken)
+            ? ToPreview(DefaultCategoryPlanner.Plan(catalog, await categories.ListAsync(workspaceId, includeInactive: true, cancellationToken)))
+            : null;
+
+    /// <summary>
+    /// Acrescenta ao orçamento o que falta do catálogo. Idempotente: categorias equivalentes (tipo e nome normalizado; subcategorias dentro da mesma
+    /// principal) são reutilizadas, nada é renomeado, reativado ou reclassificado, e repetir a ação não cria duplicatas.
+    /// </summary>
+    public async Task<DefaultCategoriesApplyDto?> ApplyDefaultsAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken))
+        {
+            return null;
+        }
+
+        var plan = await categories.ApplyDefaultCategoriesAsync(workspaceId, userId, catalog, timeProvider.GetUtcNow(), cancellationToken);
+        return new DefaultCategoriesApplyDto(plan.CategoriesToCreate, plan.SubcategoriesToCreate, ToPreview(plan));
+    }
+
+    private static DefaultCategoriesPreviewDto ToPreview(DefaultCategoriesPlan plan) =>
+        new(plan.CatalogVersion, plan.CategoriesToCreate, plan.SubcategoriesToCreate, plan.Categories);
 
     private async Task<bool> IsParticipantAsync(Guid workspaceId, Guid userId, CancellationToken cancellationToken) =>
         await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is not null;

@@ -7,7 +7,7 @@ using Saldo360.Infrastructure.Persistence.Configurations;
 
 namespace Saldo360.Infrastructure.Categories;
 
-internal sealed class FinancialCategoryRepository(Saldo360DbContext db) : IFinancialCategoryRepository
+internal sealed partial class FinancialCategoryRepository(Saldo360DbContext db) : IFinancialCategoryRepository
 {
     public async Task<bool> TryAddAsync(FinancialCategory category, CancellationToken cancellationToken)
     {

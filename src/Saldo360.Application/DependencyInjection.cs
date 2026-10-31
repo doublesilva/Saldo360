@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.Pluggy.IPluggyCategorizationService, Saldo360.Application.Pluggy.PluggyCategorizationService>();
         services.AddScoped<FamilyInvitationService>();
         services.AddScoped<FinancialAccountService>();
+        services.AddSingleton<IDefaultCategoryCatalog>(StandardDefaultCategoryCatalog.Instance);
         services.AddScoped<FinancialCategoryService>();
         services.AddScoped<FinancialTransactionService>();
         services.AddScoped<FinancialTransferService>();

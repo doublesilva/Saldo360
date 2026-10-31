@@ -9,7 +9,7 @@ namespace Saldo360.Domain.Categories;
 /// classificação nunca diverge. A subcategoria tem o mesmo orçamento e o mesmo tipo da principal e não tem filhas.
 /// Serve a contas PF e PJ: o escopo vem da conta do lançamento, não da categoria. O nome da principal é único por orçamento e tipo, e o da
 /// subcategoria é único dentro da principal, sem diferenciar maiúsculas de minúsculas e contando as inativas. Tipo e principal não mudam depois
-/// da criação, e não há exclusão física (só desativação).
+/// da criação. A exclusão física só é permitida pela aplicação quando nada referencia a categoria; com vínculos, a categoria é desativada.
 /// </summary>
 public sealed class FinancialCategory : Entity
 {
@@ -72,6 +72,14 @@ public sealed class FinancialCategory : Entity
         Name = name;
         IsActive = isActive;
     }
+
+    /// <summary>
+    /// Chave de equivalência de nomes: sem espaços nas pontas nem repetidos e sem diferenciar maiúsculas de minúsculas. Acentos continuam
+    /// distintos (como no índice único do banco) e nomes apenas parecidos nunca são considerados iguais.
+    /// </summary>
+    public static string MatchKey(string? name) =>
+        string.Join(' ', (name ?? string.Empty).Normalize(System.Text.NormalizationForm.FormC)
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
 
     /// <summary>Remove espaços nas pontas; obrigatório e com até 100 caracteres.</summary>
     public static bool TryNormalizeName(string? name, out string normalized, out string? error)

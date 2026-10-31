@@ -2,12 +2,16 @@ import { useEffect, useState, type FormEvent } from 'react'
 import {
   CATEGORY_NAME_MAX_LENGTH,
   createCategory,
+  deleteCategory,
+  getCategoryImpact,
   listCategories,
   updateCategory,
+  type CategoryImpact,
   type CategoryType,
   type FinancialCategory,
 } from '../api/categories'
 import { groupCategories, isAvailable, type CategoryGroup } from '../categoryTree'
+import { CategoryDefaults } from './CategoryDefaults'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -27,10 +31,21 @@ const sections: { type: CategoryType; title: string; singular: string }[] = [
   { type: 'Expense', title: 'Despesas', singular: 'despesa' },
 ]
 
+/** Mensagem sobre uma ação numa categoria, com o que a justifica (registros vinculados, configurações ativas) e, se couber, a alternativa de inativar. */
+interface Feedback {
+  text: string
+  lines?: string[]
+  deactivate?: { category: FinancialCategory; hasSubcategories: boolean }
+}
+
+function referenceLines(impact: CategoryImpact): string[] {
+  return impact.references.map((reference) => `${reference.label}: ${reference.count}`)
+}
+
 /**
- * Categorias da família, separadas em receitas e despesas, com até dois níveis: a categoria principal e suas subcategorias (exibidas como
- * "Categoria / Subcategoria" nos formulários). Todos os integrantes veem e editam as mesmas. Nada é criado automaticamente: a lista começa vazia.
- * Uma categoria por vez: não há criação em lote, e desativar não apaga nem move nada.
+ * Categorias do orçamento, separadas em receitas e despesas, com até dois níveis: a categoria principal e suas subcategorias (exibidas como
+ * "Categoria / Subcategoria" nos formulários). Um orçamento novo já nasce com o catálogo padrão; os mais antigos recebem-no pela ação explícita
+ * "Adicionar categorias padrão". Tudo é editável: criar, renomear, inativar e excluir (só sem vínculos). Nada é recriado automaticamente.
  */
 export function Categories({ workspaceId }: { workspaceId: string }) {
   const [list, setList] = useState<ListState>({ kind: 'loading' })
@@ -52,6 +67,8 @@ export function Categories({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="categories">
       <h3>Categorias</h3>
+
+      <CategoryDefaults workspaceId={workspaceId} onApplied={reload} />
 
       <label className="checkbox">
         <input type="checkbox" checked={includeInactive} onChange={(event) => setIncludeInactive(event.target.checked)} />
@@ -99,7 +116,7 @@ function CategorySection({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [itemError, setItemError] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
   const inputId = `category-new-${type}`
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
@@ -133,13 +150,40 @@ function CategorySection({
       : `Reativar a categoria "${category.name}"?`
     if (!window.confirm(question)) return
 
-    setItemError(null)
+    setFeedback(null)
     try {
       const result = await updateCategory(workspaceId, category.id, category.name, !category.isActive)
-      if (!result.ok) setItemError(firstError(result.errors))
+      if (!result.ok) {
+        setFeedback({
+          text: firstError(result.errors),
+          lines: result.blocked?.activeDependencies.map((dependency) => `Recorrência: ${dependency.description}`),
+        })
+      }
       onChanged()
     } catch (failure: unknown) {
-      setItemError(errorMessage(failure))
+      setFeedback({ text: errorMessage(failure) })
+    }
+  }
+
+  const handleDelete = async (category: FinancialCategory, hasSubcategories = false) => {
+    setFeedback(null)
+    try {
+      const impact = await getCategoryImpact(workspaceId, category.id)
+      if (!impact.canDelete) {
+        setFeedback(inUseFeedback(category, impact, hasSubcategories))
+        return
+      }
+      const question =
+        impact.subcategoryCount > 0
+          ? `Excluir a categoria "${category.name}" e as suas ${impact.subcategoryCount} subcategorias? Nenhuma delas tem registros vinculados. Esta ação não pode ser desfeita.`
+          : `Excluir "${category.name}"? Nenhum registro usa esta categoria. Esta ação não pode ser desfeita.`
+      if (!window.confirm(question)) return
+
+      const result = await deleteCategory(workspaceId, category.id, impact.subcategoryCount > 0)
+      if (result.kind !== 'deleted') setFeedback(inUseFeedback(category, result.impact, hasSubcategories))
+      onChanged()
+    } catch (failure: unknown) {
+      setFeedback({ text: errorMessage(failure) })
     }
   }
 
@@ -170,10 +214,22 @@ function CategorySection({
           {error}
         </p>
       )}
-      {itemError && (
-        <p className="field-error" role="alert">
-          {itemError}
-        </p>
+      {feedback && (
+        <div className="field-error category-feedback" role="alert">
+          <p>{feedback.text}</p>
+          {feedback.lines && feedback.lines.length > 0 && (
+            <ul>
+              {feedback.lines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
+          {feedback.deactivate && (
+            <button type="button" onClick={() => void handleToggle(feedback.deactivate!.category, feedback.deactivate!.hasSubcategories)}>
+              Inativar "{feedback.deactivate.category.name}"
+            </button>
+          )}
+        </div>
       )}
 
       {categories.length === 0 ? (
@@ -189,6 +245,7 @@ function CategorySection({
               renamingId={renamingId}
               setRenamingId={setRenamingId}
               onToggle={handleToggle}
+              onDelete={handleDelete}
               onChanged={onChanged}
             />
           ))}
@@ -196,6 +253,18 @@ function CategorySection({
       )}
     </section>
   )
+}
+
+/** Impedimento de excluir: explica o vínculo e oferece inativar (que preserva o histórico) quando a categoria ainda está ativa. */
+function inUseFeedback(category: FinancialCategory, impact: CategoryImpact, hasSubcategories: boolean): Feedback {
+  const usedBy = impact.subcategoryCount > 0 ? 'ela ou alguma subcategoria dela' : 'ela'
+  return {
+    text:
+      `Não é possível excluir "${category.name}": ${usedBy} já foi usada em registros. ` +
+      'Os registros não são apagados nem reclassificados. Inative a categoria para preservar o histórico e tirá-la dos novos cadastros.',
+    lines: referenceLines(impact),
+    deactivate: category.isActive ? { category, hasSubcategories } : undefined,
+  }
 }
 
 /** Nome de categoria: um por vez, sem listas separadas por vírgula ou ponto e vírgula. */
@@ -212,6 +281,7 @@ function CategoryGroupItem({
   renamingId,
   setRenamingId,
   onToggle,
+  onDelete,
   onChanged,
 }: {
   workspaceId: string
@@ -220,6 +290,7 @@ function CategoryGroupItem({
   renamingId: string | null
   setRenamingId: (id: string | null) => void
   onToggle: (category: FinancialCategory, hasSubcategories?: boolean) => Promise<void>
+  onDelete: (category: FinancialCategory, hasSubcategories?: boolean) => Promise<void>
   onChanged: () => void
 }) {
   const { main, subs } = group
@@ -251,6 +322,9 @@ function CategoryGroupItem({
           </button>
           <button type="button" onClick={() => void onToggle(category, !isSub && subs.length > 0)}>
             {category.isActive ? 'Desativar' : 'Reativar'}
+          </button>
+          <button type="button" onClick={() => void onDelete(category, !isSub && subs.length > 0)}>
+            Excluir
           </button>
           {!isSub && category.isActive && (
             <button type="button" aria-expanded={adding} onClick={() => setAdding((open) => !open)}>
