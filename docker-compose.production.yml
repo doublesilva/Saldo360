@@ -38,6 +38,10 @@ services:
       AiAgent__Provider: OpenAI
       AiAgent__Model: ${AI_AGENT_MODEL:-gpt-4o-mini}
       AiAgent__ApiKeyFile: /run/secrets/openai-api-key
+      # A classificação de lançamentos tem a própria chave AiEnabled (padrão false) e o próprio modelo (padrão de desenvolvimento): sem estas duas linhas o
+      # agente nunca fica "disponível" em produção, mesmo com AI_AGENT_ENABLED=true. Um só interruptor e um só modelo, sem variável nova.
+      FinancialClassification__AiEnabled: ${AI_AGENT_ENABLED:-false}
+      FinancialClassification__Model: ${AI_AGENT_MODEL:-gpt-4o-mini}
       # Pluggy: tudo desligado/vazio por padrão. Credenciais só no .env do servidor (0600), nunca no Git ou na imagem.
       Pluggy__Enabled: ${PLUGGY_ENABLED:-false}
       Pluggy__ImportEnabled: ${PLUGGY_IMPORT_ENABLED:-false}

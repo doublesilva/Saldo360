@@ -55,6 +55,13 @@ Só ficam no histórico contagens e códigos curtos (`Interrupted`, `AiUnavailab
 - Nenhum segredo de produção foi tocado e a IA **não foi habilitada** (`AI_AGENT_ENABLED` continua `false` nos exemplos). Documentos históricos T16.x mantêm o nome antigo como registro da época.
 - Estado do agente na central: disponível (com o modelo), ou indisponível com o motivo ("não configurado neste ambiente", "desligada neste ambiente"); a categorização local continua funcionando sem IA.
 
+### 4.1 Correção de "Agente indisponível" (diagnóstico)
+
+- Causa (observada no código): a disponibilidade exige `AiAgent:Enabled` **e** `FinancialClassification:AiEnabled` (padrão `false`) **e** credencial. O `docker-compose.production.yml` repassava só `AiAgent__*`; `FinancialClassification__AiEnabled` nunca chegava ao contêiner, então o agente aparecia como indisponível mesmo com `AI_AGENT_ENABLED=true`. O modelo usado na chamada também vinha de `FinancialClassification:Model` (padrão de desenvolvimento), não de `AI_AGENT_MODEL`.
+- Correção: o compose passa a mapear `FinancialClassification__AiEnabled` e `FinancialClassification__Model` para as mesmas variáveis `AI_AGENT_ENABLED` e `AI_AGENT_MODEL` (nenhuma variável nova). O arquivo de credencial passa a ser verificado quanto à existência na disponibilidade (sem lê-lo).
+- Estados do agente na central: **Disponível**, **Não configurado** (desligado/sem credencial: botão "Categorizar com IA" desabilitado) e **Erro temporário** (última categorização com IA parou por falha do provedor; código curto exibido, botão continua habilitado para nova tentativa). A categorização sem IA e a sincronização nunca dependem do agente.
+- Só o ambiente real confirma: existência/permissão do arquivo de segredo montado, validade da chave e acesso ao modelo configurado.
+
 ## 5. Fluxo de classificação
 
 Ordem na categorização: **escolha manual → regras do domínio → categoria da Pluggy (só se mapeada para uma categoria do orçamento) → IA**.

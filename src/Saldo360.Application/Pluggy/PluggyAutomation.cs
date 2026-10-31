@@ -8,7 +8,11 @@ namespace Saldo360.Application.Pluggy;
 // R04 — Central de Automação. Nada aqui cria motor, agente ou agendador novos: a central lê e comanda o que já existe (a sincronização manual/agendada, o
 // agendador de segundo plano e o classificador com o agente de IA), guarda a preferência do usuário e registra o histórico das execuções.
 
-public sealed record PluggyAiView(bool Enabled, bool Available, string? Model, string? Reason);
+/// <summary>
+/// <c>Status</c>: Available (configurado), NotConfigured (desligado/sem credencial: botão desabilitado) ou TemporaryError (configurado, mas a última categorização
+/// parou por falha do provedor; o botão continua habilitado para tentar de novo). <c>LastFailureCode</c>: só o código curto da última falha do provedor.
+/// </summary>
+public sealed record PluggyAiView(bool Enabled, bool Available, string? Model, string? Reason, string Status = "Available", string? LastFailureCode = null);
 
 /// <summary>O que o ambiente (servidor) permite. O usuário não liga nem desliga o agendador do servidor: só pausa o do seu orçamento.</summary>
 public sealed record PluggyServerView(bool IntegrationAvailable, bool ImportEnabled, bool SchedulerEnabled, int DefaultIntervalHours, int WindowStartHour, int WindowEndHour,
@@ -100,8 +104,15 @@ public sealed class PluggyAutomationService(IFinancialWorkspaceRepository worksp
     private async Task<bool> CanAccessAsync(Guid workspaceId, Guid userId, CancellationToken ct) =>
         pluggy.Enabled && pluggy.ImportEnabled && await workspaces.GetOwnerRoleAsync(workspaceId, userId, ct) is not null;
 
-    public PluggyAiView AiView() => new(agent.Enabled && classification.AiEnabled, model.IsAvailable, model.IsAvailable ? model.ModelName : null,
-        model.IsAvailable ? null : !agent.Enabled ? "AiNotConfigured" : !classification.AiEnabled ? "AiDisabled" : "AiNotConfigured");
+    public PluggyAiView AiView(AutomationRunView? lastCategorization = null)
+    {
+        if (!model.IsAvailable)
+            return new(agent.Enabled && classification.AiEnabled, false, null, !agent.Enabled ? "AiNotConfigured" : !classification.AiEnabled ? "AiDisabled" : "AiNotConfigured", "NotConfigured");
+        // Falha do provedor na última execução com IA (código curto já saneado): informa, sem bloquear a nova tentativa.
+        var stopped = lastCategorization is { State: not "Running", Categorization: { UsedAi: true } counts } ? counts.AiStoppedBecause : null;
+        var failure = stopped is not null && (stopped.StartsWith("Provider", StringComparison.Ordinal) || stopped == "AgentUnavailable") ? stopped : null;
+        return new(true, true, model.ModelName, failure is null ? null : "AiTemporaryError", failure is null ? "Available" : "TemporaryError", failure);
+    }
 
     public async Task<PluggyAutomationResult<PluggyAutomationOverview>> GetOverviewAsync(Guid workspaceId, Guid userId, CancellationToken ct)
     {
@@ -109,7 +120,9 @@ public sealed class PluggyAutomationService(IFinancialWorkspaceRepository worksp
         var now = time.GetUtcNow();
         var stale = TimeSpan.FromMinutes(Math.Max(1, pluggy.SyncStaleMinutes));
         var settings = await automation.FindSettingsAsync(workspaceId, ct);
-        var ai = AiView();
+        var lastCat = await automation.LastRunAsync(workspaceId, AutomationKinds.Categorization, ct);
+        var lastCatView = lastCat is null ? null : await ToViewAsync(workspaceId, lastCat, now, stale, ct);
+        var ai = AiView(lastCatView);
         var server = new PluggyServerView(IntegrationAvailable, pluggy.ImportEnabled, auto.Enabled && IntegrationAvailable, auto.IntervalHours, auto.WindowStartHour, auto.WindowEndHour,
             Saldo360.Domain.Common.BusinessCalendar.TimeZoneId, PluggyAutomationSettings.IntervalOptionsHours, ai);
         var dto = new PluggyAutomationSettingsDto(settings?.SyncPaused ?? false, settings?.SyncIntervalHours ?? Math.Max(1, auto.IntervalHours), settings?.SyncIntervalHours is null,
@@ -138,9 +151,8 @@ public sealed class PluggyAutomationService(IFinancialWorkspaceRepository worksp
         var eligible = candidates.Count(c => !c.IsManual && !c.HasAutomaticCategory);
         var counts = await categorizationRepository.CountAsync(workspaceId, ct);
         var catRunning = await automation.AnyRunningAsync(workspaceId, AutomationKinds.Categorization, now - stale, ct);
-        var lastCat = await automation.LastRunAsync(workspaceId, AutomationKinds.Categorization, ct);
         var catState = catRunning ? "Running" : !ai.Available ? "AiUnavailable" : eligible == 0 ? "NothingToDo" : "Ready";
-        var catView = new PluggyCategorizationAutomationView(catState, eligible, counts.NeedsReview, counts.NotEvaluated, catRunning, lastCat is null ? null : await ToViewAsync(workspaceId, lastCat, now, stale, ct));
+        var catView = new PluggyCategorizationAutomationView(catState, eligible, counts.NeedsReview, counts.NotEvaluated, catRunning, lastCatView);
         return PluggyAutomationResult<PluggyAutomationOverview>.Ok(new(now, server, dto, syncView, catView));
     }
 

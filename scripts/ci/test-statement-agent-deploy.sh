@@ -14,6 +14,8 @@ assert e["AiAgent__Enabled"] == "false"
 assert e["AiAgent__Model"] == "gpt-4o-mini"
 assert e["AiAgent__Provider"] == "OpenAI"
 assert e["AiAgent__ApiKeyFile"] == "/run/secrets/openai-api-key"
+assert e["FinancialClassification__AiEnabled"] == "false"
+assert e["FinancialClassification__Model"] == "gpt-4o-mini"
 assert not any(k.startswith("CreditCardStatementAgent__") for k in e)
 assert not any(k.lower().endswith("__apikey") or k == "OPENAI_API_KEY" for k in e)
 mounts=[v for v in api["volumes"] if v["target"] == "/run/secrets/openai-api-key"]
@@ -32,6 +34,7 @@ import json,sys
 e=json.load(sys.stdin)["services"]["api"]["environment"]
 assert e["AiAgent__Enabled"] == "true"
 assert e["AiAgent__Model"] == "synthetic-model"
+assert e["FinancialClassification__AiEnabled"] == "true" and e["FinancialClassification__Model"] == "synthetic-model"
 assert not any(k.startswith(("FinancialDocumentClassification__","ServiceBill","CreditCardStatementAgent__")) for k in e)
 print("PASS: explicit activation of the AI agent; no document/service-bill flags remain")
 '

@@ -160,6 +160,7 @@ public sealed class PluggyAutomationCenterTests(PostgresFixture postgres) : Plug
         var ai = overview.GetProperty("server").GetProperty("ai");
         Assert.False(ai.GetProperty("available").GetBoolean());
         Assert.Equal("AiNotConfigured", ai.GetProperty("reason").GetString());
+        Assert.Equal("NotConfigured", ai.GetProperty("status").GetString());
         Assert.Equal("AiUnavailable", overview.GetProperty("categorization").GetProperty("state").GetString());
     }
 
@@ -409,6 +410,32 @@ public sealed class PluggyAutomationCenterTests(PostgresFixture postgres) : Plug
         var run = await db.PluggyCategorizationRuns.AsNoTracking().SingleAsync(r => r.WorkspaceId == c.Workspace);
         Assert.NotEqual(PluggyCategorizationRunState.Running, run.State);
         Assert.True(await db.PluggyImportedTransactions.CountAsync(t => t.WorkspaceId == c.Workspace) == 3); // dados da sincronização intactos
+    }
+
+    [Fact]
+    public async Task ATemporaryProviderFailureIsReportedAsTemporaryErrorKeepsTheAiOfferedAndNeverLeaksTheProviderMessage()
+    {
+        var c = await ArrangeAsync("r04-temp-error");
+        Ai.Available = true;
+        await SyncAsync(c);
+        await CreateCategoryAsync(c, "Alimentação");
+        var before = await GetJson(c, Automation(c));
+        Assert.Equal("Available", before.GetProperty("server").GetProperty("ai").GetProperty("status").GetString());
+
+        Ai.Failure = new Saldo360.Application.Classification.FinancialClassificationModelException("ProviderRateLimited", false);
+        var response = await Post(c, $"{Integration(c.Workspace)}/categorization/run", new { useAi = true, confirmExternal = true });
+        Assert.True(response.IsSuccessStatusCode);
+
+        var raw = await (await c.Client.GetAsync(Automation(c))).Content.ReadAsStringAsync();
+        var ai = (await GetJson(c, Automation(c))).GetProperty("server").GetProperty("ai");
+        Assert.Equal("TemporaryError", ai.GetProperty("status").GetString());
+        Assert.True(ai.GetProperty("available").GetBoolean()); // continua operacional: o usuário pode tentar de novo
+        Assert.Equal("ProviderRateLimited", ai.GetProperty("lastFailureCode").GetString());
+        Assert.DoesNotContain("falha simulada", raw, StringComparison.Ordinal);
+
+        Ai.Failure = null;
+        Assert.True((await Post(c, $"{Integration(c.Workspace)}/categorization/run", new { useAi = true, confirmExternal = true })).IsSuccessStatusCode);
+        Assert.Equal("Available", (await GetJson(c, Automation(c))).GetProperty("server").GetProperty("ai").GetProperty("status").GetString());
     }
 
     [Fact]

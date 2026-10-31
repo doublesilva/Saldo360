@@ -22,7 +22,7 @@ const catRun = (overrides: Partial<AutomationRun> = {}): AutomationRun => ({
 const overview = (overrides: Partial<AutomationOverview> = {}): AutomationOverview => ({
   now: '2026-10-30T12:00:00Z',
   server: { integrationAvailable: true, importEnabled: true, schedulerEnabled: true, defaultIntervalHours: 24, windowStartHour: 0, windowEndHour: 24, timeZone: 'America/Sao_Paulo', intervalOptions: [6, 12, 24],
-    ai: { enabled: true, available: true, model: 'modelo-teste', reason: null } },
+    ai: { enabled: true, available: true, model: 'modelo-teste', reason: null, status: 'Available', lastFailureCode: null } },
   settings: { syncPaused: false, syncIntervalHours: 24, syncIntervalIsDefault: true, categorizeAfterSync: false, categorizeConsentAt: null },
   sync: { state: 'Scheduled', connections: 2, connectionsNeedingAttention: 0, running: false, nextRunAt: '2026-10-30T10:30:00Z', lastRun: syncRun() },
   categorization: { state: 'Ready', eligible: 9, needsReview: 4, notEvaluated: 1, running: false, lastRun: catRun() },
@@ -154,7 +154,7 @@ describe('Central de automação', () => {
 
   it('com o agente de IA indisponível, diz por quê, desabilita a IA e mantém a categorização local', async () => {
     const base = overview()
-    mockApi({ overview: overview({ server: { ...base.server, ai: { enabled: false, available: false, model: null, reason: 'AiNotConfigured' } }, categorization: { ...base.categorization, state: 'AiUnavailable' } }) })
+    mockApi({ overview: overview({ server: { ...base.server, ai: { enabled: false, available: false, model: null, reason: 'AiNotConfigured', status: 'NotConfigured', lastFailureCode: null } }, categorization: { ...base.categorization, state: 'AiUnavailable' } }) })
     render(<AutomationCenter workspaceId="w" />)
     fireEvent.click(await screen.findByRole('tab', { name: 'Automações' }))
     const card = await screen.findByRole('region', { name: 'Categorização com IA' })
@@ -162,6 +162,18 @@ describe('Central de automação', () => {
     expect(within(card).getByText(/O agente de IA não está configurado neste ambiente/)).toBeTruthy()
     expect((within(card).getByRole('button', { name: 'Categorizar com IA…' }) as HTMLButtonElement).disabled).toBe(true)
     expect((within(card).getByRole('checkbox') as HTMLInputElement).disabled).toBe(true)
+    expect((within(card).getByRole('button', { name: 'Categorizar sem IA' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('com erro temporário do provedor, avisa, mantém a IA habilitada para nova tentativa e não bloqueia a categorização local', async () => {
+    const base = overview()
+    mockApi({ overview: overview({ server: { ...base.server, ai: { enabled: true, available: true, model: 'modelo-teste', reason: 'AiTemporaryError', status: 'TemporaryError', lastFailureCode: 'ProviderRateLimited' } } }) })
+    render(<AutomationCenter workspaceId="w" />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Automações' }))
+    const card = await screen.findByRole('region', { name: 'Categorização com IA' })
+    expect(within(card).getByText('Agente com erro temporário', { selector: '.badge' })).toBeTruthy()
+    expect(within(card).getByText(/parou por uma falha do provedor/)).toBeTruthy()
+    expect((within(card).getByRole('button', { name: 'Categorizar com IA…' }) as HTMLButtonElement).disabled).toBe(false)
     expect((within(card).getByRole('button', { name: 'Categorizar sem IA' }) as HTMLButtonElement).disabled).toBe(false)
   })
 

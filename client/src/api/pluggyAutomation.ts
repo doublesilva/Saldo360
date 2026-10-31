@@ -10,7 +10,8 @@ export type RunKind = 'Sync' | 'Categorization'
 export type RunState = 'Running' | 'Completed' | 'CompletedWithPending' | 'Failed'
 export type RunTrigger = 'Manual' | 'Scheduled' | 'AfterSync'
 
-export interface AiView { enabled: boolean; available: boolean; model: string | null; reason: string | null }
+export type AiStatus = 'Available' | 'NotConfigured' | 'TemporaryError'
+export interface AiView { enabled: boolean; available: boolean; model: string | null; reason: string | null; status: AiStatus; lastFailureCode: string | null }
 export interface ServerView {
   integrationAvailable: boolean; importEnabled: boolean; schedulerEnabled: boolean; defaultIntervalHours: number; windowStartHour: number; windowEndHour: number
   timeZone: string; intervalOptions: number[]; ai: AiView
@@ -102,4 +103,5 @@ export const categorizationStateText: Record<CategorizationAutomationState, stri
 }
 export const aiReasonText: Record<string, string> = {
   AiNotConfigured: 'O agente de IA não está configurado neste ambiente.', AiDisabled: 'A classificação por IA está desligada neste ambiente.',
+  AiTemporaryError: 'A última categorização com IA parou por uma falha do provedor. Você pode tentar de novo; a sincronização e a categorização local não foram afetadas.',
 }

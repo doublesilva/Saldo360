@@ -104,7 +104,7 @@ export function AutomationCards({ workspaceId, overview, onChanged, onOpenConnec
 
     <section className="card automation-card" aria-labelledby="automation-ai-title">
       <h4 id="automation-ai-title">Categorização com IA</h4>
-      <p><span className={`badge ${ai.available ? 'badge--sync-completed' : 'badge--sync-failed'}`}>{ai.available ? `Agente disponível${ai.model ? ` (${ai.model})` : ''}` : 'Agente indisponível'}</span>{' '}
+      <p><span className={`badge ${ai.status === 'Available' ? 'badge--sync-completed' : 'badge--sync-failed'}`}>{ai.status === 'TemporaryError' ? 'Agente com erro temporário' : ai.available ? `Agente disponível${ai.model ? ` (${ai.model})` : ''}` : 'Agente indisponível'}</span>{' '}
         <span className="meta">{categorizationStateText[categorization.state]}</span></p>
       {aiReason && <p className="meta" role="status">{aiReason} A categorização local (regras e categoria do banco) continua funcionando.</p>}
       <dl className="card-overview__facts">

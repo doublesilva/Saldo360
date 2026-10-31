@@ -44,6 +44,9 @@ public sealed class ProductionDeploymentContractTests
         // O agente de IA continua configurável e desligado por padrão.
         Assert.Contains("AI_AGENT_ENABLED=false", environment, StringComparison.Ordinal);
         Assert.Contains("AiAgent__ApiKeyFile", compose, StringComparison.Ordinal);
+        // Causa de "Agente indisponível": a classificação tem chave e modelo próprios; o compose precisa repassá-los junto do interruptor do agente.
+        Assert.Contains("FinancialClassification__AiEnabled: ${AI_AGENT_ENABLED:-false}", compose, StringComparison.Ordinal);
+        Assert.Contains("FinancialClassification__Model: ${AI_AGENT_MODEL:-gpt-4o-mini}", compose, StringComparison.Ordinal);
     }
 
     [Fact]
