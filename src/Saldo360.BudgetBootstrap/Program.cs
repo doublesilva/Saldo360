@@ -8,7 +8,7 @@ using Saldo360.Infrastructure.Persistence;
 // Administrative CLI only. Never called by API, deployment, login, scheduler or a reset.
 try
 {
-    var switches = new HashSet<string> { "--dry-run", "--execute" };
+    var switches = new HashSet<string> { "--dry-run", "--execute", "--fixed-expenses-only" };
     var values = new HashSet<string> { "--workspace-id", "--source", "--output", "--approved-report", "--approved-report-hash", "--fresh-source", "--destination-snapshot" };
     var flags = new Dictionary<string, string?>();
     for (var i = 0; i < args.Length; i++)
@@ -49,7 +49,9 @@ try
     }
     var options = new DbContextOptionsBuilder<Saldo360DbContext>(); Saldo360DbContext.Configure(options, connection);
     await using var db = new Saldo360DbContext(options.Options);
-    var importer = new BudgetSpreadsheetImporter(db, TimeProvider.System);
+    var importer = new BudgetSpreadsheetImporter(db, TimeProvider.System, flags.ContainsKey("--fixed-expenses-only")
+        ? BudgetSpreadsheetImportScope.FixedExpensesOnly
+        : BudgetSpreadsheetImportScope.FullLegacyBootstrap);
     if (flags.ContainsKey("--dry-run"))
     {
         var output = Required("--output"); if (File.Exists(output)) throw new InvalidOperationException("OutputAlreadyExists");

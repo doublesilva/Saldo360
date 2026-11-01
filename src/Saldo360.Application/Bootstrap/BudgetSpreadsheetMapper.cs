@@ -102,6 +102,32 @@ public sealed class BudgetSpreadsheetMapper(int provisionalChargeDay = 10)
         return new(workspaceId, snapshot.LogicalHash, snapshot.ReadAtUtc, items.ToArray());
     }
 
+    /// <summary>
+    /// Plano restrito à aba Despesas Fixas. As categorias e contas são dependências do destino;
+    /// nenhuma linha de Lançamentos, cartão, compra, parcela ou fatura é interpretada.
+    /// </summary>
+    public SpreadsheetImportPlan MapFixedExpenses(Guid workspaceId, SpreadsheetSnapshot snapshot)
+    {
+        items.Clear();
+        if (provisionalChargeDay is < 1 or > 28) throw new ArgumentOutOfRangeException(nameof(provisionalChargeDay));
+        if (workspaceId == Guid.Empty) throw new ArgumentException("ExplicitWorkspaceRequired");
+        var fixedRows = Rows(snapshot, "Despesas Fixas");
+        Header(snapshot, "Despesas Fixas", 0, "ID");
+        foreach (var group in fixedRows.GroupBy(r => r.Id, StringComparer.Ordinal))
+            if (group.Key.Length == 0 || group.Count() != 1) Issue("SOURCE:" + group.Key, "DuplicateSourceId", group.First().Location);
+        foreach (var category in Categories)
+            Add("CATEGORY:" + category, SpreadsheetEntity.Category, new(category), "Dependency for 'Despesas Fixas'");
+        Add("ACCOUNT:ItauPF", SpreadsheetEntity.Account, new("Itaú PF", Institution: "Itaú", Scope: "PF"), "Dependency for 'Despesas Fixas'");
+        Add("ACCOUNT:ItauEmpresas", SpreadsheetEntity.Account, new("Itaú Empresas", Institution: "Itaú", Scope: "PJ"), "Dependency for 'Despesas Fixas'");
+        foreach (var row in fixedRows) Safe(row, () => MapFixed(row));
+        foreach (var id in BankRecurrences.Concat(SpecificPlans).Append("PF-007"))
+            if (fixedRows.Count(r => r.Id == id) != 1) Issue("EXPECTED:" + id, "MissingOrDuplicateExpectedId", "Despesas Fixas");
+        if (items.Where(i => i.IsEntity).GroupBy(i => i.ExternalReference).Any(g => g.Count() > 1))
+            Issue("PROVENANCE", "DuplicatePlannedProvenance", "Plan");
+        var fixedExpensesHash = SpreadsheetSnapshot.Hash(new { Sheet = snapshot.Sheet("Despesas Fixas") });
+        return new(workspaceId, fixedExpensesHash, snapshot.ReadAtUtc, items.ToArray());
+    }
+
     private void MapFixed(Row r)
     {
         if (r.Id == "PF-007") { Exclude(r.Id, "Plano de saúde inativo", "InactiveByApprovedDecision", r.Location); return; }

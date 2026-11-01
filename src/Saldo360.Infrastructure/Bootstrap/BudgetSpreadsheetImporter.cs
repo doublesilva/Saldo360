@@ -13,7 +13,9 @@ using Saldo360.Infrastructure.Persistence;
 namespace Saldo360.Infrastructure.Bootstrap;
 
 /// <summary>Offline administrative operation. Never registered in the API, jobs or startup.</summary>
-public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider time)
+public enum BudgetSpreadsheetImportScope { FullLegacyBootstrap, FixedExpensesOnly }
+
+public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider time, BudgetSpreadsheetImportScope scope = BudgetSpreadsheetImportScope.FullLegacyBootstrap)
 {
     public const string RequiredMigration = "20261022165204_AddBudgetBootstrapExtensions";
     private sealed record Assessment(Guid? Owner, SpreadsheetDomainGraph.Result Graph, Dictionary<string, long> Counts);
@@ -21,7 +23,7 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
     public async Task<SpreadsheetDryRunResult> DryRunAsync(Guid w, SpreadsheetSnapshot source, CancellationToken ct = default)
     {
         if (db.Database.CurrentTransaction is not null || db.ChangeTracker.HasChanges()) throw new InvalidOperationException("DedicatedCleanContextRequired");
-        var plan = new BudgetSpreadsheetMapper().Map(w, source);
+        var plan = Map(w, source);
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
         await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", ct);
         if (await Scalar("SELECT current_setting('transaction_read_only')", w, ct) is not "on") throw new InvalidOperationException("ReadOnlyTransactionRequired");
@@ -37,11 +39,12 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
     {
         if (!approval.CanExecute || approval.ReportHash != approvedReportHash || approval.WorkspaceId != w || approval.OwnerUserId is null)
             throw new InvalidOperationException("ExecutableDryRunApprovalRequired");
-        reviewedSource.RequireUnchanged(freshSource);
+        if (scope == BudgetSpreadsheetImportScope.FullLegacyBootstrap) reviewedSource.RequireUnchanged(freshSource);
+        else if (Map(w, reviewedSource).SourceHash != Map(w, freshSource).SourceHash) throw new InvalidOperationException("SourceChangedAfterReview");
         var checkedAt = time.GetUtcNow();
         if (freshSource.ReadAtUtc <= approval.DestinationReadAtUtc || freshSource.ReadAtUtc > checkedAt.AddMinutes(1)
             || checkedAt - freshSource.ReadAtUtc > TimeSpan.FromMinutes(5)) throw new InvalidOperationException("FreshSourceCaptureAfterReviewRequired");
-        var plan = new BudgetSpreadsheetMapper().Map(w, reviewedSource);
+        var plan = Map(w, reviewedSource);
         if (plan.SourceHash != approval.SourceHash || plan.PlanHash != approval.PlanHash) throw new InvalidOperationException("PlanChangedNewDryRunRequired");
         if (db.Database.CurrentTransaction is not null || db.ChangeTracker.Entries().Any()) throw new InvalidOperationException("DedicatedCleanContextRequired");
         using var writer = FinancialWriteScope.EnterOperation(w);
@@ -69,6 +72,10 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
         }
         catch { await tx.RollbackAsync(CancellationToken.None); db.ChangeTracker.Clear(); throw; }
     }
+
+    private SpreadsheetImportPlan Map(Guid workspaceId, SpreadsheetSnapshot source) => scope == BudgetSpreadsheetImportScope.FixedExpensesOnly
+        ? new BudgetSpreadsheetMapper().MapFixedExpenses(workspaceId, source)
+        : new BudgetSpreadsheetMapper().Map(workspaceId, source);
 
     private async Task<Assessment> Assess(SpreadsheetImportPlan plan, CancellationToken ct)
     {
@@ -106,15 +113,63 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
             // Source-invalid items cannot be made executable by an old ledger.
             if (item.Status == BootstrapDisposition.Created) items[i] = item with { Status = BootstrapDisposition.AlreadyImported, Reason = "SameProvenanceAndContent;DestinationValidationRequired" };
         }
+        if (scope == BudgetSpreadsheetImportScope.FixedExpensesOnly)
+        {
+            void Adopt(int index, Entity entity, string reason)
+            {
+                existing[items[index].ExternalReference] = entity;
+                items[index] = items[index] with { Status = BootstrapDisposition.AlreadyImported, Reason = reason };
+            }
+            var categories = await db.FinancialCategories.AsNoTracking().Where(x => x.WorkspaceId == w && x.ParentCategoryId == null).ToListAsync(ct);
+            var accounts = await db.FinancialAccounts.AsNoTracking().Where(x => x.WorkspaceId == w).ToListAsync(ct);
+            for (var i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                if (!item.IsEntity || item.Status != BootstrapDisposition.Created || existing.ContainsKey(item.ExternalReference)) continue;
+                if (item.EntityType == SpreadsheetEntity.Category)
+                {
+                    var matches = categories.Where(x => x.Type == Saldo360.Domain.Categories.CategoryType.Expense
+                        && Saldo360.Domain.Categories.FinancialCategory.MatchKey(x.Name) == Saldo360.Domain.Categories.FinancialCategory.MatchKey(item.Payload.Name)).ToList();
+                    if (matches.Count == 1) Adopt(i, matches[0], "ExistingCategoryMatchedExactly");
+                }
+                else if (item.EntityType == SpreadsheetEntity.Account && Enum.TryParse<Saldo360.Domain.Accounts.FinancialScope>(item.Payload.Scope, out var wantedScope))
+                {
+                    var matches = accounts.Where(x => x.Scope == wantedScope && x.Name.Equals(item.Payload.Name, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (matches.Count == 1) Adopt(i, matches[0], "ExistingAccountMatchedExactly");
+                }
+            }
+            var recurrences = await db.FinancialRecurrences.AsNoTracking().Where(x => x.WorkspaceId == w).ToListAsync(ct);
+            var planned = await db.FinancialPlannedTransactions.AsNoTracking().Where(x => x.WorkspaceId == w && !x.IsCancelled).ToListAsync(ct);
+            for (var i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                if (!item.IsEntity || item.Status != BootstrapDisposition.Created || existing.ContainsKey(item.ExternalReference)
+                    || item.Payload.Account is null || item.Payload.Category is null
+                    || !existing.TryGetValue(item.Payload.Account, out var accountEntity) || !existing.TryGetValue(item.Payload.Category, out var categoryEntity)) continue;
+                if (item.EntityType == SpreadsheetEntity.AccountRecurrence)
+                {
+                    var matches = recurrences.Where(x => x.FinancialAccountId == accountEntity.Id && x.FinancialCategoryId == categoryEntity.Id
+                        && x.Description == item.Payload.Name && x.Amount == item.Payload.Amount && x.StartDate == item.Payload.Date
+                        && x.EndDate == item.Payload.EndDate && x.DayOfMonth == item.Payload.Day).ToList();
+                    if (matches.Count == 1) Adopt(i, matches[0], "ExistingRecurrenceMatchedExactly");
+                }
+                else if (item.EntityType == SpreadsheetEntity.PlannedTransaction)
+                {
+                    var matches = planned.Where(x => x.AccountId == accountEntity.Id && x.CategoryId == categoryEntity.Id
+                        && x.Description == item.Payload.Name && x.Amount == item.Payload.Amount && x.DueDate == item.Payload.Date).ToList();
+                    if (matches.Count == 1) Adopt(i, matches[0], "ExistingPlannedTransactionMatchedExactly");
+                }
+            }
+        }
         // Bootstrap is not an overwrite/merge tool. Any unjournaled financial content requires a new review.
-        foreach (var entity in db.Model.GetEntityTypes().Where(e => e.FindProperty("WorkspaceId") is not null))
+        foreach (var entity in db.Model.GetEntityTypes().Where(e => e.FindProperty("WorkspaceId") is not null && scope == BudgetSpreadsheetImportScope.FullLegacyBootstrap))
         {
             var table = entity.GetTableName()!;
             if (entity.ClrType == typeof(FinancialResetAudit) || entity.ClrType == typeof(FinancialResetFileCleanup) || entity.ClrType == typeof(FinancialBootstrapProvenance)) continue;
             var represented = ledger.Count(p => TypeFor(p.EntityType) == entity.ClrType);
             if (counts.GetValueOrDefault(table) > represented) Reject("UnmanagedDestinationRows:" + table, BootstrapDisposition.Conflict);
         }
-        if (ledger.Any(p => p.SourceSystem != SpreadsheetSnapshot.System || p.SourceDocument != SpreadsheetSnapshot.Document
+        if (scope == BudgetSpreadsheetImportScope.FullLegacyBootstrap && ledger.Any(p => p.SourceSystem != SpreadsheetSnapshot.System || p.SourceDocument != SpreadsheetSnapshot.Document
             || !items.Any(i => i.IsEntity && i.ExternalReference == p.ExternalReference))) Reject("UnreviewedDestinationProvenance", BootstrapDisposition.Conflict);
         var graph = SpreadsheetDomainGraph.Build(plan with { Items = items }, root?.OwnerUserId ?? Guid.Empty, time.GetUtcNow(), existing);
         return new(root?.OwnerUserId, graph, counts);

@@ -83,6 +83,35 @@ public sealed class BudgetSpreadsheetImporterTests(PostgresFixture postgres)
         Assert.All(await verify.FinancialCreditCardInvoices.ToListAsync(), i => Assert.NotEqual("2026-10", i.Competence));
     }
 
+    [Fact] public async Task FixedExpensesOnly_IsPreviewedAndImportedIdempotently_WithoutAnyCardData()
+    {
+        var (connection, workspace, _) = await Setup();
+        var source = BudgetSpreadsheetFixture.ExecutableSyntheticSource();
+        SpreadsheetDryRunResult report;
+        await using (var dry = PostgresFixture.CreateDbContext(connection))
+            report = await new BudgetSpreadsheetImporter(dry, TimeProvider.System, BudgetSpreadsheetImportScope.FixedExpensesOnly).DryRunAsync(workspace, source);
+        Assert.True(report.CanExecute);
+        Assert.Equal(0, report.CountsByAggregate[nameof(SpreadsheetEntity.Card)]);
+        Assert.Equal(0, report.CountsByAggregate[nameof(SpreadsheetEntity.Purchase)]);
+        Assert.Equal(0, report.CountsByAggregate[nameof(SpreadsheetEntity.Installment)]);
+        await using (var write = PostgresFixture.CreateDbContext(connection))
+            await new BudgetSpreadsheetImporter(write, TimeProvider.System, BudgetSpreadsheetImportScope.FixedExpensesOnly)
+                .ExecuteApprovedAsync(workspace, source, source with { ReadAtUtc = DateTimeOffset.UtcNow }, report, report.ReportHash);
+        await using (var verify = PostgresFixture.CreateDbContext(connection))
+        {
+            Assert.Empty(verify.FinancialCreditCards);
+            Assert.Empty(verify.FinancialCreditCardPurchases);
+            Assert.Equal(11, await verify.FinancialRecurrences.CountAsync());
+            Assert.Equal(7, await verify.FinancialPlannedTransactions.CountAsync());
+        }
+        await using (var dry = PostgresFixture.CreateDbContext(connection))
+        {
+            var repeated = await new BudgetSpreadsheetImporter(dry, TimeProvider.System, BudgetSpreadsheetImportScope.FixedExpensesOnly).DryRunAsync(workspace, source);
+            Assert.True(repeated.CanExecute);
+            Assert.Equal(0, repeated.PlannedNewProvenanceRecords);
+        }
+    }
+
     [Fact] public async Task ProvenanceChangedContentAndEditedDestination_AreConflict_NotAlreadyImported()
     {
         var (c, w, _) = await Setup(); var s = BudgetSpreadsheetFixture.ExecutableSyntheticSource(); SpreadsheetDryRunResult approval;

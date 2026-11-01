@@ -11,6 +11,18 @@ namespace Saldo360.Tests.Application;
 public sealed class BudgetSpreadsheetMapperTests
 {
     private static SpreadsheetImportPlan Map(SpreadsheetSnapshot? s = null) => new BudgetSpreadsheetMapper().Map(Guid.Parse("11111111-1111-4111-8111-111111111111"), s ?? BudgetSpreadsheetFixture.Source());
+    [Fact] public void FixedExpensesOnly_NeverMapsCardsPurchasesInstallmentsOrInvoices()
+    {
+        var plan = new BudgetSpreadsheetMapper().MapFixedExpenses(Guid.Parse("11111111-1111-4111-8111-111111111111"), BudgetSpreadsheetFixture.Source());
+        Assert.DoesNotContain(plan.Items, item => item.EntityType is SpreadsheetEntity.Card or SpreadsheetEntity.CardRecurrence or SpreadsheetEntity.Purchase
+            or SpreadsheetEntity.Installment or SpreadsheetEntity.KnownInstallment or SpreadsheetEntity.Invoice);
+        Assert.Equal(11, plan.Items.Count(item => item.EntityType == SpreadsheetEntity.AccountRecurrence));
+        Assert.Equal(7, plan.Items.Count(item => item.EntityType == SpreadsheetEntity.PlannedTransaction));
+        Assert.Contains(plan.Items, item => item.ExternalReference == "PF-007" && item.ExcludedByApprovedDecision);
+        var unrelated = BudgetSpreadsheetFixture.Source();
+        unrelated.Sheet("Lançamentos").Rows[1][5] = BudgetSpreadsheetFixture.Cell("Alteração fora do escopo");
+        Assert.Equal(plan.SourceHash, new BudgetSpreadsheetMapper().MapFixedExpenses(plan.WorkspaceId, unrelated).SourceHash);
+    }
     [Fact] public void Snapshot_Roundtrip_LogicalHashExcludesTransportAndDisplay()
     {
         var s = BudgetSpreadsheetFixture.Source();
