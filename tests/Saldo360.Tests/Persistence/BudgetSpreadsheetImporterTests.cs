@@ -113,6 +113,48 @@ public sealed class BudgetSpreadsheetImporterTests(PostgresFixture postgres)
         }
     }
 
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; }
+
+    [Fact] public async Task FixedExpensesOnly_WritesCompetenceExceptionForeignKeys_MarksOctoberForReview_AndIsIdempotent()
+    {
+        var (connection, workspace, _) = await Setup();
+        var source = BudgetSpreadsheetFixture.ExecutableSyntheticSource();
+        var clock = new FixedClock(new DateTimeOffset(2026, 11, 1, 12, 0, 0, TimeSpan.Zero));
+        SpreadsheetDryRunResult report;
+        await using (var dry = PostgresFixture.CreateDbContext(connection))
+            report = await new BudgetSpreadsheetImporter(dry, clock, BudgetSpreadsheetImportScope.FixedExpensesOnly).DryRunAsync(workspace, source);
+        await using (var write = PostgresFixture.CreateDbContext(connection))
+            await new BudgetSpreadsheetImporter(write, clock, BudgetSpreadsheetImportScope.FixedExpensesOnly)
+                .ExecuteApprovedAsync(workspace, source, source with { ReadAtUtc = clock.GetUtcNow().AddSeconds(30) }, report, report.ReportHash);
+        await using (var verify = PostgresFixture.CreateDbContext(connection))
+        {
+            var recurrences = await verify.FinancialRecurrences.AsNoTracking().ToDictionaryAsync(r => r.Description);
+            var planned = await verify.FinancialPlannedTransactions.AsNoTracking().ToDictionaryAsync(p => p.Description);
+            Assert.Equal((recurrences["Synthetic fixed PF-003"].Id, new DateOnly(2026, 10, 1)), (planned["Synthetic planned PF-003-202610"].ExceptionRecurrenceId, planned["Synthetic planned PF-003-202610"].ExceptionCompetence));
+            Assert.Equal((recurrences["Synthetic fixed PF-003"].Id, new DateOnly(2026, 11, 1)), (planned["Synthetic planned PF-003-202611"].ExceptionRecurrenceId, planned["Synthetic planned PF-003-202611"].ExceptionCompetence));
+            Assert.Equal((recurrences["Synthetic fixed PF-002"].Id, new DateOnly(2026, 10, 1)), (planned["Synthetic planned PF-002-202610"].ExceptionRecurrenceId, planned["Synthetic planned PF-002-202610"].ExceptionCompetence));
+            Assert.All(planned.Values.Where(p => !p.Description.Contains("PF-003-") && !p.Description.Contains("PF-002-")), p => Assert.Null(p.ExceptionRecurrenceId));
+            // Competência anterior à implantação fica a revisar; as demais seguem previstas. A importação não cria vínculos nem movimentações.
+            Assert.True(planned["Synthetic planned PF-IPTU-202610"].NeedsHistoricalReview);
+            Assert.False(planned["Synthetic planned PF-IPTU-202611"].NeedsHistoricalReview);
+            Assert.Empty(verify.FinancialObligationSettlements);
+            Assert.Empty(verify.FinancialTransactions);
+            Assert.Empty(verify.FinancialRecurrenceMaterializations);
+        }
+        await using (var again = PostgresFixture.CreateDbContext(connection))
+        {
+            var repeated = await new BudgetSpreadsheetImporter(again, clock, BudgetSpreadsheetImportScope.FixedExpensesOnly).DryRunAsync(workspace, source);
+            Assert.Equal(0, repeated.PlannedNewProvenanceRecords); // reimportação idempotente: nada novo
+        }
+        await using (var after = PostgresFixture.CreateDbContext(connection))
+        {
+            Assert.Equal((11, 7), (await after.FinancialRecurrences.CountAsync(), await after.FinancialPlannedTransactions.CountAsync()));
+            var november = await Saldo360.Infrastructure.Recurrences.FixedObligationReader.LoadAsync(after, workspace, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), new DateOnly(2026, 11, 1), default);
+            var pf003 = await after.FinancialRecurrences.AsNoTracking().SingleAsync(r => r.Description == "Synthetic fixed PF-003");
+            Assert.Single(november, o => o.RecurrenceId == pf003.Id); // a exceção SUBSTITUI a recorrência na competência (não soma)
+        }
+    }
+
     [Fact] public async Task ProvenanceChangedContentAndEditedDestination_AreConflict_NotAlreadyImported()
     {
         var (c, w, _) = await Setup(); var s = BudgetSpreadsheetFixture.ExecutableSyntheticSource(); SpreadsheetDryRunResult approval;

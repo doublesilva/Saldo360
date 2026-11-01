@@ -4,6 +4,7 @@ using Saldo360.Domain.Categories;
 using Saldo360.Domain.CreditCards;
 using Saldo360.Domain.Transactions;
 using Saldo360.Infrastructure.Persistence;
+using Saldo360.Infrastructure.Recurrences;
 
 namespace Saldo360.Infrastructure.Budgets;
 
@@ -21,7 +22,7 @@ namespace Saldo360.Infrastructure.Budgets;
 /// </summary>
 internal static class BudgetFactReader
 {
-    public static async Task<IReadOnlyList<BudgetFact>> ReadAsync(Saldo360DbContext db, Guid workspaceId, DateOnly first, DateOnly through, CancellationToken ct)
+    public static async Task<IReadOnlyList<BudgetFact>> ReadAsync(Saldo360DbContext db, Guid workspaceId, DateOnly first, DateOnly through, CancellationToken ct, DateOnly? today = null)
     {
         var facts = new List<BudgetFact>();
 
@@ -48,15 +49,18 @@ internal static class BudgetFactReader
             "Devolução: " + r.Description, AccountId: r.AccountId, AccountName: r.AccountName, Imported: true, RelatedRecordId: r.OriginalTransactionId)));
 
         // 2. Previsões pendentes (previsto adicional).
-        var planned = await (from p in db.FinancialPlannedTransactions.AsNoTracking()
+        var planned = await (from p in db.PendingPlanned(workspaceId)
                              join a in db.FinancialAccounts.AsNoTracking() on p.AccountId equals a.Id
-                             where p.WorkspaceId == workspaceId && p.Type == CategoryType.Expense && !p.IsCancelled && p.DueDate >= first && p.DueDate < through
-                                 && !db.FinancialTransactions.Any(t => t.WorkspaceId == p.WorkspaceId && t.PlannedTransactionId == p.Id && !t.IsCancelled)
-                                 && !db.FinancialPlannedInvoiceReconciliations.Any(r => r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null)
-                                 && !db.FinancialDebtInstallmentReconciliations.Any(r => r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null)
+                             where p.Type == CategoryType.Expense && p.DueDate >= first && p.DueDate < through
                              select new { p.Id, p.DueDate, p.Amount, p.CategoryId, p.Nature, p.Description, p.AccountId, AccountName = a.Name }).ToListAsync(ct);
         facts.AddRange(planned.Select(p => new BudgetFact(BudgetFactOrigin.PlannedTransaction, p.Id, p.DueDate, p.Amount, BudgetFactState.Pending, p.CategoryId, p.Nature,
             p.Description, AccountId: p.AccountId, AccountName: p.AccountName)));
+        // Ocorrências virtuais de recorrência (despesa fixa ainda sem pagamento): previsto adicional; "a revisar" e pagas vinculadas não consomem de novo.
+        var virtualToday = today ?? DateOnly.FromDateTime(TimeProvider.System.GetUtcNow().UtcDateTime);
+        var virtualFixed = await Saldo360.Infrastructure.Recurrences.FixedObligationReader.LoadVirtualPendingAsync(db, workspaceId, first, through.AddDays(-1), virtualToday, ct);
+        var accountNames = await db.FinancialAccounts.AsNoTracking().Where(a => a.WorkspaceId == workspaceId).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
+        facts.AddRange(virtualFixed.Where(o => o.Type == CategoryType.Expense).Select(o => new BudgetFact(BudgetFactOrigin.PlannedTransaction, o.StableId, o.DueDate, o.PlannedAmount, BudgetFactState.Pending,
+            o.CategoryId, o.Nature, o.Description, AccountId: o.AccountId, AccountName: accountNames.GetValueOrDefault(o.AccountId))));
 
         // 3. Dívidas: pagamento efetivo (caixa) e saldo ainda não pago da parcela.
         var debtPayments = await (from payment in db.FinancialDebtPayments.AsNoTracking()

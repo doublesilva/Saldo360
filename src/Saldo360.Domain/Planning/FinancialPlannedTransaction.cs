@@ -59,6 +59,30 @@ public sealed class FinancialPlannedTransaction : Entity
 
     public Guid? CancelledByUserId { get; private set; }
 
+    /// <summary>Quando preenchida, esta previsão é a EXCEÇÃO de uma competência da recorrência: seu valor substitui (nunca soma) o da recorrência naquele mês.</summary>
+    public Guid? ExceptionRecurrenceId { get; private set; }
+
+    /// <summary>Primeiro dia do mês da competência substituída (sempre junto de <see cref="ExceptionRecurrenceId"/>).</summary>
+    public DateOnly? ExceptionCompetence { get; private set; }
+
+    /// <summary>Competência anterior à implantação sem evidência de pagamento: fica "A revisar", fora de atraso e do saldo projetado até ser conciliada ou reconhecida.</summary>
+    public bool NeedsHistoricalReview { get; private set; }
+
+    public void MarkAsCompetenceException(Guid recurrenceId, DateOnly competence)
+    {
+        ExceptionRecurrenceId = recurrenceId;
+        ExceptionCompetence = new DateOnly(competence.Year, competence.Month, 1);
+    }
+
+    public void MarkHistoricalReview() => NeedsHistoricalReview = true;
+
+    /// <summary>Ação explícita do usuário: reconhece a pendência histórica como dívida real (passa a contar como pendente/vencida).</summary>
+    public void ConfirmHistoricalPending(Guid userId, DateTimeOffset now)
+    {
+        if (IsCancelled) throw new InvalidOperationException("Previsão cancelada não pode ser reconhecida como pendente.");
+        NeedsHistoricalReview = false; UpdatedAt = now; UpdatedByUserId = userId;
+    }
+
     public static FinancialPlannedTransaction Create(Guid workspaceId, PlannedTransactionDetails details, Guid createdByUserId, DateTimeOffset now)
     {
         var planned = new FinancialPlannedTransaction

@@ -383,6 +383,12 @@ public sealed record FinancialCalendarItemResponse(
     /// <summary>Transferência prevista que originou o item (Source Transfer, Pendente/Vencido). Nulo nos demais.</summary>
     public Guid? PlannedTransferId { get; init; }
 
+    /// <summary>Despesa fixa: Planned, Reconciled ou NeedsReview. Nulo nos demais itens.</summary>
+    public string? ReconciliationStatus { get; init; }
+    public string? ActualAmount { get; init; }
+    public DateOnly? ActualDate { get; init; }
+    public Guid? TransactionId { get; init; }
+
     public static FinancialCalendarItemResponse From(FinancialCalendarItemDto item) => new(
         item.Id,
         item.Source,
@@ -399,5 +405,5 @@ public sealed record FinancialCalendarItemResponse(
         item.RecurrenceId,
         item.OccurrenceNumber,
         item.ScheduledDate,
-        item.AllowedActions) { PlannedTransferId = item.PlannedTransferId };
+        item.AllowedActions) { PlannedTransferId = item.PlannedTransferId, ReconciliationStatus = item.ReconciliationStatus, ActualAmount = item.ActualAmount is { } a ? Money.Format(a) : null, ActualDate = item.ActualDate, TransactionId = item.TransactionId };
 }

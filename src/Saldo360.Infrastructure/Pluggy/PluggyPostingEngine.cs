@@ -309,6 +309,8 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             await db.SaveChangesAsync(ct);
             // Transferências previstas cumpridas (ou liberadas, se a transferência foi desfeita) por esta passada: associação só quando inequívoca.
             await Saldo360.Infrastructure.Transfers.PlannedTransferReconciler.ReconcileAsync(db, workspaceId, now, ct);
+            // Despesas fixas: vínculo automático somente com correspondência única e confiável; o resto fica "a revisar". Não altera nenhuma movimentação.
+            await Saldo360.Infrastructure.Recurrences.FixedObligationReconciler.ReconcileAsync(db, workspaceId, DateOnly.FromDateTime(now.UtcDateTime), now, ct);
             return new PluggyApplySummary(created, updated, waiting, review, covered, transfersPaired, billsPaired, outOfRange, unchanged)
             {
                 PurchasesRehomed = rehomed, CardCreditsApplied = creditsApplied, InvoicesClosedByInstitution = closuresRecorded, StaleInvoicesRemoved = staleInvoicesRemoved,

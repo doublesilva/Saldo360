@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Application.Calendar;
 using Saldo360.Domain.Categories;
+using Saldo360.Infrastructure.Recurrences;
 using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.Calendar;
@@ -115,23 +116,8 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             .OrderBy(row => row.Date)
             .ToList();
 
-        var pendingQuery = db.FinancialPlannedTransactions
-            .AsNoTracking()
-            .Where(item => item.WorkspaceId == workspaceId
-                && !item.IsCancelled
-                && item.DueDate <= through
-                && !db.FinancialTransactions.Any(transaction =>
-                    transaction.WorkspaceId == item.WorkspaceId
-                    && transaction.PlannedTransactionId == item.Id
-                    && !transaction.IsCancelled)
-                && !db.FinancialPlannedInvoiceReconciliations.Any(reconciliation =>
-                    reconciliation.WorkspaceId == item.WorkspaceId
-                    && reconciliation.PlannedTransactionId == item.Id
-                    && reconciliation.RemovedAt == null)
-                && !db.FinancialDebtInstallmentReconciliations.Any(reconciliation =>
-                    reconciliation.WorkspaceId == item.WorkspaceId
-                    && reconciliation.PlannedTransactionId == item.Id
-                    && reconciliation.RemovedAt == null));
+        // Regra única de pendência (PlannedObligationQueries) + ocorrências virtuais de recorrência do mês corrente em diante.
+        var pendingQuery = db.PendingPlanned(workspaceId).Where(item => item.DueDate <= through);
         if (accountId is { } pendingAccountId)
         {
             pendingQuery = pendingQuery.Where(item => item.AccountId == pendingAccountId);
@@ -150,6 +136,11 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         var pending = pendingRows
             .Select(row => new FinancialCalendarDailyTotals(row.Date, row.Income, row.Expense, 0m, 0m))
             .ToList();
+        var virtualPending = (await Saldo360.Infrastructure.Recurrences.FixedObligationReader.LoadVirtualPendingAsync(db, workspaceId,
+                new DateOnly(today.Year, today.Month, 1), through, today, cancellationToken))
+            .Where(o => accountId == null || o.AccountId == accountId).ToList();
+        pending = pending.Concat(virtualPending.GroupBy(o => o.DueDate).Select(g => new FinancialCalendarDailyTotals(g.Key,
+            g.Where(o => o.Type == CategoryType.Income).Sum(o => o.PlannedAmount), g.Where(o => o.Type == CategoryType.Expense).Sum(o => o.PlannedAmount), 0m, 0m))).ToList();
 
         // Transferências PREVISTAS (pendentes: não canceladas e ainda sem transferência realizada associada): saída na origem e entrada no destino. Numa conta, só a ponta dela; no
         // consolidado, o líquido por dia (as duas pontas dentro do conjunto se anulam). Associada, a previsão deixa de projetar: o realizado já conta a transferência uma única vez.
@@ -217,7 +208,7 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                 .ToList();
             cardPayments = periodRows.Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, row.CardPayments, 0m, 0m)).ToList();
             budgets = await Saldo360.Infrastructure.Budgets.FinancialBudgetExecutionRepository.ReadRangeAsync(
-                db, workspaceId, firstPeriodDate, through.AddDays(1), null, cancellationToken);
+                db, workspaceId, firstPeriodDate, through.AddDays(1), null, cancellationToken, today);
         }
 
         await transaction.CommitAsync(cancellationToken);

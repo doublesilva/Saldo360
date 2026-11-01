@@ -17,7 +17,7 @@ type References = { accounts: FinancialAccount[]; categories: FinancialCategory[
 type Mode = 'details' | 'realize' | 'edit'
 
 const typeLabels = { Income: 'Receita', Expense: 'Despesa' } as const
-const statusLabels = { Realized: 'Realizado', Pending: 'Pendente', Overdue: 'Vencido' } as const
+const statusLabels = { Realized: 'Realizado', Pending: 'Pendente', Overdue: 'Vencido', NeedsReview: 'A revisar' } as const
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
@@ -52,7 +52,7 @@ export function FinancialCalendarDetails({
   }, [returnFocus])
 
   useEffect(() => {
-    if (item.source === 'DebtInstallment') return
+    if (item.source === 'DebtInstallment' || item.source === 'RecurrenceOccurrence') return
     const controller = new AbortController()
     const request = item.source === 'PlannedTransaction'
       ? getPlanned(workspaceId, item.id, controller.signal).then<Detail>((value) => ({ source: 'PlannedTransaction', value }))

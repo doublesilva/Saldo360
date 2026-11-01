@@ -13,6 +13,9 @@ public enum FinancialCalendarSource
 
     /// <summary>Uma ponta de transferência entre contas próprias (só com includeTransfers=true). Não é receita nem despesa.</summary>
     Transfer,
+
+    /// <summary>Ocorrência virtual de uma recorrência (calculada, não gravada). Sem ações de edição/realização.</summary>
+    RecurrenceOccurrence,
 }
 
 /// <summary>
@@ -23,6 +26,9 @@ public enum FinancialCalendarStatus
     Realized,
     Pending,
     Overdue,
+
+    /// <summary>Despesa fixa de competência anterior à implantação, sem evidência de pagamento: nem dívida confirmada nem paga.</summary>
+    NeedsReview,
 }
 
 /// <summary>
@@ -45,7 +51,11 @@ public sealed record FinancialCalendarItemDto(
     Guid? RecurrenceId = null,
     int? OccurrenceNumber = null,
     DateOnly? ScheduledDate = null,
-    Guid? PlannedTransferId = null)
+    Guid? PlannedTransferId = null,
+    string? ReconciliationStatus = null,
+    decimal? ActualAmount = null,
+    DateOnly? ActualDate = null,
+    Guid? TransactionId = null)
 {
     // Advisory capabilities only. Existing commands revalidate state under their own locks.
     public IReadOnlyList<string> AllowedActions => Source switch

@@ -35,7 +35,7 @@ public static class SpreadsheetDomainGraph
                     SpreadsheetEntity.Category => Category(plan.WorkspaceId, owner, p, now),
                     SpreadsheetEntity.Account => FinancialAccount.Create(plan.WorkspaceId, AccountDetails.TryCreate(p.Name, p.Institution, "Checking", p.Scope, null, p.Amount, p.Date, out _) ?? throw new ArgumentException("InvalidAccount"), owner, now),
                     SpreadsheetEntity.Card => FinancialCreditCard.Create(plan.WorkspaceId, CreditCardDetails.TryCreate(p.Name, p.Institution, null, p.Amount, p.Day, p.Number, null, out _) ?? throw new ArgumentException("InvalidCardIssuerOrCalendar"), owner, now),
-                    SpreadsheetEntity.PlannedTransaction => FinancialPlannedTransaction.Create(plan.WorkspaceId, PlannedTransactionDetails.TryCreate(Ref(p.Account), Ref(p.Category), "Expense", p.Name, p.Amount, p.Date, out _) ?? throw new ArgumentException("InvalidPlannedTransaction"), owner, now),
+                    SpreadsheetEntity.PlannedTransaction => Planned(plan.WorkspaceId, owner, p, Ref, now),
                     SpreadsheetEntity.AccountRecurrence or SpreadsheetEntity.CardRecurrence => Recurrence(plan.WorkspaceId, p, Ref, now),
                     SpreadsheetEntity.Purchase => Purchase(plan.WorkspaceId, owner, p, Ref, now),
                     SpreadsheetEntity.Invoice => Invoice(plan.WorkspaceId, p, Ref, now),
@@ -100,6 +100,16 @@ public static class SpreadsheetDomainGraph
         if (!child.InvoiceId.HasValue) child.AssignInvoice(invoiceId);
         return child;
     }
+    /// <summary>Previsão avulsa da planilha. Exceção de competência recebe a FK da recorrência; competência anterior à implantação (mês de <paramref name="now"/>) fica "a revisar", sem virar dívida.</summary>
+    private static FinancialPlannedTransaction Planned(Guid workspaceId, Guid owner, SpreadsheetPayload p, Func<string?, Guid> reference, DateTimeOffset now)
+    {
+        var planned = FinancialPlannedTransaction.Create(workspaceId, PlannedTransactionDetails.TryCreate(reference(p.Account), reference(p.Category), "Expense", p.Name, p.Amount, p.Date, out _)
+            ?? throw new ArgumentException("InvalidPlannedTransaction"), owner, now);
+        if (p.ExceptionOf is not null) planned.MarkAsCompetenceException(reference(p.ExceptionOf), p.Date!.Value);
+        if (p.Date!.Value < new DateOnly(now.Year, now.Month, 1)) planned.MarkHistoricalReview();
+        return planned;
+    }
+
     private static DateOnly Due(SpreadsheetPayload p) => new(p.Competence!.Value.Year, p.Competence.Value.Month, Math.Min(p.Day!.Value, DateTime.DaysInMonth(p.Competence.Value.Year, p.Competence.Value.Month)));
 
     /// <param name="accountsAreReadOnlyDependencies">Contas associadas (ex.: vinculadas ao Pluggy) são só leitura: saldo inicial,

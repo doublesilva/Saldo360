@@ -29,6 +29,11 @@ internal sealed class PlanActualRepository(Saldo360DbContext db) : IPlanActualRe
                 && !db.FinancialPlannedInvoiceReconciliations.Any(r => r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null)
                 && !db.FinancialDebtInstallmentReconciliations.Any(r => r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null));
         var plannedRows = await planned.GroupBy(p => p.Type).Select(g => new { Type = g.Key, Total = g.Sum(p => p.Amount), Count = g.Count() }).ToListAsync(ct);
+        // Ocorrências virtuais de recorrência entram no planejado ao valor previsto (a exceção de competência já substituiu a recorrência; pagas ou não, o previsto é o original).
+        var virtualPlan = (await Saldo360.Infrastructure.Recurrences.FixedObligationReader.LoadAsync(db, workspaceId, start, end, start, ct))
+            .Where(o => o.IsVirtual && (scope == null || scope.Contains(o.AccountId))).ToList();
+        plannedRows = plannedRows.Concat(virtualPlan.GroupBy(o => o.Type).Select(g => new { Type = g.Key, Total = g.Sum(o => o.PlannedAmount), Count = g.Count() })).GroupBy(r => r.Type)
+            .Select(g => new { Type = g.Key, Total = g.Sum(r => r.Total), Count = g.Sum(r => r.Count) }).ToList();
         var income = plannedRows.FirstOrDefault(r => r.Type == CategoryType.Income); var expense = plannedRows.FirstOrDefault(r => r.Type == CategoryType.Expense);
 
         // Datas importadas são dias civis no padrão do motor de lançamentos (UTC).

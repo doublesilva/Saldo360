@@ -95,7 +95,8 @@ public sealed class R05IntegratedCycleTests(PostgresFixture postgres) : Postgres
         Assert.Equal(("0.00", "380.00"), (Text(before, "consumed"), Text(before, "committed")));
         var overviewBefore = await OverviewAsync(s);
         var openBefore = overviewBefore.GetProperty("commitments");
-        Assert.Equal(1, openBefore.GetProperty("overdue").GetProperty("count").GetInt32() + openBefore.GetProperty("upcoming").GetProperty("count").GetInt32());
+        // Ocorrências futuras da recorrência aparecem sozinhas (virtuais); aqui interessa a obrigação do MÊS corrente: uma única vez.
+        Assert.Equal(1, CurrentMonthCommitments(openBefore));
         var balanceBefore = BalanceOf(overviewBefore, s.Account);
 
         // Realiza por um valor diferente do previsto; repetir é idempotente.
@@ -110,11 +111,15 @@ public sealed class R05IntegratedCycleTests(PostgresFixture postgres) : Postgres
         Assert.Equal(("400.00", "0.00", "100.00"), (Text(after, "consumed"), Text(after, "committed"), Text(after, "available")));
         var overviewAfter = await OverviewAsync(s);
         var commitmentsAfter = overviewAfter.GetProperty("commitments");
-        Assert.Equal(0, commitmentsAfter.GetProperty("overdue").GetProperty("count").GetInt32() + commitmentsAfter.GetProperty("upcoming").GetProperty("count").GetInt32());
+        Assert.Equal(0, CurrentMonthCommitments(commitmentsAfter)); // realizada: a obrigação do mês deixa de ser compromisso (as futuras seguem previstas)
         Assert.NotEqual(balanceBefore, BalanceOf(overviewAfter, s.Account)); // o saldo passou a refletir a saída realizada
         await using var db = Db();
         Assert.Equal(1, await db.FinancialTransactions.CountAsync(t => t.WorkspaceId == s.Workspace.Id && !t.IsCancelled && t.Description == "Internet"));
     }
+
+    private static int CurrentMonthCommitments(JsonElement commitments) =>
+        new[] { "overdue", "upcoming" }.Sum(group => commitments.GetProperty(group).GetProperty("items").EnumerateArray()
+            .Count(item => item.GetProperty("description").GetString() == "Internet" && DateOnly.Parse(item.GetProperty("date").GetString()!) is var d && d.Year == Today.Year && d.Month == Today.Month));
 
     // ---- Cenário F: objetivo financeiro ------------------------------------------------------------------------------------------------
 

@@ -7,16 +7,18 @@ using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.Budgets;
 
-internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
+internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db, TimeProvider? time = null)
     : IFinancialBudgetExecutionRepository
 {
+    private DateOnly Today => DateOnly.FromDateTime((time ?? TimeProvider.System).GetUtcNow().UtcDateTime);
+
     public async Task<FinancialBudgetExecutionSource?> GetAsync(
         Guid workspaceId, Guid budgetId, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(
             IsolationLevel.RepeatableRead, cancellationToken);
         await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
-        var result = await ReadRangeAsync(db, workspaceId, null, null, budgetId, cancellationToken);
+        var result = await ReadRangeAsync(db, workspaceId, null, null, budgetId, cancellationToken, Today);
         await transaction.CommitAsync(cancellationToken);
         return result.SingleOrDefault();
     }
@@ -39,7 +41,7 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
         }
 
         var parentOf = await BudgetFactReader.ParentsAsync(db, workspaceId, target.CategoryId is { } category ? [category] : [], cancellationToken);
-        var month = await BudgetFactReader.ReadAsync(db, workspaceId, budget.Competence, budget.Competence.AddMonths(1), cancellationToken);
+        var month = await BudgetFactReader.ReadAsync(db, workspaceId, budget.Competence, budget.Competence.AddMonths(1), cancellationToken, Today);
         var covered = month.Where(fact => BudgetTargetMatcher.Covers(target.GroupingType, target.CategoryId, parentOf, fact))
             .OrderBy(fact => fact.Date).ThenBy(fact => fact.Description, StringComparer.CurrentCultureIgnoreCase).ThenBy(fact => fact.RecordId).ToList();
         var hasCards = await HasCardsAsync(db, workspaceId, cancellationToken);
@@ -56,7 +58,7 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
         await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
-        var facts = await BudgetFactReader.ReadAsync(db, workspaceId, first, through, cancellationToken);
+        var facts = await BudgetFactReader.ReadAsync(db, workspaceId, first, through, cancellationToken, Today);
         var ids = facts.Where(fact => fact.CategoryId != null).Select(fact => fact.CategoryId!.Value).Distinct().ToList();
         var categories = await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId && ids.Contains(c.Id))
             .Select(c => new { c.Id, c.Name, ParentName = db.FinancialCategories.Where(p => p.Id == c.ParentCategoryId).Select(p => p.Name).FirstOrDefault() }).ToListAsync(cancellationToken);
@@ -82,7 +84,7 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
     }
 
     internal static async Task<IReadOnlyList<FinancialBudgetExecutionSource>> ReadRangeAsync(
-        Saldo360DbContext db, Guid workspaceId, DateOnly? from, DateOnly? until, Guid? budgetId, CancellationToken cancellationToken)
+        Saldo360DbContext db, Guid workspaceId, DateOnly? from, DateOnly? until, Guid? budgetId, CancellationToken cancellationToken, DateOnly? today = null)
     {
         var budgets = await db.FinancialBudgets.AsNoTracking()
             .Where(item => item.WorkspaceId == workspaceId && (budgetId == null || item.Id == budgetId) && !item.IsArchived
@@ -101,7 +103,7 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db)
             .ToListAsync(cancellationToken);
         // Meta de categoria principal cobre os registros diretos e os das subcategorias (R02): cada registro tem UM categoryId, então é contado uma só vez.
         var parentOf = await BudgetFactReader.ParentsAsync(db, workspaceId, targets.Where(item => item.CategoryId != null).Select(item => item.CategoryId!.Value).ToList(), cancellationToken);
-        var facts = await BudgetFactReader.ReadAsync(db, workspaceId, first, through, cancellationToken);
+        var facts = await BudgetFactReader.ReadAsync(db, workspaceId, first, through, cancellationToken, today);
         var hasCards = await HasCardsAsync(db, workspaceId, cancellationToken);
 
         return budgets.Select(budget =>

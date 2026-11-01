@@ -32,6 +32,7 @@ const statusLabels: Record<FinancialCalendarStatus, string> = {
   Realized: 'Realizado',
   Pending: 'Pendente',
   Overdue: 'Vencido',
+  NeedsReview: 'A revisar',
 }
 
 function errorMessage(error: unknown): string {

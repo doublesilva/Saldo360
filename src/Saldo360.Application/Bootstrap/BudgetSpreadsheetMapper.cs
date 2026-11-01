@@ -14,6 +14,9 @@ public sealed class BudgetSpreadsheetMapper(int provisionalChargeDay = 10)
     private static readonly HashSet<string> Singles = ["LAN-006", "LAN-007", "LAN-BL-20261010-MERCADO", "LAN-NU-20261011-DOMINOS"];
     private static readonly HashSet<string> BankRecurrences = ["PJ-001", "PJ-002", "PJ-003", "PJ-004", "PF-001", "PF-002", "PF-003", "PF-004", "PF-005", "PF-006", "PF-008"];
     private static readonly HashSet<string> SpecificPlans = ["PF-003-202610", "PF-003-202611", "PF-002-202610", "PF-IPTU-202610", "PF-IPTU-202611", "PF-IPTU-202612", "PF-TAX-202702"];
+    /// <summary>Exceção de competência (previsão específica) -> recorrência que ela substitui naquele mês. Só ajuda o bootstrap a preencher a FK; o sistema nunca interpreta ids textuais depois.</summary>
+    private static readonly Dictionary<string, string> CompetenceExceptions = new(StringComparer.Ordinal)
+    { ["PF-003-202610"] = "PF-003", ["PF-003-202611"] = "PF-003", ["PF-002-202610"] = "PF-002" };
     private static readonly HashSet<string> CardRecurrences = ["REC-001", "REC-002", "REC-003", "REC-ZAF-001", "REC-BL-KINDLE-001", "REC-BL-ADFREE-001"];
     private static readonly HashSet<string> UnsupportedParameters = ["Valor hora PJ", "Horas por dia útil", "Reserva preventiva tributos", "Percentual de referência recuperação", "Meta parcelas e recorrências", "Meta alimentação/imprevistos", "Provisão alimentação/imprevistos", "Início da provisão"];
     private static readonly HashSet<string> ReferenceParameters = ["Meta mensal cartões", "Reserva Crediário Solar", "Saldo inicial", "Mês inicial", "Horizonte em meses", "Meta mensal fixos PF", "Meta mensal total PF"];
@@ -124,6 +127,8 @@ public sealed class BudgetSpreadsheetMapper(int provisionalChargeDay = 10)
             if (fixedRows.Count(r => r.Id == id) != 1) Issue("EXPECTED:" + id, "MissingOrDuplicateExpectedId", "Despesas Fixas");
         if (items.Where(i => i.IsEntity).GroupBy(i => i.ExternalReference).Any(g => g.Count() > 1))
             Issue("PROVENANCE", "DuplicatePlannedProvenance", "Plan");
+        // A exceção referencia a recorrência por FK: a recorrência precisa ser materializada no grafo antes.
+        var ordered = items.OrderBy(i => i.Payload.ExceptionOf is null ? 0 : 1).ToList(); items.Clear(); items.AddRange(ordered);
         var fixedExpensesHash = SpreadsheetSnapshot.Hash(new { Sheet = snapshot.Sheet("Despesas Fixas") });
         return new(workspaceId, fixedExpensesHash, snapshot.ReadAtUtc, items.ToArray());
     }
@@ -138,7 +143,7 @@ public sealed class BudgetSpreadsheetMapper(int provisionalChargeDay = 10)
         var date = Day(start, day);
         var account = r.T(1) switch { "PF" => "ACCOUNT:ItauPF", "PJ" => "ACCOUNT:ItauEmpresas", _ => throw new FormatException("UnknownAccountScope") };
         var estimated = IsEstimated(r.T(11));
-        var payload = new SpreadsheetPayload(r.T(2), Money(r.C(4)), date, account, Category: CategoryRef(r.T(3)), EndDate: end, Day: day, Competence: Month(start), IsEstimated: estimated);
+        var payload = new SpreadsheetPayload(r.T(2), Money(r.C(4)), date, account, Category: CategoryRef(r.T(3)), EndDate: end, Day: day, Competence: Month(start), IsEstimated: estimated, ExceptionOf: CompetenceExceptions.TryGetValue(r.Id, out var parent) ? parent + ":recurrence" : null);
         if (SpecificPlans.Contains(r.Id)) Add(r.Id + ":planned", SpreadsheetEntity.PlannedTransaction, payload, r.Location, JsonSerializer.Serialize(new { estimated, provision = r.Id == "PF-TAX-202702" }));
         else if (BankRecurrences.Contains(r.Id)) Add(r.Id + ":recurrence", SpreadsheetEntity.AccountRecurrence, payload, r.Location);
         else Issue(r.Id, "UnapprovedFixedRow", r.Location);

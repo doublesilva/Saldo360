@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Saldo360.Application.Accounts;
 using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Categories;
+using Saldo360.Infrastructure.Recurrences;
 using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.Accounts;
@@ -147,18 +148,24 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
     public async Task<PlannedTotals> SumPendingPlannedAsync(
         Guid workspaceId, Guid accountId, DateOnly baseDate, DateOnly through, CancellationToken cancellationToken)
     {
-        var totals = await db.FinancialPlannedTransactions
-            .Where(p => p.WorkspaceId == workspaceId && p.AccountId == accountId && !p.IsCancelled && p.DueDate <= through
-                && !db.FinancialTransactions.Any(t => t.WorkspaceId == p.WorkspaceId && t.PlannedTransactionId == p.Id && !t.IsCancelled)
-                && !db.FinancialPlannedInvoiceReconciliations.Any(r => r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null))
+        // Regra única de pendência (PlannedObligationQueries) + ocorrências virtuais de recorrência (mês corrente em diante; competências fechadas ficam "a revisar").
+        var totals = await db.PendingPlanned(workspaceId)
+            .Where(p => p.AccountId == accountId && p.DueDate <= through)
             .GroupBy(p => p.AccountId)
             .Select(g => new PlannedTotals(
                 g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Income ? p.Amount : 0m),
                 g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Expense ? p.Amount : 0m),
                 g.Sum(p => p.DueDate >= baseDate && p.Type == CategoryType.Income ? p.Amount : 0m),
                 g.Sum(p => p.DueDate >= baseDate && p.Type == CategoryType.Expense ? p.Amount : 0m)))
-            .SingleOrDefaultAsync(cancellationToken);
-        return totals ?? new PlannedTotals(0m, 0m, 0m, 0m);
+            .SingleOrDefaultAsync(cancellationToken) ?? new PlannedTotals(0m, 0m, 0m, 0m);
+        var virtualPending = (await Saldo360.Infrastructure.Recurrences.FixedObligationReader.LoadVirtualPendingAsync(db, workspaceId,
+            new DateOnly(baseDate.Year, baseDate.Month, 1), through, baseDate, cancellationToken)).Where(o => o.AccountId == accountId).ToList();
+        decimal Sum(Func<Saldo360.Application.Recurrences.FixedObligation, bool> predicate) => virtualPending.Where(predicate).Sum(o => o.PlannedAmount);
+        return new PlannedTotals(
+            totals.OverdueIncome + Sum(o => o.DueDate < baseDate && o.Type == CategoryType.Income),
+            totals.OverdueExpense + Sum(o => o.DueDate < baseDate && o.Type == CategoryType.Expense),
+            totals.PlannedIncome + Sum(o => o.DueDate >= baseDate && o.Type == CategoryType.Income),
+            totals.PlannedExpense + Sum(o => o.DueDate >= baseDate && o.Type == CategoryType.Expense));
     }
 
     public async Task<CreditCardProjectionTotals> SumCreditCardObligationsAsync(Guid workspaceId, Guid accountId, DateOnly through, DateOnly today, CancellationToken cancellationToken)

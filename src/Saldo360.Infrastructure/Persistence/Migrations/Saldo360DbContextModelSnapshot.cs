@@ -3051,6 +3051,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("due_date");
 
+                    b.Property<DateOnly?>("ExceptionCompetence")
+                        .HasColumnType("date")
+                        .HasColumnName("exception_competence");
+
+                    b.Property<Guid?>("ExceptionRecurrenceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("exception_recurrence_id");
+
                     b.Property<bool>("IsCancelled")
                         .HasColumnType("boolean")
                         .HasColumnName("is_cancelled");
@@ -3062,6 +3070,12 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasDefaultValue("Undefined")
                         .HasColumnName("expense_nature");
+
+                    b.Property<bool>("NeedsHistoricalReview")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("needs_historical_review");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -3105,6 +3119,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("WorkspaceId", "DueDate", "Id")
                         .HasDatabaseName("ix_financial_planned_transactions_workspace_id_due_date_id");
 
+                    b.HasIndex("WorkspaceId", "ExceptionRecurrenceId", "ExceptionCompetence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_financial_planned_transactions_recurrence_exception")
+                        .HasFilter("exception_recurrence_id IS NOT NULL AND NOT is_cancelled");
+
                     b.ToTable("financial_planned_transactions", null, t =>
                         {
                             t.HasCheckConstraint("ck_financial_planned_transactions_amount_positive", "amount > 0");
@@ -3122,6 +3141,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_planned_transactions_description_not_blank", "btrim(description) <> ''");
 
                             t.HasCheckConstraint("ck_financial_planned_transactions_description_trimmed", "octet_length(description) = octet_length(btrim(description))");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_exception_pair", "(exception_recurrence_id IS NULL AND exception_competence IS NULL) OR (exception_recurrence_id IS NOT NULL AND exception_competence IS NOT NULL AND EXTRACT(DAY FROM exception_competence) = 1)");
 
                             t.HasCheckConstraint("ck_financial_planned_transactions_expense_nature", "expense_nature IN ('Undefined', 'Fixed', 'Variable') AND (type = 'Expense' OR expense_nature = 'Undefined')");
 
@@ -4482,6 +4503,70 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ux_pluggy_transfer_rejections_pair");
 
                     b.ToTable("pluggy_transfer_rejections", (string)null);
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialObligationSettlement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateOnly>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("FinancialTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("financial_transaction_id");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("origin");
+
+                    b.Property<Guid?>("PlannedTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("planned_transaction_id");
+
+                    b.Property<Guid?>("RecurrenceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recurrence_id");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("removed_at");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_obligation_settlements");
+
+                    b.HasIndex("WorkspaceId", "FinancialTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_obligation_settlement_transaction")
+                        .HasFilter("removed_at IS NULL");
+
+                    b.HasIndex("WorkspaceId", "PlannedTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_obligation_settlement_planned")
+                        .HasFilter("removed_at IS NULL AND planned_transaction_id IS NOT NULL");
+
+                    b.HasIndex("WorkspaceId", "RecurrenceId", "Competence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_obligation_settlement_recurrence_competence")
+                        .HasFilter("removed_at IS NULL AND recurrence_id IS NOT NULL");
+
+                    b.ToTable("financial_obligation_settlements", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_obligation_settlement_identity", "recurrence_id IS NOT NULL OR planned_transaction_id IS NOT NULL");
+                        });
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>
@@ -6356,6 +6441,13 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_financial_planned_transactions_accounts_same_family");
 
+                    b.HasOne("Saldo360.Domain.Recurrences.FinancialRecurrence", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "ExceptionRecurrenceId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_planned_transactions_exception_recurrence");
+
                     b.HasOne("Saldo360.Domain.Categories.FinancialCategory", null)
                         .WithMany()
                         .HasForeignKey("WorkspaceId", "CategoryId", "Type")
@@ -6707,6 +6799,38 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pluggy_transfer_rejections_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialObligationSettlement", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_obligation_settlements_financial_workspaces_works");
+
+                    b.HasOne("Saldo360.Domain.Transactions.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "FinancialTransactionId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_obligation_settlements_financial_transactions_wor");
+
+                    b.HasOne("Saldo360.Domain.Planning.FinancialPlannedTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "PlannedTransactionId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_obligation_settlements_financial_planned_transact");
+
+                    b.HasOne("Saldo360.Domain.Recurrences.FinancialRecurrence", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "RecurrenceId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_obligation_settlements_financial_recurrences_work");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Recurrences.FinancialRecurrence", b =>

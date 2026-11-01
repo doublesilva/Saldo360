@@ -169,7 +169,8 @@ public sealed class AccountProjectionPersistenceTests(PostgresFixture postgres) 
 
         Assert.Equal(IsolationLevel.RepeatableRead, Assert.Single(capture.IsolationLevels));
         Assert.Contains(capture.Commands, sql => sql.Contains("READ ONLY", StringComparison.OrdinalIgnoreCase));
-        var sql = Assert.Single(capture.Commands, c => c.Contains("financial_planned_transactions", StringComparison.Ordinal));
+        // As ocorrências virtuais de recorrência fazem leituras próprias (constantes); a soma das previsões continua UMA agregação no banco.
+        var sql = Assert.Single(capture.Commands, c => c.Contains("financial_planned_transactions", StringComparison.Ordinal) && c.Contains("sum(", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("sum(", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("GROUP BY", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("description", sql, StringComparison.OrdinalIgnoreCase);

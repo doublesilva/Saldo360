@@ -47,6 +47,20 @@ internal sealed class FinancialPlannedTransactionConfiguration : IEntityTypeConf
         // Listagem: data prevista crescente e Id crescente (ordem estável), sempre filtrada por família.
         builder.HasIndex(planned => new { planned.WorkspaceId, planned.DueDate, planned.Id });
 
+        // Exceção de competência: FK explícita para a recorrência; no máximo uma exceção ativa por (recorrência, competência).
+        builder.Property(planned => planned.ExceptionCompetence).HasColumnType("date");
+        builder.Property(planned => planned.NeedsHistoricalReview).HasDefaultValue(false);
+        builder.ToTable(table => table.HasCheckConstraint("ck_financial_planned_transactions_exception_pair",
+            "(exception_recurrence_id IS NULL AND exception_competence IS NULL) OR (exception_recurrence_id IS NOT NULL AND exception_competence IS NOT NULL AND EXTRACT(DAY FROM exception_competence) = 1)"));
+        builder.HasIndex(planned => new { planned.WorkspaceId, planned.ExceptionRecurrenceId, planned.ExceptionCompetence })
+            .IsUnique().HasFilter("exception_recurrence_id IS NOT NULL AND NOT is_cancelled").HasDatabaseName("ux_financial_planned_transactions_recurrence_exception");
+        builder.HasOne<Saldo360.Domain.Recurrences.FinancialRecurrence>()
+            .WithMany()
+            .HasForeignKey(planned => new { planned.WorkspaceId, planned.ExceptionRecurrenceId })
+            .HasPrincipalKey(recurrence => new { recurrence.WorkspaceId, recurrence.Id })
+            .HasConstraintName("fk_financial_planned_transactions_exception_recurrence")
+            .OnDelete(DeleteBehavior.Restrict);
+
         // Restrict em todas as FKs: nada apaga previsões por cascata (histórico preservado).
         builder.HasOne<FinancialWorkspace>()
             .WithMany()

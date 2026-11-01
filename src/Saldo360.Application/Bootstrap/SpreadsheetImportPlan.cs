@@ -9,7 +9,7 @@ public sealed record SpreadsheetPayload(string Name, decimal? Amount = null, Dat
     string? Account = null, string? Card = null, string? Category = null, string? Institution = null,
     string? Scope = null, DateOnly? EndDate = null, int? Day = null, int? Count = null, int? Number = null,
     DateOnly? Competence = null, bool IsEstimated = false, MonthlyAggregateTargetType? TargetType = null,
-    string? Purchase = null, string? Invoice = null);
+    string? Purchase = null, string? Invoice = null, string? ExceptionOf = null);
 /// <summary>Metadados não sensíveis de uma conta candidata/adotada. Sem número de conta, credenciais ou identificadores externos.</summary>
 public sealed record AccountCandidate(Guid Id, string Name, string Scope, string? Institution, string Type, bool IsActive,
     bool HasPluggyBankLink, string? PluggyInstitution, string? PluggyLinkStatus, decimal? OpeningBalance, DateOnly? OpeningBalanceDate,
@@ -31,7 +31,7 @@ public sealed record SpreadsheetPlanItem(string ExternalReference, SpreadsheetEn
 public sealed record SpreadsheetImportPlan(Guid WorkspaceId, string SourceHash, DateTimeOffset SourceReadAtUtc,
     IReadOnlyList<SpreadsheetPlanItem> Items)
 {
-    public string PlanHash => SpreadsheetSnapshot.Hash(new { WorkspaceId, SourceHash, MapperVersion = 2,
+    public string PlanHash => SpreadsheetSnapshot.Hash(new { WorkspaceId, SourceHash, MapperVersion = 3,
         Items = Items.Select(i => new { i.ExternalReference, i.EntityType, i.ContentHash, i.SourceLocation, i.Status, i.Reason, i.ExcludedByApprovedDecision }) });
 }
 public sealed record SpreadsheetDryRunResult(Guid WorkspaceId, Guid? OwnerUserId, string SourceHash, string PlanHash,

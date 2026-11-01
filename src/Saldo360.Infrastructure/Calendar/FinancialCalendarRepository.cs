@@ -1,7 +1,9 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Saldo360.Application.Calendar;
+using Saldo360.Application.Recurrences;
 using Saldo360.Application.Transactions;
+using Saldo360.Infrastructure.Recurrences;
 using Saldo360.Domain.Categories;
 using Saldo360.Domain.Transactions;
 using Saldo360.Infrastructure.Persistence;
@@ -29,20 +31,12 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
                 && (filter.AccountId == null || t.AccountId == filter.AccountId)
                 && (filter.Type == null || t.Type == filter.Type));
 
-        var pendingPlannedTransactions = db.FinancialPlannedTransactions
-            .AsNoTracking()
-            .Where(p => p.WorkspaceId == workspaceId
-                && !p.IsCancelled
-                && p.DueDate >= filter.From
+        // Regra única de pendência (sem vínculo/fatura/dívida/pagamento conciliado e fora de "a revisar"): PlannedObligationQueries.
+        var pendingPlannedTransactions = db.PendingPlanned(workspaceId)
+            .Where(p => p.DueDate >= filter.From
                 && p.DueDate <= filter.Through
                 && (filter.AccountId == null || p.AccountId == filter.AccountId)
-                && (filter.Type == null || p.Type == filter.Type)
-                && !db.FinancialTransactions.Any(t =>
-                    t.WorkspaceId == p.WorkspaceId && t.PlannedTransactionId == p.Id && !t.IsCancelled)
-                && !db.FinancialPlannedInvoiceReconciliations.Any(r =>
-                    r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null)
-                && !db.FinancialDebtInstallmentReconciliations.Any(r =>
-                    r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null));
+                && (filter.Type == null || p.Type == filter.Type));
 
 
         var effective =
@@ -129,9 +123,36 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
             .SingleOrDefaultAsync(cancellationToken) ?? new PendingTotals(0m, 0m, 0m, 0m);
         var debtPending = debtRows.Sum(x => x.remaining);
         var debtOverdue = debtRows.Where(x => x.i.DueDate < filter.Today).Sum(x => x.remaining);
+
+        // Despesas fixas: ocorrências virtuais (calculadas, sem gravar), "a revisar" e pagamentos vinculados. Uma obrigação aparece UMA vez:
+        // vinculada, o lançamento efetivo ganha a situação "Reconciled" (sem criar evento equivalente); a virtual/previsão correspondente some.
+        var obligations = (await FixedObligationReader.LoadAsync(db, workspaceId, filter.From.AddMonths(-1), filter.Through.AddMonths(1), filter.Today, cancellationToken))
+            .Where(o => (filter.AccountId == null || o.AccountId == filter.AccountId) && (filter.Type == null || o.Type == filter.Type)).ToList();
+        var reconciled = obligations.Where(o => o.TransactionId != null).GroupBy(o => o.TransactionId!.Value).ToDictionary(g => g.Key, g => g.First());
+        var shown = obligations.Where(o => o.DueDate >= filter.From && o.DueDate <= filter.Through && o.Situation != ObligationSituation.Realized && (o.IsVirtual || o.Situation == ObligationSituation.NeedsReview)).ToList();
+        var accountIds = shown.Select(o => o.AccountId).Distinct().ToList();
+        var categoryIds = shown.Select(o => o.CategoryId).Distinct().ToList();
+        var accountRefs = await db.FinancialAccounts.AsNoTracking().Where(a => a.WorkspaceId == workspaceId && accountIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => new TransactionReferenceDto(a.Id, a.Name, a.IsActive), cancellationToken);
+        var categoryRows = await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId && categoryIds.Contains(c.Id))
+            .Select(c => new { c.Id, c.Name, c.IsActive, Parent = db.FinancialCategories.Where(p => p.Id == c.ParentCategoryId).Select(p => p.Name).FirstOrDefault() }).ToListAsync(cancellationToken);
+        var categoryRefs = categoryRows.ToDictionary(c => c.Id, c => new TransactionReferenceDto(c.Id, c.Name, c.IsActive, c.Parent));
+        var obligationItems = shown.Select(o => new FinancialCalendarItemDto(
+            o.StableId, o.IsVirtual ? FinancialCalendarSource.RecurrenceOccurrence : FinancialCalendarSource.PlannedTransaction,
+            o.Situation == ObligationSituation.NeedsReview ? FinancialCalendarStatus.NeedsReview : o.DueDate < filter.Today ? FinancialCalendarStatus.Overdue : FinancialCalendarStatus.Pending,
+            o.Type, o.PlannedAmount, o.DueDate, o.Description, accountRefs.GetValueOrDefault(o.AccountId), categoryRefs.GetValueOrDefault(o.CategoryId), "BRL", null,
+            FinancialTransactionOrigin.Manual, o.RecurrenceId, o.OccurrenceNumber, o.DueDate, null, o.ReconciliationStatus)).ToList();
+        effectiveItems = effectiveItems.Select(i => reconciled.TryGetValue(i.Id, out var o)
+            ? i with { ReconciliationStatus = "Reconciled", ActualAmount = i.Amount, ActualDate = i.Date, TransactionId = i.Id } : i).ToList();
+        var virtualPending = obligations.Where(o => o.IsVirtual && o.IsPendingCashFlow && o.DueDate >= filter.From && o.DueDate <= filter.Through).ToList();
+        pendingTotals = new PendingTotals(
+            pendingTotals.Income + virtualPending.Where(o => o.Type == CategoryType.Income).Sum(o => o.PlannedAmount),
+            pendingTotals.Expense + virtualPending.Where(o => o.Type == CategoryType.Expense).Sum(o => o.PlannedAmount),
+            pendingTotals.OverdueIncome + virtualPending.Where(o => o.Type == CategoryType.Income && o.DueDate < filter.Today).Sum(o => o.PlannedAmount),
+            pendingTotals.OverdueExpense + virtualPending.Where(o => o.Type == CategoryType.Expense && o.DueDate < filter.Today).Sum(o => o.PlannedAmount));
         await transaction.CommitAsync(cancellationToken);
 
         var items = effectiveItems
+            .Concat(obligationItems)
             .Concat(plannedItems)
             .Concat(debtItems)
             .OrderBy(item => item.Date)

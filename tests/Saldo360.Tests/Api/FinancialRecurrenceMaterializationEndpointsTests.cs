@@ -44,7 +44,10 @@ public sealed class FinancialRecurrenceMaterializationEndpointsTests(PostgresFix
         var calendar = await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{family.Id}/financial-calendar?from=2026-11-01&through=2027-03-31", owner);
         Assert.Equal(HttpStatusCode.OK, calendar.StatusCode);
         using var calendarBody = JsonDocument.Parse(await calendar.Content.ReadAsStringAsync());
-        Assert.Equal(4, calendarBody.RootElement.GetProperty("items").GetArrayLength());
+        // 4 previsões materializadas + a 5a ocorrência aparece VIRTUAL (calculada, sem gravar): nunca duas para a mesma obrigação.
+        Assert.Equal(5, calendarBody.RootElement.GetProperty("items").GetArrayLength());
+        Assert.Equal(1, calendarBody.RootElement.GetProperty("items").EnumerateArray().Count(i => i.GetProperty("source").GetString() == "RecurrenceOccurrence"));
+        Assert.Equal(4, await db.FinancialPlannedTransactions.CountAsync()); // a leitura não materializou nada
         Assert.All(calendarBody.RootElement.GetProperty("items").EnumerateArray(), item =>
         {
             Assert.Equal(recurrenceId, item.GetProperty("recurrenceId").GetGuid());
