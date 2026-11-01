@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Saldo360.Application.Bootstrap;
 using Saldo360.Application.Workspaces;
+using Saldo360.Domain.Accounts;
 using Saldo360.Domain.Bootstrap;
 using Saldo360.Domain.Common;
 using Saldo360.Domain.CreditCards;
@@ -15,8 +16,15 @@ namespace Saldo360.Infrastructure.Bootstrap;
 /// <summary>Offline administrative operation. Never registered in the API, jobs or startup.</summary>
 public enum BudgetSpreadsheetImportScope { FullLegacyBootstrap, FixedExpensesOnly }
 
-public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider time, BudgetSpreadsheetImportScope scope = BudgetSpreadsheetImportScope.FullLegacyBootstrap)
+/// <param name="accountMap">Associação EXPLÍCITA (FixedExpensesOnly): referência da planilha (ACCOUNT:ItauPF / ACCOUNT:ItauEmpresas) para a
+/// conta existente do workspace. A conta nunca é modificada; é só dependência de leitura.</param>
+public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider time, BudgetSpreadsheetImportScope scope = BudgetSpreadsheetImportScope.FullLegacyBootstrap,
+    IReadOnlyDictionary<string, Guid>? accountMap = null)
 {
+    public static readonly string[] MappableAccounts = ["ACCOUNT:ItauPF", "ACCOUNT:ItauEmpresas"];
+    private const string ExplicitMapping = "ExplicitMapping", AutomaticLink = "AutomaticPluggyLink", FromLedger = "Ledger";
+    private IReadOnlyDictionary<string, Guid> AccountMap => accountMap ?? new Dictionary<string, Guid>();
+
     public const string RequiredMigration = "20261022165204_AddBudgetBootstrapExtensions";
     private sealed record Assessment(Guid? Owner, SpreadsheetDomainGraph.Result Graph, Dictionary<string, long> Counts);
 
@@ -59,6 +67,10 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id={w} FOR UPDATE", ct);
             var state = await Assess(plan, ct);
             if (state.Owner != approval.OwnerUserId || !SpreadsheetDryRunResult.PermitsExecution(state.Graph.Items)) throw new InvalidOperationException("PreflightRejectedNoWrites");
+            // The association the user reviewed is the one that is persisted.
+            foreach (var reviewed in approval.Items.Where(i => i.EntityType == SpreadsheetEntity.Account && i.AccountResolution?.SelectedAccountId is not null))
+                if (state.Graph.Items.FirstOrDefault(i => i.ExternalReference == reviewed.ExternalReference)?.AccountResolution?.SelectedAccountId != reviewed.AccountResolution!.SelectedAccountId)
+                    throw new InvalidOperationException("AccountAssociationChangedNewDryRunRequired");
             var pending = state.Graph.Items.Where(i => i.IsEntity && i.Status == BootstrapDisposition.Created).ToArray();
             var now = time.GetUtcNow();
             // Every domain object was constructed/validated before the first Add. One context, SaveChanges, transaction.
@@ -70,9 +82,16 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
                     item.ExternalReference, item.ContentHash, item.EntityType.ToString(), entity.Id,
                     System.Text.Json.JsonSerializer.Serialize(new { sourceHash = plan.SourceHash, item.SourceLocation, item.MetadataJson }), now));
             }
+            // Associated (not created) accounts: preserve the association in the ledger; the account row itself is never touched.
+            var associated = state.Graph.Items.Where(i => i.IsEntity && i.EntityType == SpreadsheetEntity.Account && i.Status == BootstrapDisposition.AlreadyImported
+                && i.AccountResolution is { Method: ExplicitMapping or AutomaticLink }).ToArray();
+            foreach (var item in associated)
+                db.FinancialBootstrapProvenance.Add(FinancialBootstrapProvenance.Create(w, SpreadsheetSnapshot.System, SpreadsheetSnapshot.Document,
+                    item.ExternalReference, item.ContentHash, item.EntityType.ToString(), item.AccountResolution!.SelectedAccountId!.Value,
+                    System.Text.Json.JsonSerializer.Serialize(new { sourceHash = plan.SourceHash, item.SourceLocation, associationMethod = item.AccountResolution.Method }), now));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
-            return pending.Length;
+            return pending.Length + associated.Length;
         }
         catch { await tx.RollbackAsync(CancellationToken.None); db.ChangeTracker.Clear(); throw; }
     }
@@ -84,6 +103,8 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
     private async Task<Assessment> Assess(SpreadsheetImportPlan plan, CancellationToken ct)
     {
         var w = plan.WorkspaceId;
+        if (AccountMap.Count > 0 && (scope != BudgetSpreadsheetImportScope.FixedExpensesOnly || AccountMap.Any(p => !MappableAccounts.Contains(p.Key, StringComparer.Ordinal) || p.Value == Guid.Empty)))
+            throw new InvalidOperationException("InvalidAccountMap");
         var root = await db.FinancialWorkspaces.AsNoTracking().SingleOrDefaultAsync(x => x.Id == w, ct);
         var ownerValid = root is not null && await db.Users.AsNoTracking().AnyAsync(x => x.Id == root.OwnerUserId, ct);
         var items = plan.Items.ToList();
@@ -136,12 +157,8 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
                         && Saldo360.Domain.Categories.FinancialCategory.MatchKey(x.Name) == Saldo360.Domain.Categories.FinancialCategory.MatchKey(item.Payload.Name)).ToList();
                     if (matches.Count == 1) Adopt(i, matches[0], "ExistingCategoryMatchedExactly");
                 }
-                else if (item.EntityType == SpreadsheetEntity.Account && Enum.TryParse<Saldo360.Domain.Accounts.FinancialScope>(item.Payload.Scope, out var wantedScope))
-                {
-                    var matches = accounts.Where(x => x.Scope == wantedScope && x.Name.Equals(item.Payload.Name, StringComparison.OrdinalIgnoreCase)).ToList();
-                    if (matches.Count == 1) Adopt(i, matches[0], "ExistingAccountMatchedExactly");
-                }
             }
+            await ResolveAccounts(w, items, existing, accounts, ct);
             var recurrences = await db.FinancialRecurrences.AsNoTracking().Where(x => x.WorkspaceId == w).ToListAsync(ct);
             var planned = await db.FinancialPlannedTransactions.AsNoTracking().Where(x => x.WorkspaceId == w && !x.IsCancelled).ToListAsync(ct);
             for (var i = 0; i < items.Count; i++)
@@ -175,8 +192,94 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
         }
         if (scope == BudgetSpreadsheetImportScope.FullLegacyBootstrap && ledger.Any(p => p.SourceSystem != SpreadsheetSnapshot.System || p.SourceDocument != SpreadsheetSnapshot.Document
             || !items.Any(i => i.IsEntity && i.ExternalReference == p.ExternalReference))) Reject("UnreviewedDestinationProvenance", BootstrapDisposition.Conflict);
-        var graph = SpreadsheetDomainGraph.Build(plan with { Items = items }, root?.OwnerUserId ?? Guid.Empty, time.GetUtcNow(), existing);
+        var graph = SpreadsheetDomainGraph.Build(plan with { Items = items }, root?.OwnerUserId ?? Guid.Empty, time.GetUtcNow(), existing,
+            accountsAreReadOnlyDependencies: scope == BudgetSpreadsheetImportScope.FixedExpensesOnly);
         return new(root?.OwnerUserId, graph, counts);
+    }
+
+
+    private static string Fold(string? text) => new string((text ?? "").Normalize(System.Text.NormalizationForm.FormD)
+        .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark).ToArray()).ToLowerInvariant();
+
+    /// <summary>
+    /// Associates the spreadsheet's PF/PJ accounts with existing workspace accounts. The name alone never concludes a match:
+    /// automatic association needs exactly one active bank account of the scope, institution-compatible AND proven by a Pluggy bank link.
+    /// Otherwise it is blocked with the candidates listed, until the user passes an explicit, validated association (preserved in the ledger).
+    /// Associated accounts are read-only dependencies; they are never created, updated or compared on opening balance.
+    /// </summary>
+    private async Task ResolveAccounts(Guid w, List<SpreadsheetPlanItem> items, Dictionary<string, Entity> existing, List<FinancialAccount> accounts, CancellationToken ct)
+    {
+        var links = await db.PluggyAccountLinks.AsNoTracking().Where(x => x.WorkspaceId == w && x.Kind == Saldo360.Domain.Pluggy.PluggyLinkedAccountKind.Bank && x.FinancialAccountId != null).ToListAsync(ct);
+        var cardIds = (await db.FinancialCreditCards.AsNoTracking().Where(x => x.WorkspaceId == w).Select(x => x.Id).ToListAsync(ct)).ToHashSet();
+        AccountCandidate Describe(FinancialAccount a, SpreadsheetPayload p, params string[] issues)
+        {
+            var link = links.FirstOrDefault(l => l.FinancialAccountId == a.Id);
+            var divergent = new List<string>();
+            if (!a.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase)) divergent.Add("Name");
+            if (!string.Equals(a.Institution, p.Institution, StringComparison.OrdinalIgnoreCase)) divergent.Add("Institution");
+            if (a.Type != AccountType.Checking) divergent.Add("Type");
+            if (a.OpeningBalance is not null) divergent.Add("OpeningBalance");
+            if (a.OpeningBalanceDate is not null) divergent.Add("OpeningBalanceDate");
+            if (a.ResponsibleUserId is not null) divergent.Add("ResponsibleUserId");
+            if (a.Currency != FinancialAccount.DefaultCurrency) divergent.Add("Currency");
+            return new(a.Id, a.Name, a.Scope.ToString(), a.Institution, a.Type.ToString(), a.IsActive, link is not null, link?.InstitutionName,
+                link?.Status.ToString(), a.OpeningBalance, a.OpeningBalanceDate, divergent.ToArray(), issues);
+        }
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            if (!item.IsEntity || item.EntityType != SpreadsheetEntity.Account || !Enum.TryParse<FinancialScope>(item.Payload.Scope, out var wanted)) continue;
+            var reference = item.ExternalReference; var key = Fold(item.Payload.Institution);
+            var hasMap = AccountMap.TryGetValue(reference, out var mappedId);
+            if (existing.TryGetValue(reference, out var preserved))
+            {
+                // Association preserved by a previous execution (ledger).
+                if (preserved is not FinancialAccount kept || item.Status != BootstrapDisposition.AlreadyImported) continue;
+                if (hasMap && mappedId != kept.Id)
+                {
+                    existing.Remove(reference);
+                    items[i] = item with { Status = BootstrapDisposition.Conflict, Reason = "AccountMappingDiffersFromPreservedAssociation",
+                        AccountResolution = new("MappingDiffersFromLedger", kept.Id, [Describe(kept, item.Payload)]) };
+                    continue;
+                }
+                items[i] = item with { AccountResolution = new(FromLedger, kept.Id, [Describe(kept, item.Payload)]) };
+                continue;
+            }
+            if (item.Status != BootstrapDisposition.Created) continue;
+            var inScope = accounts.Where(a => a.Scope == wanted && a.IsActive && FinancialAccount.IsBankType(a.Type)).ToList();
+            var related = inScope.Where(a => Fold(a.Institution).Contains(key, StringComparison.Ordinal) || Fold(a.Name).Contains(key, StringComparison.Ordinal)
+                || links.Any(l => l.FinancialAccountId == a.Id && Fold(l.InstitutionName).Contains(key, StringComparison.Ordinal))).ToList();
+            void Block(string reason, string method) => items[i] = item with { Status = BootstrapDisposition.Conflict, Reason = reason,
+                AccountResolution = new(method, null, related.Select(a => Describe(a, item.Payload)).ToArray(),
+                    $"Escolha um candidato e informe --account-map {reference}=<id>.") };
+            if (hasMap)
+            {
+                var target = accounts.FirstOrDefault(a => a.Id == mappedId);
+                var issue = target is null ? cardIds.Contains(mappedId) ? "AccountMappingTargetIsCard" : "AccountMappingTargetNotFoundInWorkspace"
+                    : !target.IsActive ? "AccountMappingTargetInactive" : !FinancialAccount.IsBankType(target.Type) ? "AccountMappingTargetNotBankAccount"
+                    : target.Scope != wanted ? "AccountMappingScopeMismatch" : null;
+                if (issue is not null) { Block(issue, "InvalidExplicitMapping"); continue; }
+                existing[reference] = target!;
+                items[i] = item with { Status = BootstrapDisposition.AlreadyImported, Reason = "ExplicitAccountMapping", AccountResolution = new(ExplicitMapping, target!.Id, [Describe(target, item.Payload)]) };
+                continue;
+            }
+            if (related.Count == 0)
+            {
+                // Nothing compatible exists, so creating cannot duplicate an account. Other accounts of the scope are listed for transparency.
+                items[i] = item with { AccountResolution = new("NoCompatibleAccount", null, inScope.Select(a => Describe(a, item.Payload, "InstitutionNotCompatible")).ToArray()) };
+                continue;
+            }
+            var only = related.Count == 1 ? related[0] : null;
+            var proven = only is not null && links.Any(l => l.FinancialAccountId == only.Id && (Fold(only.Institution).Contains(key, StringComparison.Ordinal)
+                || Fold(l.InstitutionName).Contains(key, StringComparison.Ordinal)));
+            if (proven)
+            {
+                existing[reference] = only!;
+                items[i] = item with { Status = BootstrapDisposition.AlreadyImported, Reason = "AutomaticAccountMatchPluggyLink", AccountResolution = new(AutomaticLink, only!.Id, [Describe(only, item.Payload)]) };
+            }
+            else if (only is null) Block("AccountAssociationRequired:AmbiguousCandidates", "AmbiguousCandidates");
+            else Block("AccountAssociationRequired:InsufficientProof", "InsufficientProof");
+        }
     }
 
     private async Task<string?> Scalar(string sql, Guid w, CancellationToken ct)

@@ -10,10 +10,17 @@ public sealed record SpreadsheetPayload(string Name, decimal? Amount = null, Dat
     string? Scope = null, DateOnly? EndDate = null, int? Day = null, int? Count = null, int? Number = null,
     DateOnly? Competence = null, bool IsEstimated = false, MonthlyAggregateTargetType? TargetType = null,
     string? Purchase = null, string? Invoice = null);
+/// <summary>Metadados não sensíveis de uma conta candidata/adotada. Sem número de conta, credenciais ou identificadores externos.</summary>
+public sealed record AccountCandidate(Guid Id, string Name, string Scope, string? Institution, string Type, bool IsActive,
+    bool HasPluggyBankLink, string? PluggyInstitution, string? PluggyLinkStatus, decimal? OpeningBalance, DateOnly? OpeningBalanceDate,
+    string[] DivergentFields, string[] EligibilityIssues);
+/// <summary>Como a conta de uma dependência foi (ou não) associada. Method: Ledger, ExplicitMapping, AutomaticPluggyLink,
+/// NoCompatibleAccount, AmbiguousCandidates, InsufficientProof, InvalidExplicitMapping, MappingDiffersFromLedger.</summary>
+public sealed record AccountResolution(string Method, Guid? SelectedAccountId, IReadOnlyList<AccountCandidate> Candidates, string? Instruction = null);
 public sealed record SpreadsheetPlanItem(string ExternalReference, SpreadsheetEntity EntityType,
     SpreadsheetPayload Payload, string SourceLocation, string? MetadataJson = null,
     BootstrapDisposition Status = BootstrapDisposition.Created, string Reason = "CreatePlanned",
-    bool ExcludedByApprovedDecision = false, string[]? Warnings = null)
+    bool ExcludedByApprovedDecision = false, string[]? Warnings = null, AccountResolution? AccountResolution = null)
 {
     public bool IsEntity => EntityType is not (SpreadsheetEntity.Exclusion or SpreadsheetEntity.Parameter or SpreadsheetEntity.Validation);
     public string ContentHash => BootstrapContentFingerprint.Compute(EntityType.ToString(), new { Payload, MetadataJson });

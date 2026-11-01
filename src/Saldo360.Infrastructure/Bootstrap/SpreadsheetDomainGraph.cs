@@ -14,7 +14,7 @@ public static class SpreadsheetDomainGraph
 {
     public sealed record Result(IReadOnlyList<SpreadsheetPlanItem> Items, IReadOnlyDictionary<string, Entity> Entities);
     public static Result Build(SpreadsheetImportPlan plan, Guid owner, DateTimeOffset now,
-        IReadOnlyDictionary<string, Entity>? existing = null)
+        IReadOnlyDictionary<string, Entity>? existing = null, bool accountsAreReadOnlyDependencies = false)
     {
         var entities = existing is null ? new Dictionary<string, Entity>() : new Dictionary<string, Entity>(existing);
         var items = new List<SpreadsheetPlanItem>();
@@ -47,7 +47,7 @@ public static class SpreadsheetDomainGraph
                 };
                 if (item.Status == BootstrapDisposition.AlreadyImported)
                 {
-                    if (!entities.TryGetValue(item.ExternalReference, out var current) || !Matches(expected, current))
+                    if (!entities.TryGetValue(item.ExternalReference, out var current) || !Matches(expected, current, accountsAreReadOnlyDependencies))
                         throw new ArgumentException("DestinationEntityChangedOrMissing");
                 }
                 else entities.Add(item.ExternalReference, expected);
@@ -102,8 +102,11 @@ public static class SpreadsheetDomainGraph
     }
     private static DateOnly Due(SpreadsheetPayload p) => new(p.Competence!.Value.Year, p.Competence.Value.Month, Math.Min(p.Day!.Value, DateTime.DaysInMonth(p.Competence.Value.Year, p.Competence.Value.Month)));
 
-    private static bool Matches(Entity expected, Entity current) => (expected, current) switch
+    /// <param name="accountsAreReadOnlyDependencies">Contas associadas (ex.: vinculadas ao Pluggy) são só leitura: saldo inicial,
+    /// instituição e tipo pertencem ao usuário e não são conflito; vale apenas identidade bancária, escopo e situação ativa.</param>
+    private static bool Matches(Entity expected, Entity current, bool accountsAreReadOnlyDependencies) => (expected, current) switch
     {
+        (FinancialAccount e, FinancialAccount c) when accountsAreReadOnlyDependencies => c.IsActive && c.Scope == e.Scope && FinancialAccount.IsBankType(c.Type),
         (FinancialCategory e, FinancialCategory c) => c.IsActive && c.Type == e.Type && c.Name.Equals(e.Name, StringComparison.OrdinalIgnoreCase),
         (FinancialAccount e, FinancialAccount c) => c.IsActive && (c.Name, c.Institution, c.Type, c.Scope, c.OpeningBalance, c.OpeningBalanceDate, c.ResponsibleUserId, c.Currency) == (e.Name, e.Institution, e.Type, e.Scope, e.OpeningBalance, e.OpeningBalanceDate, e.ResponsibleUserId, e.Currency),
         (FinancialCreditCard e, FinancialCreditCard c) => !c.IsArchived && (c.Name, c.Issuer, c.CreditLimit, c.ClosingDay, c.DueDay, c.HolderUserId, c.DefaultPaymentAccountId, c.LastFourDigits) == (e.Name, e.Issuer, e.CreditLimit, e.ClosingDay, e.DueDay, e.HolderUserId, e.DefaultPaymentAccountId, e.LastFourDigits),

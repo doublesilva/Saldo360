@@ -9,13 +9,15 @@ using Saldo360.Infrastructure.Persistence;
 try
 {
     var switches = new HashSet<string> { "--dry-run", "--execute", "--fixed-expenses-only" };
-    var values = new HashSet<string> { "--workspace-id", "--source", "--output", "--approved-report", "--approved-report-hash", "--fresh-source", "--destination-snapshot" };
+    var values = new HashSet<string> { "--workspace-id", "--source", "--output", "--approved-report", "--approved-report-hash", "--fresh-source", "--destination-snapshot", "--account-map" };
     var flags = new Dictionary<string, string?>();
+    var accountMapEntries = new List<string>(); // repeatable: ACCOUNT:ItauPF=<guid>
     for (var i = 0; i < args.Length; i++)
     {
         var key = args[i];
-        if ((!switches.Contains(key) && !values.Contains(key)) || flags.ContainsKey(key)) throw new InvalidOperationException("InvalidArguments");
-        flags[key] = switches.Contains(key) ? null : ++i < args.Length ? args[i] : throw new InvalidOperationException("MissingArgument");
+        if ((!switches.Contains(key) && !values.Contains(key)) || (flags.ContainsKey(key) && key != "--account-map")) throw new InvalidOperationException("InvalidArguments");
+        var argument = switches.Contains(key) ? null : ++i < args.Length ? args[i] : throw new InvalidOperationException("MissingArgument");
+        if (key == "--account-map") accountMapEntries.Add(argument ?? ""); else flags[key] = argument;
     }
     string Required(string name) => flags.GetValueOrDefault(name) is { Length: > 0 } value ? value : throw new InvalidOperationException("MissingExplicitArgument");
     if (flags.ContainsKey("--dry-run") == flags.ContainsKey("--execute") || !Guid.TryParse(Required("--workspace-id"), out var w) || w == Guid.Empty)
@@ -49,9 +51,17 @@ try
     }
     var options = new DbContextOptionsBuilder<Saldo360DbContext>(); Saldo360DbContext.Configure(options, connection);
     await using var db = new Saldo360DbContext(options.Options);
+    // Explicit association of the spreadsheet's PF/PJ accounts with existing workspace accounts (read-only dependency; validated by the importer).
+    var accounts = new Dictionary<string, Guid>(StringComparer.Ordinal);
+    foreach (var entry in accountMapEntries)
+    {
+        var parts = entry.Split('=', 2);
+        if (parts.Length != 2 || !Guid.TryParse(parts[1], out var accountId) || !accounts.TryAdd(parts[0], accountId)) throw new InvalidOperationException("InvalidAccountMap");
+    }
+    if (accounts.Count > 0 && !flags.ContainsKey("--fixed-expenses-only")) throw new InvalidOperationException("InvalidAccountMap");
     var importer = new BudgetSpreadsheetImporter(db, TimeProvider.System, flags.ContainsKey("--fixed-expenses-only")
         ? BudgetSpreadsheetImportScope.FixedExpensesOnly
-        : BudgetSpreadsheetImportScope.FullLegacyBootstrap);
+        : BudgetSpreadsheetImportScope.FullLegacyBootstrap, accounts);
     if (flags.ContainsKey("--dry-run"))
     {
         var output = Required("--output"); if (File.Exists(output)) throw new InvalidOperationException("OutputAlreadyExists");
