@@ -4,7 +4,7 @@ import type { MonthlyPlan, PlanHistoryEntry, SixMonthPlan, WorkingDays } from '.
 import { PlanningHub } from './PlanningHub'
 import { emptyMonthlyPlan, monthlyPlan, sixMonths, workingDays } from './monthlyPlanFixtures'
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
 const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } }))
 const text = (element: Element | null) => (element?.textContent ?? '').replace(/[  ]/g, ' ')
@@ -421,6 +421,8 @@ describe('PlanningHub — calendário de dias úteis e cenários', () => {
   })
 
   it('cadastra e remove um dia não trabalhado', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }) // o campo Data é limitado ao mês corrente; fixa o mês em 2026-10 como nos dados simulados
+    vi.setSystemTime(new Date('2026-10-20T12:00:00'))
     const fetchMock = stub()
     render(<PlanningHub workspaceId="w" />)
     await screen.findByRole('article', { name: 'Receitas: planejado, projetado e realizado' })

@@ -128,7 +128,9 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
         var realization = await RealizeAsync(planned, "40.00", Today);
 
         var current = (await ProjectionAsync(account, ThisMonth, 1)).Months.Single();
-        Assert.Equal(("100.10", "60.05", "10.00", "30.00", "10.00", "0.00"),
+        // No dia 1 o "ontem" cai no mês anterior: a vencida não vira movimento mensal (ver PreviousOverdueAffectsFutureOnce...), então só conta no mês quando Today.Day > 1.
+        var overdueInMonth = Today.Day > 1 ? "10.00" : "0.00";
+        Assert.Equal(("100.10", "60.05", overdueInMonth, "30.00", overdueInMonth, "0.00"),
             (current.RealizedIncome, current.RealizedExpense, current.PendingIncome, current.PendingExpense,
                 current.OverdueIncome, current.OverdueExpense));
         Assert.Equal("1020.05", current.ClosingBalance);

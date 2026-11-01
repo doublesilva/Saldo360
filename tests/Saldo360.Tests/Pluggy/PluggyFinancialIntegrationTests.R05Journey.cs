@@ -198,7 +198,7 @@ public sealed partial class PluggyFinancialIntegrationTests
         Assert.Equal("AiUnavailable", automation.GetProperty("categorization").GetProperty("state").GetString());
 
         // Natureza indefinida e competência estimada ficam sinalizadas na meta de fixas, sem inflá-la; saldo indisponível nunca vira zero.
-        var competence = Today.ToString("yyyy-MM");
+        var competence = Today.AddDays(-5).ToString("yyyy-MM"); // mês da despesa g1 (5 dias atrás); no dia 1 é o mês anterior
         var budget = (await JsonOf(await Send(c.Client, HttpMethod.Post, $"{root}/budgets", c.Session, new { competence }))).GetProperty("id").GetGuid();
         var created = await JsonOf(await Send(c.Client, HttpMethod.Post, $"{root}/budgets/{budget}/targets", c.Session, new { groupingType = "FixedExpenses", plannedAmount = "600.00" }));
         var target = created.GetProperty("targets").EnumerateArray().Single(t => t.GetProperty("groupingType").GetString() == "FixedExpenses").GetProperty("id").GetGuid();
