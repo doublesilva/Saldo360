@@ -121,7 +121,13 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # FULL e fatiado em 8 jobs paralelos balanceados por duracao medida (scripts/ci/test-shards.json): cada fatia executa seu proprio subconjunto do MESMO conjunto completo e o
+    # job `ci-success`/`ci-full-success` exige que todas passem; a ultima fatia tambem executa qualquer teste nao listado (nada fica sem fatia). Fora do FULL, so a fatia 1 (FAST).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.changes.outputs.full == 'true' && '[1,2,3,4,5,6,7,8]' || '[1]') }}
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -147,14 +153,18 @@ jobs:
       - name: Test FAST (critical contracts and real PostgreSQL sentinels)
         if: needs.changes.outputs.full != 'true'
         run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "Profile=FAST" --logger "trx;LogFileName=fast.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
-      - name: Test FULL (all legitimate tests, PostgreSQL and migrations)
+      - name: Test FULL shard ${{ matrix.shard }}/8 (all legitimate tests, PostgreSQL and migrations)
         if: needs.changes.outputs.full == 'true'
-        run: dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --logger "trx;LogFileName=full.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          SHARD_FILTER="$(python3 scripts/ci/test-shard-filter.py '${{ matrix.shard }}')"
+          dotnet test tests/Saldo360.Tests/Saldo360.Tests.csproj --configuration Release --no-build --no-restore --filter "$SHARD_FILTER" --logger "trx;LogFileName=full-${{ matrix.shard }}.trx" --results-directory TestResults -- RunConfiguration.TreatNoTestsAsError=true
       - name: Preserve test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: backend-test-results
+          name: backend-test-results-${{ matrix.shard }}
           path: TestResults/*.trx
           if-no-files-found: ignore
 
