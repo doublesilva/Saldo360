@@ -95,6 +95,9 @@ public sealed partial class PluggyFinancialIntegrationTests
         Assert.Equal(1000m, await BalanceAsync(c, account)); // o crédito soma UMA vez no saldo: 1000 − 55,99 + 55,99
         var realized = await RealizedAsync(c);
         Assert.Equal((0m, 0m, 55.99m), (realized.Income, realized.Expense, await RefundsAsync(c))); // fora das receitas, abatida da despesa
+        // Totais brutos da Agenda: a devolução entra uma vez como crédito de caixa e a despesa bruta volta a somar (RealizedExpense já a abate); o líquido bate com o saldo (1000 → 1000).
+        var calendar = (await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-calendar?from={D(60)}&through={D(0)}")).GetProperty("summary");
+        Assert.Equal(("55.99", "55.99"), (calendar.GetProperty("totalInflows").GetString(), calendar.GetProperty("totalOutflows").GetString()));
         var facts = await FactsAsync(c.Workspace);
         var refundFact = facts.Single(f => f.Origin == BudgetFactOrigin.BankRefund);
         Assert.Equal((-55.99m, category, ExpenseNature.Fixed, originalId, Today.AddDays(-2)), (refundFact.Amount, refundFact.CategoryId, refundFact.Nature, refundFact.RelatedRecordId, refundFact.Date));
