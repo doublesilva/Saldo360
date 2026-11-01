@@ -11,6 +11,7 @@ import type { BudgetGroup } from '../budget/budgetText'
 import type { ExpenseNature } from '../../api/expenseNature'
 import { OverviewAccountsBlock, OverviewCommitmentsBlock, OverviewGoalsBlock, OverviewRecentBlock, OverviewTransfersBlock } from './OverviewAside'
 import { OverviewRecovery } from './OverviewRecovery'
+import { OverviewCashFlowSection, OverviewCompetenceSection } from './OverviewCashFlow'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
 import { useLoad } from './useLoad'
 import '../../Overview.css'
@@ -73,11 +74,13 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
       </div>
     </header>
 
+    {overviewData?.cashFlow && <OverviewCashFlowSection flow={overviewData.cashFlow} scopeAccountId={overviewData.scopeAccountId} onNavigate={(section, context) => onNavigate(section, context)} />}
+
     <div className="ov-top">
       {plan.load.state === 'loading' && !planData && <OperationalLoading>Carregando indicadores…</OperationalLoading>}
       {plan.load.state === 'error' && <OperationalError error={plan.load.error} onRetry={plan.retry} retryLabel="Recarregar indicadores" />}
       {(planData ?? (plan.load.state === 'loading' ? plan.previous : null)) && <Indicators data={(planData ?? plan.previous) as PlanActualDashboard} stale={!planData}
-        workspaceId={workspaceId} classification={overviewData?.classification ?? null} onNavigate={(target, context) => onNavigate(target, context)} onSynced={reloadAll} />}
+        workspaceId={workspaceId} classification={overviewData?.classification ?? null} cashFlow={overviewData?.cashFlow ?? null} onNavigate={(target, context) => onNavigate(target, context)} onSynced={reloadAll} />}
     </div>
 
     <div className="ov-layout">
@@ -106,12 +109,13 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
   </div>
 }
 
-function Indicators({ data, stale, workspaceId, classification, onNavigate, onSynced }: {
-  data: PlanActualDashboard; stale: boolean; workspaceId: string; classification: import('../../api/overview').OverviewClassification | null
+function Indicators({ data, stale, workspaceId, classification, cashFlow, onNavigate, onSynced }: {
+  data: PlanActualDashboard; stale: boolean; workspaceId: string; classification: import('../../api/overview').OverviewClassification | null; cashFlow: import('../../api/overview').OverviewCashFlow | null
   onNavigate: (target: 'accounts' | 'transactions' | 'automation', context?: OverviewNavigation) => void; onSynced: () => void
 }) {
   return <div className={stale ? 'ov-stale' : undefined} aria-busy={stale || undefined}>
-    <OverviewIndicators data={data} />
+    <OverviewIndicators data={data} byCompetence={cashFlow !== null} />
+    {cashFlow && <OverviewCompetenceSection flow={cashFlow} />}
     <OverviewNotices workspaceId={workspaceId} data={data} classification={classification} onNavigate={onNavigate} onSynced={onSynced} />
   </div>
 }

@@ -77,6 +77,40 @@ public sealed class FinancialAccountService(
         return new(first, last, flows, flows.Sum(f => f.Income), flows.Sum(f => f.Expense), flows.Sum(f => f.TransfersReceived));
     }
 
+    /// <summary>
+    /// Abertura e totais efetivos de cada conta no período [first, last], num único snapshot. Abertura = saldo no INÍCIO de <paramref name="first"/> (saldo inicial efetivo +
+    /// movimentos anteriores); sem saldo inicial ou antes da referência é indisponível com o motivo, nunca zero. Conta inativa só aparece se tiver movimento ou saldo.
+    /// </summary>
+    public async Task<IReadOnlyList<AccountPeriodCashDto>?> GetPeriodCashAsync(Guid workspaceId, Guid userId, DateOnly first, DateOnly last, CancellationToken cancellationToken)
+    {
+        if (!await IsParticipantAsync(workspaceId, userId, cancellationToken)) return null;
+        return await accounts.ReadConsistentAsync<IReadOnlyList<AccountPeriodCashDto>>(async () =>
+        {
+            var result = new List<AccountPeriodCashDto>();
+            foreach (var account in await accounts.ListAsync(workspaceId, true, cancellationToken))
+            {
+                decimal? opening = null; string? reason = null; DateOnly? reference = null;
+                if (await accounts.GetOpeningBalanceAsync(workspaceId, account.Id, cancellationToken) is not { Amount: { } amount, Date: { } date }) reason = "OpeningBalanceNotConfigured";
+                else if (first < date) { reason = "BeforeOpeningBalanceDate"; reference = date; }
+                else
+                {
+                    reference = date;
+                    if (first == date) opening = amount;
+                    else
+                    {
+                        var before = await accounts.SumMovementsAsync(workspaceId, account.Id, date, first.AddDays(-1), cancellationToken);
+                        opening = FinancialBalanceCalculator.ApplyMovements(amount, before.Income, before.Expense, before.TransferIn, before.TransferOut);
+                    }
+                }
+                var totals = await accounts.SumMovementsAsync(workspaceId, account.Id, first, last, cancellationToken);
+                var empty = totals is { Income: 0m, Expense: 0m, TransferIn: 0m, TransferOut: 0m };
+                if (!account.IsActive && empty && (opening is null || opening == 0m)) continue;
+                result.Add(new(account.Id, account.Name, account.IsActive, account.FinancialScope.ToString(), opening, reason, reference, totals));
+            }
+            return result;
+        }, cancellationToken);
+    }
+
     public async Task<FinancialAccountDto?> GetAsync(Guid workspaceId, Guid accountId, Guid userId, CancellationToken cancellationToken) =>
         await IsParticipantAsync(workspaceId, userId, cancellationToken)
             ? await accounts.GetAsync(workspaceId, accountId, cancellationToken)

@@ -52,11 +52,31 @@ export interface OverviewTransfers {
   refunds?: string | null; cashExpenses?: string | null
 }
 
+/** Fluxo de caixa (aditivo): ponte de saldo, posição bancária e conciliação. Todos os valores vêm calculados do servidor. */
+export interface OverviewCashAccountIssue { accountId: string; name: string; reason: string }
+export interface OverviewCashTransfer { id: string; date: string; description: string; source: string; destination: string; amount: string; relation: 'Inbound' | 'Outbound' | 'Internal'; effect: string }
+export interface OverviewBankPosition {
+  state: 'Complete' | 'Partial' | 'Unavailable'; total: string | null; observedAt: string | null
+  accounts: { accountId: string; name: string; amount: string; kind: string; observedAt: string; asOfDate: string; reliability: string }[]; missing: OverviewCashAccountIssue[]
+}
+export interface OverviewReconciliation { status: 'Verified' | 'Divergent' | 'NotVerifiable'; bank: string | null; calculated: string | null; difference: string | null; cutoffDate: string | null; reasons: string[]; accounts: OverviewCashAccountIssue[] }
+export interface OverviewCashFlow {
+  state: 'Complete' | 'Partial'; competence: string; from: string; through: string; inProgress: boolean; accountCount: number
+  opening: string | null; openingMissing: OverviewCashAccountIssue[]
+  inflows: { total: string; credits: string; refunds: string | null; transfersReceived: string }
+  outflows: { total: string; debits: string; transfersSent: string }
+  closing: string | null; identityHolds: boolean | null; snapshotConsistent: boolean
+  bankPosition: OverviewBankPosition; reconciliation: OverviewReconciliation; internalMoved: string; transfers: OverviewCashTransfer[]
+  byCompetence: { classifiedIncome: string | null; expenses: string | null; difference: string | null }
+}
+
 export interface DashboardOverview {
   competence: string; asOf: string; scopeKind: 'primary' | 'all' | 'account'; scopeAccountId: string | null
   accounts: OverviewAccounts; commitments: OverviewCommitments; goals: OverviewGoals; budget: OverviewBudget; recent: OverviewRecent; classification: OverviewClassification
   /** Aditivo: servidores antigos não enviam. */
   transfers?: OverviewTransfers | null
+  /** Aditivo: fluxo de caixa (null quando indisponível; servidores antigos não enviam). */
+  cashFlow?: OverviewCashFlow | null
 }
 
 export function getDashboardOverview(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<DashboardOverview> {

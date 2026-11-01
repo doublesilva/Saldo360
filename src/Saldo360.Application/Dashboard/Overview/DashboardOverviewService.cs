@@ -79,9 +79,9 @@ public sealed record OverviewTransfersDto(string State, string Received, string 
     string? Refunds = null, string? CashExpenses = null);
 
 public sealed record DashboardOverviewDto(string Competence, DateOnly AsOf, string ScopeKind, Guid? ScopeAccountId, OverviewAccountsDto Accounts, OverviewCommitmentsDto Commitments, OverviewGoalsDto Goals,
-    OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null);
+    OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null, OverviewCashFlowDto? CashFlow = null);
 
-public sealed class DashboardOverviewService(
+public sealed partial class DashboardOverviewService(
     IFinancialWorkspaceRepository workspaces,
     FinancialAccountService accountService,
     FinancialCalendarService calendar,
@@ -94,6 +94,7 @@ public sealed class DashboardOverviewService(
     Saldo360.Application.Dashboard.PlanActual.PlanActualService planActual,
     IPluggyCategorizationService categorization,
     IFinancialTransferRepository transferRepository,
+    Saldo360.Application.Accounts.Reconciliation.AccountBalanceReconciliationService reconciliation,
     TimeProvider time)
 {
     public const int HorizonDays = 30;
@@ -138,7 +139,9 @@ public sealed class DashboardOverviewService(
         var recent = await BuildRecentAsync(workspaceId, userId, month, selected?.Id, today, ct);
         var classification = await BuildClassificationAsync(workspaceId, ct);
         var transfers = await BuildTransfersAsync(workspaceId, userId, month, requested, selected?.Id, accounts, ct);
-        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers));
+        var byCompetence = await BuildCompetenceAsync(workspaceId, userId, month, requested, selected?.Id, ct);
+        var cashFlow = await BuildCashFlowAsync(workspaceId, userId, month, selected?.Id, today, byCompetence, ct);
+        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow));
     }
 
     private async Task<OverviewTransfersDto> BuildTransfersAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, OverviewAccountsDto accounts, CancellationToken ct)
@@ -147,7 +150,7 @@ public sealed class DashboardOverviewService(
         // entre contas do mesmo orçamento seja sempre interna e neutralizada.
         var selected = accountId is null
             ? ((await accountService.ListAsync(workspaceId, userId, includeInactive: true, ct)) ?? []).Select(a => a.Id).ToHashSet()
-            : accounts.Items.Where(a => a.InScope).Select(a => a.AccountId).ToHashSet();
+            : new HashSet<Guid> { accountId.Value };
         var flows = await BuildTransferFlowsAsync(workspaceId, month, selected, ct);
         if (flows.State != "Complete") return flows;
         string? external = null, expenses = null, inflows = null, outflows = null, available = null, refunds = null, cashExpenses = null;
@@ -190,13 +193,7 @@ public sealed class DashboardOverviewService(
         try
         {
             var first = new DateOnly(int.Parse(month[..4]), int.Parse(month[5..]), 1);
-            var items = new List<FinancialTransferDto>();
-            for (var page = 1; page <= 20; page++)
-            {
-                var result = await transferRepository.ListAsync(workspaceId, new(first, first.AddMonths(1).AddDays(-1), null, false, page, 100), ct);
-                items.AddRange(result.Items);
-                if (items.Count >= result.TotalCount || result.Items.Count == 0) break;
-            }
+            var items = await LoadTransfersAsync(workspaceId, first, first.AddMonths(1).AddDays(-1), ct);
             var classified = items.Select(t => (Transfer: t, Relation: TransferPerspective.Classify(t.SourceAccount.Id, t.DestinationAccount.Id, selected)))
                 .Where(x => x.Relation != TransferRelation.Outside).ToList();
             var inbound = classified.Where(x => x.Relation == TransferRelation.Inbound).Select(x => x.Transfer).ToList();
@@ -213,6 +210,34 @@ public sealed class DashboardOverviewService(
         catch (Exception) when (!ct.IsCancellationRequested)
         {
             return new("Unavailable", zero, zero, zero, 0, []);
+        }
+    }
+
+    private async Task<List<FinancialTransferDto>> LoadTransfersAsync(Guid workspaceId, DateOnly first, DateOnly last, CancellationToken ct)
+    {
+        var items = new List<FinancialTransferDto>();
+        for (var page = 1; page <= 20; page++)
+        {
+            var result = await transferRepository.ListAsync(workspaceId, new(first, last, null, false, page, 100), ct);
+            items.AddRange(result.Items);
+            if (items.Count >= result.TotalCount || result.Items.Count == 0) break;
+        }
+        return items;
+    }
+
+    /// <summary>Orçamento por competência (receitas classificadas × despesas por competência, cartão no mês da fatura): bloco independente do caixa.</summary>
+    private async Task<OverviewCompetenceDto> BuildCompetenceAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, CancellationToken ct)
+    {
+        try
+        {
+            var plan = await planActual.GetAsync(workspaceId, userId, month, requestedScope, accountId, ct);
+            if (plan.Value is not { } dashboard) return new(null, null, null);
+            var income = Num(dashboard.Income.Realized); var expenses = Num(dashboard.Expenses.Consumption.Realized);
+            return new(Money.Format(income), Money.Format(expenses), Money.Format(income - expenses));
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return new(null, null, null);
         }
     }
 

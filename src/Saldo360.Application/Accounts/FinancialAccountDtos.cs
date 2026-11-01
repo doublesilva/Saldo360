@@ -66,6 +66,15 @@ public sealed record AccountInput(
 /// <summary>Saldo inicial usado no cálculo. <c>Source</c>: Manual (cadastro) ou BalanceAnchor (derivado da referência bancária, sem cadastro manual).</summary>
 public sealed record AccountOpeningBalance(decimal? Amount, DateOnly? Date, string? Source = null);
 
+/// <summary>
+/// Fluxo de caixa de uma conta num período: saldo de ABERTURA (início do primeiro dia; nulo com o motivo quando não há saldo inicial confiável, nunca zero) e os totais
+/// efetivos do período. Lido no mesmo snapshot do saldo realizado.
+/// </summary>
+public sealed record AccountPeriodCashDto(Guid AccountId, string Name, bool IsActive, string Scope, decimal? Opening, string? OpeningReason, DateOnly? OpeningReferenceDate, AccountTotals Totals)
+{
+    public decimal? Closing => Opening is { } o ? FinancialBalanceCalculator.ApplyMovements(o, Totals.Income, Totals.Expense, Totals.TransferIn, Totals.TransferOut) : null;
+}
+
 /// <summary>Totais de uma conta no período: lançamentos (receita/despesa) e transferências (recebidas/enviadas).</summary>
 public sealed record AccountTotals(decimal Income, decimal Expense, decimal TransferIn, decimal TransferOut);
 

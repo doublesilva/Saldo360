@@ -140,3 +140,20 @@
 .ov-recovery__account:first-of-type { border-top: 0; }
 .ov-bar { display: block; height: .5rem; margin-top: .25rem; background: var(--border); border-radius: .25rem; overflow: hidden; }
 .ov-bar > span { display: block; height: 100%; background: var(--accent); }
+
+/* Fluxo de caixa: cards em 4 colunas (desktop), 2 (<=1200px) e compactos (<=670px); ponte e transferência em 1,63fr/1fr, empilhadas em tablet. */
+.ov-cash { display: grid; gap: 1rem; margin-bottom: 1.1rem; }
+.ov-cash h2 { margin: 0; font-size: 1.05rem; }
+.ov-cash__title { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.ov-cash__cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .85rem; }
+.ov-cash__parts { display: grid; gap: .2rem; margin: 0; font-size: .78rem; }
+.ov-cash__parts > div { display: flex; justify-content: space-between; gap: .75rem; }
+.ov-cash__parts dt { color: var(--muted); }
+.ov-cash__parts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.ov-cash__why-grid { display: grid; grid-template-columns: minmax(0, 1.63fr) minmax(0, 1fr); gap: .85rem; margin-top: .6rem; }
+.ov-cash__competence { margin-bottom: 1rem; }
+.ov-cash .ov-table td { text-align: right; white-space: nowrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 75rem) { .ov-cash__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 64rem) { .ov-cash__why-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 42rem) { .ov-cash__cards { gap: .6rem; } .ov-cash .ov-table td { white-space: normal; } }

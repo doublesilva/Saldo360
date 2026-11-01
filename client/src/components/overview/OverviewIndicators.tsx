@@ -13,7 +13,7 @@ type Target = 'accounts' | 'transactions' | 'automation'
  * Os quatro indicadores principais, e só eles (R01). Fonte única: `plan-actual`, no escopo e na competência escolhidos.
  * Saldo atual e fechamento têm a sua própria referência de tempo; receitas e despesas acompanham a competência.
  */
-export function OverviewIndicators({ data }: { data: PlanActualDashboard }) {
+export function OverviewIndicators({ data, byCompetence = false }: { data: PlanActualDashboard; byCompetence?: boolean }) {
   const situation = data.situation
   const partialBalance = situation.realizedBalance === null && situation.partialRealizedBalance !== null && situation.consideredAccounts > 0
   const balance = situation.realizedBalance ?? (partialBalance ? situation.partialRealizedBalance : null)
@@ -26,9 +26,9 @@ export function OverviewIndicators({ data }: { data: PlanActualDashboard }) {
     <Indicator title="Saldo atual" value={balance} negative={isNegative(balance)} tag={partialBalance ? 'Parcial' : null}
       note={balance === null ? 'Saldo indisponível: configure o saldo inicial das contas.' : partialBalance ? `Soma de ${situation.consideredAccounts} conta(s); ${situation.unavailableAccounts} sem saldo calculável.` : null}
       reference={`Posição em ${formatDate(data.asOf)}${bankUpdate ? ` · banco atualizado em ${bankUpdate}` : ''}`} />
-    <Indicator title="Receitas do mês" value={data.income.realized} tone="income"
+    <Indicator title={byCompetence ? 'Receitas por competência (sem transferências)' : 'Receitas do mês'} value={data.income.realized} tone="income"
       note={data.income.pending !== '0.00' ? `Previsto a receber: ${money(data.income.pending)}` : null} reference={`Realizadas em ${monthTitle(data.competence)}`} />
-    <Indicator title="Despesas do mês" value={consumption.realized} tone="expense"
+    <Indicator title={byCompetence ? 'Despesas por competência (sem transferências)' : 'Despesas do mês'} value={consumption.realized} tone="expense"
       note={consumption.pending !== '0.00' ? `Previsto a pagar: ${money(consumption.pending)}` : null} reference={`Incorridas em ${monthTitle(data.competence)} · cartão pelo mês da fatura`} />
     <Indicator title={past ? 'Saldo no fechamento' : 'Fechamento projetado'} value={situation.projectedClosing} negative={isNegative(situation.projectedClosing)}
       note={situation.projectedClosing === null ? closingReason : null}
