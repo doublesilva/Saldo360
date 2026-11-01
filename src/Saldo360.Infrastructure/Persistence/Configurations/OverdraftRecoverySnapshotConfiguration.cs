@@ -23,6 +23,9 @@ internal sealed class OverdraftRecoverySnapshotConfiguration : IEntityTypeConfig
         builder.Property(x => x.PlannedExpense).HasColumnType("numeric");
         builder.Property(x => x.PlannedClosingBalance).HasColumnType("numeric");
         builder.Property(x => x.RecoveryTarget).HasColumnType("numeric");
+        builder.Property(x => x.TargetFactor).HasColumnType("numeric");
+        builder.Property(x => x.TargetCapacity).HasColumnType("numeric");
+        builder.Property(x => x.FixedAt);
         builder.Property(x => x.Quality).HasMaxLength(20);
         builder.Property(x => x.Composition).HasMaxLength(1000);
         builder.HasIndex(x => new { x.WorkspaceId, x.AccountId, x.Competence }).IsUnique();

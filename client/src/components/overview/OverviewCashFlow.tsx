@@ -1,7 +1,7 @@
-import type { OverviewCashAccountIssue, OverviewCashFlow } from '../../api/overview'
+import type { OverviewCashAccountIssue, OverviewCashFlow, OverviewRecovery, RecoveryBand } from '../../api/overview'
 import { formatDate } from '../../money'
 import type { OverviewNavigation } from './Overview'
-import { dateTime, isNegative, money } from './overviewText'
+import { barWidth, dateTime, isNegative, money, percentNow, percentText } from './overviewText'
 
 // Fluxo de caixa da Visão Geral. É CAIXA (movimentações efetivas): nada é somado aqui, o servidor entrega abertura, entradas, saídas, fechamento, posição do banco e conciliação.
 // Orçamento por competência fica em outra seção e nunca explica o saldo bancário.
@@ -30,6 +30,7 @@ export function OverviewCashFlowSection({ flow, scopeAccountId, onNavigate }: { 
         <h3>Saldo de abertura · {day(flow.from)}</h3>
         <p className="ov-indicator__value" data-unavailable={noOpening || undefined}>{noOpening ? 'Não apurado' : money(flow.opening)}</p>
         <p className="ov-indicator__reference">{noOpening ? issues(flow.openingMissing) || 'Sem contas no recorte.' : 'Saldo no início do primeiro dia do período'}</p>
+        {flow.recovery && <RecoveryTarget recovery={flow.recovery} />}
       </article>
       <article className="ov-card ov-indicator ov-indicator--income" aria-label="Entradas de caixa">
         <h3>Entradas de caixa</h3>
@@ -48,10 +49,11 @@ export function OverviewCashFlowSection({ flow, scopeAccountId, onNavigate }: { 
           <div><dt>Transferências enviadas</dt><dd>{money(flow.outflows.transfersSent)}</dd></div></dl>
         <button type="button" onClick={() => open()}>Ver lançamentos</button>
       </article>
-      <article className={`ov-card ov-indicator${isNegative(flow.closing) ? ' ov-indicator--negative' : ''}`} aria-label="Saldo de fechamento">
-        <h3>Saldo de fechamento · {day(flow.through)}</h3>
+      <article className={`ov-card ov-indicator${isNegative(flow.closing) ? ' ov-indicator--negative' : ''}`} aria-label={flow.recovery && flow.inProgress ? 'Saldo parcial' : 'Saldo de fechamento'}>
+        <h3>{flow.recovery && flow.inProgress ? `Saldo parcial · ${day(flow.recovery.currentAsOf)}` : `Saldo de fechamento · ${day(flow.through)}`}</h3>
         <p className="ov-indicator__value" data-unavailable={flow.closing === null || undefined}>{flow.closing === null ? 'Não apurado' : money(flow.closing)}</p>
         <p className="ov-indicator__reference">{flow.closing === null ? 'Depende do saldo de abertura.' : flow.inProgress ? 'Mês em andamento: abertura + entradas − saídas até agora' : 'Abertura + entradas − saídas'}</p>
+        {flow.recovery && <RecoveryProgress recovery={flow.recovery} inProgress={flow.inProgress} />}
       </article>
     </div>
 
@@ -87,6 +89,49 @@ export function OverviewCashFlowSection({ flow, scopeAccountId, onNavigate }: { 
       </div>
     </div>
   </section>
+}
+
+const bandLabel: Record<RecoveryBand, string> = {
+  Exceeded: 'Acima da meta', Met: 'Meta atingida (80% a 100%)', Attention: 'Atenção (acima de 50% e abaixo de 80%)', Critical: 'Crítico (até 50%)', NoTarget: 'Sem meta',
+}
+const pendingText: Record<string, string> = {
+  ProjectionUnavailable: 'projeção indisponível', CardCoverageIncomplete: 'faturas de cartão ainda não fechadas',
+}
+
+/** Meta de recuperação do mês no card de abertura: valor, estado (Provisória | Fixada) e data de fixação, todos do servidor. */
+function RecoveryTarget({ recovery: r }: { recovery: OverviewRecovery }) {
+  const fixedAt = dateTime(r.targetFixedAt)
+  return <dl className="ov-cash__parts ov-recovery" aria-label="Meta de recuperação do cheque especial">
+    <div><dt>Cheque especial usado na abertura</dt><dd>{money(r.openingUsed)}</dd></div>
+    <div><dt>Meta de recuperação do mês</dt><dd data-unavailable={r.target === null || undefined}>{r.target === null ? 'Pendente' : money(r.target)}</dd></div>
+    <div><dt>Estado da meta</dt><dd><span className={`ov-tag${r.targetState === 'Fixed' ? ' ov-tag--ok' : ' ov-tag--warning'}`}>
+      {r.targetState === 'Fixed' ? 'Fixada' : r.targetState === 'Provisional' ? 'Provisória' : r.targetState === 'Pending' ? 'Pendente' : 'Não registrada'}</span></dd></div>
+    {r.targetState === 'Fixed' && fixedAt && <div><dt>Fixada em</dt><dd>{fixedAt}{r.legacyTarget ? ' (meta histórica)' : ''}</dd></div>}
+    {r.targetState === 'Provisional' && <div><dt>Será fixada em</dt><dd>{formatDate(r.fixDate)}</dd></div>}
+    {r.targetState === 'Pending' && <div><dt>Pendência</dt><dd>{r.pendingReason ? pendingText[r.pendingReason] ?? r.pendingReason : 'dados insuficientes'}</dd></div>}
+  </dl>
+}
+
+/** Recuperação parcial/final no card de fechamento: valores, percentual vs. meta, faixa em texto e barra limitada a 0–100%. */
+function RecoveryProgress({ recovery: r, inProgress }: { recovery: OverviewRecovery; inProgress: boolean }) {
+  const percent = inProgress ? r.projectedAchievementPercent : r.finalAchievementPercent
+  const text = percentText(percent)
+  const label = `${inProgress ? 'Recuperação prevista' : 'Recuperação final'} ${text ?? 'sem percentual'}: ${bandLabel[r.band]}`
+  return <div className={`ov-recovery ov-recovery--${r.band}`}>
+    <dl className="ov-cash__parts">
+      {inProgress ? <>
+        <div><dt>Saldo efetivo em {formatDate(r.currentAsOf)}</dt><dd>{money(r.currentBalance)}</dd></div>
+        <div><dt>Recuperação em andamento</dt><dd>{money(r.recoveryCurrent)}</dd></div>
+        <div><dt>Recuperação prevista no encerramento</dt><dd data-unavailable={r.projectedRecovery === null || undefined}>{money(r.projectedRecovery)}</dd></div>
+      </> : <div><dt>Recuperação final</dt><dd>{money(r.finalRecovery)}</dd></div>}
+      <div><dt>{inProgress ? 'Meta vigente' : 'Meta fixada'}</dt><dd>{r.target === null ? 'Sem meta' : money(r.target)}</dd></div>
+    </dl>
+    {text !== null ? <>
+      <p className="ov-recovery__percent"><strong>{text}</strong> da meta · <span>{bandLabel[r.band]}</span></p>
+      <div className="ov-bar-track ov-recovery__track" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentNow(percent)} aria-valuetext={label}>
+        <span style={{ width: barWidth(percent) }} /></div>
+    </> : <p className="ov-meta">{r.targetState === 'Pending' || r.targetState === 'NotRegistered' ? 'Meta ainda não disponível: sem percentual.' : 'Sem meta: sem percentual.'}</p>}
+  </div>
 }
 
 function BankPosition({ flow }: { flow: OverviewCashFlow }) {

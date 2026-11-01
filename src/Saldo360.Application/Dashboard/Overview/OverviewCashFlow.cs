@@ -45,7 +45,7 @@ public sealed record OverviewCompetenceDto(string? ClassifiedIncome, string? Exp
 public sealed record OverviewCashFlowDto(string State, string Competence, DateOnly From, DateOnly Through, bool InProgress, int AccountCount,
     string? Opening, IReadOnlyList<OverviewCashAccountIssueDto> OpeningMissing, OverviewCashInflowsDto Inflows, OverviewCashOutflowsDto Outflows, string? Closing,
     bool? IdentityHolds, bool SnapshotConsistent, OverviewBankPositionDto BankPosition, OverviewReconciliationDto Reconciliation, string InternalMoved,
-    IReadOnlyList<OverviewCashTransferDto> Transfers, OverviewCompetenceDto ByCompetence);
+    IReadOnlyList<OverviewCashTransferDto> Transfers, OverviewCompetenceDto ByCompetence, OverviewRecoveryDto? Recovery = null);
 
 public sealed partial class DashboardOverviewService
 {
@@ -107,9 +107,11 @@ public sealed partial class DashboardOverviewService
             var snapshotConsistent = set.Sum(p => p.Totals.TransferIn) - set.Sum(p => p.Totals.TransferOut) == received - sent;
             var state = set.Count > 0 && missing.Count == 0 ? "Complete" : "Partial";
             var bank = await BuildBankPositionAndReconciliationAsync(workspaceId, set, ct);
+            // Recuperação do cheque especial: só para UMA conta (um conjunto não compensa saldos de contas diferentes) que abre a competência negativa.
+            var recovery = set.Count == 1 && accountId is not null && missing.Count == 0 ? await BuildRecoveryAsync(workspaceId, userId, month, accountId, first, last, today, set[0], ct) : null;
             return new(state, month, first, last, last > today, set.Count, opening, missing,
                 new(Money.Format(inflows), Money.Format(credits), refunds, Money.Format(received)), new(Money.Format(outflows), Money.Format(debits), Money.Format(sent)), closing,
-                identity, snapshotConsistent, bank.Position, bank.Reconciliation, Money.Format(internalMoved), lines.Take(MaxCashTransfers).ToList(), competence);
+                identity, snapshotConsistent, bank.Position, bank.Reconciliation, Money.Format(internalMoved), lines.Take(MaxCashTransfers).ToList(), competence, recovery);
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {

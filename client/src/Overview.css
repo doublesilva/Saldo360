@@ -82,6 +82,17 @@
 .ov-limit--ApproachingLimit .ov-bar-track span, .ov-limit--LimitReached .ov-bar-track span { background: var(--warning); }
 .ov-limit--Exceeded .ov-bar-track span { background: var(--fail); }
 .ov-limit--cards { padding-top: .7rem; border-top: 1px dashed var(--border); }
+/* Recuperação do cheque especial: cor da faixa (azul >100%, verde 80-100%, amarelo >50% e <80%, vermelho <=50%); o texto da faixa acompanha, a cor nunca é o único sinal. */
+.ov-recovery { display: grid; gap: .35rem; }
+.ov-recovery__percent { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
+.ov-recovery--Exceeded .ov-recovery__percent strong { color: var(--accent); }
+.ov-recovery--Met .ov-recovery__percent strong { color: var(--ok); }
+.ov-recovery--Attention .ov-recovery__percent strong { color: var(--warning); }
+.ov-recovery--Critical .ov-recovery__percent strong { color: var(--fail); }
+.ov-recovery--Exceeded .ov-recovery__track span { background: var(--accent); }
+.ov-recovery--Met .ov-recovery__track span { background: var(--ok); }
+.ov-recovery--Attention .ov-recovery__track span { background: var(--warning); }
+.ov-recovery--Critical .ov-recovery__track span { background: var(--fail); }
 .ov-bar-track--goal span { background: var(--ok); }
 
 .ov-group { display: grid; gap: .45rem; }

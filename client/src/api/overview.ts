@@ -60,6 +60,15 @@ export interface OverviewBankPosition {
   accounts: { accountId: string; name: string; amount: string; kind: string; observedAt: string; asOfDate: string; reliability: string }[]; missing: OverviewCashAccountIssue[]
 }
 export interface OverviewReconciliation { status: 'Verified' | 'Divergent' | 'NotVerifiable'; bank: string | null; calculated: string | null; difference: string | null; cutoffDate: string | null; reasons: string[]; accounts: OverviewCashAccountIssue[] }
+export type RecoveryBand = 'Exceeded' | 'Met' | 'Attention' | 'Critical' | 'NoTarget'
+/** Recuperação do cheque especial (aditivo; só quando a conta abre a competência com saldo negativo). Tudo vem calculado do servidor. */
+export interface OverviewRecovery {
+  openingUsed: string; target: string | null; targetState: 'Provisional' | 'Fixed' | 'Pending' | 'NotRegistered'; targetFactor: string | null; capacity: string | null
+  targetFixedAt: string | null; fixDate: string; legacyTarget: boolean; pendingReason: string | null
+  currentBalance: string; currentAsOf: string; recoveryCurrent: string
+  projectedClosing: string | null; projectedRecovery: string | null; projectedAchievementPercent: string | null; band: RecoveryBand
+  finalRecovery: string | null; finalAchievementPercent: string | null
+}
 export interface OverviewCashFlow {
   state: 'Complete' | 'Partial'; competence: string; from: string; through: string; inProgress: boolean; accountCount: number
   opening: string | null; openingMissing: OverviewCashAccountIssue[]
@@ -68,6 +77,7 @@ export interface OverviewCashFlow {
   closing: string | null; identityHolds: boolean | null; snapshotConsistent: boolean
   bankPosition: OverviewBankPosition; reconciliation: OverviewReconciliation; internalMoved: string; transfers: OverviewCashTransfer[]
   byCompetence: { classifiedIncome: string | null; expenses: string | null; difference: string | null }
+  recovery?: OverviewRecovery | null
 }
 
 export interface DashboardOverview {

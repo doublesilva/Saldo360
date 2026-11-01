@@ -27,6 +27,16 @@ describe('Responsividade da Visão Geral', () => {
     expect(css).toMatch(/\.ov-slot--accounts\s*\{\s*order:\s*2/)
   })
 
+  it('a recuperação do cheque especial usa só proporções e cores por faixa (sem larguras fixas nem duplicar .sr-only)', () => {
+    for (const band of ['Exceeded', 'Met', 'Attention', 'Critical']) expect(css).toContain(`.ov-recovery--${band}`)
+    expect(css).toMatch(/\.ov-recovery\s*\{[^}]*display:\s*grid/)
+    expect(css).toMatch(/\.ov-recovery__percent\s*\{[^}]*overflow-wrap:\s*anywhere/)
+    expect(css).not.toMatch(/\.sr-only/)
+    const component = src('components/overview/OverviewCashFlow.tsx')
+    expect(component).toContain('role="progressbar"')
+    expect(component).toContain('aria-valuetext')
+  })
+
   it('nenhum valor é truncado com reticências; o texto quebra de linha', () => {
     expect(css).not.toContain('text-overflow: ellipsis')
     expect(css).toContain('overflow-wrap: anywhere')

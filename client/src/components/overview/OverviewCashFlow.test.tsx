@@ -67,3 +67,81 @@ describe('OverviewCashFlowSection', () => {
     expect(screen.getByText('Receitas classificadas')).toBeTruthy()
   })
 })
+
+const recovery = (over: Partial<NonNullable<OverviewCashFlow['recovery']>> = {}): NonNullable<OverviewCashFlow['recovery']> => ({
+  openingUsed: '10000.00', target: '4800.00', targetState: 'Fixed', targetFactor: '0.80', capacity: '6000.00', targetFixedAt: '2026-11-10T15:00:00Z', fixDate: '2026-11-10', legacyTarget: false, pendingReason: null,
+  currentBalance: '-8500.00', currentAsOf: '2026-11-15', recoveryCurrent: '1500.00',
+  projectedClosing: '-5000.00', projectedRecovery: '5000.00', projectedAchievementPercent: '104.2', band: 'Exceeded', finalRecovery: null, finalAchievementPercent: null,
+  ...over,
+})
+const inProgress = (r: ReturnType<typeof recovery> | null) => flow({ competence: '2026-11', from: '2026-11-01', through: '2026-11-30', inProgress: true, opening: '-10000.00', closing: '-8500.00', recovery: r })
+
+describe('Recuperação do cheque especial nos cards de abertura e fechamento', () => {
+  it('abertura mostra saldo inicial, meta, estado Fixada e data de fixação; sem recuperação não mostra nada disso', () => {
+    renderFlow(inProgress(recovery()))
+    const card = screen.getByRole('article', { name: 'Saldo de abertura' })
+    expect(within(card).getAllByText(/10\.000,00/).length).toBeGreaterThan(0)
+    expect(within(card).getByText('Meta de recuperação do mês')).toBeTruthy()
+    expect(within(card).getByText(/4\.800,00/)).toBeTruthy()
+    expect(within(card).getByText('Fixada')).toBeTruthy()
+    expect(within(card).getByText(/Fixada em/)).toBeTruthy()
+    cleanup()
+    renderFlow(flow())
+    expect(screen.queryByText('Meta de recuperação do mês')).toBeNull()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+  })
+
+  it('meta provisória diz quando será fixada e meta pendente não mostra valor inventado', () => {
+    renderFlow(inProgress(recovery({ targetState: 'Provisional', targetFixedAt: null })))
+    expect(screen.getByText('Provisória')).toBeTruthy()
+    expect(screen.getByText('Será fixada em')).toBeTruthy()
+    cleanup()
+    renderFlow(inProgress(recovery({ targetState: 'Pending', target: null, targetFixedAt: null, pendingReason: 'CardCoverageIncomplete', projectedAchievementPercent: null, band: 'NoTarget' })))
+    const card = screen.getByRole('article', { name: 'Saldo de abertura' })
+    expect(within(card).getAllByText('Pendente').length).toBeGreaterThan(0)
+    expect(within(card).getByText(/faturas de cartão ainda não fechadas/)).toBeTruthy()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+  })
+
+  it('mês em andamento vira "Saldo parcial" com recuperação atual, prevista e percentual contra a meta vigente', () => {
+    renderFlow(inProgress(recovery()))
+    const card = screen.getByRole('article', { name: 'Saldo parcial' })
+    expect(within(card).getByRole('heading', { name: /Saldo parcial · 15\/11/ })).toBeTruthy()
+    expect(within(card).getByText('Recuperação em andamento')).toBeTruthy()
+    expect(within(card).getByText(/1\.500,00/)).toBeTruthy()
+    expect(within(card).getByText('Recuperação prevista no encerramento')).toBeTruthy()
+    expect(within(card).getByText(/104,2%/)).toBeTruthy()
+    expect(within(card).getByText('Meta vigente')).toBeTruthy()
+  })
+
+  it('mês encerrado mantém "Saldo de fechamento" com recuperação final contra a meta fixada', () => {
+    renderFlow(flow({ opening: '-10000.00', closing: '-5200.00', recovery: recovery({ projectedRecovery: null, projectedClosing: null, projectedAchievementPercent: null, finalRecovery: '4800.00', finalAchievementPercent: '100.0', band: 'Met', currentBalance: '-5200.00', currentAsOf: '2026-10-31' }) }))
+    const card = screen.getByRole('article', { name: 'Saldo de fechamento' })
+    expect(within(card).getByText('Recuperação final')).toBeTruthy()
+    expect(within(card).getByText('Meta fixada')).toBeTruthy()
+    expect(within(card).getByText(/100,0%/)).toBeTruthy()
+  })
+
+  it.each([
+    ['Exceeded', '250.0', 'Acima da meta', 100], ['Met', '100.0', 'Meta atingida', 100], ['Met', '80.0', 'Meta atingida', 80], ['Attention', '65.5', 'Atenção', 65],
+    ['Critical', '50.0', 'Crítico', 50], ['Critical', '-12.5', 'Crítico', 0],
+  ] as const)('faixa %s com %s%%: texto da faixa, percentual legível, barra limitada a 0–100%% e rótulo acessível', (band, percent, label, now) => {
+    renderFlow(inProgress(recovery({ band, projectedAchievementPercent: percent })))
+    const bar = screen.getByRole('progressbar')
+    expect(bar.getAttribute('aria-valuenow')).toBe(String(now))
+    expect(bar.getAttribute('aria-label')).toContain(label)
+    expect(bar.getAttribute('aria-label')).toContain(`${percent.replace('.', ',')}%`)
+    const card = screen.getByRole('article', { name: 'Saldo parcial' })
+    expect(within(card).getAllByText(new RegExp(label)).length).toBeGreaterThan(0)
+    expect(card.querySelector('.ov-recovery')?.className).toContain(`ov-recovery--${band}`)
+    const fill = bar.querySelector('span') as HTMLElement
+    expect(fill.style.width).toBe(now === 0 ? '0%' : `min(100%, ${percent}%)`)
+  })
+
+  it('meta zero mostra "Sem meta" e nenhum percentual artificial', () => {
+    renderFlow(inProgress(recovery({ target: '0.00', projectedAchievementPercent: null, band: 'NoTarget' })))
+    const card = screen.getByRole('article', { name: 'Saldo parcial' })
+    expect(within(card).getByText('Sem meta: sem percentual.')).toBeTruthy()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+  })
+})

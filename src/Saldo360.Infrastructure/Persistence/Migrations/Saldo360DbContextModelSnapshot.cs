@@ -278,6 +278,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("composition");
 
+                    b.Property<DateTimeOffset?>("FixedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fixed_at");
+
                     b.Property<decimal>("OpeningBalance")
                         .HasColumnType("numeric")
                         .HasColumnName("opening_balance");
@@ -307,6 +311,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly>("ReferenceDate")
                         .HasColumnType("date")
                         .HasColumnName("reference_date");
+
+                    b.Property<decimal?>("TargetCapacity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("target_capacity");
+
+                    b.Property<decimal?>("TargetFactor")
+                        .HasColumnType("numeric")
+                        .HasColumnName("target_factor");
 
                     b.Property<Guid>("WorkspaceId")
                         .HasColumnType("uuid")

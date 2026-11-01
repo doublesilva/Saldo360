@@ -95,6 +95,7 @@ public sealed partial class DashboardOverviewService(
     IPluggyCategorizationService categorization,
     IFinancialTransferRepository transferRepository,
     Saldo360.Application.Accounts.Reconciliation.AccountBalanceReconciliationService reconciliation,
+    IOverdraftRecoveryRepository recoveryRepository,
     TimeProvider time)
 {
     public const int HorizonDays = 30;
