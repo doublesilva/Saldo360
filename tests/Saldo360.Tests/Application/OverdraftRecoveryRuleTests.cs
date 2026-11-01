@@ -107,8 +107,8 @@ public sealed class OverdraftRecoveryRuleTests
         // Itaú PF, outubro/2026: meta histórica 1.270,38 (85% da capacidade, planilha, 08/10); recuperação efetiva 1.472,88 => 115,9% (Exceeded)
         var october = new DateOnly(2026, 10, 1);
         var registeredAt = new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.FromHours(-3));
-        var stored = OverdraftRecoverySnapshot.CreateHistorical(W, A, october, -10000m, october, -8505.44m, 1270.38m, "SpreadsheetMetasMensais;Factor=0.85", registeredAt);
-        var dto = OverdraftRecoveryRule.Build(october, new DateOnly(2026, 10, 31), new DateOnly(2026, 11, 5), -10000m, -8527.12m, stored, null)!.Dto;
+        var stored = OverdraftRecoverySnapshot.CreateHistorical(W, A, october, -15284.39m, october, -13789.83m, 1270.38m, "SpreadsheetMetasMensais;Factor=0.85", registeredAt);
+        var dto = OverdraftRecoveryRule.Build(october, new DateOnly(2026, 10, 31), new DateOnly(2026, 11, 5), -15284.39m, -13811.51m, stored, null)!.Dto;
         Assert.Equal(("Fixed", "1270.38", true, null, "1472.88", "115.9", "Exceeded"), (dto.TargetState, dto.Target, dto.LegacyTarget, dto.TargetFactor, dto.FinalRecovery, dto.FinalAchievementPercent, dto.Band));
         Assert.Equal(registeredAt, dto.TargetFixedAt); // 08/10, nunca 10/10
     }

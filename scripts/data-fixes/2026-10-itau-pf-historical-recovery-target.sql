@@ -2,8 +2,8 @@
 -- Fonte (somente referência): planilha "Orçamento Diego 2026-2027", aba "Metas Mensais". Meta aprovada R$ 1.270,38 em 08/10/2026 (regra histórica: 85% da capacidade).
 -- NÃO aplica o fator atual (80%): target_factor/target_capacity/fixed_at ficam NULOS => a tela mostra "meta histórica" e a data 08/10/2026.
 -- Idempotente (índice único workspace/conta/competência + ON CONFLICT DO NOTHING). Não toca saldos, transferências, Pluggy nem outras competências.
--- Uso (após autorização):  psql -v ON_ERROR_STOP=1 -v opening_balance=<saldo de abertura 01/10, negativo> -f <este arquivo>
--- opening_balance é obrigatório (nunca se assume zero): conferir antes na Visão Geral (cartão Saldo de abertura).
+-- Uso (após autorização):  psql -v ON_ERROR_STOP=1 -v opening_balance=-15284.39 -f <este arquivo>
+-- opening_balance confirmado pelo usuário: -15284.39 em 01/10/2026 (-13826.92 é o saldo intermediário de 08/10, não o inicial).
 \if :{?opening_balance} \else \echo 'Informe -v opening_balance=...'; \quit \endif
 BEGIN;
 WITH target_account AS (

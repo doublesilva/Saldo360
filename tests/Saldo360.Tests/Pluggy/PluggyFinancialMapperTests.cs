@@ -34,6 +34,7 @@ public sealed class PluggyFinancialMapperTests
     [Theory]
     [InlineData("BANK", PluggyLinkedAccountKind.Bank)]
     [InlineData("credit", PluggyLinkedAccountKind.Card)]
+    [InlineData("CREDIT_CARD", PluggyLinkedAccountKind.Card)]
     [InlineData("INVESTMENT", null)]
     [InlineData(null, null)]
     public void OnlyBankAndCreditAccountsAreSupported(string? type, PluggyLinkedAccountKind? expected) => Assert.Equal(expected, PluggyFinancialMapper.KindOf(type));

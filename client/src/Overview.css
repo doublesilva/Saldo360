@@ -84,11 +84,14 @@
 .ov-limit--cards { padding-top: .7rem; border-top: 1px dashed var(--border); }
 /* Recuperação do cheque especial: cor da faixa (azul >100%, verde 80-100%, amarelo >50% e <80%, vermelho <=50%); o texto da faixa acompanha, a cor nunca é o único sinal. */
 .ov-recovery { display: grid; gap: .35rem; }
+.ov-recovery__head, .ov-recovery__values { margin: 0; display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; font-size: .78rem; }
+.ov-recovery__head > strong:first-child { color: var(--text); overflow-wrap: anywhere; }
+.ov-recovery__values { color: var(--muted); font-variant-numeric: tabular-nums; }
 .ov-recovery__percent { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
-.ov-recovery--Exceeded .ov-recovery__percent strong { color: var(--accent); }
-.ov-recovery--Met .ov-recovery__percent strong { color: var(--ok); }
-.ov-recovery--Attention .ov-recovery__percent strong { color: var(--warning); }
-.ov-recovery--Critical .ov-recovery__percent strong { color: var(--fail); }
+.ov-recovery--Exceeded .ov-recovery__percent { color: var(--accent); }
+.ov-recovery--Met .ov-recovery__percent { color: var(--ok); }
+.ov-recovery--Attention .ov-recovery__percent { color: var(--warning); }
+.ov-recovery--Critical .ov-recovery__percent { color: var(--fail); }
 .ov-recovery--Exceeded .ov-recovery__track span { background: var(--accent); }
 .ov-recovery--Met .ov-recovery__track span { background: var(--ok); }
 .ov-recovery--Attention .ov-recovery__track span { background: var(--warning); }

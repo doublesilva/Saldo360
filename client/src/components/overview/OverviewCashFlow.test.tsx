@@ -122,6 +122,29 @@ describe('Recuperação do cheque especial nos cards de abertura e fechamento', 
     expect(within(card).getByText(/100,0%/)).toBeTruthy()
   })
 
+  it('outubro histórico confirmado mostra valores, 115,9% e barra azul completa sem aplicar 80% retroativamente', () => {
+    renderFlow(flow({ opening: '-15284.39', closing: '-13811.51', recovery: recovery({
+      openingUsed: '15284.39', target: '1270.38', targetState: 'Fixed', targetFactor: null, capacity: null,
+      targetFixedAt: '2026-10-08T15:00:00Z', fixDate: '2026-10-10', legacyTarget: true,
+      currentBalance: '-13811.51', currentAsOf: '2026-10-31', recoveryCurrent: '1472.88', projectedClosing: null,
+      projectedRecovery: null, projectedAchievementPercent: null, finalRecovery: '1472.88', finalAchievementPercent: '115.9', band: 'Exceeded',
+    }) }))
+
+    const opening = screen.getByRole('article', { name: 'Saldo de abertura' })
+    expect(within(opening).getAllByText(/15\.284,39/).length).toBe(2)
+    expect(within(opening).getByText(/1\.270,38/)).toBeTruthy()
+    expect(within(opening).getByText(/08\/10\/2026.*meta histórica/)).toBeTruthy()
+    const closing = screen.getByRole('article', { name: 'Saldo de fechamento' })
+    expect(within(closing).getByText(/13\.811,51/)).toBeTruthy()
+    expect(within(closing).getByText('◎ Recuperação do saldo')).toBeTruthy()
+    expect(within(closing).getByText('115,9%')).toBeTruthy()
+    expect(within(closing).getByText(/R\$ 1\.472,88 \/ R\$ 1\.270,38/)).toBeTruthy()
+    const bar = within(closing).getByRole('progressbar')
+    expect(bar.getAttribute('aria-valuenow')).toBe('100')
+    expect(bar.querySelector('span')?.getAttribute('style')).toContain('min(100%, 115.9%)')
+    expect(closing.querySelector('.ov-recovery--Exceeded .ov-recovery__track')).toBeTruthy()
+  })
+
   it.each([
     ['Exceeded', '250.0', 'Acima da meta', 100], ['Met', '100.0', 'Meta atingida', 100], ['Met', '80.0', 'Meta atingida', 80], ['Attention', '65.5', 'Atenção', 65],
     ['Critical', '50.0', 'Crítico', 50], ['Critical', '-12.5', 'Crítico', 0],

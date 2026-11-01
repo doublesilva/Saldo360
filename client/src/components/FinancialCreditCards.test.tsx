@@ -92,6 +92,7 @@ describe('FinancialCreditCardsPage', () => {
     expect((await screen.findAllByText('Platinum')).length).toBeGreaterThan(0)
     await waitFor(() => expect(screen.getAllByText(/10\.000,00/).length).toBeGreaterThan(0))
     expect(screen.getAllByText(/•••• 0012/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Manual')).toBeTruthy()
     expect(screen.getAllByText('Cartões').length).toBeGreaterThan(0)
     expect((await screen.findByLabelText('Resumo dos cartões')).textContent).toContain('Faturas da competência')
     expect(Array.from(screen.getByLabelText('Resumo dos cartões').querySelectorAll('dt')).map(d => d.textContent)).toEqual(['Faturas da competência', 'Pendente conhecido — inclui sem vínculo', 'Pagamentos registrados', 'Limite disponível — ativos'])

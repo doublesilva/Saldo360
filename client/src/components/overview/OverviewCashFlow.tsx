@@ -127,9 +127,10 @@ function RecoveryProgress({ recovery: r, inProgress }: { recovery: OverviewRecov
       <div><dt>{inProgress ? 'Meta vigente' : 'Meta fixada'}</dt><dd>{r.target === null ? 'Sem meta' : money(r.target)}</dd></div>
     </dl>
     {text !== null ? <>
-      <p className="ov-recovery__percent"><strong>{text}</strong> da meta · <span>{bandLabel[r.band]}</span></p>
+      <p className="ov-recovery__head"><strong>◎ Recuperação do saldo</strong><strong className="ov-recovery__percent">{text}</strong></p>
       <div className="ov-bar-track ov-recovery__track" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentNow(percent)} aria-valuetext={label}>
         <span style={{ width: barWidth(percent) }} /></div>
+      <p className="ov-recovery__values"><span>{money(inProgress ? r.projectedRecovery : r.finalRecovery)} / {money(r.target)}</span><span>{r.band === 'Exceeded' ? 'Acima da meta' : bandLabel[r.band]}</span></p>
     </> : <p className="ov-meta">{r.targetState === 'Pending' || r.targetState === 'NotRegistered' ? 'Meta ainda não disponível: sem percentual.' : 'Sem meta: sem percentual.'}</p>}
   </div>
 }

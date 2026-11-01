@@ -66,7 +66,7 @@ public static class PluggyFinancialMapper
     public static PluggyLinkedAccountKind? KindOf(string? pluggyType) => pluggyType?.ToUpperInvariant() switch
     {
         "BANK" => PluggyLinkedAccountKind.Bank,
-        "CREDIT" => PluggyLinkedAccountKind.Card,
+        "CREDIT" or "CREDIT_CARD" => PluggyLinkedAccountKind.Card,
         _ => null,
     };
 
