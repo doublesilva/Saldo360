@@ -28,6 +28,7 @@ public sealed record PendingPurchaseFact(string SourceId, string Description, de
 
 /// <summary>Obrigação conhecida importada sem fatura (extrato histórico); vence na data informada, se houver.</summary>
 public sealed record KnownImportedFact(Guid Id, decimal Amount, DateOnly? DueDate);
+public sealed record RecurringChargeFact(Guid RecurrenceId, string Description, decimal Amount, DateOnly ChargeDate, bool IsEstimated);
 
 /// <summary>Uma fatura persistida do Saldo360, com a composição local, os pagamentos e o que o banco informou.</summary>
 public sealed record CardInvoiceFact(
@@ -43,7 +44,8 @@ public sealed record CardInfo(
 /// <summary>Tudo o que o motor precisa sobre um cartão. Os fatos vêm do banco já filtrados pelo orçamento.</summary>
 public sealed record CardFacts(
     CardInfo Card, IReadOnlyList<Saldo360.Application.Pluggy.PluggyBillFact> Bills, IReadOnlyList<CardInvoiceFact> Invoices,
-    IReadOnlyList<PendingPurchaseFact> Pending, IReadOnlyList<InstallmentObservation> Installments, IReadOnlyList<KnownImportedFact> KnownImported);
+    IReadOnlyList<PendingPurchaseFact> Pending, IReadOnlyList<InstallmentObservation> Installments, IReadOnlyList<KnownImportedFact> KnownImported,
+    IReadOnlyList<RecurringChargeFact>? Recurring = null);
 
 public sealed record ProjectedInstallment(
     int Number, int Total, decimal Amount, DateOnly Closing, DateOnly Due, InstallmentOrigin Origin, bool Absorbed, string? SourceId);

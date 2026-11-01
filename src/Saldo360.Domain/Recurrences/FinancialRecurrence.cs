@@ -5,6 +5,7 @@ namespace Saldo360.Domain.Recurrences;
 
 public enum RecurrenceFrequency { Weekly, Monthly, Yearly }
 public enum RecurrenceStatus { Active, Paused, Ended, Archived }
+public enum RecurrenceOrigin { Manual, PluggyDetected }
 
 public sealed class FinancialRecurrence : Entity
 {
@@ -32,19 +33,42 @@ public sealed class FinancialRecurrence : Entity
     public DateTimeOffset CreatedAt { get; private init; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public DateTimeOffset? ArchivedAt { get; private set; }
+    public RecurrenceOrigin Origin { get; private init; } = RecurrenceOrigin.Manual;
+    public string? ExternalKey { get; private init; }
+    public int EvidenceCount { get; private set; }
+    public string? DetectionConfidence { get; private set; }
+    public bool IsUserAdjusted { get; private set; }
 
     public static FinancialRecurrence Create(Guid workspaceId, RecurrenceDetails details, DateTimeOffset now) =>
         new FinancialRecurrence { WorkspaceId = workspaceId, CreatedAt = now, UpdatedAt = now, Status = RecurrenceStatus.Active }.Apply(details);
 
+    public static FinancialRecurrence CreatePluggyDetected(Guid workspaceId, RecurrenceDetails details, string externalKey, int evidenceCount, DateTimeOffset now)
+    {
+        if (string.IsNullOrWhiteSpace(externalKey) || evidenceCount < 2) throw new ArgumentException("Detecção Pluggy inválida.");
+        var confidence = evidenceCount >= 3 ? "High" : "Candidate";
+        return new FinancialRecurrence { WorkspaceId = workspaceId, CreatedAt = now, UpdatedAt = now,
+            Status = confidence == "High" ? RecurrenceStatus.Active : RecurrenceStatus.Paused,
+            Origin = RecurrenceOrigin.PluggyDetected, ExternalKey = externalKey, EvidenceCount = evidenceCount, DetectionConfidence = confidence }.Apply(details);
+    }
+
     public void Update(RecurrenceDetails details, DateTimeOffset now)
     {
         if (Status == RecurrenceStatus.Archived) throw new InvalidOperationException("Recorrência arquivada não pode ser editada.");
-        Apply(details); UpdatedAt = now;
+        Apply(details); UpdatedAt = now; IsUserAdjusted = true;
     }
-    public void Pause(DateTimeOffset now) { if (Status == RecurrenceStatus.Active) { Status = RecurrenceStatus.Paused; UpdatedAt = now; } }
-    public void Resume(DateTimeOffset now) { if (Status == RecurrenceStatus.Paused) { Status = RecurrenceStatus.Active; UpdatedAt = now; } }
-    public void End(DateTimeOffset now) { if (Status is not RecurrenceStatus.Archived) { Status = RecurrenceStatus.Ended; UpdatedAt = now; } }
-    public void Archive(DateTimeOffset now) { if (Status != RecurrenceStatus.Archived) { Status = RecurrenceStatus.Archived; ArchivedAt = now; UpdatedAt = now; } }
+    public void Pause(DateTimeOffset now) { if (Status == RecurrenceStatus.Active) { Status = RecurrenceStatus.Paused; UpdatedAt = now; IsUserAdjusted = true; } }
+    public void Resume(DateTimeOffset now) { if (Status == RecurrenceStatus.Paused) { Status = RecurrenceStatus.Active; UpdatedAt = now; IsUserAdjusted = true; } }
+    public void End(DateTimeOffset now) { if (Status is not RecurrenceStatus.Archived) { Status = RecurrenceStatus.Ended; UpdatedAt = now; IsUserAdjusted = true; } }
+    public void Archive(DateTimeOffset now) { if (Status != RecurrenceStatus.Archived) { Status = RecurrenceStatus.Archived; ArchivedAt = now; UpdatedAt = now; IsUserAdjusted = true; } }
+
+    public void ObservePluggy(decimal amount, bool estimated, int evidenceCount, DateOnly lastChargeDate, DateTimeOffset now)
+    {
+        if (Origin != RecurrenceOrigin.PluggyDetected || IsUserAdjusted || Status is RecurrenceStatus.Ended or RecurrenceStatus.Archived) return;
+        Amount = amount; IsEstimated = estimated; EvidenceCount = Math.Max(EvidenceCount, evidenceCount); DayOfMonth = lastChargeDate.Day;
+        DetectionConfidence = EvidenceCount >= 3 ? "High" : "Candidate";
+        if (DetectionConfidence == "High") Status = RecurrenceStatus.Active;
+        UpdatedAt = now;
+    }
 
     private FinancialRecurrence Apply(RecurrenceDetails d)
     {

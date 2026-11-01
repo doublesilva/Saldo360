@@ -4,6 +4,7 @@ import type { ExpenseNature } from './expenseNature'
 export type RecurrenceType = 'Income' | 'Expense'
 export type RecurrenceFrequency = 'Weekly' | 'Monthly' | 'Yearly'
 export type RecurrenceStatus = 'Active' | 'Paused' | 'Ended' | 'Archived'
+export type RecurrenceOrigin = 'Manual' | 'PluggyDetected'
 export type PlannedStatus = 'Pending' | 'Realized' | 'Cancelled'
 
 export interface FinancialRecurrence {
@@ -11,6 +12,7 @@ export interface FinancialRecurrence {
   amount: string; isEstimated: boolean; frequency: RecurrenceFrequency; interval: number; startDate: string
   endDate: string | null; occurrenceCount: number | null; dayOfMonth: number; status: RecurrenceStatus
   currency: string; createdAt: string; updatedAt: string; archivedAt: string | null
+  origin?: RecurrenceOrigin; evidenceCount?: number; detectionConfidence?: string | null; isUserAdjusted?: boolean
   /** Tipo de despesa que cada materialização herda; mudá-lo vale só para as próximas. */
   expenseNature?: ExpenseNature
 }

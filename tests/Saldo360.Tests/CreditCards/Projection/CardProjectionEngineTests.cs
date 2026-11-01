@@ -24,8 +24,9 @@ public sealed class CardProjectionEngineTests
             reconciliation, null, null);
 
     private static CardFacts Facts(IReadOnlyList<CardInvoiceFact>? invoices = null, IReadOnlyList<PendingPurchaseFact>? pending = null,
-        IReadOnlyList<InstallmentObservation>? installments = null, IReadOnlyList<PluggyBillFact>? bills = null, CardInfo? card = null, IReadOnlyList<KnownImportedFact>? known = null) =>
-        new(card ?? Card(), bills ?? StableBills(), invoices ?? [], pending ?? [], installments ?? [], known ?? []);
+        IReadOnlyList<InstallmentObservation>? installments = null, IReadOnlyList<PluggyBillFact>? bills = null, CardInfo? card = null,
+        IReadOnlyList<KnownImportedFact>? known = null, IReadOnlyList<RecurringChargeFact>? recurring = null) =>
+        new(card ?? Card(), bills ?? StableBills(), invoices ?? [], pending ?? [], installments ?? [], known ?? [], recurring ?? []);
 
     private static CardInvoiceProjection ByCompetence(CardProjection projection, string competence) => projection.Invoices.Single(i => i.Competence == competence);
 
@@ -132,6 +133,23 @@ public sealed class CardProjectionEngineTests
         // 08..10 faltam: estimadas só porque há duas parcelas com periodicidade mensal provada
         Assert.Equal(3, projection.Chains.Single().Estimated);
         Assert.Equal(100m, ByCompetence(projection, "2027-01").Estimated);
+    }
+
+    [Fact]
+    public void ADetectedRecurringChargeProjectsAsEstimatedAndNeverChangesAClosedInvoice()
+    {
+        var recurrence = Guid.NewGuid();
+        var facts = Facts([Closed(new DateOnly(2026, 10, 8), 230m, 230m)], recurring:
+        [
+            new RecurringChargeFact(recurrence, "Streaming", 49.90m, new DateOnly(2026, 10, 2), false),
+            new RecurringChargeFact(recurrence, "Streaming", 49.90m, new DateOnly(2026, 11, 2), false)
+        ]);
+
+        var projection = CardProjectionEngine.Compute(facts, Today);
+
+        Assert.Equal(230m, ByCompetence(projection, "2026-10").Obligation);
+        var november = ByCompetence(projection, "2026-11");
+        Assert.Equal((49.90m, 49.90m), (november.Estimated, november.Obligation));
     }
 
     // ---- 14: idempotência e 21: precisão ------------------------------------------------------------------------------------

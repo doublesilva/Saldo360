@@ -15,7 +15,8 @@ public enum PluggySyncStatus { Running, Completed, CompletedWithErrors, Failed }
 /// <summary>Retrato normalizado de uma transação como a Pluggy a devolveu numa coleta. Não carrega pagador, recebedor nem documentos.</summary>
 public sealed record PluggyTransactionSnapshot(string PluggyTransactionId, string PluggyAccountId, string? AccountType, string? AccountLabel,
     DateTimeOffset? Date, decimal? Amount, string? Currency, string? Description, string? DescriptionRaw, string? Type, PluggyTransactionStatus Status,
-    string? OperationType, string? Category, int? InstallmentNumber, int? TotalInstallments, string? BillId, string? CardLast4, string? PaymentMethod);
+    string? OperationType, string? Category, int? InstallmentNumber, int? TotalInstallments, string? BillId, string? CardLast4, string? PaymentMethod,
+    string? MerchantName = null, string? MerchantCategory = null);
 
 public sealed record PluggyClassification(PluggyTransactionClass Class, string Reason);
 
@@ -99,6 +100,8 @@ public sealed class PluggyImportedTransaction : Entity
     public string? BillId { get; private set; }
     public string? CardLast4 { get; private set; }
     public string? PaymentMethod { get; private set; }
+    public string? MerchantName { get; private set; }
+    public string? MerchantCategory { get; private set; }
     public PluggyTransactionClass Classification { get; private set; }
     public string ClassificationReason { get; private set; }
     /// <summary>Hash de conta + dia + valor + descrição original normalizada. Chave igual em IDs diferentes indica possível duplicidade (ou repetição legítima).</summary>
@@ -158,6 +161,8 @@ public sealed class PluggyImportedTransaction : Entity
         Check("billId", BillId, Clip(s.BillId, 80));
         Check("cardLast4", CardLast4, Clip(s.CardLast4, 4));
         Check("paymentMethod", PaymentMethod, Clip(s.PaymentMethod, 40));
+        Check("merchantName", MerchantName, Clip(s.MerchantName, 160));
+        Check("merchantCategory", MerchantCategory, Clip(s.MerchantCategory, 120));
         return fields;
     }
 
@@ -186,6 +191,8 @@ public sealed class PluggyImportedTransaction : Entity
         BillId = Clip(s.BillId, 80);
         CardLast4 = Clip(s.CardLast4, 4);
         PaymentMethod = Clip(s.PaymentMethod, 40);
+        MerchantName = Clip(s.MerchantName, 160);
+        MerchantCategory = Clip(s.MerchantCategory, 120);
         Reclassify(s);
     }
 

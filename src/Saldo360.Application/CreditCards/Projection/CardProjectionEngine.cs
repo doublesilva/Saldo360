@@ -69,6 +69,14 @@ public static class CardProjectionEngine
             }
         }
 
+        // Recorrências inferidas nunca viram realizado: são somente componentes estimados da fatura e desaparecem quando a cobrança efetiva do ciclo existe.
+        foreach (var recurring in facts.Recurring ?? [])
+        {
+            var cycle = EnsureFrom(schedule.CycleFor(recurring.ChargeDate));
+            if (cycle.Fact is { ClosedByBank: true } || latestClosed is { } closed && cycle.Closing <= closed) { cycle.Absorbed++; continue; }
+            cycle.Estimated += recurring.Amount;
+        }
+
         // O ciclo aberto sempre existe, mesmo vazio, para que o cartão tenha "a fatura atual".
         EnsureFrom(schedule.CycleFor(today));
 

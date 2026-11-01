@@ -44,6 +44,7 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
         {
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM financial_workspaces WHERE id = {workspaceId} FOR UPDATE", ct);
             var summary = await new Run(db, workspaceId, userId, now, null).ExecuteAsync(ct);
+            await PluggyRecurringChargeDetectionService.ApplyAsync(db, workspaceId, now, ct);
             if (tx is not null) await tx.CommitAsync(ct);
             return summary;
         }

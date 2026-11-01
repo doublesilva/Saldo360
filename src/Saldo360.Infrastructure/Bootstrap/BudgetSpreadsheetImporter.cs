@@ -30,7 +30,11 @@ public sealed class BudgetSpreadsheetImporter(Saldo360DbContext db, TimeProvider
         var state = await Assess(plan, ct);
         if (db.ChangeTracker.Entries().Any()) throw new InvalidOperationException("DryRunMustNotTrackOrStageEntities");
         await tx.CommitAsync(ct);
-        return new(w, state.Owner, plan.SourceHash, plan.PlanHash, source.ReadAtUtc, time.GetUtcNow(), true, state.Graph.Items, state.Counts);
+        var destinationReadAt = time.GetUtcNow();
+        var destinationHash = SpreadsheetSnapshot.Hash(new { WorkspaceId = w, state.Owner, ReadAtUtc = destinationReadAt,
+            Counts = state.Counts.OrderBy(x => x.Key, StringComparer.Ordinal) });
+        return new(w, state.Owner, plan.SourceHash, plan.PlanHash, source.ReadAtUtc, destinationReadAt, true, state.Graph.Items, state.Counts,
+            DestinationSnapshotHash: destinationHash);
     }
 
     /// <summary>Future path. Explicit review+fresh capture required; full preflight under writer/reset root lock before staging.</summary>

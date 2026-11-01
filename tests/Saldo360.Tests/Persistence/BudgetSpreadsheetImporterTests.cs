@@ -46,6 +46,7 @@ public sealed class BudgetSpreadsheetImporterTests(PostgresFixture postgres)
         {
             var report = await new BudgetSpreadsheetImporter(db, TimeProvider.System).DryRunAsync(w, BudgetSpreadsheetFixture.Source());
             Assert.Equal(owner, report.OwnerUserId); Assert.True(report.DatabaseReadOnly); Assert.True(report.CanExecute);
+            Assert.Equal(64, report.DestinationSnapshotHash?.Length);
             Assert.All(report.DestinationCounts.Where(x => x.Key != "__migrations"), p => Assert.Equal(0, p.Value));
             Assert.Empty(db.ChangeTracker.Entries());
             Assert.Contains(guard.Commands, s => s == "SET TRANSACTION READ ONLY");

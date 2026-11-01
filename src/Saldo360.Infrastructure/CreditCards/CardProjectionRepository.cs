@@ -4,6 +4,8 @@ using Saldo360.Application.CreditCards.Projection;
 using Saldo360.Application.Pluggy;
 using Saldo360.Domain.CreditCards;
 using Saldo360.Domain.Pluggy;
+using Saldo360.Domain.Recurrences;
+using Saldo360.Application.Recurrences;
 using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.CreditCards;
@@ -66,8 +68,14 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
         var transactions = connectionIds.Count == 0 ? [] : await db.PluggyImportedTransactions.AsNoTracking()
             .Where(t => t.WorkspaceId == workspaceId && connectionIds.Contains(t.ConnectionId)
                 && (t.Status == PluggyTransactionStatus.Pending || (t.TotalInstallments != null && t.TotalInstallments > 1))).ToListAsync(ct);
+        var postedSinglePurchases = connectionIds.Count == 0 ? [] : await db.PluggyImportedTransactions.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && connectionIds.Contains(t.ConnectionId)
+                && t.Status == PluggyTransactionStatus.Posted && (t.TotalInstallments == null || t.TotalInstallments <= 1)).ToListAsync(ct);
         var postings = linkIds.Count == 0 ? [] : (await db.PluggyPostings.AsNoTracking().Where(p => p.WorkspaceId == workspaceId && linkIds.Contains(p.AccountLinkId))
             .Select(p => new { p.ImportedTransactionId, p.State, p.Kind, p.AppliedAmount, p.AppliedDate }).ToListAsync(ct)).ToDictionary(p => p.ImportedTransactionId);
+        var detectedRecurrences = await db.FinancialRecurrences.AsNoTracking().Where(r => r.WorkspaceId == workspaceId
+            && r.Origin == RecurrenceOrigin.PluggyDetected && r.Status == RecurrenceStatus.Active && r.FinancialCreditCardId != null
+            && cardIds.Contains(r.FinancialCreditCardId.Value)).ToListAsync(ct);
 
         var result = new List<CardFacts>();
         foreach (var dto in dtos)
@@ -121,8 +129,22 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
                 }
             }
 
+            var recurring = new List<RecurringChargeFact>();
+            foreach (var recurrence in detectedRecurrences.Where(r => r.FinancialCreditCardId == dto.Id))
+            {
+                var occurrences = FinancialRecurrenceCalendar.CalculateOccurrences(recurrence, today, today.AddMonths(7));
+                foreach (var occurrence in occurrences)
+                {
+                    var cycle = CardCycleSchedule.Resolve(cardBills.Select(b => new PluggyBillFact(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency)).ToList(), today, dto.ClosingDay, dto.DueDay).CycleFor(occurrence.Date);
+                    var alreadyObserved = link is not null && postedSinglePurchases.Any(t => t.ConnectionId == link.ConnectionId && t.PluggyAccountId == link.PluggyAccountId
+                        && t.Status == PluggyTransactionStatus.Posted && t.Date is { } date
+                        && PluggyFinancialMapper.Normalize(t.Description ?? t.DescriptionRaw) == PluggyFinancialMapper.Normalize(recurrence.Description)
+                        && CardCycleSchedule.Resolve([], today, dto.ClosingDay, dto.DueDay).CycleFor(PluggyFinancialMapper.BusinessDate(date)).Competence == cycle.Competence);
+                    if (!alreadyObserved) recurring.Add(new(recurrence.Id, recurrence.Description, recurrence.Amount, occurrence.Date, recurrence.IsEstimated));
+                }
+            }
             result.Add(new(info, cardBills.Select(b => new PluggyBillFact(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency)).ToList(), invoiceFacts, pending, observations,
-                known.Where(k => k.CreditCardId == dto.Id).Select(k => new KnownImportedFact(k.Id, k.Amount, k.DueDate)).ToList()));
+                known.Where(k => k.CreditCardId == dto.Id).Select(k => new KnownImportedFact(k.Id, k.Amount, k.DueDate)).ToList(), recurring));
         }
         return result;
     }

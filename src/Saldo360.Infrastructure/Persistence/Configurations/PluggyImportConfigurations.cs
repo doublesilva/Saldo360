@@ -79,6 +79,8 @@ internal sealed class PluggyImportedTransactionConfiguration : IEntityTypeConfig
         b.Property(x => x.BillId).HasMaxLength(80);
         b.Property(x => x.CardLast4).HasMaxLength(4);
         b.Property(x => x.PaymentMethod).HasMaxLength(40);
+        b.Property(x => x.MerchantName).HasMaxLength(160);
+        b.Property(x => x.MerchantCategory).HasMaxLength(120);
         b.Property(x => x.Classification).HasConversion<string>().HasMaxLength(32);
         b.Property(x => x.ClassificationReason).HasMaxLength(64).IsRequired();
         b.Property(x => x.PossibleDuplicateKey).HasMaxLength(64);

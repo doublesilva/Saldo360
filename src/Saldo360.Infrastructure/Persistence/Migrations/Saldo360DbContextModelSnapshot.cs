@@ -3825,6 +3825,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("last_seen_run_id");
 
+                    b.Property<string>("MerchantCategory")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("merchant_category");
+
+                    b.Property<string>("MerchantName")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("merchant_name");
+
                     b.Property<int>("MissingSyncCount")
                         .HasColumnType("integer")
                         .HasColumnName("missing_sync_count");
@@ -4509,9 +4519,23 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("description");
 
+                    b.Property<string>("DetectionConfidence")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("detection_confidence");
+
                     b.Property<DateOnly?>("EndDate")
                         .HasColumnType("date")
                         .HasColumnName("end_date");
+
+                    b.Property<int>("EvidenceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("evidence_count");
+
+                    b.Property<string>("ExternalKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("external_key");
 
                     b.Property<Guid?>("FinancialAccountId")
                         .HasColumnType("uuid")
@@ -4539,6 +4563,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_estimated");
 
+                    b.Property<bool>("IsUserAdjusted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_user_adjusted");
+
                     b.Property<string>("Nature")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -4550,6 +4578,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.Property<int?>("OccurrenceCount")
                         .HasColumnType("integer")
                         .HasColumnName("occurrence_count");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Manual")
+                        .HasColumnName("origin");
 
                     b.Property<DateOnly>("StartDate")
                         .HasColumnType("date")
@@ -4580,6 +4616,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                     b.HasAlternateKey("WorkspaceId", "Id")
                         .HasName("ak_financial_recurrences_workspace_id_id");
+
+                    b.HasIndex("WorkspaceId", "ExternalKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_financial_recurrences_workspace_id_external_key")
+                        .HasFilter("external_key IS NOT NULL");
 
                     b.HasIndex("WorkspaceId", "FinancialAccountId")
                         .HasDatabaseName("ix_financial_recurrences_workspace_id_financial_account_id");

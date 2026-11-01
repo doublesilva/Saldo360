@@ -276,7 +276,8 @@ public sealed class PluggyTransactionSyncService(IFinancialWorkspaceRepository w
 
     internal static PluggyTransactionSnapshot ToSnapshot(PluggyTransaction t, PluggyAccount account, string accountLabel) => new(t.Id, account.Id, account.Type, accountLabel,
         t.Date, t.Amount, t.CurrencyCode, t.Description, t.DescriptionRaw, t.Type, StatusOf(t.Status), t.OperationType, t.Category,
-        t.Card?.InstallmentNumber, t.Card?.TotalInstallments, t.Card?.BillId, t.Card?.CardLast4, t.Payment?.PaymentMethod);
+        t.Card?.InstallmentNumber, t.Card?.TotalInstallments, t.Card?.BillId, t.Card?.CardLast4, t.Payment?.PaymentMethod,
+        t.Merchant?.Name ?? t.Merchant?.BusinessName, t.Merchant?.Category);
 
     private static PluggyTransactionStatus StatusOf(string? status) => status?.ToUpperInvariant() switch
     {
