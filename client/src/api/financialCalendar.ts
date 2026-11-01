@@ -42,6 +42,9 @@ export interface FinancialCalendarSummary {
   transfersReceived?: string
   transfersSent?: string
   transfersInternal?: string
+  /** Total de entradas/saídas de caixa realizadas, somados no servidor (mesma definição de Contas e Visão Geral; sem previstos). */
+  totalInflows?: string
+  totalOutflows?: string
 }
 
 export interface FinancialCalendarResponse {

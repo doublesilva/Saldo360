@@ -282,6 +282,29 @@ describe('FinancialCalendarPage — mês, calendário e compromissos', () => {
     ]) expect(within(monthlySummary).getByText(label)).toBeTruthy()
     expect(screen.getByText('Nenhum acontecimento nesta data.')).toBeTruthy()
   })
+
+  it('exibe os totais de entradas e saídas do servidor sem recalcular, com os componentes separados', async () => {
+    const summary = {
+      realizedIncome: '100.00',
+      realizedExpense: '40.00',
+      pendingIncome: '0.00',
+      pendingExpense: '0.00',
+      overdueIncome: '0.00',
+      overdueExpense: '0.00',
+      transfersReceived: '12692.00',
+      transfersSent: '0.00',
+      totalInflows: '12792.00',
+      totalOutflows: '40.00',
+    }
+    mockApi(() => Response.json(response({ summary, items: [] })))
+    render(<FinancialCalendarPage workspaceId="family-1" />)
+
+    const monthlySummary = await screen.findByLabelText('Resumo financeiro do mês')
+    expect(within(monthlySummary).getByText(/Total de entradas/).parentElement?.textContent).toMatch(/R\$\s12\.792,00/)
+    expect(within(monthlySummary).getByText(/Total de saídas/).parentElement?.textContent).toMatch(/R\$\s40,00/)
+    expect(within(monthlySummary).getByText(/Transferências recebidas/).parentElement?.textContent).toMatch(/R\$\s12\.692,00/)
+    expect(within(monthlySummary).getByText('Receitas realizadas').parentElement?.textContent).toMatch(/R\$\s100,00/)
+  })
 })
 
 describe('FinancialCalendarPage — navegação e filtros', () => {

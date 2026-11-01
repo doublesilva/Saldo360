@@ -66,18 +66,20 @@ public sealed class FinancialCalendarService(
         }
         decimal received = 0m, sent = 0m, internalMoved = 0m;
         var extra = new List<FinancialCalendarItemDto>();
+        // Conjunto da perspectiva: a conta filtrada ou, sem filtro, todas as contas do orçamento (inclusive inativas), que são as pontas de qualquer transferência.
+        IReadOnlySet<Guid> perspective = query.AccountId is { } selectedAccount
+            ? new HashSet<Guid> { selectedAccount }
+            : transfers.SelectMany(t => new[] { t.SourceAccount.Id, t.DestinationAccount.Id }).ToHashSet();
         foreach (var t in transfers)
         {
-            if (query.AccountId is { } account)
+            switch (Saldo360.Application.Transfers.TransferPerspective.Classify(t.SourceAccount.Id, t.DestinationAccount.Id, perspective))
             {
-                if (t.DestinationAccount.Id == account) { received += t.Amount; extra.Add(Item(t, true)); }
-                if (t.SourceAccount.Id == account) { sent += t.Amount; extra.Add(Item(t, false)); }
-            }
-            else
-            {
-                internalMoved += t.Amount;
-                extra.Add(Item(t, true));
-                extra.Add(Item(t, false));
+                case Saldo360.Application.Transfers.TransferRelation.Inbound: received += t.Amount; extra.Add(Item(t, true)); break;
+                case Saldo360.Application.Transfers.TransferRelation.Outbound: sent += t.Amount; extra.Add(Item(t, false)); break;
+                case Saldo360.Application.Transfers.TransferRelation.Internal:
+                    internalMoved += t.Amount; // neutralizada nos totais; continua visível nas duas pontas
+                    extra.Add(Item(t, true)); extra.Add(Item(t, false));
+                    break;
             }
         }
         // Transferências previstas pendentes (ainda não realizadas): as duas pontas na Agenda, separadas da transferência realizada.
@@ -91,6 +93,14 @@ public sealed class FinancialCalendarService(
             if (query.AccountId is null || query.AccountId == p.SourceAccount.Id) { plannedItems.Add(PlannedItem(p, status, false)); if (query.AccountId is not null) plannedSent += p.Amount; }
         }
         summary = summary with { TransfersReceived = received, TransfersSent = sent, TransfersInternal = internalMoved, PlannedTransfersReceived = plannedReceived, PlannedTransfersSent = plannedSent };
+        // Totais de CAIXA realizados (mesma definição de Contas e Visão Geral): todos os créditos e débitos efetivos (devolução entra como crédito de caixa e volta ao débito bruto,
+        // pois RealizedExpense já a abate) mais as transferências que cruzam o conjunto. Previstos e transferências previstas ficam de fora. Com filtro de tipo, transferências não entram.
+        var crossing = type is null;
+        summary = summary with
+        {
+            TotalInflows = summary.RealizedIncome + summary.RealizedRefunds + (crossing ? received : 0m),
+            TotalOutflows = summary.RealizedExpense + summary.RealizedRefunds + (crossing ? sent : 0m),
+        };
         if (query.IncludeTransfers && type is null)
         {
             items = items.Concat(extra).Concat(plannedItems).OrderBy(i => i.Date).ThenBy(i => i.Source == FinancialCalendarSource.Transfer ? 1 : 0).ThenBy(i => i.Id).ToList();

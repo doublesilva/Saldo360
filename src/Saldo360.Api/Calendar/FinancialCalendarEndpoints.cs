@@ -215,6 +215,9 @@ public sealed record FinancialCalendarSummaryResponse(
     /// <summary>Transferências previstas pendentes da conta no período (aditivo).</summary>
     public string PlannedTransfersReceived { get; init; } = "0.00";
     public string PlannedTransfersSent { get; init; } = "0.00";
+    /// <summary>Total de entradas/saídas de caixa realizadas (componentes acima somados no servidor; sem previstos).</summary>
+    public string TotalInflows { get; init; } = "0.00";
+    public string TotalOutflows { get; init; } = "0.00";
 
     public static FinancialCalendarSummaryResponse From(FinancialCalendarSummaryDto summary) => new(
         Money.Format(summary.RealizedIncome),
@@ -223,7 +226,7 @@ public sealed record FinancialCalendarSummaryResponse(
         Money.Format(summary.PendingExpense),
         Money.Format(summary.OverdueIncome),
         Money.Format(summary.OverdueExpense))
-    { RealizedRefunds = Money.Format(summary.RealizedRefunds), TransfersReceived = Money.Format(summary.TransfersReceived), TransfersSent = Money.Format(summary.TransfersSent), TransfersInternal = Money.Format(summary.TransfersInternal), PlannedTransfersReceived = Money.Format(summary.PlannedTransfersReceived), PlannedTransfersSent = Money.Format(summary.PlannedTransfersSent) };
+    { RealizedRefunds = Money.Format(summary.RealizedRefunds), TransfersReceived = Money.Format(summary.TransfersReceived), TransfersSent = Money.Format(summary.TransfersSent), TransfersInternal = Money.Format(summary.TransfersInternal), PlannedTransfersReceived = Money.Format(summary.PlannedTransfersReceived), PlannedTransfersSent = Money.Format(summary.PlannedTransfersSent), TotalInflows = Money.Format(summary.TotalInflows), TotalOutflows = Money.Format(summary.TotalOutflows) };
 }
 
 public sealed record FinancialCalendarBalancesResponse(

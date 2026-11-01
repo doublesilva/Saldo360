@@ -607,6 +607,8 @@ export function FinancialCalendarSummary({ summary }: { summary: FinancialCalend
       {summary.transfersReceived && !isZeroDecimal(summary.transfersReceived) && <SummaryValue label="Transferências recebidas (não são receita)" value={summary.transfersReceived} kind="income" />}
       {summary.transfersSent && !isZeroDecimal(summary.transfersSent) && <SummaryValue label="Transferências enviadas (não são despesa)" value={summary.transfersSent} kind="expense" />}
       {summary.transfersInternal && !isZeroDecimal(summary.transfersInternal) && <SummaryValue label="Transferências entre as contas (neutralizadas no consolidado)" value={summary.transfersInternal} kind="income" />}
+      {summary.totalInflows !== undefined && <SummaryValue label="Total de entradas (receitas + devoluções + transferências recebidas)" value={summary.totalInflows} kind="income" />}
+      {summary.totalOutflows !== undefined && <SummaryValue label="Total de saídas (despesas + devoluções abatidas + transferências enviadas)" value={summary.totalOutflows} kind="expense" />}
       <SummaryValue label="Receitas pendentes" value={summary.pendingIncome} kind="income" planned />
       <SummaryValue label="Despesas pendentes" value={summary.pendingExpense} kind="expense" planned />
       <SummaryValue label="Receitas vencidas" value={summary.overdueIncome} kind="income" overdue />

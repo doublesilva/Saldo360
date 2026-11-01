@@ -88,6 +88,10 @@ public sealed record FinancialCalendarSummaryDto(
     /// <summary>Transferências PREVISTAS pendentes do período (ainda não realizadas), separadas de receitas e despesas previstas.</summary>
     public decimal PlannedTransfersReceived { get; init; }
     public decimal PlannedTransfersSent { get; init; }
+
+    /// <summary>Total de entradas/saídas de caixa REALIZADAS do período: receitas (ou despesas brutas) + devoluções + transferências que cruzam o conjunto. Sem previstos.</summary>
+    public decimal TotalInflows { get; init; }
+    public decimal TotalOutflows { get; init; }
 }
 
 public sealed record FinancialCalendarSnapshot(
