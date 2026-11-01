@@ -40,6 +40,16 @@ public sealed class OverdraftRecoverySnapshot : Entity
         };
     }
 
+    /// <summary>Meta histórica aprovada fora do sistema (ex.: planilha), gravada exatamente como aprovada e na data em que foi registrada. Sem fator/capacidade/FixedAt: nunca é recalculada pela regra atual.</summary>
+    public static OverdraftRecoverySnapshot CreateHistorical(Guid workspaceId, Guid accountId, DateOnly competence, decimal openingBalance, DateOnly referenceDate,
+        decimal plannedClosingBalance, decimal approvedTarget, string provenance, DateTimeOffset registeredAt) =>
+        new()
+        {
+            WorkspaceId = workspaceId, AccountId = accountId, Competence = new(competence.Year, competence.Month, 1),
+            OpeningBalance = openingBalance, ReferenceDate = referenceDate, PlannedIncome = 0m, PlannedExpense = 0m,
+            PlannedClosingBalance = plannedClosingBalance, RecoveryTarget = approvedTarget, Quality = "Historical", Composition = provenance, CapturedAt = registeredAt,
+        };
+
     /// <summary>Meta fixada pela regra vigente: <c>target = round(capacity × factor, 2)</c>, gravada uma única vez (o fator fica registrado para distinguir de metas históricas).</summary>
     public static OverdraftRecoverySnapshot CreateFixed(Guid workspaceId, Guid accountId, DateOnly competence, decimal openingBalance, DateOnly referenceDate,
         decimal plannedIncome, decimal plannedExpense, decimal projectedClosingBalance, decimal capacity, decimal factor, decimal target, string quality, string composition, DateTimeOffset now) =>

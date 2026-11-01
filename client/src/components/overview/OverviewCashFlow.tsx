@@ -106,7 +106,7 @@ function RecoveryTarget({ recovery: r }: { recovery: OverviewRecovery }) {
     <div><dt>Meta de recuperação do mês</dt><dd data-unavailable={r.target === null || undefined}>{r.target === null ? 'Pendente' : money(r.target)}</dd></div>
     <div><dt>Estado da meta</dt><dd><span className={`ov-tag${r.targetState === 'Fixed' ? ' ov-tag--ok' : ' ov-tag--warning'}`}>
       {r.targetState === 'Fixed' ? 'Fixada' : r.targetState === 'Provisional' ? 'Provisória' : r.targetState === 'Pending' ? 'Pendente' : 'Não registrada'}</span></dd></div>
-    {r.targetState === 'Fixed' && fixedAt && <div><dt>Fixada em</dt><dd>{fixedAt}{r.legacyTarget ? ' (meta histórica)' : ''}</dd></div>}
+    {r.targetState === 'Fixed' && fixedAt && <div><dt>{r.legacyTarget ? 'Registrada anteriormente em' : 'Fixada em'}</dt><dd>{fixedAt}{r.legacyTarget ? ' (meta histórica)' : ''}</dd></div>}
     {r.targetState === 'Provisional' && <div><dt>Será fixada em</dt><dd>{formatDate(r.fixDate)}</dd></div>}
     {r.targetState === 'Pending' && <div><dt>Pendência</dt><dd>{r.pendingReason ? pendingText[r.pendingReason] ?? r.pendingReason : 'dados insuficientes'}</dd></div>}
   </dl>

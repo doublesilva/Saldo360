@@ -1,5 +1,6 @@
 using System.Globalization;
 using Saldo360.Application.Accounts;
+using Saldo360.Application.Dashboard.Overview;
 using Saldo360.Application.Dashboard.PlanActual;
 using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Accounts;
@@ -36,8 +37,11 @@ public sealed class OverdraftRecoveryService(IFinancialWorkspaceRepository works
         var closing = Parse(dashboard.Situation.ProjectedClosing);
         var quality = dashboard.Coverage.Complete && dashboard.SnapshotConsistent ? "Complete" : "Partial";
         var reasons = dashboard.Coverage.Reasons.Concat(overdraft.Reasons).Distinct().ToArray();
-        var snapshot = OverdraftRecoverySnapshot.Create(workspaceId, accountId, month, -openingUsed, overdraft.StartAsOf ?? month,
-            Parse(dashboard.Income.Projected), Parse(dashboard.Expenses.CashFlow.Projected), closing, quality, string.Join(",", reasons), time.GetUtcNow());
+        // Mesma regra da fixação automática da Visão Geral: meta = 80% da capacidade projetada (OverdraftRecoveryRule).
+        var capacity = OverdraftRecoveryRule.Capacity(openingUsed, closing);
+        var snapshot = OverdraftRecoverySnapshot.CreateFixed(workspaceId, accountId, month, -openingUsed, overdraft.StartAsOf ?? month,
+            Parse(dashboard.Income.Projected), Parse(dashboard.Expenses.CashFlow.Projected), closing, capacity, OverdraftRecoveryRule.TargetFactor,
+            OverdraftRecoveryRule.Target(capacity), quality, string.Join(",", reasons), time.GetUtcNow());
         await repository.AddIfAbsentAsync(snapshot, ct);
         return await GetAsync(workspaceId, userId, accountId, competence, ct);
     }
