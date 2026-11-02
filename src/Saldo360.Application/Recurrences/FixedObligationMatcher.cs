@@ -31,7 +31,7 @@ public static class FixedObligationMatcher
 
     public static bool DescriptionCompatible(string obligation, string transaction)
     {
-        var wanted = Tokens(obligation);
+        var wanted = Tokens(StripCompetenceSuffix(obligation));
         if (wanted.Count == 0) return false;
         var haystack = Normalize(transaction);
         var hits = wanted.Count(w => haystack.Contains(w, StringComparison.Ordinal));
@@ -44,6 +44,17 @@ public static class FixedObligationMatcher
         var edges = obligations.SelectMany(o => transactions.Where(t => Matches(o, t)).Select(t => (o, t))).ToList();
         return edges.Where(e => edges.Count(x => ReferenceEquals(x.o, e.o)) == 1 && edges.Count(x => x.t.Id == e.t.Id) == 1).ToList();
     }
+
+    /// <summary>Remove o sufixo administrativo de competência ("DMAE — outubro/2026", "CEEE - 10/2026"), que nunca consta na descrição bancária.</summary>
+    private static string StripCompetenceSuffix(string text)
+    {
+        var plain = new string(text.Normalize(NormalizationForm.FormD).Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray());
+        return CompetenceSuffix.Replace(plain, "");
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex CompetenceSuffix = new(
+        @"[\s\-–—:|]*\b(?:jan(?:eiro)?|fev(?:ereiro)?|mar(?:co)?|abr(?:il)?|mai(?:o)?|jun(?:ho)?|jul(?:ho)?|ago(?:sto)?|set(?:embro)?|out(?:ubro)?|nov(?:embro)?|dez(?:embro)?|\d{1,2})\s*[/\-]\s*\d{2,4}\s*$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     private static List<string> Tokens(string text) =>
         Normalize(text).Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => w.Length >= 3 && !Stop.Contains(w) && !w.All(char.IsDigit)).Distinct().ToList();

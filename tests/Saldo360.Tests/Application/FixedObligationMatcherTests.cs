@@ -79,6 +79,34 @@ public sealed class FixedObligationMatcherTests
         Assert.Empty(FixedObligationMatcher.UniquePairs([Obligation(), Obligation()], [t])); // uma movimentação para duas obrigações
     }
 
+    [Theory]
+    [InlineData("DMAE — outubro/2026", "PAGTO DMAE PORTO ALEGRE")]
+    [InlineData("CEEE — outubro/2026", "DEBITO CEEE EQUATORIAL")]
+    [InlineData("ASTTI", "PIX ASTTI ASSOCIACAO")]
+    [InlineData("DMAE - 10/2026", "DMAE")]
+    public void CompetenceSuffix_IsIgnoredWhenComparingWithBankDescription(string obligation, string bank)
+    {
+        var o = Obligation(obligation, estimated: true, planned: 200m);
+        Assert.Single(FixedObligationMatcher.UniquePairs([o], [Tx(bank, 180m)]));
+    }
+
+    [Fact]
+    public void CompetenceSuffix_DoesNotCreateMatchWithoutPayeeIdentification()
+    {
+        var o = Obligation("DMAE — outubro/2026", estimated: true);
+        Assert.False(FixedObligationMatcher.Matches(o, Tx("PIX OUTUBRO ROSA 2026", 200m)));
+        Assert.False(FixedObligationMatcher.Matches(o, Tx("PAGTO CEEE EQUATORIAL", 200m)));
+        Assert.False(FixedObligationMatcher.Matches(Obligation("outubro/2026"), Tx("PIX OUTUBRO", 200m)));
+    }
+
+    [Fact]
+    public void CompetenceSuffix_AmbiguousPayeeStillRejected()
+    {
+        var o = Obligation("DMAE — outubro/2026", estimated: true);
+        Assert.Empty(FixedObligationMatcher.UniquePairs([o], [Tx("PAGTO DMAE", 200m), Tx("DEBITO DMAE", 190m, Due.AddDays(2))]));
+        Assert.Empty(FixedObligationMatcher.UniquePairs([o, Obligation("DMAE — novembro/2026", estimated: true)], [Tx("PAGTO DMAE", 200m)]));
+    }
+
     [Fact]
     public void DifferentAccountTypeOrDateOutsideWindow_DoesNotMatch()
     {

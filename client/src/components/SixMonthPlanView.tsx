@@ -21,7 +21,7 @@ const rows: Row[] = [
   { group: 'Resultado', label: 'Realizado', cell: m => money(m.realizedResult) },
   { group: 'Obrigações', label: 'Conhecidas no mês', cell: m => money(m.knownObligations) },
   { group: 'Obrigações', label: 'Saldo projetado no fechamento', cell: m => money(m.closingBalance) },
-  { group: 'Cobertura', label: 'Das obrigações', cell: m => coverageLabels[m.coverage.obligationsCoverage] },
+  { group: 'Cobertura', label: 'Das obrigações cadastradas', cell: m => coverageLabels[m.coverage.obligationsCoverage] },
   { group: 'Cobertura', label: 'Dos dados', cell: m => m.coverage.dataComplete ? 'Completa' : 'Parcial' },
 ]
 
@@ -44,6 +44,7 @@ export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope
   const plan = visible.data
   const { summary } = plan
   const reasons = [...new Set(plan.months.flatMap(month => month.riskReasons))]
+  const withoutFutureIncome = plan.months.filter(month => month.periodKind === 'Future').some(month => /^-?0+(\.0+)?$/.test(month.projectedIncome))
   return <div className="monthly-plan">
     <p className="meta">{formatMonthYear(`${plan.from}-01`)} a {formatMonthYear(`${plan.through}-01`)} · {plan.scope.kind === 'all' ? 'Todas as contas' : plan.scope.accountName ?? 'Conta'}</p>
     <section className="monthly-plan__summary" aria-label="Resumo dos seis meses">
@@ -62,6 +63,7 @@ export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope
         </tbody>
       </table>
     </div>
+    {withoutFutureIncome && <p className="meta" role="note">A cobertura mostrada é a das obrigações cadastradas, não a do planejamento financeiro integral: há meses futuros sem receitas cadastradas, e faturas de cartão só entram quando existirem no sistema. O saldo projetado desses meses considera apenas despesas.</p>}
     {reasons.length > 0 && <section aria-label="Motivos de risco"><h5>O que sinaliza risco</h5><ul className="plan-card__notes">{plan.months.filter(month => month.riskReasons.length > 0).map(month =>
       <li key={month.competence}><strong>{formatMonthYear(`${month.competence}-01`)}:</strong> {month.riskReasons.map(reason => riskReasonText[reason] ?? reason).join(' ')}</li>)}</ul></section>}
     <p className="meta">Meses futuros mostram apenas os compromissos já conhecidos (faturas, parcelas, previsões e recorrências materializadas): nenhuma receita ou despesa é inventada para preencher o período. O plano é meta e não altera o saldo projetado da Agenda.</p>

@@ -208,6 +208,21 @@ public sealed class FixedObligationConsolidationTests(PostgresFixture postgres) 
     }
 
     [Fact]
+    public async Task Reconciler_CompetenceSuffixDescription_Links_AndLeavesThePluggyTransactionUntouched()
+    {
+        await AddRecurrenceAsync("DMAE — novembro/2026", 150m, new DateOnly(2026, 10, 10), estimated: true);
+        var payment = await AddPluggyTransactionAsync("PAGTO DMAE PORTO ALEGRE", 168.30m, new DateOnly(2026, 11, 9));
+        async Task<string> Snapshot() { await using var d = Db(); var t = await d.FinancialTransactions.AsNoTracking().SingleAsync(x => x.Id == payment.Id); return $"{t.Amount}|{t.TransactionDate}|{t.Description}|{t.IsCancelled}|{t.UpdatedAt:O}|{t.PlannedTransactionId}"; }
+        var before = await Snapshot();
+
+        await using (var db = Db()) Assert.Equal(1, await FixedObligationReconciler.ReconcileAsync(db, _ws.Id, Today, Now, default));
+
+        Assert.Equal(before, await Snapshot());
+        await using var verify = Db();
+        Assert.Equal(payment.Id, Assert.Single(await verify.FinancialObligationSettlements.ToListAsync()).FinancialTransactionId);
+    }
+
+    [Fact]
     public async Task Reconciler_AmbiguousOrPartialOrOtherOrigin_StaysForReview()
     {
         await AddRecurrenceAsync("Aluguel", 200m, new DateOnly(2026, 10, 10));

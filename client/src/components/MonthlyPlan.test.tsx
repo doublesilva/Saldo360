@@ -387,6 +387,7 @@ describe('PlanningHub — seis meses', () => {
     expect(reasons).toContain('Despesa projetada acima da planejada')
     expect(reasons).toContain('Cobertura incompleta')
     expect(text(screen.getByText(/nenhuma receita ou despesa é inventada/))).toContain('O plano é meta')
+    expect(text(screen.getByRole('note'))).toContain('não a do planejamento financeiro integral')
   })
 
   it('compartilha a conta escolhida e consulta a competência inicial informada', async () => {
