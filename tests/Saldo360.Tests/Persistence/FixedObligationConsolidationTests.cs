@@ -192,6 +192,19 @@ public sealed class FixedObligationConsolidationTests(PostgresFixture postgres) 
     }
 
     [Fact]
+    public async Task CalendarRead_EndingBeforeTheCurrentMonth_DoesNotFailOnVirtualRecurrences()
+    {
+        await AddRecurrenceAsync("Aluguel", 200m, new DateOnly(2026, 10, 10));
+        await using var db = Db();
+
+        // Painel do mês: compromissos em aberto "até o fim do mês anterior" com hoje já em novembro (início da janela virtual > fim).
+        var snapshot = await new FinancialCalendarBalanceRepository(db).ReadAsync(_ws.Id, null, NovFirst.AddDays(-1), Today, default);
+
+        Assert.NotNull(snapshot);
+        Assert.Empty(await FixedObligationReader.LoadVirtualPendingAsync(db, _ws.Id, NovFirst, NovFirst.AddDays(-1), Today, default));
+    }
+
+    [Fact]
     public async Task Reconciler_LinksOnlyUniqueMatch_IsIdempotent_AndNeverMovesAConfirmedLink()
     {
         var recurrence = await AddRecurrenceAsync("Aluguel", 200m, new DateOnly(2026, 10, 10), estimated: true);

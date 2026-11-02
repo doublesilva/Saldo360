@@ -98,7 +98,8 @@ internal static class FixedObligationReader
 
     /// <summary>Virtuais ainda pendentes (fluxo futuro). As previsões comuns vêm de <see cref="PlannedObligationQueries.PendingPlanned"/>.</summary>
     public static async Task<List<FixedObligation>> LoadVirtualPendingAsync(Saldo360DbContext db, Guid workspaceId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct) =>
-        (await LoadAsync(db, workspaceId, from, through, today, ct)).Where(i => i.IsVirtual && i.IsPendingCashFlow).ToList();
+        through < from ? [] // leitura "até o fim do mês anterior" (compromissos em aberto antes da competência) não tem janela futura
+            : (await LoadAsync(db, workspaceId, from, through, today, ct)).Where(i => i.IsVirtual && i.IsPendingCashFlow).ToList();
 
     private static DateOnly Month(DateOnly d) => new(d.Year, d.Month, 1);
 }
