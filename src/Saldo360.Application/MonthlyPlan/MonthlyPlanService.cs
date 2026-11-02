@@ -3,6 +3,7 @@ using Saldo360.Application.Accounts;
 using Saldo360.Application.Budgets;
 using Saldo360.Application.Calendar;
 using Saldo360.Application.CreditCards.Projection;
+using Saldo360.Application.Dashboard;
 using Saldo360.Application.Dashboard.PlanActual;
 using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Budgets;
@@ -19,7 +20,7 @@ namespace Saldo360.Application.MonthlyPlan;
 public sealed partial class MonthlyPlanService(
     IFinancialWorkspaceRepository workspaces, IFinancialAccountRepository accounts, IFinancialBudgetRepository budgetRepository, FinancialBudgetService budgetService,
     FinancialBudgetExecutionService budgetExecution, IMonthlyPlanRepository repository, PlanActualService dashboard, FinancialCalendarMonthlyProjectionService monthlyProjection,
-    CardProjectionService cardProjection, IPlanActualRepository planActualRepository, TimeProvider time)
+    CardProjectionService cardProjection, IPlanActualRepository planActualRepository, IOverdraftRecoveryRepository recoveryRepository, TimeProvider time)
 {
     private const int HistoryLimit = 200;
 

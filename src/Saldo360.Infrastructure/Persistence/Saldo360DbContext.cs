@@ -56,6 +56,8 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<Saldo360.Domain.Planning.FinancialPlanLine> FinancialPlanLines => Set<Saldo360.Domain.Planning.FinancialPlanLine>();
     public DbSet<Saldo360.Domain.Planning.FinancialPlanHistoryEntry> FinancialPlanHistory => Set<Saldo360.Domain.Planning.FinancialPlanHistoryEntry>();
     public DbSet<Saldo360.Domain.Planning.FinancialNonWorkingDay> FinancialNonWorkingDays => Set<Saldo360.Domain.Planning.FinancialNonWorkingDay>();
+    public DbSet<Saldo360.Domain.Planning.FinancialIncomeForecast> FinancialIncomeForecasts => Set<Saldo360.Domain.Planning.FinancialIncomeForecast>();
+    public DbSet<Saldo360.Domain.Planning.FinancialIncomeForecastMonth> FinancialIncomeForecastMonths => Set<Saldo360.Domain.Planning.FinancialIncomeForecastMonth>();
     public DbSet<Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance> FinancialBootstrapProvenance => Set<Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance>();
 
     public DbSet<FinancialCreditCard> FinancialCreditCards => Set<FinancialCreditCard>();

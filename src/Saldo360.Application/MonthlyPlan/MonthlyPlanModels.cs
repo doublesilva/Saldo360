@@ -77,7 +77,9 @@ public sealed record PlanMonthDto(
 
 public sealed record SixMonthSummaryDto(IReadOnlyList<string> HighestRiskMonths, int MonthsWithoutPlan, int MonthsWithRisk, string? PlannedResult, string ProjectedResult);
 
-public sealed record SixMonthPlanDto(string From, string Through, DateOnly AsOf, PlanActualScopeDto Scope, IReadOnlyList<PlanMonthDto> Months, SixMonthSummaryDto Summary);
+/// <summary><c>Integrated</c> (PROJ-01): receita PJ, disponibilidade, repasses PJ → PF, conta PF e recuperação do limite, sempre das contas PJ e PF (independente do escopo escolhido).</summary>
+public sealed record SixMonthPlanDto(string From, string Through, DateOnly AsOf, PlanActualScopeDto Scope, IReadOnlyList<PlanMonthDto> Months, SixMonthSummaryDto Summary,
+    IntegratedProjectionDto? Integrated = null);
 
 // ---- Pedidos ------------------------------------------------------------------------------------------------------------------------------------
 

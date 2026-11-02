@@ -30,7 +30,7 @@ describe('Responsividade e contrato visual do planejamento mensal', () => {
   })
 
   it('não implementa cálculo financeiro no navegador: nenhuma soma, arredondamento ou ponto flutuante nos componentes do módulo', () => {
-    for (const file of ['MonthlyPlanView.tsx', 'MonthlyPlanForms.tsx', 'SixMonthPlanView.tsx', 'WorkingCalendarView.tsx', 'PlanningHub.tsx', 'monthlyPlanText.ts', '../api/monthlyPlan.ts']) {
+    for (const file of ['MonthlyPlanView.tsx', 'MonthlyPlanForms.tsx', 'SixMonthPlanView.tsx', 'IntegratedProjectionView.tsx', 'IncomeForecastEditor.tsx', 'WorkingCalendarView.tsx', 'PlanningHub.tsx', 'monthlyPlanText.ts', '../api/monthlyPlan.ts']) {
       expect(read(file.startsWith('..') ? file.slice(3) : `components/${file}`), file).not.toMatch(/parseFloat|toFixed|Math\.(round|floor|ceil)|\.reduce\(/)
     }
   })

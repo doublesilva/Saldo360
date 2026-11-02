@@ -12,6 +12,7 @@ namespace Saldo360.Api.MonthlyPlan;
 /// <item><c>POST|PUT|DELETE monthly-plan/lines[/{id}]</c>: receitas, despesas e transferências previstas.</item>
 /// <item><c>PUT|DELETE monthly-plan/category-limits</c>: limite mensal por categoria.</item>
 /// <item><c>GET monthly-plan/history?competence=&amp;subjectId=</c>, <c>POST monthly-plan/copy</c>.</item>
+/// <item><c>GET|PUT monthly-plan/income-forecast</c>, <c>PUT|DELETE monthly-plan/income-forecast/months/{yyyy-MM}</c> (PROJ-01): previsão de receita PJ por horas.</item>
 /// <item><c>GET monthly-plan/working-days</c>, <c>GET monthly-plan/hourly-income</c>, <c>POST|DELETE monthly-plan/non-working-days</c>.</item>
 /// </list>
 /// </summary>
@@ -30,6 +31,10 @@ public static class MonthlyPlanEndpoints
         group.MapGet("/history", History);
         group.MapGet("/working-days", WorkingDays);
         group.MapGet("/hourly-income", HourlyIncome);
+        group.MapGet("/income-forecast", IncomeForecast);
+        group.MapPut("/income-forecast", SaveIncomeForecast).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPut("/income-forecast/months/{competence}", SaveForecastMonth).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapDelete("/income-forecast/months/{competence}", RemoveForecastMonth).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPost("/lines", CreateLine).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapPut("/lines/{lineId:guid}", ReviseLine).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapDelete("/lines/{lineId:guid}", RemoveLine).AddEndpointFilter<ValidateCsrfTokenFilter>();
@@ -90,4 +95,16 @@ public static class MonthlyPlanEndpoints
 
     private static Task<IResult> RemoveNonWorkingDay(Guid workspaceId, Guid id, string? competence, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
         Run(user, ct, userId => service.RemoveNonWorkingDayAsync(workspaceId, userId, id, competence, ct));
+
+    private static Task<IResult> IncomeForecast(Guid workspaceId, string? from, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
+        Run(user, ct, id => service.IncomeForecastAsync(workspaceId, id, from, ct));
+
+    private static Task<IResult> SaveIncomeForecast(Guid workspaceId, IncomeForecastRequest request, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
+        Run(user, ct, id => service.SaveIncomeForecastAsync(workspaceId, id, request, ct));
+
+    private static Task<IResult> SaveForecastMonth(Guid workspaceId, string competence, IncomeForecastMonthRequest request, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
+        Run(user, ct, id => service.SaveForecastMonthAsync(workspaceId, id, competence, request, ct));
+
+    private static Task<IResult> RemoveForecastMonth(Guid workspaceId, string competence, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
+        Run(user, ct, id => service.RemoveForecastMonthAsync(workspaceId, id, competence, ct));
 }

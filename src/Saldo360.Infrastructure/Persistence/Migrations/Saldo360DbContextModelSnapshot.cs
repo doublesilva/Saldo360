@@ -2743,6 +2743,135 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialIncomeForecast", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<decimal>("HourlyRate")
+                        .HasColumnType("numeric")
+                        .HasColumnName("hourly_rate");
+
+                    b.Property<decimal>("HoursPerDay")
+                        .HasColumnType("numeric")
+                        .HasColumnName("hours_per_day");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<decimal>("OperationalReserve")
+                        .HasColumnType("numeric")
+                        .HasColumnName("operational_reserve");
+
+                    b.Property<int>("PaymentDay")
+                        .HasColumnType("integer")
+                        .HasColumnName("payment_day");
+
+                    b.Property<int>("PaymentOffsetMonths")
+                        .HasColumnType("integer")
+                        .HasColumnName("payment_offset_months");
+
+                    b.Property<decimal>("TaxReservePercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("tax_reserve_percent");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_income_forecasts");
+
+                    b.HasIndex("AccountId")
+                        .HasDatabaseName("ix_financial_income_forecasts_account_id");
+
+                    b.HasIndex("WorkspaceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_income_forecasts_workspace");
+
+                    b.ToTable("financial_income_forecasts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_income_forecast_hours", "hours_per_day > 0 AND hours_per_day <= 24");
+
+                            t.HasCheckConstraint("ck_income_forecast_payment", "payment_day BETWEEN 1 AND 31 AND payment_offset_months BETWEEN 0 AND 3");
+
+                            t.HasCheckConstraint("ck_income_forecast_rate", "hourly_rate > 0 AND scale(hourly_rate) <= 2");
+
+                            t.HasCheckConstraint("ck_income_forecast_reserves", "tax_reserve_percent BETWEEN 0 AND 100 AND operational_reserve >= 0 AND scale(operational_reserve) <= 2");
+                        });
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialIncomeForecastMonth", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int?>("BillableDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("billable_days");
+
+                    b.Property<DateOnly>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<decimal?>("ExpectedAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("expected_amount");
+
+                    b.Property<bool>("IsDismissed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_dismissed");
+
+                    b.Property<DateOnly?>("PaymentDate")
+                        .HasColumnType("date")
+                        .HasColumnName("payment_date");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_income_forecast_months");
+
+                    b.HasIndex("WorkspaceId", "Competence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_income_forecast_months_workspace_competence");
+
+                    b.ToTable("financial_income_forecast_months", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_income_forecast_month_competence", "EXTRACT(DAY FROM competence) = 1");
+
+                            t.HasCheckConstraint("ck_income_forecast_month_values", "(billable_days IS NULL OR billable_days BETWEEN 0 AND 31) AND (expected_amount IS NULL OR (expected_amount >= 0 AND scale(expected_amount) <= 2))");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialNonWorkingDay", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6355,6 +6484,33 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_goal_allocations_financial_goals_workspace_id_goa");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialIncomeForecast", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Accounts.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_income_forecasts_financial_accounts_account_id");
+
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_income_forecasts_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialIncomeForecastMonth", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_income_forecast_months_financial_workspaces_works");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialNonWorkingDay", b =>

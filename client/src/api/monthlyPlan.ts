@@ -50,10 +50,31 @@ export interface PlanMonth {
   firstNegativeProjectedDate: string | null; balanceStatus: string; risk: RiskLevel; riskReasons: string[]
   coverage: { dataComplete: boolean; obligationsCoverage: 'Covered' | 'Shortfall' | 'Unknown'; reasons: string[] }
 }
+/** PROJ-01: projeção integrada das contas PJ e PF. Cada valor é calculado pelo backend; o navegador só apresenta. */
+export type IncomeSource = 'Forecast' | 'Realized' | 'Dismissed' | 'NotConfigured' | 'None'
+export interface IntegratedIncome { source: IncomeSource; workedCompetence: string | null; businessDays: number | null; billableDays: number | null; hoursPerDay: string | null; hourlyRate: string | null; expectedGross: string | null; paymentDate: string | null; realizedIncome: string; adjusted: boolean }
+export interface IntegratedPj { opening: string | null; pendingIncome: string; pendingExpense: string; taxReserve: string; taxObligationRegistered: boolean; operationalReserve: string; closing: string | null; available: string | null; suggestedTransfer: string | null }
+export interface IntegratedPf { opening: string | null; closing: string | null; entries: string; exits: string; result: string; fixedPending: string; cardsOutstanding: string; otherPending: string; transfersIn: string }
+export interface IntegratedOverdraft { limit: string | null; usedStart: string; usedEnd: string; available: string | null; excess: string; recovery: string; target: string | null; targetState: 'Fixed' | 'Provisional' | 'None'; achievementPercent: string | null }
+export interface IntegratedMonth { competence: string; periodKind: 'Past' | 'Current' | 'Future'; income: IntegratedIncome; pj: IntegratedPj; transfers: { plannedPjToPf: string; realizedPjToPf: string }; pf: IntegratedPf; overdraft: IntegratedOverdraft | null; complete: boolean; quality: string[] }
+export interface IntegratedProjection { incomeForecastActive: boolean; pjAccountId: string | null; pjAccountName: string | null; pfAccountId: string | null; pfAccountName: string | null; recoveryOverPeriod: string | null; months: IntegratedMonth[] }
 export interface SixMonthPlan {
   from: string; through: string; asOf: string; scope: PlanActualScope; months: PlanMonth[]
   summary: { highestRiskMonths: string[]; monthsWithoutPlan: number; monthsWithRisk: number; plannedResult: string | null; projectedResult: string }
+  integrated?: IntegratedProjection | null
 }
+
+export type ForecastStatus = 'Forecast' | 'Realized' | 'Dismissed'
+export interface IncomeForecastMonth {
+  workedCompetence: string; paymentDate: string; businessDays: number; billableDays: number; grossAmount: string; taxReserve: string; status: ForecastStatus; realizedAmount: string
+  daysAdjusted: boolean; amountAdjusted: boolean; dateAdjusted: boolean
+}
+export interface IncomeForecastSettings {
+  exists: boolean; isActive: boolean; accountId: string | null; accountName: string | null; hourlyRate: string; hoursPerDay: string; paymentDay: number; paymentOffsetMonths: number
+  taxReservePercent: string; operationalReserve: string; months: IncomeForecastMonth[]; accounts: { id: string; name: string; scope: string }[]
+}
+export interface IncomeForecastInput { accountId: string | null; hourlyRate: string; hoursPerDay: string; paymentDay: number; paymentOffsetMonths: number; taxReservePercent: string; operationalReserve: string; isActive: boolean }
+export interface IncomeForecastMonthInput { billableDays?: number | null; expectedAmount?: string | null; paymentDate?: string | null; isDismissed: boolean }
 
 /** Corpo de uma linha. Na receita por hora, informe valor/hora, horas por dia e dias faturáveis (o valor é calculado pelo backend) e omita `amount`. */
 export interface PlanLineInput {
@@ -118,3 +139,12 @@ export const addNonWorkingDay = (workspaceId: string, date: string, kind: NonWor
   write<NonWorkingDay>('POST', `${base(workspaceId)}/non-working-days`, { date, kind, description }, 'Falha ao cadastrar o dia.')
 export const removeNonWorkingDay = (workspaceId: string, id: string, competence: string) =>
   write<WorkingDays>('DELETE', `${base(workspaceId)}/non-working-days/${encodeURIComponent(id)}?competence=${encodeURIComponent(competence)}`, undefined, 'Falha ao remover o dia.')
+
+export const getIncomeForecast = (workspaceId: string, from: string, signal?: AbortSignal) =>
+  requestJson<IncomeForecastSettings>(`${base(workspaceId)}/income-forecast?from=${encodeURIComponent(from)}`, { ...read, signal }, { fallback: 'Falha ao carregar a previsão de receita.' })
+export const saveIncomeForecast = (workspaceId: string, input: IncomeForecastInput) =>
+  write<IncomeForecastSettings>('PUT', `${base(workspaceId)}/income-forecast`, input, 'Falha ao salvar a previsão de receita.')
+export const saveForecastMonth = (workspaceId: string, workedCompetence: string, input: IncomeForecastMonthInput) =>
+  write<IncomeForecastSettings>('PUT', `${base(workspaceId)}/income-forecast/months/${encodeURIComponent(workedCompetence)}`, input, 'Falha ao ajustar a competência.')
+export const removeForecastMonth = (workspaceId: string, workedCompetence: string) =>
+  write<IncomeForecastSettings>('DELETE', `${base(workspaceId)}/income-forecast/months/${encodeURIComponent(workedCompetence)}`, undefined, 'Falha ao restaurar o cálculo da competência.')

@@ -87,6 +87,57 @@ internal sealed class MonthlyPlanRepository(Saldo360DbContext db) : IMonthlyPlan
         return await TrySaveAsync(ct);
     }
 
+    // ---- PROJ-01 ----------------------------------------------------------------------------------------------------------------------------------
+
+    public Task<IncomeForecastView> LoadIncomeForecastAsync(Guid workspaceId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct) =>
+        IncomeForecastLoader.LoadAsync(db, workspaceId, from, through, ct);
+
+    public async Task UpsertIncomeForecastAsync(Guid workspaceId, IncomeForecastSettings s, Guid userId, DateTimeOffset now, CancellationToken ct)
+    {
+        var existing = await db.FinancialIncomeForecasts.SingleOrDefaultAsync(f => f.WorkspaceId == workspaceId, ct);
+        if (existing is null) db.FinancialIncomeForecasts.Add(FinancialIncomeForecast.Create(workspaceId, s.AccountId, s.HourlyRate, s.HoursPerDay, s.PaymentDay, s.PaymentOffsetMonths, s.TaxReservePercent, s.OperationalReserve, s.IsActive, userId, now));
+        else existing.Revise(s.AccountId, s.HourlyRate, s.HoursPerDay, s.PaymentDay, s.PaymentOffsetMonths, s.TaxReservePercent, s.OperationalReserve, s.IsActive, userId, now);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpsertForecastMonthAsync(Guid workspaceId, IncomeForecastMonthOverride a, Guid userId, DateTimeOffset now, CancellationToken ct)
+    {
+        var existing = await db.FinancialIncomeForecastMonths.SingleOrDefaultAsync(m => m.WorkspaceId == workspaceId && m.Competence == a.Competence, ct);
+        if (existing is null) db.FinancialIncomeForecastMonths.Add(FinancialIncomeForecastMonth.Create(workspaceId, a.Competence, a.BillableDays, a.ExpectedAmount, a.PaymentDate, a.IsDismissed, userId, now));
+        else existing.Revise(a.BillableDays, a.ExpectedAmount, a.PaymentDate, a.IsDismissed, userId, now);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> RemoveForecastMonthAsync(Guid workspaceId, DateOnly competence, CancellationToken ct)
+    {
+        var existing = await db.FinancialIncomeForecastMonths.SingleOrDefaultAsync(m => m.WorkspaceId == workspaceId && m.Competence == competence, ct);
+        if (existing is null) return false;
+        db.FinancialIncomeForecastMonths.Remove(existing);
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<TransferMonthFlow>> TransferFlowsAsync(Guid workspaceId, Guid sourceAccountId, Guid destinationAccountId, DateOnly from, DateOnly through, CancellationToken ct)
+    {
+        var planned = await db.FinancialPlannedTransfers.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.RealizedTransferId == null && t.SourceAccountId == sourceAccountId && t.DestinationAccountId == destinationAccountId
+                && t.DueDate >= from && t.DueDate <= through)
+            .Select(t => new { t.DueDate, t.Amount }).ToListAsync(ct);
+        var realized = await db.FinancialTransfers.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.SourceAccountId == sourceAccountId && t.DestinationAccountId == destinationAccountId
+                && t.TransferDate >= from && t.TransferDate <= through)
+            .Select(t => new { t.TransferDate, t.Amount }).ToListAsync(ct);
+        var months = planned.Select(p => new DateOnly(p.DueDate.Year, p.DueDate.Month, 1)).Concat(realized.Select(r => new DateOnly(r.TransferDate.Year, r.TransferDate.Month, 1))).Distinct();
+        return months.Select(m => new TransferMonthFlow(m,
+            planned.Where(p => p.DueDate.Year == m.Year && p.DueDate.Month == m.Month).Sum(p => p.Amount),
+            realized.Where(r => r.TransferDate.Year == m.Year && r.TransferDate.Month == m.Month).Sum(r => r.Amount))).ToList();
+    }
+
+    public async Task<IReadOnlyDictionary<DateOnly, decimal>> PendingFixedByMonthAsync(Guid workspaceId, Guid accountId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct) =>
+        (await Saldo360.Infrastructure.Recurrences.FixedObligationReader.LoadAsync(db, workspaceId, from, through, today, ct))
+            .Where(o => o.AccountId == accountId && o.Type == Saldo360.Domain.Categories.CategoryType.Expense && o.IsPendingCashFlow)
+            .GroupBy(o => new DateOnly(o.DueDate.Year, o.DueDate.Month, 1)).ToDictionary(g => g.Key, g => g.Sum(o => o.PlannedAmount));
+
     private async Task<bool> TrySaveAsync(CancellationToken ct)
     {
         try { await db.SaveChangesAsync(ct); return true; }

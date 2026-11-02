@@ -36,4 +36,21 @@ public interface IMonthlyPlanRepository
 
     /// <summary>Grava a cópia do planejamento. Falso se uma restrição de unicidade foi violada (cópia concorrente); nada é gravado.</summary>
     Task<bool> ApplyCopyAsync(CopyBatch batch, CancellationToken cancellationToken);
+
+    // ---- PROJ-01: previsão de receita PJ, transferências PJ → PF e obrigações fixas por mês --------------------------------------------------------------
+
+    /// <summary>Configuração (ativa ou não) e recebimentos previstos que caem entre <paramref name="from"/> e <paramref name="through"/>. Somente leitura.</summary>
+    Task<IncomeForecastView> LoadIncomeForecastAsync(Guid workspaceId, DateOnly from, DateOnly through, DateOnly today, CancellationToken cancellationToken);
+
+    Task UpsertIncomeForecastAsync(Guid workspaceId, IncomeForecastSettings settings, Guid userId, DateTimeOffset now, CancellationToken cancellationToken);
+    Task UpsertForecastMonthAsync(Guid workspaceId, IncomeForecastMonthOverride adjust, Guid userId, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<bool> RemoveForecastMonthAsync(Guid workspaceId, DateOnly competence, CancellationToken cancellationToken);
+
+    /// <summary>Repasses entre as duas contas por mês: previstos ainda sem transferência associada e realizados. Somente leitura.</summary>
+    Task<IReadOnlyList<TransferMonthFlow>> TransferFlowsAsync(Guid workspaceId, Guid sourceAccountId, Guid destinationAccountId, DateOnly from, DateOnly through, CancellationToken cancellationToken);
+
+    /// <summary>Despesas fixas ainda pendentes (previsão consolidada) da conta, por mês de vencimento.</summary>
+    Task<IReadOnlyDictionary<DateOnly, decimal>> PendingFixedByMonthAsync(Guid workspaceId, Guid accountId, DateOnly from, DateOnly through, DateOnly today, CancellationToken cancellationToken);
 }
+
+public sealed record TransferMonthFlow(DateOnly Month, decimal PlannedPending, decimal Realized);

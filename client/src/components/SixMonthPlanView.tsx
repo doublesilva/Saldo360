@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { getSixMonthPlan, type PlanMonth, type PlanScopeChoice, type SixMonthPlan } from '../api/monthlyPlan'
 import type { PlanActualScope } from '../api/planActual'
 import { formatMonthYear } from '../dates'
+import { IncomeForecastEditor } from './IncomeForecastEditor'
+import { IntegratedProjectionView } from './IntegratedProjectionView'
 import { OperationalError, OperationalLoading } from './OperationalFeedback'
 import { coverageLabels, money, periodLabels, plannedMoney, riskLabels, riskReasonText } from './monthlyPlanText'
 import '../MonthlyPlan.css'
@@ -63,6 +65,8 @@ export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope
         </tbody>
       </table>
     </div>
+    {plan.integrated && <IntegratedProjectionView projection={plan.integrated} />}
+    <IncomeForecastEditor workspaceId={workspaceId} from={from} onChanged={() => setReload(value => value + 1)} />
     {withoutFutureIncome && <p className="meta" role="note">A cobertura mostrada é a das obrigações cadastradas, não a do planejamento financeiro integral: há meses futuros sem receitas cadastradas, e faturas de cartão só entram quando existirem no sistema. O saldo projetado desses meses considera apenas despesas.</p>}
     {reasons.length > 0 && <section aria-label="Motivos de risco"><h5>O que sinaliza risco</h5><ul className="plan-card__notes">{plan.months.filter(month => month.riskReasons.length > 0).map(month =>
       <li key={month.competence}><strong>{formatMonthYear(`${month.competence}-01`)}:</strong> {month.riskReasons.map(reason => riskReasonText[reason] ?? reason).join(' ')}</li>)}</ul></section>}

@@ -25,6 +25,14 @@ public static class MonthlyPlanCalculator
         public const string IncompleteCoverage = "IncompleteCoverage";
     }
 
+    /// <summary>Fontes ausentes da projeção. Sem elas o fechamento é parcial: ausência de cartões ou de receita futura nunca é ausência de despesa ou de receita.</summary>
+    public static class CoverageReasons
+    {
+        public const string NoCardsRegistered = "NoCardsRegistered";
+        public const string IncomeForecastNotConfigured = "IncomeForecastNotConfigured";
+        public const string IncomeForecastDismissed = "IncomeForecastDismissed";
+    }
+
     public static class Pendencies
     {
         public const string MovementsInReview = "MovementsInReview";

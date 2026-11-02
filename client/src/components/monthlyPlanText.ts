@@ -32,6 +32,19 @@ export const riskReasonText: Record<string, string> = {
   IncompleteCoverage: 'Cobertura incompleta: parte das obrigações ainda é estimativa.',
 }
 
+/** Fontes ausentes e avisos da projeção integrada (PROJ-01): faltar cartão, receita ou fonte nunca é ausência de despesa ou de receita. */
+export const qualityText: Record<string, string> = {
+  NoCardsRegistered: 'Nenhum cartão cadastrado: faturas e compras de cartão não estão na projeção.',
+  IncomeForecastNotConfigured: 'Receita PJ sem previsão aprovada: nenhuma receita futura entra na projeção.',
+  IncomeForecastDismissed: 'A previsão deste recebimento foi descartada.',
+  CardCoverageIncomplete: 'Faturas de cartão ainda não fechadas pelo banco.',
+  DebtCoverageIncomplete: 'Parcelas de dívida sem conta responsável.',
+}
+export const incomeSourceLabels: Record<string, string> = {
+  Forecast: 'Estimativa aprovada', Realized: 'Realizada (substitui a estimativa)', Dismissed: 'Descartada', NotConfigured: 'Sem previsão aprovada', None: 'Sem recebimento no mês',
+}
+export const overdraftStateLabels: Record<string, string> = { Fixed: 'Meta fixada', Provisional: 'Meta provisória (calculada, não gravada)', None: 'Sem uso do limite na abertura' }
+
 export const sourceText: Record<string, string> = { MonthlyPlan: 'Planejamento mensal', PlannedTransactions: 'Previsões cadastradas', Budget: 'Metas por categoria', AggregateTarget: 'Meta agregada' }
 
 export const dateTime = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)} ${new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`

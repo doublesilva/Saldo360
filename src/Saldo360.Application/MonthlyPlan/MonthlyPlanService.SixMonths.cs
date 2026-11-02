@@ -38,7 +38,9 @@ public sealed partial class MonthlyPlanService
         var last = first.AddMonths(5);
         var projection = await monthlyProjection.GetAsync(workspaceId, userId, new(first, 6, selected?.Id), ct, today);
         if (projection.NotFound || projection.Projection is null) return projection.Errors is { } errors ? MonthlyPlanResult<SixMonthPlanDto>.Invalid(errors) : MonthlyPlanResult<SixMonthPlanDto>.NotFound;
-        var cards = (await cardProjection.ComputeWithBillsAsync(workspaceId, today, ct)).Where(c => selected is null || c.Projection.Card.PayerAccountId == selected.Id).ToList();
+        var allCards = await cardProjection.ComputeWithBillsAsync(workspaceId, today, ct);
+        var cards = allCards.Where(c => selected is null || c.Projection.Card.PayerAccountId == selected.Id).ToList();
+        var forecast = await repository.LoadIncomeForecastAsync(workspaceId, first, last.AddMonths(1).AddDays(-1), today, ct);
         var planFacts = await repository.LoadAsync(workspaceId, first, last, ct);
         var planAccounts = await repository.AccountsWithPlanAsync(workspaceId, first, last, ct);
 
@@ -67,6 +69,9 @@ public sealed partial class MonthlyPlanService
             if (!m.CreditCardProjectionComplete || cards.Any(c => !c.Projection.Coverage.Complete)) reasons.Add(PlanActualCalculator.Reasons.CardCoverageIncomplete);
             if (!m.DebtProjectionComplete) reasons.Add(PlanActualCalculator.Reasons.DebtCoverageIncomplete);
             if (m.UnavailableReason is { } unavailable) reasons.Add(PlanActualCalculator.Reasons.ProjectionUnavailable + ":" + unavailable);
+            // Fontes ausentes (PROJ-01): sem cartões cadastrados ou sem previsão de receita aprovada, o fechamento é parcial, nunca "completo".
+            if (allCards.Count == 0) reasons.Add(MonthlyPlanCalculator.CoverageReasons.NoCardsRegistered);
+            if (!forecast.Effective) reasons.Add(MonthlyPlanCalculator.CoverageReasons.IncomeForecastNotConfigured);
             var complete = reasons.Count == 0;
             var (risk, riskReasons) = MonthlyPlanCalculator.Risk(m.Status, m.PeriodKind, plannedExpense, projectedExpense, plannedResult, projectedResult, complete);
             minimums[key] = m.MinimumProjectedBalance;
@@ -86,7 +91,8 @@ public sealed partial class MonthlyPlanService
             MonthlyPlanCalculator.CentsOrNull(plannedResultSum), MonthlyPlanCalculator.Cents(projectedResultSum));
         var scopeDto = new PlanActualScopeDto(requested, kind, selected?.Id, selected?.Name, selected?.FinancialScope.ToString(), primary?.Id, primary?.Name,
             requested == PlanActualScopes.Primary && primary is null, PlanActualService.ScopeOptions(all, planAccounts, selected));
-        return MonthlyPlanResult<SixMonthPlanDto>.Ok(new(Key(first), Key(last), today, scopeDto, months, summary));
+        var integrated = await IntegratedAsync(workspaceId, userId, first, last, today, all, allCards.Count == 0, ct);
+        return MonthlyPlanResult<SixMonthPlanDto>.Ok(new(Key(first), Key(last), today, scopeDto, months, summary, integrated));
     }
     /// <summary>A projeção da Agenda chama o mês passado de "Historical"; o contrato do plano (e o cliente) usa Past, Current e Future, como o resto do módulo.</summary>
     private static string PlanPeriodKind(string kind) => kind == "Historical" ? "Past" : kind;
