@@ -9,7 +9,7 @@ import { OverviewEvolution } from './OverviewEvolution'
 import { OverviewBudget } from './OverviewBudget'
 import type { BudgetGroup } from '../budget/budgetText'
 import type { ExpenseNature } from '../../api/expenseNature'
-import { OverviewAccountsBlock, OverviewCommitmentsBlock, OverviewGoalsBlock, OverviewRecentBlock, OverviewTransfersBlock } from './OverviewAside'
+import { OverviewCommitmentsBlock, OverviewGoalsBlock, OverviewRecentBlock } from './OverviewAside'
 import { OverviewRecovery } from './OverviewRecovery'
 import { OverviewCashFlowSection, OverviewCompetenceSection } from './OverviewCashFlow'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
@@ -101,8 +101,6 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
       </div>
       <div className="ov-aside">
         {overviewData && <div className="ov-slot ov-slot--commitments"><OverviewCommitmentsBlock commitments={overviewData.commitments} onOpenItem={openCommitment} onOpenAgenda={() => openAgenda()} onOpenCards={() => onNavigate('cards')} /></div>}
-        {overviewData && <div className="ov-slot ov-slot--accounts"><OverviewAccountsBlock accounts={overviewData.accounts} scopeKind={overviewData.scopeKind} onOpen={() => onNavigate('accounts')} /></div>}
-        {overviewData?.transfers && <div className="ov-slot ov-slot--transfers"><OverviewTransfersBlock transfers={overviewData.transfers} scopeKind={overviewData.scopeKind} onOpen={() => onNavigate('transfers')} /></div>}
         {overviewData && <div className="ov-slot ov-slot--goals"><OverviewGoalsBlock goals={overviewData.goals} onOpen={() => onNavigate('goals')} onOpenGoal={goalId => onNavigate('goals', { goalId })} /></div>}
       </div>
     </div>

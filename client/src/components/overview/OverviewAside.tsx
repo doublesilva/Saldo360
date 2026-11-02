@@ -1,26 +1,9 @@
-import type { OverviewTransfers, OverviewAccounts, OverviewCardPayments, OverviewCommitment, OverviewCommitments, OverviewGoals, OverviewRecent } from '../../api/overview'
+import type { OverviewCardPayments, OverviewCommitment, OverviewCommitments, OverviewGoals, OverviewRecent } from '../../api/overview'
 import { formatDate } from '../../money'
 import { todayInSaoPaulo } from '../../dates'
-import { barWidth, percentNow, dayDistance, exceedsHundred, isNegative, isPositiveAmount, money, monthTitle, percentText, unavailableBalanceReasons } from './overviewText'
+import { barWidth, percentNow, dayDistance, exceedsHundred, isPositiveAmount, money, monthTitle, percentText } from './overviewText'
 
 const Unavailable = ({ children }: { children: string }) => <p className="ov-empty" role="alert">{children}</p>
-
-/** Contas: nome e saldo de cada uma. Saldo indisponível é dito como tal (nunca zero); a principal e as contas incluídas nos indicadores são identificadas. */
-export function OverviewAccountsBlock({ accounts, scopeKind, onOpen }: { accounts: OverviewAccounts; scopeKind: string; onOpen: () => void }) {
-  return <section className="ov-card" aria-labelledby="ov-accounts-title">
-    <header><div><h3 id="ov-accounts-title">Contas</h3><p className="ov-meta">Saldo em {formatDate(accounts.asOf)}{scopeKind !== 'all' ? ' · a marcada entra nos indicadores' : ''}</p></div><button type="button" onClick={onOpen}>Abrir contas</button></header>
-    {accounts.state === 'Unavailable' ? <Unavailable>Não foi possível carregar as contas.</Unavailable>
-      : accounts.items.length === 0 ? <div className="ov-empty"><p>Nenhuma conta cadastrada.</p><button type="button" onClick={onOpen}>Cadastrar conta</button></div>
-        : <ul className="ov-list">{accounts.items.map(account => <li key={account.accountId} className={account.inScope && scopeKind !== 'all' ? 'ov-list__item--selected' : undefined}>
-          <button type="button" className="ov-row" onClick={onOpen} aria-label={`${account.name}: ${account.balanceAvailable ? money(account.balance) : 'saldo indisponível'}. Abrir contas`}>
-            <span className="ov-row__main"><strong>{account.name}</strong>
-              <small>{account.scope}{account.isPrimary ? ' · Principal' : ''}{account.inScope && scopeKind !== 'all' ? ' · Selecionada' : ''}</small></span>
-            {account.balanceAvailable
-              ? <span className={`ov-amount${isNegative(account.balance) ? ' ov-amount--negative' : ''}`}>{money(account.balance)}{isNegative(account.balance) && <small> negativo</small>}</span>
-              : <span className="ov-amount ov-amount--unavailable">Saldo indisponível<small>{unavailableBalanceReasons[account.unavailableReason ?? ''] ?? unavailableBalanceReasons.Unavailable}</small></span>}
-          </button></li>)}</ul>}
-  </section>
-}
 
 function CommitmentRow({ item, onOpen }: { item: OverviewCommitment; onOpen: (item: OverviewCommitment) => void }) {
   return <li><button type="button" className="ov-row" onClick={() => onOpen(item)} aria-label={`${item.description}, ${formatDate(item.date)}, ${money(item.amount)}. Ver na Agenda`}>
@@ -103,35 +86,5 @@ export function OverviewRecentBlock({ recent, competence, scopeText, onOpenAll }
             <small>{formatDate(item.date)} · {item.categoryName ?? 'Sem categoria'}{item.awaitingClassification && <> · <span className="ov-tag ov-tag--warning">Aguardando classificação</span></>} · {item.accountName}</small></span>
           <span className={`ov-amount ov-amount--${item.type === 'Income' ? 'income' : 'expense'}`}><span className="visually-hidden">{item.type === 'Income' ? 'Receita ' : 'Despesa '}</span>{item.type === 'Income' ? '+' : '−'} {money(item.amount)}</span></div></li>)}</ul>}
     {recent.state === 'Complete' && recent.totalCount > recent.items.length && <p className="ov-meta">Mostrando {recent.items.length} de {recent.totalCount} lançamentos do período.</p>}
-  </section>
-}
-
-/**
- * Entradas e saídas do mês, com as transferências entre contas próprias sempre à parte de Receitas e Despesas (todos os valores calculados no servidor). Com uma conta no
- * escopo mostra o recebido/enviado por conta; no consolidado, o total movimentado e o líquido zero.
- */
-export function OverviewTransfersBlock({ transfers, scopeKind, onOpen }: { transfers: OverviewTransfers; scopeKind: string; onOpen: () => void }) {
-  if (transfers.state === 'Unavailable') return <section className="ov-card" aria-labelledby="ov-transfers-title"><h3 id="ov-transfers-title">Entradas e saídas do mês</h3><Unavailable>Não foi possível carregar as transferências.</Unavailable></section>
-  const consolidated = scopeKind === 'all'
-  return <section className="ov-card" aria-labelledby="ov-transfers-title">
-    <header><div><h3 id="ov-transfers-title">Entradas e saídas do mês</h3>
-      <p className="ov-meta">Transferências entre contas próprias não são receita nem despesa e movimentam o saldo das duas contas{consolidated ? '; entre as contas do consolidado elas são neutralizadas (líquido zero) e continuam nos extratos' : ''}.</p></div>
-      <button type="button" onClick={onOpen}>Abrir Transferências</button></header>
-    <dl className="ov-meta">
-      {transfers.externalIncome != null && <div><dt>Receitas de fontes externas</dt><dd>{money(transfers.externalIncome)}</dd></div>}
-      {transfers.refunds != null && transfers.refunds !== '0.00' && <div><dt>Devoluções e estornos (crédito de caixa, não são receita)</dt><dd>{money(transfers.refunds)}</dd></div>}
-      <div><dt>Transferências recebidas</dt><dd>{money(transfers.received)}</dd></div>
-      <div><dt>Transferências enviadas</dt><dd>{money(transfers.sent)}</dd></div>
-      {transfers.internalMoved != null && transfers.internalMoved !== '0.00' && <div><dt>Entre as contas deste conjunto (neutralizado)</dt><dd>{money(transfers.internalMoved)} · líquido {money(transfers.net)}</dd></div>}
-      {transfers.cashExpenses != null && <div><dt>Despesas pagas (caixa)</dt><dd>{money(transfers.cashExpenses)}</dd></div>}
-      {transfers.available != null && <div><dt>Disponível (saldo das contas)</dt><dd>{money(transfers.available)}</dd></div>}
-      {transfers.totalInflows != null && <div><dt>Total de entradas (todos os créditos efetivos)</dt><dd>{money(transfers.totalInflows)}</dd></div>}
-      {transfers.totalOutflows != null && <div><dt>Total de saídas (todos os débitos efetivos)</dt><dd>{money(transfers.totalOutflows)}</dd></div>}
-    </dl>
-    {transfers.count === 0 ? <p className="ov-empty">Nenhuma transferência neste mês.</p>
-      : <ul className="ov-list">{transfers.items.map(line => <li key={`${line.direction}:${line.counterpart}:${line.counterpart2 ?? ''}`}><span className="ov-row">
-        <span className="ov-row__main"><strong>{line.direction === 'Received' ? `Recebida de ${line.counterpart}` : line.direction === 'Sent' ? `Enviada para ${line.counterpart}` : `${line.counterpart} → ${line.counterpart2}`}</strong><small>{line.count} transferência(s)</small></span>
-        <span className="ov-amount">{money(line.amount)}</span></span></li>)}</ul>}
-    <p className="ov-meta">Cada transferência aparece como lançamento nas duas contas (Lançamentos, com “Incluir transferências”). “Desfazer vínculo” em Transferências serve apenas para corrigir um pareamento incorreto.</p>
   </section>
 }

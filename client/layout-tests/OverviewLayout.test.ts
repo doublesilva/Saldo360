@@ -19,12 +19,18 @@ describe('Responsividade da Visão Geral', () => {
     expect(css).toMatch(/\.ov-table-wrap\s*\{[^}]*overflow-x:\s*auto/)
   })
 
-  it('reorganiza em degraus (4 indicadores em linha → 2 por linha) e em uma coluna de blocos e prioriza compromissos e contas no celular', () => {
+  it('reorganiza em degraus (4 indicadores em linha → 2 por linha) e em uma coluna de blocos e prioriza compromissos no celular', () => {
     expect(css).toMatch(/@media \(max-width: 75rem\)[^}]*grid-template-columns: repeat\(2/)
     expect(css).toMatch(/@media \(max-width: 64rem\)/)
     expect(css).toMatch(/@media \(max-width: 40rem\)[\s\S]*\.ov-indicators\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/)
     expect(css).toMatch(/\.ov-slot--commitments\s*\{\s*order:\s*1/)
-    expect(css).toMatch(/\.ov-slot--accounts\s*\{\s*order:\s*2/)
+  })
+
+  it('as barras da evolução financeira não são sobrescritas por outra regra .ov-bar (altura total, coluna flex)', () => {
+    const rules = [...css.matchAll(/(?:^|\n)\.ov-bar\s*\{([^}]*)\}/g)].map(match => match[1])
+    expect(rules).toHaveLength(1)
+    expect(rules[0]).toMatch(/height:\s*100%/)
+    expect(rules[0]).toMatch(/flex-direction:\s*column/)
   })
 
   it('a recuperação do cheque especial usa só proporções e cores por faixa (sem larguras fixas nem duplicar .sr-only)', () => {

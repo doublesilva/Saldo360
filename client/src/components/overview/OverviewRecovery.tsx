@@ -77,7 +77,7 @@ function RecoveryDetails({ recovery }: { recovery: OverdraftRecovery }) {
       {recovery.aboveLimit !== null && isPositiveAmount(recovery.aboveLimit) && <div><dt>Acima do limite</dt><dd>{money(recovery.aboveLimit)}</dd></div>}
     </dl>
     {recovery.attainmentPercent !== null
-      ? <p className="meta">Atingimento da meta: {percentText(recovery.attainmentPercent)}<span className="ov-bar" aria-hidden="true"><span style={{ width: barWidth(recovery.attainmentPercent) }} /></span></p>
+      ? <p className="meta">Atingimento da meta: {percentText(recovery.attainmentPercent)}<span className="ov-attain" aria-hidden="true"><span style={{ width: barWidth(recovery.attainmentPercent) }} /></span></p>
       : <p className="meta">Meta sem valor a recuperar: comparação em reais (recuperado × meta).</p>}
     {recovery.lateReference && <p className="meta">Referência tardia: a meta foi registrada em {dateTime(recovery.capturedAt)}, depois do início do mês; a abertura usada é a de {formatDate(recovery.referenceDate)}.</p>}
     <p className="meta">Abertura de referência: {formatDate(recovery.referenceDate)} · saldo de {formatDate(recovery.balanceAsOf)} · calculado em {dateTime(recovery.updatedAt)}{recovery.reasons.length ? ' · projeção parcial' : ''}</p>

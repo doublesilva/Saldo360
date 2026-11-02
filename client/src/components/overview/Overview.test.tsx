@@ -38,32 +38,14 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const plan = (changes: Partial<PlanActualDashboard>): PlanActualDashboard => ({ ...planActual, ...changes })
 
-describe('Visão Geral — transferências entre contas', () => {
-  it('mostra o recebido por transferência à parte (de qual conta) e a frase para desfazer o vínculo, sem mexer nos indicadores', async () => {
-    mockApi({ overview: { ...overview, scopeKind: 'account', transfers: { state: 'Complete', received: '12692.00', sent: '0.00', net: '12692.00', count: 1, items: [{ direction: 'Received', counterpart: 'Itaú PJ', counterpart2: null, amount: '12692.00', count: 1 }], externalIncome: '320.00', externalExpenses: '100.00', totalInflows: '13012.00', totalOutflows: '100.00', available: '5000.00' } } })
-    renderPage()
-    const card = await screen.findByRole('region', { name: 'Entradas e saídas do mês' })
-    expect(within(card).getByText('Recebida de Itaú PJ')).toBeTruthy()
-    expect(within(card).getByText('Transferências recebidas')).toBeTruthy()
-    expect(within(card).getAllByText('R$ 12.692,00').length).toBeGreaterThan(0)
-    expect(within(card).getByText(/não são receita nem despesa e movimentam o saldo das duas contas/)).toBeTruthy()
-    expect(within(card).getByText(/apenas para corrigir um pareamento incorreto/)).toBeTruthy()
-    expect(within(card).queryByText(/pró-labore|virar receita|use “Desfazer vínculo”: o crédito volta/i)).toBeNull()
-    expect(within(card).getByText('Receitas de fontes externas')).toBeTruthy()
-    expect(within(card).getByText('Total de entradas (todos os créditos efetivos)')).toBeTruthy()
-    expect(within(card).getByText('R$ 13.012,00')).toBeTruthy()
-    expect(within(indicators().getByRole('article', { name: 'Receitas do mês' })).getByText('R$ 450,00')).toBeTruthy()
-    fireEvent.click(within(card).getByRole('button', { name: 'Abrir Transferências' }))
-    expect(navigations.at(-1)?.section).toBe('transfers')
-  })
-
-  it('no consolidado mostra o total movimentado e o líquido zero', async () => {
-    mockApi({ overview: { ...overview, scopeKind: 'all', transfers: { state: 'Complete', received: '0.00', sent: '0.00', net: '0.00', internalMoved: '500.00', count: 1, items: [{ direction: 'Between', counterpart: 'Itaú PJ', counterpart2: 'Itaú PF', amount: '500.00', count: 1 }] } } })
-    renderPage()
-    const card = await screen.findByRole('region', { name: 'Entradas e saídas do mês' })
-    expect(within(card).getByText('Itaú PJ → Itaú PF')).toBeTruthy()
-    expect(within(card).getByText(/neutralizado/)).toBeTruthy()
-    expect(within(card).getByText(/líquido R\$ 0,00/)).toBeTruthy()
+describe('Visão Geral — blocos removidos', () => {
+  it('não mostra os cards de Contas e de Entradas e saídas do mês, nem posição bancária, ponte de saldo ou transferência identificada', async () => {
+    mockApi(); renderPage()
+    await screen.findByRole('region', { name: 'Próximos compromissos' })
+    for (const name of ['Contas', 'Entradas e saídas do mês', 'Posição bancária mais recente']) expect(screen.queryByRole('region', { name })).toBeNull()
+    expect(screen.queryByText(/De onde veio o saldo/)).toBeNull()
+    expect(screen.queryByText('Ponte de saldo')).toBeNull()
+    expect(screen.queryByText('Transferência identificada')).toBeNull()
   })
 })
 
@@ -175,19 +157,6 @@ describe('Visão Geral — filtros', () => {
 })
 
 describe('Visão Geral — blocos', () => {
-  it('contas: principal identificada, saldo negativo em texto e saldo indisponível diferente de zero', async () => {
-    mockApi(); renderPage()
-    const accounts = await screen.findByRole('region', { name: 'Contas' })
-    expect(within(accounts).getByText(/PF · Principal · Selecionada/)).toBeTruthy()
-    expect(within(accounts).getByText('-R$ 150,25')).toBeTruthy()
-    expect(within(accounts).getByText('negativo')).toBeTruthy()
-    expect(within(accounts).getByText('Saldo indisponível')).toBeTruthy()
-    expect(within(accounts).getByText('Sem saldo inicial configurado')).toBeTruthy()
-    expect(within(accounts).queryByText('R$ 0,00')).toBeNull()
-    fireEvent.click(within(accounts).getByRole('button', { name: /Conta A: R\$\s3\.000,00/ }))
-    expect(navigations.at(-1)?.section).toBe('accounts')
-  })
-
   it('compromissos: vencidos separados dos próximos, com o horizonte e a abertura da Agenda no mês do item', async () => {
     mockApi(); renderPage()
     const block = await screen.findByRole('region', { name: 'Próximos compromissos' })
@@ -344,7 +313,7 @@ describe('Visão Geral — estados e falhas', () => {
     mockApi(); renderPage()
     expect(screen.getByText('Carregando indicadores…')).toBeTruthy()
     expect(await screen.findByRole('article', { name: 'Saldo atual' })).toBeTruthy()
-    expect(await screen.findByRole('region', { name: 'Contas' })).toBeTruthy()
+    expect(await screen.findByRole('region', { name: 'Próximos compromissos' })).toBeTruthy()
   })
 
   it('a falha de um bloco não derruba os outros e a recarga é só dele', async () => {
@@ -359,23 +328,20 @@ describe('Visão Geral — estados e falhas', () => {
   })
 
   it('um bloco indisponível dentro da resposta é dito como indisponível, nunca como vazio ou zero', async () => {
-    mockApi({ overview: { ...overview, accounts: { ...overview.accounts, state: 'Unavailable', items: [] }, goals: { ...overview.goals, state: 'Unavailable', items: [], activeCount: 0 },
+    mockApi({ overview: { ...overview, goals: { ...overview.goals, state: 'Unavailable', items: [], activeCount: 0 },
       commitments: { ...overview.commitments, state: 'Unavailable' }, recent: { ...overview.recent, state: 'Unavailable', items: [], totalCount: 0 }, budget: { ...overview.budget, state: 'Unavailable', hasBudget: false, fixed: null, cards: null, categories: { count: 0, planned: null, consumed: null, exceededCount: 0, approachingCount: 0, targets: [] } } } })
     renderPage()
-    expect(await screen.findByText('Não foi possível carregar as contas.')).toBeTruthy()
-    expect(screen.getByText('Não foi possível carregar as metas.')).toBeTruthy()
+    expect(await screen.findByText('Não foi possível carregar as metas.')).toBeTruthy()
     expect(screen.getByText('Não foi possível carregar os compromissos da Agenda.')).toBeTruthy()
     expect(screen.getByText('Não foi possível carregar os lançamentos.')).toBeTruthy()
     expect(screen.getByText(/Não foi possível carregar o orçamento deste mês/)).toBeTruthy()
     expect(screen.queryByText(/Nenhum orçamento definido/)).toBeNull()
   })
 
-  it('estados vazios orientam: contas, metas e lançamentos', async () => {
-    mockApi({ overview: { ...overview, accounts: { ...overview.accounts, items: [] }, goals: { ...overview.goals, items: [], activeCount: 0 }, recent: { ...overview.recent, items: [], totalCount: 0 } } })
+  it('estados vazios orientam: metas e lançamentos', async () => {
+    mockApi({ overview: { ...overview, goals: { ...overview.goals, items: [], activeCount: 0 }, recent: { ...overview.recent, items: [], totalCount: 0 } } })
     renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Cadastrar conta' }))
-    expect(navigations.at(-1)?.section).toBe('accounts')
-    fireEvent.click(screen.getByRole('button', { name: 'Criar meta' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Criar meta' }))
     expect(navigations.at(-1)?.section).toBe('goals')
   })
 

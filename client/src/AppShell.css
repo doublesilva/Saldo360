@@ -57,7 +57,6 @@
 .app-content { max-width: 100rem; margin: 0 auto; padding: 1.75rem clamp(1rem, 3vw, 3rem) 2.5rem; min-width: 0; }
 .app-content > .family-section:not(.dashboard-page) { padding: 1.5rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--surface); }
 .app-menu-toggle, .app-sidebar__close, .app-shell__scrim { display: none; }
-.page--authenticated > .api-health { margin: 0 2rem 0 17.5rem; font-size: .8rem; background: #141d2c; border-color: #2b3850; color: #a0aec4; }
 .app-shell .card { border-radius: 1rem; background: var(--surface); padding: 1.35rem; }
 .app-shell .card :is(h4, h5) { font-size: .95rem; font-weight: 600; margin: 0 0 .8rem; letter-spacing: -.015em; }
 .app-shell .operational-feedback--loading { background: var(--surface-muted); color: var(--muted); }
@@ -100,7 +99,6 @@
   .app-menu-toggle, .app-sidebar__close { display: block; }
   .app-sidebar__close { margin-left: auto; padding: .25rem .65rem; font-size: 1.3rem; }
   .app-shell__scrim { display: block; position: fixed; z-index: 25; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; background: #030711bd; }
-  .page--authenticated > .api-health { margin: 0 1rem; }
 }
 @media (max-width: 48rem) {
   .dashboard-grid--month { grid-template-columns: 1fr; }

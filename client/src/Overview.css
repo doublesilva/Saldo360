@@ -128,8 +128,6 @@
   .ov-layout { grid-template-columns: minmax(0, 1fr); }
   .ov-main, .ov-aside { display: contents; }
   .ov-slot--commitments { order: 1; }
-  .ov-slot--accounts { order: 2; }
-  .ov-slot--transfers { order: 3; }
   .ov-slot--evolution { order: 3; }
   .ov-slot--budget { order: 4; }
   .ov-slot--recent { order: 5; }
@@ -152,8 +150,8 @@
 /* Recuperação do limite: uma conta por bloco; nomes longos quebram e a barra é limitada a 100% (o texto mostra o valor real). */
 .ov-recovery__account { padding: .5rem 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
 .ov-recovery__account:first-of-type { border-top: 0; }
-.ov-bar { display: block; height: .5rem; margin-top: .25rem; background: var(--border); border-radius: .25rem; overflow: hidden; }
-.ov-bar > span { display: block; height: 100%; background: var(--accent); }
+.ov-attain { display: block; height: .5rem; margin-top: .25rem; background: var(--border); border-radius: .25rem; overflow: hidden; }
+.ov-attain > span { display: block; height: 100%; background: var(--accent); }
 
 /* Fluxo de caixa: cards em 4 colunas (desktop), 2 (<=1200px) e compactos (<=670px); ponte e transferência em 1,63fr/1fr, empilhadas em tablet. */
 .ov-cash { display: grid; gap: 1rem; margin-bottom: 1.1rem; }

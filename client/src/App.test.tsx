@@ -5,7 +5,6 @@ import App from './App'
 
 const session = vi.hoisted(() => ({ state: { kind: 'anonymous' } as SessionState }))
 vi.mock('./session', () => ({ useSession: () => ({ state: session.state, busy: false, logout: vi.fn() }) }))
-vi.mock('./api/health', () => ({ fetchHealth: vi.fn().mockResolvedValue({ status: 'Healthy', totalDurationMs: 1, checks: [] }) }))
 vi.mock('./components/PersonalFinance', () => ({ PersonalFinance: () => <p>Área financeira</p> }))
 vi.mock('./components/UserMenu', () => ({ UserMenu: () => <p>Menu</p> }))
 vi.mock('./components/InvitePage', () => ({ InvitePage: () => <p>Convite</p> }))
