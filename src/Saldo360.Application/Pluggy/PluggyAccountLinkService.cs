@@ -47,6 +47,41 @@ public sealed class PluggyAccountLinkService(
         catch (PluggyException error) { return Failure<IReadOnlyList<PluggyAvailableAccountView>>(error); }
     }
 
+    /// <summary>
+    /// PROJ-02: prévia somente leitura de um cartão da Pluggy antes do vínculo. Só consulta contas, faturas e transações (GET); não cria vínculo, cartão, compra, fatura nem
+    /// lançamento, e a conta externa só vale se pertencer ao Item deste orçamento.
+    /// </summary>
+    public async Task<PluggyResult<PluggyCardPreviewView>> PreviewCardAsync(Guid workspaceId, Guid userId, Guid connectionId, string pluggyAccountId, CancellationToken ct)
+    {
+        if (!await CanAccessAsync(workspaceId, userId, ct) || await items.FindAsync(workspaceId, connectionId, ct) is not { } connection)
+            return PluggyResult<PluggyCardPreviewView>.NotFound();
+        try
+        {
+            var account = (await client.ListAccountsAsync(connection.PluggyItemId, ct)).FirstOrDefault(a => string.Equals(a.Id, pluggyAccountId, StringComparison.Ordinal));
+            if (account is null) return PluggyResult<PluggyCardPreviewView>.NotFound();
+            if (PluggyFinancialMapper.KindOf(account.Type) is not PluggyLinkedAccountKind.Card) return PluggyResult<PluggyCardPreviewView>.Invalid("A prévia está disponível apenas para cartões de crédito.");
+
+            var bills = new List<PluggyBill>();
+            for (var page = 1; page <= Math.Max(1, options.BillMaxPages); page++)
+            {
+                var read = await client.ListBillsAsync(account.Id, page, 50, ct);
+                bills.AddRange(read.Items);
+                if (read.TotalPages is not { } total || page >= total) break;
+            }
+            var transactions = new List<PluggyTransaction>(); string? after = null; var truncated = false;
+            for (var page = 0; ; page++)
+            {
+                if (page >= Math.Max(1, options.MaxTransactionPages)) { truncated = true; break; }
+                var read = await client.ListTransactionsAsync(account.Id, null, null, after, ct);
+                transactions.AddRange(read.Items);
+                if (string.IsNullOrEmpty(read.NextCursor)) break;
+                after = read.NextCursor;
+            }
+            return PluggyResult<PluggyCardPreviewView>.Ok(PluggyCardPreview.Build(account, bills, transactions, truncated, BusinessCalendar.Today(time.GetUtcNow())));
+        }
+        catch (PluggyException error) { return Failure<PluggyCardPreviewView>(error); }
+    }
+
     // ---- Vínculo -------------------------------------------------------------------------------------------------------
 
     public async Task<PluggyResult<PluggyAccountLinkDetailView>> LinkAsync(Guid workspaceId, Guid userId, PluggyLinkRequest request, CancellationToken ct)
