@@ -35,6 +35,24 @@ As cobranças por mês são **o que o banco já informou**, não a fatura nem a 
 1. Vínculo dos 5 cartões em produção (ação do usuário, com conta pagadora e data de início por cartão).
 2. Cadastrar a meta "Todos os cartões" (R$ 5.000,00) nos orçamentos dos meses futuros: sem ela o mês mostra "Sem meta definida".
 3. Conferir, depois do vínculo e da primeira sincronização, o ciclo (fechamento) de cada cartão e as faturas de 11/2026.
+4. Melhoria visual não bloqueante (FAT-01): na Visão Geral, o valor de recuperação quebra a linha separando o sinal negativo do número; manter sinal e valor juntos (por exemplo, espaço sem quebra).
+
+## Duas leituras de fatura (FAT-01)
+
+| Endpoint | Fonte | Quando não há fatura gravada |
+|---|---|---|
+| `GET …/credit-cards/{cardId}/invoice-projection?from=yyyy-MM&months=n` | Só faturas **já gravadas** (`financial_credit_card_invoices`), filtradas por competência | Lista vazia: o nome é enganoso, não projeta |
+| `GET …/monthly-plan/six-months` (`cards`, `integrated`) | Motor de projeção de cartões (`CardProjectionRepository`/`PlanActualCalculator.Slice`): compras e parcelas pendentes da Pluggy, parcelas locais e estimativas, atribuídas ao ciclo pela data de fechamento | Calcula a fatura aberta do ciclo a partir do que o banco já informou |
+
+Competência da fatura: lançamento até o dia de fechamento (inclusive) entra na fatura que fecha naquele mês; depois, na seguinte.
+
+### Encerramento da FAT-01 (validação pós-deploy `1dc6315`): aprovado com ressalvas
+
+- Faturas e pagamentos de outubro conciliados, sem duplicidade nos pagamentos ativos verificados.
+- `monthly.projectedExpense` − `knownObligations` (R$ 1.026,91 em 11/2026) = `PendingBank`: débitos bancários **pendentes** da Pluggy, contados no consumo e fora da agenda de caixa (`integrated.pf.exits` e saldo projetado).
+- Credicard 11/2026: R$ 446,50 rastreados a seis lançamentos pendentes da Pluggy; o estorno de juros de R$ 18,05 não é abatido.
+
+Backlog: (alta) tratamento de `PendingBank` na agenda e no saldo projetado, sem omissão nem duplicidade; (normal) abatimento de créditos e estornos de cartão na competência correta (referência: Credicard, R$ 18,05); (configuração) confirmar titularidade e escopo da conta "Nubank PJ", hoje PF, sem alteração automática.
 
 ## Meta consolidada "Todos os cartões" na visão integrada
 
