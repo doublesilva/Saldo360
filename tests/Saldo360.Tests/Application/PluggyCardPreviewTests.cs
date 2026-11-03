@@ -2,6 +2,8 @@ using Saldo360.Application.Pluggy;
 
 namespace Saldo360.Tests.Application;
 
+[Trait("Category", "CORE")]
+[Trait("Area", "Cards")]
 public sealed class PluggyCardPreviewTests
 {
     private static readonly DateOnly Today = new(2026, 11, 3);
