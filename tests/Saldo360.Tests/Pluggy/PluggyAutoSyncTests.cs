@@ -59,9 +59,16 @@ public sealed class PluggyAutoSyncTests(PostgresFixture postgres) : PluggyApiTes
         return setup;
     }
 
+    private async Task<Guid> PayerAsync(Setup s)
+    {
+        var response = await Send(s.Client, HttpMethod.Post, $"/api/financial-workspaces/{s.Workspace}/accounts", s.Session, new { name = "Pagadora " + Guid.NewGuid().ToString("N")[..6], type = "Checking", financialScope = "PF" });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await JsonOf(response)).GetProperty("id").GetGuid();
+    }
+
     private async Task<JsonElement> LinkAccountAsync(Setup s, Guid connection, string account, string name, bool card = false)
     {
-        var body = card ? (object)new { connectionId = connection, pluggyAccountId = account, mode = "CreateNew", name, closingDay = 8, dueDay = 15 }
+        var body = card ? (object)new { connectionId = connection, pluggyAccountId = account, mode = "CreateNew", name, closingDay = 8, dueDay = 15, paymentAccountId = await PayerAsync(s) }
             : new { connectionId = connection, pluggyAccountId = account, mode = "CreateNew", name, financialScope = "PF" };
         var response = await Send(s.Client, HttpMethod.Post, $"/api/financial-workspaces/{s.Workspace}/pluggy-integration/links", s.Session, body);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);

@@ -16,7 +16,7 @@ const bank = card('bank-1', 'Conta corrente', { kind: 'Bank' })
 const connection = { id: 'c1', label: null, itemReference: 'item', institution: 'Banco Teste', institutionType: null, isOpenFinance: true, state: 'Healthy', status: null, executionStatus: null, lastUpdatedAt: null, consentExpiresAt: null, errorCode: null, errorMessage: null, integrationError: null, createdAt: '2026-01-01T00:00:00Z' }
 const preview = (over: Partial<CardPreview> = {}): CardPreview => ({
   accountName: 'Cartão Ouro', brand: 'VISA', creditLimit: '1000.00', availableLimit: '400.00', usedLimit: '600.00', dueDay: 13, billsRead: 2, lastBillDue: '2026-10-13', lastBillTotal: '250.00',
-  transactionsRead: 5, posted: 1, pending: 4, withInstallments: 2, bills: [], upcoming: [{ month: '2026-11', entries: 2, installments: 1, amount: '120.00' }], flags: ['AwaitingBankBill'], ...over,
+  transactionsRead: 5, posted: 1, pending: 4, withInstallments: 2, bills: [], upcoming: [{ month: '2026-11', entries: 2, installments: 1, amount: '120.00' }], flags: ['AwaitingBankBill'], cutoff: null, ...over,
 })
 
 const stub = (accounts: AvailableAccount[], previewBody: CardPreview = preview()) => {
@@ -78,5 +78,22 @@ describe('PluggyCardsPreview', () => {
     stub([bank])
     render(<PluggyCardsPreview workspaceId="w" />)
     expect(await screen.findByText(/Nenhum cartão de crédito foi identificado/)).toBeTruthy()
+  })
+
+  it('propõe 01/10/2026 como corte, envia a data na prévia e mostra o impacto sem ampliar o histórico', async () => {
+    const cutoff = { importFrom: '2026-10-01', excludedTransactions: 120, importedTransactions: 30, installmentSeriesStartedBefore: 4, installmentsInsideWindow: 11,
+      billsSpanningCutoff: [{ dueDate: '2026-10-15', bankTotal: '6806.73', fromCutoff: '5000.00', beforeCutoff: '1806.73' }] }
+    const fetchMock = stub([card('a', 'Cartão A')], preview({ cutoff, flags: ['HistoryBeforeCutoffExcluded', 'InstallmentsFromBeforeCutoff', 'BillsSpanCutoff'] }))
+    render(<PluggyCardsPreview workspaceId="w" />)
+
+    expect((await screen.findByLabelText('Data inicial de importação (proposta)') as HTMLInputElement).value).toBe('2026-10-01')
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver prévia do cartão' }))
+
+    const impact = await screen.findByLabelText('Impacto da data de corte')
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/card-preview?importFrom=2026-10-01'))).toBe(true)
+    expect(text(impact)).toContain('120 anterior(es) ficariam de fora')
+    expect(text(impact)).toContain('4 compra(s) parcelada(s) feita(s) antes do corte têm 11 parcela(s) dentro da janela')
+    expect(text(within(impact).getByRole('row', { name: /15\/10\/2026/ }))).toContain('R$ 1.806,73')
+    expect(text(screen.getByLabelText('Pontos de atenção do cartão'))).toContain('Considere um corte anterior')
   })
 })

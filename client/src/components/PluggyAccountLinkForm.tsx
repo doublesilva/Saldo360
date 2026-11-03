@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { ACCOUNT_NAME_MAX_LENGTH, accountTypeLabels, type AccountType, type FinancialAccount, type FinancialScope } from '../api/accounts'
+import { ACCOUNT_NAME_MAX_LENGTH, accountTypeLabels, isBankAccount, listAccounts, type AccountType, type FinancialAccount, type FinancialScope } from '../api/accounts'
 import { listAvailableAccounts, listIntegrationConnections, linkAccount, type AvailableAccount, type LinkMode, type LinkRequest } from '../api/pluggyIntegration'
 import type { PluggyConnection } from '../api/pluggyPoc'
 import { decimalToInput, parseAmount } from '../money'
@@ -32,11 +32,15 @@ export function PluggyAccountLinkForm({ workspaceId, manualAccounts, onLinked, o
   const [closingDay, setClosingDay] = useState('')
   const [dueDay, setDueDay] = useState('')
   const [limitText, setLimitText] = useState('')
+  // PROJ-02: o desembolso da fatura sai da conta pagadora; só contas bancárias ativas do orçamento são oferecidas e nenhuma é escolhida sozinha (nem pelo nome do cartão).
+  const [payers, setPayers] = useState<FinancialAccount[] | null>(null)
+  const [paymentAccountId, setPaymentAccountId] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
+    listAccounts(workspaceId, false, controller.signal).then(list => { if (!controller.signal.aborted) setPayers(list.filter(account => account.isActive && isBankAccount(account))) }).catch((cause: unknown) => { if (!controller.signal.aborted) setError(errorText(cause)) })
     listIntegrationConnections(workspaceId, controller.signal).then(setConnections).catch((cause: unknown) => { if (!controller.signal.aborted) setError(errorText(cause)) })
     return () => controller.abort()
   }, [workspaceId])
@@ -67,9 +71,10 @@ export function PluggyAccountLinkForm({ workspaceId, manualAccounts, onLinked, o
     const request: LinkRequest = { connectionId, pluggyAccountId: selected.pluggyAccountId, mode, importFrom: importFrom || null }
     if (mode === 'LinkExisting') request.existingAccountId = existingAccountId
     else if (isCard) {
+      if (!paymentAccountId) { setError('Selecione a conta pagadora do cartão: é dela que sairá o pagamento da fatura.'); return }
       const limit = parseAmount(limitText, 'O limite')
       if (limit.kind === 'invalid') { setError(limit.message); return }
-      request.name = name.trim(); request.closingDay = Number(closingDay) || null; request.dueDay = Number(dueDay) || null
+      request.name = name.trim(); request.closingDay = Number(closingDay) || null; request.dueDay = Number(dueDay) || null; request.paymentAccountId = paymentAccountId
       request.creditLimit = limit.kind === 'ok' ? limit.text : null
     } else { request.name = name.trim(); request.accountType = accountType; request.financialScope = scope }
     setBusy(true); setError(null)
@@ -128,6 +133,12 @@ export function PluggyAccountLinkForm({ workspaceId, manualAccounts, onLinked, o
           <input id="pluggy-due" inputMode="numeric" value={dueDay} onChange={event => setDueDay(event.target.value)} />
           <label htmlFor="pluggy-limit">Limite de crédito (R$)</label>
           <input id="pluggy-limit" inputMode="decimal" value={limitText} onChange={event => setLimitText(event.target.value)} />
+          <label htmlFor="pluggy-payer">Conta pagadora da fatura (obrigatória)</label>
+          <select id="pluggy-payer" value={paymentAccountId} onChange={event => setPaymentAccountId(event.target.value)} required>
+            <option value="">Selecione…</option>
+            {payers?.map(account => <option key={account.id} value={account.id}>{account.name} · {account.financialScope}</option>)}
+          </select>
+          {payers && payers.length === 0 && <p className="meta">Nenhuma conta bancária ativa neste orçamento. Cadastre ou integre a conta pagadora antes de vincular o cartão.</p>}
           <p className="meta">Dias e limite sugeridos pela Pluggy; confira antes de confirmar.</p>
         </>}
       </>}

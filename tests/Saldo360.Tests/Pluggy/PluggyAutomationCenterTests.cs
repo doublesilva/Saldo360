@@ -77,12 +77,19 @@ public sealed class PluggyAutomationCenterTests(PostgresFixture postgres) : Plug
 
     private async Task LinkAccountAsync(Ctx c, string account, string name, bool card = false)
     {
-        var body = card ? (object)new { connectionId = c.Connection, pluggyAccountId = account, mode = "CreateNew", name, closingDay = 8, dueDay = 15 }
+        var body = card ? (object)new { connectionId = c.Connection, pluggyAccountId = account, mode = "CreateNew", name, closingDay = 8, dueDay = 15, paymentAccountId = await PayerAsync(c) }
             : new { connectionId = c.Connection, pluggyAccountId = account, mode = "CreateNew", name, financialScope = "PF" };
         Assert.Equal(HttpStatusCode.Created, (await Post(c, $"{Integration(c.Workspace)}/links", body)).StatusCode);
     }
 
     private Task<HttpResponseMessage> Post(Ctx c, string url, object? body = null) => Send(c.Client, HttpMethod.Post, url, c.Session, body ?? new { });
+
+    private async Task<Guid> PayerAsync(Ctx c)
+    {
+        var response = await Post(c, $"/api/financial-workspaces/{c.Workspace}/accounts", new { name = "Pagadora " + Guid.NewGuid().ToString("N")[..6], type = "Checking", financialScope = "PF" });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await JsonOf(response)).GetProperty("id").GetGuid();
+    }
     private Task<HttpResponseMessage> Put(Ctx c, string url, object body) => Send(c.Client, HttpMethod.Put, url, c.Session, body);
     private Task<HttpResponseMessage> Get(Ctx c, string url) => Send(c.Client, HttpMethod.Get, url, c.Session);
 

@@ -57,3 +57,23 @@ Reutiliza a meta única `AllCards` do orçamento (R03, editável no Orçamento) 
 ## Interface da prévia ("Cartões Pluggy")
 
 Nova aba em Cartões: lista só cartões das conexões, com instituição, nome, final mascarado e status (**disponível**, **já vinculado**, **indisponível**), e carrega a prévia sob demanda. Mostra apenas o que o banco informa, com "Não informado pelo banco" no que faltar; as cobranças futuras aparecem como "o que o banco já conhece", nunca como fatura ou meta. A tela não tem ação de vínculo e só faz `GET`.
+
+## Preparação do vínculo dos cartões reais (sem aplicar nada em produção)
+
+**Conta pagadora obrigatória.** O vínculo de um cartão novo exige `paymentAccountId` no formulário e na API (`POST /pluggy-integration/links`, modo `CreateNew`). O formulário oferece só contas bancárias **ativas** do orçamento, não escolhe nenhuma sozinho e preserva fechamento, vencimento e limite sugeridos pela Pluggy. O backend valida que a conta pertence ao orçamento, está ativa e é corrente/poupança; sem ela devolve 400 e nada é criado.
+
+**Mapeamento definido pelo usuário** (nunca inferido pelo nome do cartão):
+
+| Cartão (Pluggy) | Conta pagadora |
+|---|---|
+| Itaú Empresas Visa | Itaú PJ |
+| Personnalité Mult Black | Itaú PF |
+| Credicard On Mastercard | Itaú PF |
+| Iti Itaú Visa Platinum | Itaú PF |
+| Company | **pendente de classificação** (PF ou PJ) |
+
+**Data inicial de importação.** Proposta: `2026-10-01` para os cinco cartões, editável na aba "Cartões Pluggy"; nunca é ampliada para 10/2025 sem decisão do usuário. A prévia (`?importFrom=`) mostra: lançamentos que ficam de fora; compras parceladas feitas antes do corte e quantas parcelas delas caem dentro da janela (essas parcelas chegam do banco como movimentos futuros); e faturas a partir do corte que incluem lançamentos anteriores a ele (nesses casos só o total do banco vale e a composição local fica incompleta: sinal `BillsSpanCutoff`).
+
+**Meta "Todos os cartões" (R$ 5.000,00 por mês), a aplicar depois, pelo usuário**, por competência, no Orçamento: criar o orçamento do mês (`POST /budgets` com `competence`) e adicionar a meta (`POST /budgets/{id}/targets` com `groupingType = AllCards` e `plannedAmount = 5000.00`). É uma única meta por orçamento (a API recusa a segunda e recusa meta por cartão). Ela é meta de consumo, não fatura.
+
+**Roteiro de vínculo controlado, um cartão por vez:** (1) abrir a aba "Cartões Pluggy" e conferir a prévia com o corte; (2) vincular o cartão na tela de contas, escolhendo a conta pagadora; (3) aguardar a sincronização e conferir fatura aberta/fechada, parcelas e ciclo; (4) só então o próximo cartão.

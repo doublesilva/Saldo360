@@ -85,11 +85,19 @@ public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture post
         return await JsonOf(response);
     }
 
-    private async Task<JsonElement> LinkCardAsync(Ctx c, int closingDay, int dueDay, string name = "Cartão Itaú")
+    /// <summary>PROJ-02: o vínculo de um cartão novo exige a conta pagadora; os testes usam uma conta manual própria.</summary>
+    private async Task<Guid> PayerAsync(Ctx c)
+    {
+        var response = await PostAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts", new { name = "Pagadora " + Guid.NewGuid().ToString("N")[..6], type = "Checking", financialScope = "PF" });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await JsonOf(response)).GetProperty("id").GetGuid();
+    }
+
+    private async Task<JsonElement> LinkCardAsync(Ctx c, int closingDay, int dueDay, string name = "Cartão Itaú", Guid? payer = null)
     {
         var response = await PostAsync(c, $"{Integration(c.Workspace)}/links", new
         {
-            connectionId = c.Connection, pluggyAccountId = CardA, mode = "CreateNew", name, closingDay, dueDay,
+            connectionId = c.Connection, pluggyAccountId = CardA, mode = "CreateNew", name, closingDay, dueDay, paymentAccountId = payer ?? await PayerAsync(c),
         });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return await JsonOf(response);
@@ -1496,7 +1504,7 @@ public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture post
         Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 190m), Tx("salary", BankA, 12, 1200m, operation: "OUTROS", description: "SALARIO", category: "Salary")];
         SeedCycle(190m, payments: [(190m, 10)], extra: [Tx("refund", CardA, 12, 40m, operation: "ESTORNO", description: "ESTORNO", card: OnBill("bill-1"), type: "CREDIT", category: "Shopping")]);
         var bank = await LinkBankAsync(c);
-        await LinkCardAsync(c, 3, 12);
+        await LinkCardAsync(c, 3, 12, payer: bank.GetProperty("link").GetProperty("financialAccountId").GetGuid()); // a própria conta bancária paga a fatura: nenhuma conta extra sem saldo de referência entra no total
         await SyncAsync(c);
 
         var from = Today.AddDays(-40); var through = Today;

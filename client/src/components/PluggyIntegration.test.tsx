@@ -12,6 +12,9 @@ const api = vi.hoisted(() => ({
   confirmTransfer: vi.fn(), rejectTransfer: vi.fn(), previewRecovery: vi.fn(), confirmRefund: vi.fn(),
 }))
 vi.mock('../api/pluggyIntegration', () => api)
+const accountsApi = vi.hoisted(() => ({ listAccounts: vi.fn() }))
+vi.mock('../api/accounts', async importOriginal => ({ ...(await importOriginal<typeof import('../api/accounts')>()), listAccounts: accountsApi.listAccounts }))
+const payer = (id: string, name: string, over: Partial<FinancialAccount> = {}) => ({ id, name, type: 'Checking', financialScope: 'PF', isActive: true, ...over }) as FinancialAccount
 
 const connection = { id: 'conn-1', label: 'Itaú PF', institution: 'Itaú', itemReference: 'aaaaaaaa…' } as PluggyConnection
 const bank: AvailableAccount = {
@@ -44,6 +47,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   api.listIntegrationConnections.mockResolvedValue([connection])
   api.listAvailableAccounts.mockResolvedValue([bank, card, linked])
+  accountsApi.listAccounts.mockResolvedValue([payer('pf', 'Itaú PF'), payer('pj', 'Itaú PJ', { financialScope: 'PJ' }), payer('old', 'Conta antiga', { isActive: false }), payer('cash', 'Carteira', { type: 'Cash' })])
 })
 afterEach(cleanup)
 
@@ -108,10 +112,26 @@ describe('PluggyAccountLinkForm', () => {
 
     expect((screen.getByLabelText('Dia de fechamento da fatura') as HTMLInputElement).value).toBe('10')
     expect((screen.getByLabelText('Dia de vencimento da fatura') as HTMLInputElement).value).toBe('17')
+    fireEvent.change(screen.getByLabelText(/Conta pagadora da fatura/), { target: { value: 'pf' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar e vincular' }))
 
     await waitFor(() => expect(api.linkAccount).toHaveBeenCalled())
-    expect(api.linkAccount.mock.calls[0][1]).toMatchObject({ pluggyAccountId: 'acc-card', mode: 'CreateNew', closingDay: 10, dueDay: 17, creditLimit: '5000.00' })
+    expect(api.linkAccount.mock.calls[0][1]).toMatchObject({ pluggyAccountId: 'acc-card', mode: 'CreateNew', closingDay: 10, dueDay: 17, paymentAccountId: 'pf', creditLimit: '5000.00' })
+  })
+
+  it('cartão novo exige a conta pagadora: só contas bancárias ativas, nenhuma escolhida sozinha, e sem ela nada é enviado', async () => {
+    render(<PluggyAccountLinkForm workspaceId="w1" manualAccounts={[]} onLinked={vi.fn()} onCancel={vi.fn()} />)
+    await screen.findByRole('option', { name: /Itaú PF/ })
+    fireEvent.change(screen.getByLabelText('Conexão (Item)'), { target: { value: 'conn-1' } })
+    fireEvent.click(await screen.findByRole('radio', { name: /Cartão ••••2222/ }))
+
+    const select = screen.getByLabelText(/Conta pagadora da fatura/) as HTMLSelectElement
+    expect(select.value).toBe('')
+    expect(Array.from(select.options).map(option => option.textContent)).toEqual(['Selecione…', 'Itaú PF · PF', 'Itaú PJ · PJ'])
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e vincular' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Selecione a conta pagadora')
+    expect(api.linkAccount).not.toHaveBeenCalled()
   })
 
   it('mostra o erro da API (ex.: vínculo duplicado) sem fechar o formulário', async () => {

@@ -52,4 +52,57 @@ public sealed class PluggyCardPreviewTests
         Assert.DoesNotContain("SECRETA", json);
         Assert.DoesNotContain("5555444433332222", json);
     }
+
+    private static PluggyTransaction Installment(string date, decimal amount, int number, int total, string description, string? purchase = null, string? billId = null) =>
+        new("i-" + date + description, "acc", At(date), description, null, amount, null, "BRL", "DEBIT", At(date).Date > At("2026-11-03").Date ? "PENDING" : "POSTED", null, null, null, null, null, null,
+            new(number, total, null, purchase is null ? null : At(purchase), billId, null, null, null), null);
+
+    [Fact]
+    public void TheCutoffReportsWhatStaysOutAndInstallmentsOfOlderPurchasesInsideTheWindow()
+    {
+        var cutoff = new DateOnly(2026, 10, 1);
+        var transactions = new[]
+        {
+            Installment("2026-08-10", 100m, 1, 4, "SOFA 01/04", purchase: "2026-08-10"),   // antes do corte: fora
+            Installment("2026-09-10", 100m, 2, 4, "SOFA 02/04", purchase: "2026-08-10"),   // antes do corte: fora
+            Installment("2026-10-10", 100m, 3, 4, "SOFA 03/04", purchase: "2026-08-10"),   // dentro da janela
+            Installment("2026-11-10", 100m, 4, 4, "SOFA 04/04", purchase: "2026-08-10"),   // dentro da janela
+            Installment("2026-10-20", 50m, 1, 2, "TV 01/02", purchase: "2026-10-20"),      // compra nova: não conta como anterior
+            Tx("2026-10-25", 30m),
+        };
+
+        var view = PluggyCardPreview.Build(Account(), [], transactions, false, Today, cutoff);
+
+        var result = view.Cutoff!;
+        Assert.Equal((cutoff, 2, 4), (result.ImportFrom, result.ExcludedTransactions, result.ImportedTransactions));
+        Assert.Equal((1, 2), (result.InstallmentSeriesStartedBefore, result.InstallmentsInsideWindow));
+        Assert.Contains("HistoryBeforeCutoffExcluded", view.Flags);
+        Assert.Contains("InstallmentsFromBeforeCutoff", view.Flags);
+    }
+
+    [Fact]
+    public void ABillThatMixesPurchasesBeforeAndAfterTheCutoffIsReportedWithBothParts()
+    {
+        var cutoff = new DateOnly(2026, 10, 1);
+        var bill = new PluggyBill("bill-oct", At("2026-10-13"), 300m, "BRL", null, null, [], null, []);
+        var transactions = new[]
+        {
+            Installment("2026-09-20", 120m, 1, 1, "COMPRA A", billId: "bill-oct"),
+            Installment("2026-10-02", 180m, 1, 1, "COMPRA B", billId: "bill-oct"),
+        };
+
+        var view = PluggyCardPreview.Build(Account(), [bill], transactions, false, Today, cutoff);
+
+        var spanning = Assert.Single(view.Cutoff!.BillsSpanningCutoff);
+        Assert.Equal((new DateOnly(2026, 10, 13), "300.00", "180.00", "120.00"), (spanning.DueDate, spanning.BankTotal, spanning.FromCutoff, spanning.BeforeCutoff));
+        Assert.Contains("BillsSpanCutoff", view.Flags);
+    }
+
+    [Fact]
+    public void WithoutACutoffNothingIsReportedAboutIt()
+    {
+        var view = PluggyCardPreview.Build(Account(), [], [Tx("2026-09-01", 10m)], false, Today);
+        Assert.Null(view.Cutoff);
+        Assert.DoesNotContain("HistoryBeforeCutoffExcluded", view.Flags);
+    }
 }

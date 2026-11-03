@@ -13,6 +13,9 @@ const flagText: Record<string, string> = {
   FractionalBillCents: 'Há faturas com frações de centavo; o total do banco é mantido como informado.',
   CreditBill: 'Há fatura com total negativo (crédito).',
   TransactionsTruncated: 'A leitura de compras foi interrompida por limite de páginas: os dados podem estar incompletos.',
+  HistoryBeforeCutoffExcluded: 'Há lançamentos anteriores à data de corte que não serão importados.',
+  InstallmentsFromBeforeCutoff: 'Há compras parceladas feitas antes do corte cujas parcelas futuras estão dentro da janela: elas virão do banco nos movimentos a partir do corte.',
+  BillsSpanCutoff: 'Há faturas que incluem lançamentos anteriores ao corte: a composição local ficará incompleta e só o total informado pelo banco valerá. Considere um corte anterior.',
 }
 
 type Status = { label: string; tone: 'available' | 'linked' | 'unavailable' }
@@ -25,7 +28,11 @@ const statusOf = (account: AvailableAccount): Status =>
  * Cartões identificados pela Pluggy (PROJ-02). Somente leitura: lista os cartões das conexões e, sob demanda, mostra o que o banco informa (limite, faturas e cobranças
  * futuras). Não vincula, não cria cartão e não importa nada; só mostra o que o provedor devolveu e diz o que não veio.
  */
+/** Proposta inicial de corte do histórico; o usuário pode alterar. Nunca é ampliada automaticamente. */
+export const PROPOSED_IMPORT_FROM = '2026-10-01'
+
 export function PluggyCardsPreview({ workspaceId }: { workspaceId: string }) {
+  const [importFrom, setImportFrom] = useState(PROPOSED_IMPORT_FROM)
   const [accounts, setAccounts] = useState<{ connection: PluggyConnection; items: AvailableAccount[] }[] | null>(null)
   const [error, setError] = useState<unknown>(null)
 
@@ -45,16 +52,19 @@ export function PluggyCardsPreview({ workspaceId }: { workspaceId: string }) {
     <h3 id="pluggy-cards-title">Cartões identificados pela Pluggy</h3>
     <p className="meta">Somente leitura: esta tela não vincula nem cria cartões e não importa compras. Para vincular, use o cadastro de contas e cartões.</p>
     {cards.length === 0 && <p className="meta">Nenhum cartão de crédito foi identificado nas conexões.</p>}
-    <ul className="pluggy-cards__list">{cards.map(({ connection, account }) => <CardEntry key={account.pluggyAccountId} workspaceId={workspaceId} connection={connection} account={account} />)}</ul>
+    <label htmlFor="pluggy-cutoff">Data inicial de importação (proposta)</label>
+    <input id="pluggy-cutoff" type="date" value={importFrom} onChange={event => setImportFrom(event.target.value)} />
+    <p className="meta">Compras anteriores a esta data não seriam importadas. As prévias abaixo mostram o impacto; nada é importado nem vinculado.</p>
+    <ul className="pluggy-cards__list">{cards.map(({ connection, account }) => <CardEntry key={`${account.pluggyAccountId}|${importFrom}`} workspaceId={workspaceId} connection={connection} account={account} importFrom={importFrom} />)}</ul>
   </section>
 }
 
-function CardEntry({ workspaceId, connection, account }: { workspaceId: string; connection: PluggyConnection; account: AvailableAccount }) {
+function CardEntry({ workspaceId, connection, account, importFrom }: { workspaceId: string; connection: PluggyConnection; account: AvailableAccount; importFrom: string }) {
   const [state, setState] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'error'; error: unknown } | { kind: 'ready'; preview: CardPreview }>({ kind: 'idle' })
   const status = statusOf(account)
   const open = () => {
     setState({ kind: 'loading' })
-    getCardPreview(workspaceId, connection.id, account.pluggyAccountId).then(preview => setState({ kind: 'ready', preview })).catch((cause: unknown) => setState({ kind: 'error', error: cause }))
+    getCardPreview(workspaceId, connection.id, account.pluggyAccountId, importFrom || null).then(preview => setState({ kind: 'ready', preview })).catch((cause: unknown) => setState({ kind: 'error', error: cause }))
   }
   const last4 = account.maskedNumber?.replace(/\D/g, '').slice(-4)
   return <li className="pluggy-cards__item">
@@ -78,6 +88,7 @@ function PreviewDetails({ preview }: { preview: CardPreview }) {
       <div><dt>Última fatura</dt><dd>{preview.lastBillDue === null || preview.lastBillTotal === null ? 'Nenhuma devolvida' : `${formatDate(preview.lastBillDue)} · ${money(preview.lastBillTotal)}`}</dd></div>
     </dl>
     <p className="meta">Compras lidas: {preview.transactionsRead} ({preview.posted} efetivadas, {preview.pending} pendentes, {preview.withInstallments} parceladas) · faturas lidas: {preview.billsRead}.</p>
+    {preview.cutoff && <CutoffImpact cutoff={preview.cutoff} />}
     {preview.flags.length > 0 && <ul className="plan-card__notes" aria-label="Pontos de atenção do cartão">{preview.flags.map(flag => <li key={flag}>{flagText[flag] ?? flag}</li>)}</ul>}
     {preview.upcoming.length > 0
       ? <table className="monthly-plan__table"><caption>Cobranças já conhecidas pelo banco (não é a fatura nem a meta)</caption>
@@ -85,4 +96,15 @@ function PreviewDetails({ preview }: { preview: CardPreview }) {
         <tbody>{preview.upcoming.map(row => <tr key={row.month}><th scope="row">{formatMonthYear(`${row.month}-01`)}</th><td>{row.entries}</td><td>{row.installments}</td><td>{money(row.amount)}</td></tr>)}</tbody></table>
       : <p className="meta">O banco não informou cobranças futuras para este cartão. Isso não significa gasto zero.</p>}
   </div>
+}
+
+function CutoffImpact({ cutoff }: { cutoff: NonNullable<CardPreview['cutoff']> }) {
+  return <section aria-label="Impacto da data de corte" className="pluggy-cards__cutoff">
+    <h5>Impacto do corte em {formatDate(cutoff.importFrom)}</h5>
+    <p className="meta">{cutoff.importedTransactions} lançamento(s) a partir do corte seriam importados; {cutoff.excludedTransactions} anterior(es) ficariam de fora.
+      {' '}{cutoff.installmentSeriesStartedBefore} compra(s) parcelada(s) feita(s) antes do corte têm {cutoff.installmentsInsideWindow} parcela(s) dentro da janela.</p>
+    {cutoff.billsSpanningCutoff.length > 0 && <table className="monthly-plan__table"><caption>Faturas que misturam lançamentos de antes e depois do corte</caption>
+      <thead><tr><th scope="col">Vencimento</th><th scope="col">Total do banco</th><th scope="col">A partir do corte</th><th scope="col">Antes do corte</th></tr></thead>
+      <tbody>{cutoff.billsSpanningCutoff.map(bill => <tr key={bill.dueDate}><th scope="row">{formatDate(bill.dueDate)}</th><td>{money(bill.bankTotal)}</td><td>{money(bill.fromCutoff)}</td><td>{money(bill.beforeCutoff)}</td></tr>)}</tbody></table>}
+  </section>
 }

@@ -126,13 +126,16 @@ export const listAvailableAccounts = (workspaceId: string, connectionId: string,
 /** PROJ-02: prévia somente leitura de um cartão da Pluggy, antes de qualquer vínculo. Valores como texto decimal exato; nada é gravado. */
 export interface CardPreviewBill { dueDate: string | null; closingDate: string | null; total: string; minimum: string | null; isCredit: boolean; hasFractionalCents: boolean }
 export interface CardPreviewMonth { month: string; entries: number; installments: number; amount: string }
+export interface CardPreviewCutoffBill { dueDate: string; bankTotal: string; fromCutoff: string; beforeCutoff: string }
+/** Impacto da data inicial de importação: o que fica de fora, parcelas de compras anteriores dentro da janela e faturas que misturam lançamentos de antes e depois do corte. */
+export interface CardPreviewCutoff { importFrom: string; excludedTransactions: number; importedTransactions: number; installmentSeriesStartedBefore: number; installmentsInsideWindow: number; billsSpanningCutoff: CardPreviewCutoffBill[] }
 export interface CardPreview {
   accountName: string; brand: string | null; creditLimit: string | null; availableLimit: string | null; usedLimit: string | null; dueDay: number | null
   billsRead: number; lastBillDue: string | null; lastBillTotal: string | null; transactionsRead: number; posted: number; pending: number; withInstallments: number
-  bills: CardPreviewBill[]; upcoming: CardPreviewMonth[]; flags: string[]
+  bills: CardPreviewBill[]; upcoming: CardPreviewMonth[]; flags: string[]; cutoff: CardPreviewCutoff | null
 }
-export const getCardPreview = (workspaceId: string, connectionId: string, pluggyAccountId: string, signal?: AbortSignal) =>
-  get<CardPreview>(`${base(workspaceId)}/connections/${encodeURIComponent(connectionId)}/accounts/${encodeURIComponent(pluggyAccountId)}/card-preview`, 'Falha ao consultar a prévia do cartão na Pluggy.', signal)
+export const getCardPreview = (workspaceId: string, connectionId: string, pluggyAccountId: string, importFrom?: string | null, signal?: AbortSignal) =>
+  get<CardPreview>(`${base(workspaceId)}/connections/${encodeURIComponent(connectionId)}/accounts/${encodeURIComponent(pluggyAccountId)}/card-preview${importFrom ? `?importFrom=${encodeURIComponent(importFrom)}` : ''}`, 'Falha ao consultar a prévia do cartão na Pluggy.', signal)
 
 export const listLinks = (workspaceId: string, signal?: AbortSignal) =>
   get<AccountLink[]>(`${base(workspaceId)}/links`, 'Falha ao carregar as integrações.', signal)

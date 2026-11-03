@@ -67,9 +67,9 @@ public static class PluggyFinancialEndpoints
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
         : PluggyPocEndpoints.Map(await service.ListAvailableAsync(workspaceId, userId, connectionId, ct), Results.Ok);
 
-    private static async Task<IResult> CardPreview(Guid workspaceId, Guid connectionId, string pluggyAccountId, CurrentUser user, PluggyAccountLinkService service, CancellationToken ct) =>
+    private static async Task<IResult> CardPreview(Guid workspaceId, Guid connectionId, string pluggyAccountId, DateOnly? importFrom, CurrentUser user, PluggyAccountLinkService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized()
-        : PluggyPocEndpoints.Map(await service.PreviewCardAsync(workspaceId, userId, connectionId, pluggyAccountId, ct), Results.Ok);
+        : PluggyPocEndpoints.Map(await service.PreviewCardAsync(workspaceId, userId, connectionId, pluggyAccountId, importFrom, ct), Results.Ok);
 
     /// <summary>Monitoramento da sincronização por conexão (última tentativa e sucesso, próxima execução, contagens, erro resumido, consentimento). Só lê o banco: não consulta a Pluggy.</summary>
     private static async Task<IResult> SyncStatus(Guid workspaceId, CurrentUser user, PluggySyncMonitorService service, CancellationToken ct) =>

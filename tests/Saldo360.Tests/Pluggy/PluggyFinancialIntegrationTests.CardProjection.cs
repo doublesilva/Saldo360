@@ -262,7 +262,7 @@ public sealed partial class PluggyFinancialIntegrationTests
         Assert.Equal("77.00", Money(InvoiceOf(overview, Competence(NextClosing)), "obligation"));
         var reasons = card.GetProperty("coverage").GetProperty("reasons").EnumerateArray().Select(x => x.GetString()).ToList();
         Assert.Contains("NoBankHistory", reasons);
-        Assert.Contains("MissingPayerAccount", reasons);
+        Assert.DoesNotContain("MissingPayerAccount", reasons); // PROJ-02: o vínculo de um cartão novo exige a conta pagadora
         Assert.False(card.GetProperty("coverage").GetProperty("complete").GetBoolean());
         Assert.False(card.GetProperty("schedule").GetProperty("strong").GetBoolean());
         _ = cardLink;

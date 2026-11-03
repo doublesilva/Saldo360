@@ -51,12 +51,13 @@ public sealed class PluggyAccountLinkService(
     /// PROJ-02: prévia somente leitura de um cartão da Pluggy antes do vínculo. Só consulta contas, faturas e transações (GET); não cria vínculo, cartão, compra, fatura nem
     /// lançamento, e a conta externa só vale se pertencer ao Item deste orçamento.
     /// </summary>
-    public async Task<PluggyResult<PluggyCardPreviewView>> PreviewCardAsync(Guid workspaceId, Guid userId, Guid connectionId, string pluggyAccountId, CancellationToken ct)
+    public async Task<PluggyResult<PluggyCardPreviewView>> PreviewCardAsync(Guid workspaceId, Guid userId, Guid connectionId, string pluggyAccountId, DateOnly? importFrom, CancellationToken ct)
     {
         if (!await CanAccessAsync(workspaceId, userId, ct) || await items.FindAsync(workspaceId, connectionId, ct) is not { } connection)
             return PluggyResult<PluggyCardPreviewView>.NotFound();
         try
         {
+            if (importFrom is { } cutoff && cutoff > BusinessCalendar.Today(time.GetUtcNow())) return PluggyResult<PluggyCardPreviewView>.Invalid("A data de início da importação não pode ser futura.");
             var account = (await client.ListAccountsAsync(connection.PluggyItemId, ct)).FirstOrDefault(a => string.Equals(a.Id, pluggyAccountId, StringComparison.Ordinal));
             if (account is null) return PluggyResult<PluggyCardPreviewView>.NotFound();
             if (PluggyFinancialMapper.KindOf(account.Type) is not PluggyLinkedAccountKind.Card) return PluggyResult<PluggyCardPreviewView>.Invalid("A prévia está disponível apenas para cartões de crédito.");
@@ -77,7 +78,7 @@ public sealed class PluggyAccountLinkService(
                 if (string.IsNullOrEmpty(read.NextCursor)) break;
                 after = read.NextCursor;
             }
-            return PluggyResult<PluggyCardPreviewView>.Ok(PluggyCardPreview.Build(account, bills, transactions, truncated, BusinessCalendar.Today(time.GetUtcNow())));
+            return PluggyResult<PluggyCardPreviewView>.Ok(PluggyCardPreview.Build(account, bills, transactions, truncated, BusinessCalendar.Today(time.GetUtcNow()), importFrom));
         }
         catch (PluggyException error) { return Failure<PluggyCardPreviewView>(error); }
     }
@@ -142,6 +143,8 @@ public sealed class PluggyAccountLinkService(
         }
         else
         {
+            // PROJ-02: o desembolso da fatura sai da conta pagadora; sem ela a projeção não sabe de onde o dinheiro sai. Por isso o vínculo de um cartão novo a exige.
+            if (request.PaymentAccountId is null || request.PaymentAccountId == Guid.Empty) errors.Add("Selecione a conta pagadora do cartão.");
             var suggestion = CardSuggestion(account);
             newCard = CreditCardDetails.TryCreate(request.Name ?? SuggestedName(account), Clip(item.ConnectorName, FinancialCreditCard.IssuerMaxLength) ?? "Cartão", LastFour(account.Number), null,
                 request.CreditLimit ?? account.Credit?.CreditLimit ?? 0m, request.ClosingDay ?? suggestion.ClosingDay, request.DueDay ?? suggestion.DueDay,

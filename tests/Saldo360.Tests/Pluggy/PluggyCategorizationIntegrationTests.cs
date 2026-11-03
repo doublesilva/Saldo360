@@ -68,6 +68,13 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
 
     private Task<HttpResponseMessage> PostAsync(Ctx c, string url, object? body = null) => Send(c.Client, HttpMethod.Post, url, c.Session, body ?? new { });
 
+    private async Task<Guid> PayerAsync(Ctx c)
+    {
+        var response = await PostAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts", new { name = "Pagadora " + Guid.NewGuid().ToString("N")[..6], type = "Checking", financialScope = "PF" });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await JsonOf(response)).GetProperty("id").GetGuid();
+    }
+
     private async Task<JsonElement> LinkBankAsync(Ctx c)
     {
         var response = await PostAsync(c, $"{Integration(c.Workspace)}/links", new { connectionId = c.Connection, pluggyAccountId = BankA, mode = "CreateNew", name = "Itaú corrente", financialScope = "PF" });
@@ -376,7 +383,7 @@ public sealed class PluggyCategorizationIntegrationTests(PostgresFixture postgre
             Tx("c1", CardA, 20, 150m, "PAGAMENTO", "Restaurante", "Eating out", new(null, null, null, null, billId, "2222", null, null), "DEBIT"),
             Tx("c2", CardA, 19, 50m, "PAGAMENTO", "Coisa", "Strange", new(null, null, null, null, billId, "2222", null, null), "DEBIT"),
         ];
-        var response = await PostAsync(c, $"{Integration(c.Workspace)}/links", new { connectionId = c.Connection, pluggyAccountId = CardA, mode = "CreateNew", name = "Cartão", closingDay = 10, dueDay = 18 });
+        var response = await PostAsync(c, $"{Integration(c.Workspace)}/links", new { connectionId = c.Connection, pluggyAccountId = CardA, mode = "CreateNew", name = "Cartão", closingDay = 10, dueDay = 18, paymentAccountId = await PayerAsync(c) });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         await SyncAsync(c);
         return c;
