@@ -13,7 +13,7 @@ public sealed partial class MonthlyPlanService
     // sem duplicar o realizado. Aqui só se compõe a leitura (receita PJ estimada, reservas, disponibilidade, conta PF e recuperação do limite). Nada é gravado.
 
     private async Task<IntegratedProjectionDto?> IntegratedAsync(Guid workspaceId, Guid userId, DateOnly first, DateOnly last, DateOnly today, IReadOnlyList<FinancialAccountDto> all,
-        bool noCards, CancellationToken ct)
+        IReadOnlyList<(Saldo360.Application.CreditCards.Projection.CardProjection Projection, IReadOnlyList<Saldo360.Application.Pluggy.PluggyBillFact> Bills)> allCards, CancellationToken ct)
     {
         var through = last.AddMonths(1).AddDays(-1); // `last` é o primeiro dia do sexto mês
         var forecast = await repository.LoadIncomeForecastAsync(workspaceId, first, through, today, ct);
@@ -47,10 +47,13 @@ public sealed partial class MonthlyPlanService
             var entries = f.RealizedIncome + f.PendingIncome; var exits = f.RealizedExpense + f.PendingExpense;
 
             var overdraft = await OverdraftAsync(workspaceId, pf, f, today, ct);
+            // Meta única "Todos os cartões" (consumo por competência da fatura): meta de consumo, separada do fluxo de caixa e nunca usada como fatura prevista.
+            var cardSlices = allCards.Select(c => PlanActualCalculator.Slice(c.Projection, c.Bills, Key(f.Month))).ToList();
+            var cardTarget = PlanActualService.BuildCardTarget(null, cardSlices, allCards.Select(c => c.Projection).ToList(), (await planActualRepository.LoadBasisAsync(workspaceId, f.Month, null, ct)).CardBudgetTarget, f.CreditCardProjectionComplete);
             var quality = new List<string>();
             if (!forecast.Effective) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeForecastNotConfigured);
             if (income.Source == IncomeForecastStatus.Dismissed) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeForecastDismissed);
-            if (noCards) quality.Add(MonthlyPlanCalculator.CoverageReasons.NoCardsRegistered);
+            if (allCards.Count == 0) quality.Add(MonthlyPlanCalculator.CoverageReasons.NoCardsRegistered);
             if (!f.CreditCardProjectionComplete || !p.CreditCardProjectionComplete) quality.Add(PlanActualCalculator.Reasons.CardCoverageIncomplete);
             if (!f.DebtProjectionComplete || !p.DebtProjectionComplete) quality.Add(PlanActualCalculator.Reasons.DebtCoverageIncomplete);
             foreach (var unavailable in new[] { f.UnavailableReason, p.UnavailableReason }.OfType<BalanceUnavailableReason>().Distinct()) quality.Add(PlanActualCalculator.Reasons.ProjectionUnavailable + ":" + unavailable);
@@ -63,7 +66,7 @@ public sealed partial class MonthlyPlanService
                 new(MonthlyPlanCalculator.CentsOrNull(f.OpeningBalance), MonthlyPlanCalculator.CentsOrNull(f.ClosingBalance), MonthlyPlanCalculator.Cents(entries), MonthlyPlanCalculator.Cents(exits),
                     MonthlyPlanCalculator.Cents(entries - exits), MonthlyPlanCalculator.Cents(fixedAmount), MonthlyPlanCalculator.Cents(cards), MonthlyPlanCalculator.Cents(other),
                     MonthlyPlanCalculator.Cents(plannedTransfer + realizedTransfer)),
-                overdraft, quality.Count == 0, quality));
+                overdraft, cardTarget, quality.Count == 0, quality));
         }
 
         string? period = null;

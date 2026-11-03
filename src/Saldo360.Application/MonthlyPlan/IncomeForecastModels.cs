@@ -1,3 +1,4 @@
+using Saldo360.Application.Dashboard.PlanActual;
 namespace Saldo360.Application.MonthlyPlan;
 
 // PROJ-01: contratos da previsão de receita PJ e da projeção integrada de seis meses. Dinheiro trafega como texto decimal exato; nenhuma fórmula existe no navegador.
@@ -47,7 +48,7 @@ public sealed record IntegratedOverdraftDto(
     string? Limit, string UsedStart, string UsedEnd, string? Available, string Excess, string Recovery, string? Target, string TargetState, string? AchievementPercent);
 
 public sealed record IntegratedMonthDto(
-    string Competence, string PeriodKind, IntegratedIncomeDto Income, IntegratedPjDto Pj, IntegratedTransfersDto Transfers, IntegratedPfDto Pf, IntegratedOverdraftDto? Overdraft,
+    string Competence, string PeriodKind, IntegratedIncomeDto Income, IntegratedPjDto Pj, IntegratedTransfersDto Transfers, IntegratedPfDto Pf, IntegratedOverdraftDto? Overdraft, CardTargetDto Cards,
     bool Complete, IReadOnlyList<string> Quality);
 
 /// <summary><c>RecoveryOverPeriod</c> = limite usado na abertura do primeiro mês − limite usado no fechamento projetado do último (negativo = piora); nulo sem saldos.</summary>

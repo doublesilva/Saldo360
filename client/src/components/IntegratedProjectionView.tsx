@@ -7,6 +7,9 @@ type Row = { group: string; label: string; cell: (month: IntegratedMonth) => str
 
 const percent = (value: string | null) => value === null ? 'Sem meta' : `${value.replace('.', ',')}%`
 
+/** Sem cartões vinculados o consumo é desconhecido: nunca é mostrado como R$ 0,00 nem como cobertura completa. */
+const cardFigure = (month: IntegratedMonth, value: string) => month.cards.applicable ? money(value) : 'Sem cartões vinculados'
+
 const rows: Row[] = [
   { group: 'Receita PJ', label: 'Situação', cell: m => incomeSourceLabels[m.income.source] ?? m.income.source },
   { group: 'Receita PJ', label: 'Competência trabalhada', cell: m => m.income.workedCompetence ? formatMonthYear(`${m.income.workedCompetence}-01`) : '—' },
@@ -27,6 +30,13 @@ const rows: Row[] = [
   { group: 'Despesas PF', label: 'Fixas pendentes', cell: m => money(m.pf.fixedPending) },
   { group: 'Despesas PF', label: 'Cartões (faturas existentes)', cell: m => money(m.pf.cardsOutstanding) },
   { group: 'Despesas PF', label: 'Demais compromissos', cell: m => money(m.pf.otherPending) },
+  { group: 'Meta de cartões', label: 'Meta mensal (todos os cartões)', cell: m => m.cards.target === null ? 'Sem meta definida' : money(m.cards.target) },
+  { group: 'Meta de cartões', label: 'Consumo realizado (confirmado)', cell: m => cardFigure(m, m.cards.confirmed) },
+  { group: 'Meta de cartões', label: 'Parcelas e compras futuras comprometidas', cell: m => cardFigure(m, m.cards.pendingKnown) },
+  { group: 'Meta de cartões', label: 'Parcelas estimadas', cell: m => cardFigure(m, m.cards.estimated) },
+  { group: 'Meta de cartões', label: 'Consumo projetado', cell: m => cardFigure(m, m.cards.projected) },
+  { group: 'Meta de cartões', label: 'Saldo disponível da meta', cell: m => m.cards.applicable ? plannedMoney(m.cards.remaining) : '—' },
+  { group: 'Meta de cartões', label: 'Acima da meta', cell: m => m.cards.applicable && m.cards.excessProjected !== null ? money(m.cards.excessProjected) : '—' },
   { group: 'Fluxo de caixa PF', label: 'Entradas (sem repasses)', cell: m => money(m.pf.entries) },
   { group: 'Fluxo de caixa PF', label: 'Saídas (sem repasses)', cell: m => money(m.pf.exits) },
   { group: 'Fluxo de caixa PF', label: 'Resultado do mês', cell: m => money(m.pf.result) },
@@ -61,6 +71,7 @@ export function IntegratedProjectionView({ projection }: { projection: Integrate
         <tbody>{rows.map(row => <tr key={`${row.group}-${row.label}`}><th scope="row">{row.group} · {row.label}</th>{projection.months.map(month => <td key={month.competence}>{row.cell(month)}</td>)}</tr>)}</tbody>
       </table>
     </div>
+    <p className="meta">A meta de cartões é meta de consumo (competência da fatura), compartilhada por todos os cartões: não é fatura prevista nem débito. O desembolso das faturas está em "Cartões (faturas existentes)". Ajuste a meta no Orçamento ("Todos os cartões").</p>
     {missing.length > 0 && <ul className="plan-card__notes" aria-label="Fontes ausentes da projeção">{missing.map(code => <li key={code}>{qualityText[code] ?? code}</li>)}</ul>}
   </section>
 }

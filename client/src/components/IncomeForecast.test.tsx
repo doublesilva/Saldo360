@@ -16,6 +16,8 @@ const month = (competence: string, over: Partial<IntegratedMonth> = {}): Integra
   transfers: { plannedPjToPf: '3000.00', realizedPjToPf: '0.00' },
   pf: { opening: '-13811.51', closing: '-14000.00', entries: '0.00', exits: '3177.78', result: '-3177.78', fixedPending: '3177.78', cardsOutstanding: '0.00', otherPending: '0.00', transfersIn: '3000.00' },
   overdraft: { limit: '16100.00', usedStart: '13811.51', usedEnd: '14000.00', available: '2100.00', excess: '0.00', recovery: '-188.49', target: '1000.00', targetState: 'Provisional', achievementPercent: '-18.8' },
+  cards: { applicable: true, state: 'Complete', plannedState: 'Defined', target: '5000.00', targetSource: 'BudgetTarget', targetPartial: false, confirmed: '1000.00', pendingKnown: '2300.00', estimated: '0.00', projected: '3300.00',
+    remaining: '1700.00', excessProjected: '0.00', excessConfirmed: '0.00', confirmedPercent: '20.0', projectedPercent: '66.0', financeCharges: '0.00', cards: [], payerAccountIds: [], reasons: [] },
   complete: false, quality: ['NoCardsRegistered'],
   ...over,
 })
@@ -55,6 +57,29 @@ describe('IntegratedProjectionView', () => {
     render(<IntegratedProjectionView projection={projection([complete])} />)
     expect(screen.queryByRole('note')).toBeNull()
     expect(text(within(screen.getByRole('table')).getByRole('row', { name: /Reserva de tributos/ }))).toContain('reserva não aplicada')
+  })
+
+  it('meta única de cartões: separa realizado, parcelas futuras, projetado, saldo da meta e excesso', () => {
+    const over = month('2026-12', { cards: { ...month('2026-12').cards, target: '2000.00', projected: '3300.00', remaining: '0.00', excessProjected: '1300.00' } })
+    render(<IntegratedProjectionView projection={projection([month('2026-11'), over])} />)
+    const row = (name: RegExp) => text(within(screen.getByRole('table')).getByRole('row', { name }))
+    expect(row(/Meta de cartões · Meta mensal \(todos os cartões\)/)).toContain('R$ 5.000,00')
+    expect(row(/Meta de cartões · Consumo realizado/)).toContain('R$ 1.000,00')
+    expect(row(/Meta de cartões · Parcelas e compras futuras comprometidas/)).toContain('R$ 2.300,00')
+    expect(row(/Meta de cartões · Consumo projetado/)).toContain('R$ 3.300,00')
+    expect(row(/Meta de cartões · Saldo disponível da meta/)).toContain('R$ 1.700,00')
+    expect(row(/Meta de cartões · Acima da meta/)).toContain('R$ 1.300,00')
+    expect(text(screen.getByText(/A meta de cartões é meta de consumo/))).toContain('não é fatura prevista nem débito')
+  })
+
+  it('sem cartões vinculados o consumo não vira R$ 0,00 nem cobertura completa', () => {
+    const none = month('2026-11', { cards: { ...month('2026-11').cards, applicable: false, state: 'Unavailable', confirmed: '0.00', pendingKnown: '0.00', estimated: '0.00', projected: '0.00', remaining: null, excessProjected: null, reasons: ['NoCards'] } })
+    render(<IntegratedProjectionView projection={projection([none])} />)
+    const table = screen.getByRole('table')
+    expect(text(within(table).getByRole('row', { name: /Meta de cartões · Consumo projetado/ }))).toContain('Sem cartões vinculados')
+    expect(text(within(table).getByRole('row', { name: /Meta de cartões · Consumo projetado/ }))).not.toContain('R$ 0,00')
+    expect(text(within(table).getByRole('row', { name: /Meta de cartões · Meta mensal/ }))).toContain('R$ 5.000,00')
+    expect(text(within(table).getByRole('row', { name: /Qualidade · Cobertura da projeção/ }))).toContain('Parcial')
   })
 })
 

@@ -91,7 +91,7 @@ public sealed partial class MonthlyPlanService
             MonthlyPlanCalculator.CentsOrNull(plannedResultSum), MonthlyPlanCalculator.Cents(projectedResultSum));
         var scopeDto = new PlanActualScopeDto(requested, kind, selected?.Id, selected?.Name, selected?.FinancialScope.ToString(), primary?.Id, primary?.Name,
             requested == PlanActualScopes.Primary && primary is null, PlanActualService.ScopeOptions(all, planAccounts, selected));
-        var integrated = await IntegratedAsync(workspaceId, userId, first, last, today, all, allCards.Count == 0, ct);
+        var integrated = await IntegratedAsync(workspaceId, userId, first, last, today, all, allCards, ct);
         return MonthlyPlanResult<SixMonthPlanDto>.Ok(new(Key(first), Key(last), today, scopeDto, months, summary, integrated));
     }
     /// <summary>A projeção da Agenda chama o mês passado de "Historical"; o contrato do plano (e o cliente) usa Past, Current e Future, como o resto do módulo.</summary>

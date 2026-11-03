@@ -182,7 +182,7 @@ public sealed class PlanActualService(
         var expenses = new ExpensesDto("Consumption", consumption, cash);
 
         // ---- Meta dos cartões ---------------------------------------------------------------------------------------------
-        var cardsDto = BuildCardTarget(selected, slices, cards.Select(c => c.Projection).ToList(), facts, month, m.CreditCardProjectionComplete);
+        var cardsDto = BuildCardTarget(selected, slices, cards.Select(c => c.Projection).ToList(), facts.CardBudgetTarget, m.CreditCardProjectionComplete);
 
         // ---- Cheque especial --------------------------------------------------------------------------------------------
         var overdraftResults = new List<OverdraftResult>();
@@ -233,7 +233,7 @@ public sealed class PlanActualService(
             .OrderByDescending(a => a.IsPrimary).ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(a => new ScopeAccountDto(a.Id, a.Name, a.FinancialScope.ToString(), a.IsPrimary, a.IsActive)).ToList();
 
-    private static CardTargetDto BuildCardTarget(FinancialAccountDto? selected, IReadOnlyList<CardSlice> slices, IReadOnlyList<CardProjection> projections, PlanActualFacts facts, DateOnly month, bool projectionComplete)
+    internal static CardTargetDto BuildCardTarget(FinancialAccountDto? selected, IReadOnlyList<CardSlice> slices, IReadOnlyList<CardProjection> projections, decimal? cardBudgetTarget, bool projectionComplete)
     {
         var reasons = new List<string>();
         if (slices.Count == 0) reasons.Add(PlanActualCalculator.Reasons.NoCards);
@@ -244,7 +244,7 @@ public sealed class PlanActualService(
 
         // Meta única "Todos os cartões" do orçamento do mês (R03). Ela vale para o conjunto dos cartões: numa conta específica não há meta (não existe teto individual).
         IReadOnlyList<Guid> payers = selected is not null ? [selected.Id] : slices.Where(s => s.PayerAccountId is not null).Select(s => s.PayerAccountId!.Value).Distinct().ToList();
-        decimal? target = selected is null ? facts.CardBudgetTarget : null; string? source = target is null ? null : "BudgetTarget"; const bool partial = false;
+        decimal? target = selected is null ? cardBudgetTarget : null; string? source = target is null ? null : "BudgetTarget"; const bool partial = false;
         if (target is null && slices.Count > 0) reasons.Add(PlanActualCalculator.Reasons.PlanNotDefined);
         return PlanActualCalculator.CardTarget(slices, target, source, partial, payers, reasons);
     }

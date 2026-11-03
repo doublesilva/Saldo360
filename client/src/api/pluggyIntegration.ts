@@ -123,6 +123,17 @@ export const listIntegrationConnections = (workspaceId: string, signal?: AbortSi
 export const listAvailableAccounts = (workspaceId: string, connectionId: string, signal?: AbortSignal) =>
   get<AvailableAccount[]>(`${base(workspaceId)}/connections/${encodeURIComponent(connectionId)}/accounts`, 'Falha ao consultar as contas na Pluggy.', signal)
 
+/** PROJ-02: prévia somente leitura de um cartão da Pluggy, antes de qualquer vínculo. Valores como texto decimal exato; nada é gravado. */
+export interface CardPreviewBill { dueDate: string | null; closingDate: string | null; total: string; minimum: string | null; isCredit: boolean; hasFractionalCents: boolean }
+export interface CardPreviewMonth { month: string; entries: number; installments: number; amount: string }
+export interface CardPreview {
+  accountName: string; brand: string | null; creditLimit: string | null; availableLimit: string | null; usedLimit: string | null; dueDay: number | null
+  billsRead: number; lastBillDue: string | null; lastBillTotal: string | null; transactionsRead: number; posted: number; pending: number; withInstallments: number
+  bills: CardPreviewBill[]; upcoming: CardPreviewMonth[]; flags: string[]
+}
+export const getCardPreview = (workspaceId: string, connectionId: string, pluggyAccountId: string, signal?: AbortSignal) =>
+  get<CardPreview>(`${base(workspaceId)}/connections/${encodeURIComponent(connectionId)}/accounts/${encodeURIComponent(pluggyAccountId)}/card-preview`, 'Falha ao consultar a prévia do cartão na Pluggy.', signal)
+
 export const listLinks = (workspaceId: string, signal?: AbortSignal) =>
   get<AccountLink[]>(`${base(workspaceId)}/links`, 'Falha ao carregar as integrações.', signal)
 

@@ -33,5 +33,27 @@ As cobranças por mês são **o que o banco já informou**, não a fatura nem a 
 ## Pendências
 
 1. Vínculo dos 5 cartões em produção (ação do usuário, com conta pagadora e data de início por cartão).
-2. Meta consolidada de R$ 5.000 lado a lado com a obrigação dos cartões na visão integrada.
-3. Interface da prévia (hoje só a API).
+2. Cadastrar a meta "Todos os cartões" (R$ 5.000,00) nos orçamentos dos meses futuros: sem ela o mês mostra "Sem meta definida".
+3. Conferir, depois do vínculo e da primeira sincronização, o ciclo (fechamento) de cada cartão e as faturas de 11/2026.
+
+## Meta consolidada "Todos os cartões" na visão integrada
+
+Reutiliza a meta única `AllCards` do orçamento (R03, editável no Orçamento) e `PlanActualCalculator.CardTarget`/`Slice` (a mesma fonte do Dashboard). `IntegratedMonth.cards` traz, por competência da fatura:
+
+| Campo | Regra |
+|---|---|
+| `target` | meta mensal única de todos os cartões; nula se o orçamento do mês não a define (`plannedState = NotDefined`) |
+| `confirmed` | consumo realizado: faturas fechadas pelo banco (total bancário) + composição já lançada |
+| `pendingKnown` | compras pendentes e parcelas já devolvidas pelo banco, ainda não faturadas |
+| `estimated` | parcelas estimadas só com evidência (nunca gravadas) |
+| `projected` | `confirmed + pendingKnown + estimated` |
+| `remaining` / `excessProjected` | `max(0, meta − projetado)` / `max(0, projetado − meta)` |
+
+- A meta é de consumo por competência: **não** entra no saldo bancário nem vira fatura prevista. O desembolso da fatura continua em "Cartões (faturas existentes)" na conta pagadora, pelo vencimento.
+- Pagamento de fatura e transferências bancárias não consomem a meta (o consumo vem das compras/parcelas pela fatura, uma vez).
+- Sem cartões vinculados: `applicable = false`, `state = Unavailable`, razão `NoCards`; a tela mostra "Sem cartões vinculados" (nunca R$ 0,00) e o mês fica parcial (`NoCardsRegistered`).
+- `PlanActualService.BuildCardTarget` passou de `private` a `internal` e recebe só a meta (`decimal?`), sem mudar o resultado do Dashboard.
+
+## Interface da prévia ("Cartões Pluggy")
+
+Nova aba em Cartões: lista só cartões das conexões, com instituição, nome, final mascarado e status (**disponível**, **já vinculado**, **indisponível**), e carrega a prévia sob demanda. Mostra apenas o que o banco informa, com "Não informado pelo banco" no que faltar; as cobranças futuras aparecem como "o que o banco já conhece", nunca como fatura ou meta. A tela não tem ação de vínculo e só faz `GET`.

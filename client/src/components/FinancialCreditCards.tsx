@@ -16,6 +16,7 @@ import { CardKnownCommitments } from './CardKnownCommitments'
 import { CardInstallments } from './CardInstallments'
 import { CardOverview } from './CardOverview'
 import { CardPlanning } from './CardPlanning'
+import { PluggyCardsPreview } from './PluggyCardsPreview'
 import { normalizeRequestError, toUserMessage } from '../api/apiErrors'
 import { FieldError, OperationalError } from './OperationalFeedback'
 
@@ -24,7 +25,7 @@ const firstError = (errors: Record<string, string[]>) => Object.values(errors).f
 const shiftMonth = (month: string, offset: number) => { const [year, value] = month.split('-').map(Number); const date = new Date(Date.UTC(year, value - 1 + offset, 1)); return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}` }
 
 export function FinancialCreditCardsPage({ workspaceId, refreshKey = 0, onChanged }: { workspaceId: string; refreshKey?: number; onChanged?: () => void }) {
-  const [view, setView] = useState<'cards' | 'overview' | 'planning'>('cards')
+  const [view, setView] = useState<'cards' | 'overview' | 'planning' | 'pluggy'>('cards')
   const [cards, setCards] = useState<FinancialCreditCard[]>([]); const [selected, setSelected] = useState<FinancialCreditCard | null>(null)
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]); const [categories, setCategories] = useState<FinancialCategory[]>([])
   const [month, setMonth] = useState(() => startOfMonth(todayInSaoPaulo()).slice(0, 7)); const [error, setError] = useState<string | null>(null); const [showForm, setShowForm] = useState(false)
@@ -42,8 +43,9 @@ export function FinancialCreditCardsPage({ workspaceId, refreshKey = 0, onChange
       <button type="button" className={view === 'cards' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'cards' ? 'page' : undefined} onClick={() => setView('cards')}>Cartões</button>
       <button type="button" className={view === 'overview' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'overview' ? 'page' : undefined} onClick={() => setView('overview')}>Visão geral</button>
       <button type="button" className={view === 'planning' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'planning' ? 'page' : undefined} onClick={() => setView('planning')}>Planejamento</button>
+      <button type="button" className={view === 'pluggy' ? 'credit-cards__tab credit-cards__tab--active' : 'credit-cards__tab'} aria-current={view === 'pluggy' ? 'page' : undefined} onClick={() => setView('pluggy')}>Cartões Pluggy</button>
     </nav>
-    {view === 'overview' ? <CardOverview workspaceId={workspaceId} refreshKey={refreshKey} onOpenCard={id => { const card = cards.find(c => c.id === id); if (card) setSelected(card); setView('cards') }} /> : view === 'planning' ? <CardPlanning workspaceId={workspaceId} refreshKey={refreshKey} /> : <>
+    {view === 'overview' ? <CardOverview workspaceId={workspaceId} refreshKey={refreshKey} onOpenCard={id => { const card = cards.find(c => c.id === id); if (card) setSelected(card); setView('cards') }} /> : view === 'planning' ? <CardPlanning workspaceId={workspaceId} refreshKey={refreshKey} /> : view === 'pluggy' ? <PluggyCardsPreview workspaceId={workspaceId} /> : <>
     <div className="credit-cards__heading"><div><h3>Cartões</h3><p className="meta">Compras, faturas, pagamentos e limite em um só lugar.</p></div><button type="button" className="button--primary" onClick={() => setShowForm(true)}>Novo cartão</button></div>
     {error && <p className="status status--down" role="alert">{error}</p>}
     {showForm && <CardForm workspaceId={workspaceId} accounts={accounts} onDone={() => { setShowForm(false); refresh() }} onCancel={() => setShowForm(false)} />}
