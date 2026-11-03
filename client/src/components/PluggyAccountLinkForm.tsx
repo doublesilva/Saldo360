@@ -12,10 +12,12 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
  * identificador externo é digitado. A criação usa os metadados da Pluggy como sugestão, sempre confirmada aqui; o saldo inicial nunca é
  * preenchido automaticamente.
  */
-export function PluggyAccountLinkForm({ workspaceId, manualAccounts, onLinked, onCancel }: {
+export function PluggyAccountLinkForm({ workspaceId, manualAccounts, only, onLinked, onCancel }: {
   workspaceId: string
   /** Contas manuais ainda sem integração, para vincular a uma já existente. */
   manualAccounts: FinancialAccount[]
+  /** Restringe a escolha a cartões (usado ao criar um cartão novo a partir da Pluggy). */
+  only?: 'Card'
   onLinked: () => void
   onCancel: () => void
 }) {
@@ -48,7 +50,7 @@ export function PluggyAccountLinkForm({ workspaceId, manualAccounts, onLinked, o
   const chooseConnection = (id: string) => {
     setConnectionId(id); setSelectedId(''); setAvailable(null); setError(null)
     if (!id) return
-    listAvailableAccounts(workspaceId, id).then(setAvailable).catch((cause: unknown) => setError(errorText(cause)))
+    listAvailableAccounts(workspaceId, id).then(list => setAvailable(only === 'Card' ? list.filter(account => account.kind === 'Card') : list)).catch((cause: unknown) => setError(errorText(cause)))
   }
 
   const selected = available?.find(account => account.pluggyAccountId === selectedId) ?? null
@@ -84,7 +86,7 @@ export function PluggyAccountLinkForm({ workspaceId, manualAccounts, onLinked, o
   }
 
   return <form className="form accounts" onSubmit={submit} noValidate aria-labelledby="pluggy-link-title">
-    <h3 id="pluggy-link-title">Nova conta integrada (Pluggy)</h3>
+    <h3 id="pluggy-link-title">{only === 'Card' ? 'Novo cartão integrado (Pluggy)' : 'Nova conta integrada (Pluggy)'}</h3>
     <p className="meta">A conta ou o cartão é escolhido entre os que a Pluggy devolve para o Item cadastrado. O Saldo360 só lê os dados: nenhuma operação financeira é iniciada no banco.</p>
 
     {connections && connections.length === 0 && <p className="meta">Nenhum Item cadastrado neste orçamento. Cadastre o Item no Laboratório Pluggy antes de integrar contas.</p>}
@@ -95,8 +97,8 @@ export function PluggyAccountLinkForm({ workspaceId, manualAccounts, onLinked, o
     </select>
 
     {available && <fieldset>
-      <legend>Conta ou cartão na Pluggy</legend>
-      {available.length === 0 && <p className="meta">A Pluggy não devolveu contas para esta conexão.</p>}
+      <legend>{only === 'Card' ? 'Cartão na Pluggy' : 'Conta ou cartão na Pluggy'}</legend>
+      {available.length === 0 && <p className="meta">{only === 'Card' ? 'A Pluggy não devolveu cartões para esta conexão.' : 'A Pluggy não devolveu contas para esta conexão.'}</p>}
       {available.map(account => <label key={account.pluggyAccountId} className="checkbox">
         <input type="radio" name="pluggy-account" value={account.pluggyAccountId} checked={selectedId === account.pluggyAccountId} disabled={!account.linkable} onChange={() => chooseAccount(account)} />
         {account.displayName} · {account.kind === 'Card' ? 'Cartão' : account.kind === 'Bank' ? 'Conta bancária' : 'Tipo não suportado'}

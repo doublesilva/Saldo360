@@ -17,6 +17,8 @@ import { CardInstallments } from './CardInstallments'
 import { CardOverview } from './CardOverview'
 import { CardPlanning } from './CardPlanning'
 import { PluggyCardsPreview } from './PluggyCardsPreview'
+import { PluggyAccountLinkForm } from './PluggyAccountLinkForm'
+import { isPluggyIntegrationAvailable } from '../api/pluggyIntegration'
 import { normalizeRequestError, toUserMessage } from '../api/apiErrors'
 import { FieldError, OperationalError } from './OperationalFeedback'
 
@@ -48,7 +50,7 @@ export function FinancialCreditCardsPage({ workspaceId, refreshKey = 0, onChange
     {view === 'overview' ? <CardOverview workspaceId={workspaceId} refreshKey={refreshKey} onOpenCard={id => { const card = cards.find(c => c.id === id); if (card) setSelected(card); setView('cards') }} /> : view === 'planning' ? <CardPlanning workspaceId={workspaceId} refreshKey={refreshKey} /> : view === 'pluggy' ? <PluggyCardsPreview workspaceId={workspaceId} /> : <>
     <div className="credit-cards__heading"><div><h3>Cartões</h3><p className="meta">Compras, faturas, pagamentos e limite em um só lugar.</p></div><button type="button" className="button--primary" onClick={() => setShowForm(true)}>Novo cartão</button></div>
     {error && <p className="status status--down" role="alert">{error}</p>}
-    {showForm && <CardForm workspaceId={workspaceId} accounts={accounts} onDone={() => { setShowForm(false); refresh() }} onCancel={() => setShowForm(false)} />}
+    {showForm && <NewCardForm workspaceId={workspaceId} accounts={accounts} onDone={() => { setShowForm(false); refresh() }} onCancel={() => setShowForm(false)} />}
     <label>Competência das faturas<input type="month" value={month} onChange={e => { if (e.target.value) setMonth(e.target.value) }} /></label>
     {portfolioError && <p role="alert">Resumo indisponível: {portfolioError}</p>}
     {portfolio && <><dl className="credit-card-limit" aria-label="Resumo dos cartões"><div><dt>Faturas da competência</dt><dd>{formatBrlDecimal(portfolio.periodInvoiceTotal ?? portfolio.invoiceTotal)}</dd></div><div><dt>Pendente conhecido — inclui sem vínculo</dt><dd>{portfolio.periodOutstandingTotal ? formatBrlDecimal(portfolio.periodOutstandingTotal) : "Indisponível"}</dd></div><div><dt>Pagamentos registrados</dt><dd>{portfolio.periodPaidTotal ? formatBrlDecimal(portfolio.periodPaidTotal) : "Indisponível"}</dd></div><div><dt>Limite disponível — ativos</dt><dd>{formatBrlDecimal(portfolio.availableLimit)}</dd></div></dl><p className="meta">Cartões ativos{portfolio.cardCount} · Faturas efetivas separadas de obrigações não conciliadas: {portfolio.periodUnlinkedTotal ? formatBrlDecimal(portfolio.periodUnlinkedTotal) : "informação indisponível"}.</p></>}
@@ -56,6 +58,30 @@ export function FinancialCreditCardsPage({ workspaceId, refreshKey = 0, onChange
     {cards.length > 0 && <div className="credit-cards__layout"><aside className="credit-card-list" aria-label="Cartões"><h4>Meus cartões</h4>{cards.map((card) => <button key={card.id} type="button" className={selected?.id === card.id ? 'credit-card-list__item credit-card-list__item--active' : 'credit-card-list__item'} onClick={() => setSelected(card)}><strong>{card.name}</strong><span className="badge">{card.origin === 'Pluggy' ? 'Pluggy' : 'Manual'}</span><span>{card.issuer}{card.lastFourDigits ? ` · •••• ${card.lastFourDigits}` : ''}</span><small>Fecha dia {card.closingDay} · vence dia {card.dueDay}</small>{portfolio?.cards?.filter(s => s.cardId === card.id).map(s => <span key={s.cardId} className="credit-card-list__usage"><strong>Fatura {formatBrlDecimal(s.invoiceTotal)}</strong><span>Pendente conhecido {formatBrlDecimal(s.outstandingPeriodAmount)}</span><small>{s.invoices?.map(i => `${i.paymentStatus === "Paid" ? "Paga" : i.paymentStatus === "PartiallyPaid" ? "Parcialmente paga" : i.status === "Closed" ? "Fechada" : "Aberta"} · vence ${i.dueDate}`).join(" / ") || "Sem fatura vinculada — conciliação pendente se houver obrigações"}</small><small>Limite {formatBrlDecimal(s.creditLimit)} · Utilizado {formatBrlDecimal(s.usedLimit)} · Disponível {formatBrlDecimal(s.availableLimit)}</small><progress aria-label={`Utilização do limite de ${card.name}`} max="100" value={Number(s.utilizationPercentage)} /><small>Faturas de {month}: {formatBrlDecimal(s.invoiceTotal)}</small>{s.unlinkedKnownCount > 0 && <small>{s.unlinkedKnownCount} parcelas conhecidas sem fatura · {formatBrlDecimal(s.unlinkedKnownAmount)} no limite</small>}</span>)}{card.isArchived && <small>Arquivado</small>}</button>)}</aside>{selected && <CardDetails key={`${workspaceId}|${selected.id}|${month}|${generation}|${refreshKey}`} workspaceId={workspaceId} cards={cards} card={selected} month={month} accounts={accounts} categories={categories} onCardSelected={id => setSelected(cards.find(c => c.id === id) ?? null)} onChanged={refresh} onMonthChange={setMonth} />}</div>}
   </>}
   </div>
+}
+
+/**
+ * Novo cartão: manual, ou a partir de um cartão da Pluggy (como nas contas). A origem Pluggy só aparece com a integração habilitada; escolhe o cartão devolvido pelo banco, preenche
+ * nome, fechamento, vencimento e limite com o que a Pluggy informa (editáveis), exige a conta pagadora e só cria o vínculo ao confirmar.
+ */
+function NewCardForm({ workspaceId, accounts, onDone, onCancel }: { workspaceId: string; accounts: FinancialAccount[]; onDone: () => void; onCancel: () => void }) {
+  const [integrationAvailable, setIntegrationAvailable] = useState(false)
+  const [origin, setOrigin] = useState<'Manual' | 'Pluggy'>('Manual')
+  useEffect(() => {
+    const controller = new AbortController()
+    isPluggyIntegrationAvailable(workspaceId, controller.signal).then(available => { if (!controller.signal.aborted) setIntegrationAvailable(available) }).catch(() => undefined)
+    return () => controller.abort()
+  }, [workspaceId])
+  return <>
+    {integrationAvailable && <fieldset className="form">
+      <legend>Origem do cartão</legend>
+      <label className="checkbox"><input type="radio" name="card-origin" checked={origin === 'Manual'} onChange={() => setOrigin('Manual')} /> Manual — informar os dados do cartão</label>
+      <label className="checkbox"><input type="radio" name="card-origin" checked={origin === 'Pluggy'} onChange={() => setOrigin('Pluggy')} /> Pluggy — usar um cartão identificado pelo banco e preencher os dados</label>
+    </fieldset>}
+    {origin === 'Pluggy'
+      ? <PluggyAccountLinkForm workspaceId={workspaceId} manualAccounts={[]} only="Card" onLinked={onDone} onCancel={onCancel} />
+      : <CardForm workspaceId={workspaceId} accounts={accounts} onDone={onDone} onCancel={onCancel} />}
+  </>
 }
 
 function CardForm({ workspaceId, accounts, card, onDone, onCancel }: { workspaceId: string; accounts: FinancialAccount[]; card?: FinancialCreditCard; onDone: () => void; onCancel: () => void }) {

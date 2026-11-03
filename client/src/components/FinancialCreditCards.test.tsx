@@ -150,4 +150,58 @@ describe('FinancialCreditCardsPage — conta pagadora padrão (T09.3.3)', () => 
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(saved).toMatchObject({ defaultPaymentAccountId: 'pj', creditLimit: '10000.00' }))
   })
+
+  describe('novo cartão a partir da Pluggy', () => {
+    const connection = { id: 'conn-1', label: 'Itaú', institution: 'Itaú', itemReference: 'aaaaaaaa…' }
+    const available = (id: string, name: string, kind: 'Card' | 'Bank') => ({ pluggyAccountId: id, kind, displayName: name, maskedNumber: '••••2222', pluggyType: kind === 'Card' ? 'CREDIT' : 'BANK', pluggySubtype: null,
+      suggestedAccountType: null, subtypeRecognized: true, balance: null, currency: 'BRL', linkedLinkId: null, linkable: true, notLinkableReason: null,
+      card: kind === 'Card' ? { closingDay: 8, dueDay: 15, creditLimit: '5000.00', availableCreditLimit: '800.00', brand: 'VISA' } : null })
+    const account = (id: string, name: string) => ({ id, name, type: 'Checking', financialScope: 'PF', isActive: true })
+
+    const stub = (integration: boolean, linked: { body?: Record<string, unknown> } = {}) => vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/auth/csrf') return json({ token: 't' })
+      if (url.endsWith('/pluggy-integration/status')) return Promise.resolve(new Response('{}', { status: integration ? 200 : 404 }))
+      if (url.endsWith('/pluggy-integration/connections')) return json([connection])
+      if (url.endsWith('/connections/conn-1/accounts')) return json([available('bank', 'Conta corrente', 'Bank'), available('card', 'Cartão Ouro', 'Card')])
+      if (url.endsWith('/pluggy-integration/links') && init?.method === 'POST') { linked.body = JSON.parse(init.body as string); return Promise.resolve(new Response(JSON.stringify({ link: { id: 'l1' } }), { status: 201 })) }
+      if (/\/accounts(\?|$)/.test(url)) return json([account('pf', 'Itaú PF'), account('pj', 'Itaú PJ')])
+      if (url.includes('/credit-cards?')) return json([])
+      if (url.includes('/summary?')) return json({ cardCount: 0, totalLimit: '0.00', invoiceTotal: '0.00', availableLimit: '0.00', cards: [] })
+      return json([])
+    }))
+
+    it('sem a integração habilitada o novo cartão continua só manual', async () => {
+      stub(false)
+      render(<FinancialCreditCardsPage workspaceId="workspace" />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Novo cartão' }))
+      await screen.findByRole('heading', { name: 'Novo cartão' })
+      expect(screen.queryByRole('radio', { name: /Pluggy/ })).toBeNull()
+    })
+
+    it('oferece a origem Pluggy, lista só cartões, preenche os dados do banco e exige a conta pagadora', async () => {
+      const linked: { body?: Record<string, unknown> } = {}
+      stub(true, linked)
+      render(<FinancialCreditCardsPage workspaceId="workspace" />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Novo cartão' }))
+      fireEvent.click(await screen.findByRole('radio', { name: /Pluggy — usar um cartão/ }))
+
+      await screen.findByRole('heading', { name: 'Novo cartão integrado (Pluggy)' })
+      fireEvent.change(await screen.findByLabelText('Conexão (Item)'), { target: { value: 'conn-1' } })
+      expect(await screen.findByRole('radio', { name: /Cartão Ouro/ })).toBeTruthy()
+      expect(screen.queryByRole('radio', { name: /Conta corrente/ })).toBeNull()
+      fireEvent.click(screen.getByRole('radio', { name: /Cartão Ouro/ }))
+
+      expect((screen.getByLabelText('Dia de fechamento da fatura') as HTMLInputElement).value).toBe('8')
+      expect((screen.getByLabelText('Dia de vencimento da fatura') as HTMLInputElement).value).toBe('15')
+      expect((screen.getByLabelText('Limite de crédito (R$)') as HTMLInputElement).value).toMatch(/5\.?000/)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar e vincular' }))
+      expect((await screen.findByRole('alert')).textContent).toContain('Selecione a conta pagadora')
+      expect(linked.body).toBeUndefined()
+
+      fireEvent.change(screen.getByLabelText(/Conta pagadora da fatura/), { target: { value: 'pj' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar e vincular' }))
+      await waitFor(() => expect(linked.body).toMatchObject({ pluggyAccountId: 'card', mode: 'CreateNew', closingDay: 8, dueDay: 15, paymentAccountId: 'pj' }))
+    })
+  })
 })
