@@ -39,9 +39,11 @@ public sealed partial class PluggyFinancialIntegrationTests
 
     private async Task<Pair> ArrangeAgendaPairAsync(string user, decimal amount)
     {
+        // Os lancamentos externos precisam estar na mesma competencia da transferencia (consultada por MonthOfTransfers), mesmo quando hoje e o dia 3 do mes.
+        var externalDaysAgo = Today.AddDays(-2).Month == Today.AddDays(-3).Month ? 2 : 3;
         var p = await ArrangePairAsync(user,
-            [Tx("pf-in", BankA, 3, amount, operation: "PIX", description: "Pix recebido", category: "Transfer - PIX"), Tx("pf-expense", BankA, 2, -40m, operation: "PIX", description: "Padaria", category: "Groceries")],
-            [Tx("pj-out", BankB, 3, -amount, operation: "PIX", description: "Pix enviado", category: "Transfer - PIX"), Tx("pj-in", BankB, 2, 100m, operation: "TED", description: "Cliente", category: "Salary")]);
+            [Tx("pf-in", BankA, 3, amount, operation: "PIX", description: "Pix recebido", category: "Transfer - PIX"), Tx("pf-expense", BankA, externalDaysAgo, -40m, operation: "PIX", description: "Padaria", category: "Groceries")],
+            [Tx("pj-out", BankB, 3, -amount, operation: "PIX", description: "Pix enviado", category: "Transfer - PIX"), Tx("pj-in", BankB, externalDaysAgo, 100m, operation: "TED", description: "Cliente", category: "Salary")]);
         await SyncBothAsync(p);
         Assert.Equal(1, await ActiveTransfersAsync());
         return p;
