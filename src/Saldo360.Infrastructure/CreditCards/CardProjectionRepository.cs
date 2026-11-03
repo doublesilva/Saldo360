@@ -90,7 +90,9 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
                 payer is null ? null : dto.DefaultPaymentAccountId, payer?.Name, payer?.Scope.ToString(), payer?.IsPrimary ?? false,
                 link?.Status.ToString() ?? "None", link?.LastSyncedAt, dto.IsArchived);
 
-            var invoiceFacts = invoices.Where(i => i.CreditCardId == dto.Id).Select(i =>
+            // FAT-01: faturas fechadas antes da data inicial de importação são histórico (fora do corte): o banco as devolve em /bills, mas a composição e os pagamentos anteriores ao corte
+            // não são importados, então elas nunca podem ser obrigação a pagar nem vencidas. Só vale para cartão vinculado com data de início.
+            var invoiceFacts = invoices.Where(i => i.CreditCardId == dto.Id && (link?.ImportFrom is not { } importFrom || i.ClosingDate >= importFrom)).Select(i =>
             {
                 var bill = cardBills.FirstOrDefault(b => b.ClosingDate == i.ClosingDate);
                 var closed = i.OfficialVersion > 0 || i.IsClosedByInstitution;

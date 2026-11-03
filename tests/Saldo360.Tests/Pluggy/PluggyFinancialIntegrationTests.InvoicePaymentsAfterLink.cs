@@ -52,4 +52,25 @@ public sealed partial class PluggyFinancialIntegrationTests
         await SyncAsync(c); // repetir não duplica
         Assert.Equal(recognized, await PaymentStateAsync(c));
     }
+
+    [Fact]
+    public async Task InvoicesClosedBeforeTheImportStartDateAreHistoryAndNeverBecomeOverdueObligations()
+    {
+        var c = await ArrangeAsync("fat01-cutoff", seed: false);
+        SeedCycle(190m); // bill-0 fechou há 46 dias (10,00) e bill-1 há 15 dias (190,00); nenhum pagamento
+        var payer = (await JsonOf(await PostAsync(c, $"/api/financial-workspaces/{c.Workspace}/accounts", new { name = "Pagadora", type = "Checking", financialScope = "PF" }))).GetProperty("id").GetGuid();
+        var link = await PostAsync(c, $"{Integration(c.Workspace)}/links", new
+        {
+            connectionId = c.Connection, pluggyAccountId = CardA, mode = "CreateNew", name = "Cartão", closingDay = Today.AddDays(-15).Day, dueDay = Today.AddDays(-8).Day, paymentAccountId = payer, importFrom = D(30),
+        });
+        Assert.Equal(System.Net.HttpStatusCode.Created, link.StatusCode);
+        await SyncAsync(c);
+
+        await using var db = Db();
+        Assert.Equal(2, await db.FinancialCreditCardInvoices.CountAsync()); // o banco devolveu as duas faturas: ambas ficam registradas para rastreio
+        var projection = await ProjectionAsync(c, 1);
+
+        // Só a fatura que fechou depois do corte (190) é obrigação em atraso; a de antes do corte (10) é histórico e não soma.
+        Assert.Equal("190.00", projection.GetProperty("carryover").GetString());
+    }
 }
