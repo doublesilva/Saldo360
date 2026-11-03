@@ -70,7 +70,7 @@ Nova aba em Cartões: lista só cartões das conexões, com instituição, nome,
 | Personnalité Mult Black | Itaú PF |
 | Credicard On Mastercard | Itaú PF |
 | Iti Itaú Visa Platinum | Itaú PF |
-| Company | **pendente de classificação** (PF ou PJ) |
+| Company | Itaú PJ (classificado como PJ pelo usuário) |
 
 **Data inicial de importação.** Proposta: `2026-10-01` para os cinco cartões, editável na aba "Cartões Pluggy"; nunca é ampliada para 10/2025 sem decisão do usuário. A prévia (`?importFrom=`) mostra: lançamentos que ficam de fora; compras parceladas feitas antes do corte e quantas parcelas delas caem dentro da janela (essas parcelas chegam do banco como movimentos futuros); e faturas a partir do corte que incluem lançamentos anteriores a ele (nesses casos só o total do banco vale e a composição local fica incompleta: sinal `BillsSpanCutoff`).
 
