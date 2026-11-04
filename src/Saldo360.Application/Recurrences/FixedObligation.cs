@@ -20,7 +20,8 @@ public sealed record FixedObligation(
     Guid AccountId, Guid CategoryId, CategoryType Type, ExpenseNature Nature, string Description,
     decimal PlannedAmount, bool IsEstimated, DateOnly DueDate, ObligationSituation Situation, bool IsVirtual,
     decimal? ActualAmount = null, DateOnly? ActualDate = null, Guid? TransactionId = null,
-    decimal? BaseAmount = null, ObligationAmountSource AmountSource = ObligationAmountSource.Base, decimal? AdjustedAmount = null)
+    decimal? BaseAmount = null, ObligationAmountSource AmountSource = ObligationAmountSource.Base, decimal? AdjustedAmount = null,
+    Guid? SourceTransactionId = null, string? ConfirmationSource = null)
 {
     /// <summary>ValorConsolidado = COALESCE(realizado vinculado, previsto). Previsto e realizado nunca são somados.</summary>
     public decimal Consolidated => ActualAmount ?? PlannedAmount;

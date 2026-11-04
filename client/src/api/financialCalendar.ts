@@ -35,6 +35,8 @@ export interface FinancialCalendarItem {
   /** Despesa fixa: valor-base da recorrência e origem do valor vigente. Confirmar o valor não é pagar. */
   baseAmount?: string | null
   amountSource?: 'Base' | 'Adjustment' | 'Confirmed' | null
+  /** Origem do valor confirmado: Manual, PluggyAuto (banco, automático) ou ManualLink (vínculo manual). */
+  confirmationSource?: 'Manual' | 'PluggyAuto' | 'ManualLink' | null
 }
 
 /** Totais calculados pela API. A UI apenas os formata. */

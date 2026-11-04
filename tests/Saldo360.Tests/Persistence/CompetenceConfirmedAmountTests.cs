@@ -196,7 +196,6 @@ public sealed class CompetenceConfirmedAmountTests(PostgresFixture postgres) : I
     }
 
     private const string Previous = "20261102171709_AddIncomeForecast";
-    private const string Current = "20261104111511_AddCompetenceConfirmedAmount";
 
     [Fact]
     public async Task Migration_IsAdditive_AndNeverMarksExistingExceptionsAsConfirmed()
@@ -210,7 +209,7 @@ public sealed class CompetenceConfirmedAmountTests(PostgresFixture postgres) : I
             var migrator = db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
             await migrator.MigrateAsync(Previous); // desfaz só esta migration
             Assert.Equal(0, await db.Database.SqlQuery<int>($"SELECT COUNT(*)::int AS \"Value\" FROM information_schema.columns WHERE table_name = 'financial_planned_transactions' AND column_name = 'confirmed_amount'").SingleAsync());
-            await migrator.MigrateAsync(Current); // reaplica
+            await migrator.MigrateAsync(); // reaplica até a última (o modelo atual exige as migrations posteriores)
         }
 
         await using var verify = Db();

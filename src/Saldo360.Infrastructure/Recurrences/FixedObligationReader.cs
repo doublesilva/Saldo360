@@ -71,7 +71,8 @@ internal static class FixedObligationReader
             var source = p.ConfirmedAmount != null ? ObligationAmountSource.Confirmed
                 : p.ExceptionRecurrenceId != null || (baseAmount != null && p.Amount != baseAmount) ? ObligationAmountSource.Adjustment : ObligationAmountSource.Base;
             result.Add(new(workspaceId, recurrenceId, mat?.OccurrenceNumber, competence, p.Id, p.AccountId, p.CategoryId, p.Type, p.Nature, p.Description,
-                p.EffectiveAmount, false, p.DueDate, situation, false, amount, date, txId, baseAmount, source, p.Amount));
+                p.EffectiveAmount, false, p.DueDate, situation, false, amount, date, txId, baseAmount, source, p.Amount,
+                p.AmountSourceTransactionId, p.ConfirmedAmount == null ? null : (p.ConfirmationSource ?? Saldo360.Domain.Planning.AmountConfirmationSource.Manual).ToString()));
         }
 
         // Exceções (inclusive canceladas = mês pulado de propósito) suprimem a ocorrência virtual daquela competência.

@@ -74,65 +74,17 @@ internal sealed class FinancialRecurrenceMaterializationRepository(Saldo360DbCon
         }
     }
 
-    /// <summary>
-    /// Define (ou corrige) o valor real confirmado de UMA competência reaproveitando a exceção de competência: a previsão da competência
-    /// (materializada ou exceção) recebe o valor confirmado; sem ela, cria-se a exceção. O valor-base da recorrência, as demais competências
-    /// e o histórico não mudam, e a obrigação continua pendente (confirmar não é pagar).
-    /// </summary>
-    public async Task<CompetenceAmountOutcome> ConfirmCompetenceAmountAsync(FinancialRecurrence recurrence, DateOnly competence, decimal amount, Guid userId, DateTimeOffset now, CancellationToken ct)
-    {
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        try
-        {
-            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM financial_recurrences WHERE id = {recurrence.Id} AND workspace_id = {recurrence.WorkspaceId} FOR UPDATE", ct);
-            await db.Entry(recurrence).ReloadAsync(ct);
-            if (recurrence.Status != RecurrenceStatus.Active) return Rejected(CompetenceAmountStatus.Conflict, "A recorrência não está ativa.");
-            if (recurrence.Origin != RecurrenceOrigin.Manual || recurrence.FinancialAccountId is not { } accountId)
-                return Rejected(CompetenceAmountStatus.Conflict, "Somente despesas fixas de conta cadastradas manualmente aceitam valor por competência.");
-            var first = new DateOnly(competence.Year, competence.Month, 1);
-            var occurrences = FinancialRecurrenceCalendar.CalculateOccurrences(recurrence, first, first.AddMonths(1).AddDays(-1));
-            if (occurrences.Count != 1) return Rejected(CompetenceAmountStatus.InvalidCompetence, occurrences.Count == 0 ? "A recorrência não tem ocorrência nesta competência." : "A competência tem mais de uma ocorrência; use uma recorrência mensal.");
-            var occurrence = occurrences[0];
+    /// <summary>Confirmação manual do valor de UMA competência (PROJ-04); a regra vive em <see cref="CompetenceAmountWriter"/>, compartilhada com a confirmação bancária.</summary>
+    public Task<CompetenceAmountOutcome> ConfirmCompetenceAmountAsync(FinancialRecurrence recurrence, DateOnly competence, decimal amount, Guid userId, DateTimeOffset now, CancellationToken ct) =>
+        CompetenceAmountWriter.ConfirmInTransactionAsync(db, recurrence, competence, amount, AmountConfirmationSource.Manual, userId, null, userId, now, ct);
 
-            var planned = await (from m in db.FinancialRecurrenceMaterializations
-                                 join p in db.FinancialPlannedTransactions on m.PlannedTransactionId equals p.Id
-                                 where m.WorkspaceId == recurrence.WorkspaceId && m.RecurrenceId == recurrence.Id && m.OccurrenceNumber == occurrence.Sequence
-                                 select p).SingleOrDefaultAsync(ct)
-                ?? await db.FinancialPlannedTransactions.SingleOrDefaultAsync(p => p.WorkspaceId == recurrence.WorkspaceId && p.ExceptionRecurrenceId == recurrence.Id
-                    && p.ExceptionCompetence == first && !p.IsCancelled, ct);
-            var paid = await db.FinancialObligationSettlements.AnyAsync(s => s.WorkspaceId == recurrence.WorkspaceId && s.RecurrenceId == recurrence.Id && s.Competence == first && s.RemovedAt == null, ct);
-            if (paid) return Rejected(CompetenceAmountStatus.Conflict, "A competência já foi paga; o valor pago prevalece.");
-            var created = false;
-            if (planned is null)
-            {
-                var skipped = await db.FinancialPlannedTransactions.AnyAsync(p => p.WorkspaceId == recurrence.WorkspaceId && p.ExceptionRecurrenceId == recurrence.Id && p.ExceptionCompetence == first, ct);
-                if (skipped) return Rejected(CompetenceAmountStatus.Conflict, "A competência foi cancelada (mês pulado).");
-                // Competência fechada sem previsão é "a revisar": criar exceção aqui a transformaria em dívida vencida.
-                var today = DateOnly.FromDateTime(now.UtcDateTime);
-                if (first < new DateOnly(today.Year, today.Month, 1)) return Rejected(CompetenceAmountStatus.InvalidCompetence, "Competência fechada: o histórico não é alterado.");
-                var details = PlannedTransactionDetails.TryCreate(accountId, recurrence.FinancialCategoryId, recurrence.Type.ToString(), recurrence.Description, recurrence.Amount, occurrence.Date, out var errors, recurrence.Nature.ToString());
-                if (details is null) return Rejected(CompetenceAmountStatus.Conflict, string.Join(" ", errors.SelectMany(x => x.Value)));
-                planned = FinancialPlannedTransaction.Create(recurrence.WorkspaceId, details, userId, now);
-                planned.MarkAsCompetenceException(recurrence.Id, first);
-                db.FinancialPlannedTransactions.Add(planned);
-                created = true;
-            }
-            else if (planned.IsCancelled || !await db.PendingPlanned(recurrence.WorkspaceId).AnyAsync(p => p.Id == planned.Id, ct))
-                return Rejected(CompetenceAmountStatus.Conflict, "A obrigação da competência já foi paga, substituída ou está em revisão.");
-            planned.ConfirmCompetenceAmount(amount, userId, now);
-            await db.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
-            return new(CompetenceAmountStatus.Ok, null, new(recurrence.Id, first, planned.Id, planned.DueDate, recurrence.Amount, planned.Amount, amount, now, created));
-        }
-        catch
-        {
-            await transaction.RollbackAsync(CancellationToken.None);
-            db.ChangeTracker.Clear();
-            throw;
-        }
-    }
+    /// <summary>Vínculo manual de uma competência a uma transação bancária (pendente ou efetivada): aplica o valor bancário sem segunda confirmação.</summary>
+    public Task<CompetenceAmountOutcome> LinkBankTransactionAsync(FinancialRecurrence recurrence, DateOnly competence, Guid pluggyTransactionId, Guid userId, DateTimeOffset now, CancellationToken ct) =>
+        CompetenceAmountWriter.LinkBankTransactionAsync(db, recurrence, competence, pluggyTransactionId, userId, now, ct);
 
-    private static CompetenceAmountOutcome Rejected(CompetenceAmountStatus status, string message) => new(status, message, null);
+    public Task<IReadOnlyList<BankTransactionCandidate>> BankCandidatesAsync(FinancialRecurrence recurrence, DateOnly competence, CancellationToken ct) =>
+        CompetenceAmountWriter.BankCandidatesAsync(db, recurrence, competence, ct);
+
 
     private async Task<MaterializationResultDto> MaterializeCardAsync(FinancialRecurrence r, Guid cardId, IReadOnlyList<RecurrenceOccurrenceDto> occurrences, Guid userId, DateTimeOffset now, CancellationToken ct)
     {

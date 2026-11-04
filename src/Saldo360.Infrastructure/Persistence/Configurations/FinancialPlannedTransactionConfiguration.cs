@@ -56,11 +56,17 @@ internal sealed class FinancialPlannedTransactionConfiguration : IEntityTypeConf
         builder.Property(planned => planned.ConfirmedAmount).HasColumnType("numeric");
         builder.ToTable(table =>
         {
+            // Valor, data e responsável juntos; a confirmação automática (PluggyAuto) não tem usuário. Origem e transação de referência só existem com valor confirmado.
             table.HasCheckConstraint("ck_financial_planned_transactions_confirmed_triple",
-                "(confirmed_amount IS NULL AND amount_confirmed_at IS NULL AND amount_confirmed_by_user_id IS NULL) OR (confirmed_amount IS NOT NULL AND amount_confirmed_at IS NOT NULL AND amount_confirmed_by_user_id IS NOT NULL)");
+                "(confirmed_amount IS NULL AND amount_confirmed_at IS NULL AND amount_confirmed_by_user_id IS NULL AND amount_confirmation_source IS NULL AND amount_source_transaction_id IS NULL) "
+                + "OR (confirmed_amount IS NOT NULL AND amount_confirmed_at IS NOT NULL AND (amount_confirmed_by_user_id IS NOT NULL OR amount_confirmation_source = 'PluggyAuto') "
+                + "AND (amount_confirmation_source IN ('Manual', 'PluggyAuto', 'ManualLink') OR amount_confirmation_source IS NULL) "
+                + "AND (amount_source_transaction_id IS NOT NULL OR amount_confirmation_source IS NULL OR amount_confirmation_source = 'Manual'))");
             table.HasCheckConstraint("ck_financial_planned_transactions_confirmed_amount_valid",
                 $"confirmed_amount IS NULL OR (confirmed_amount > 0 AND scale(confirmed_amount) <= {Money.MaxScale} AND confirmed_amount < {Money.Limit})");
         });
+        builder.Property(planned => planned.ConfirmationSource).HasColumnName("amount_confirmation_source").HasConversion<string>().HasMaxLength(16);
+        builder.HasIndex(planned => new { planned.WorkspaceId, planned.AmountSourceTransactionId }).HasFilter("amount_source_transaction_id IS NOT NULL AND NOT is_cancelled");
         builder.HasOne<ApplicationUser>()
             .WithMany()
             .HasForeignKey(planned => planned.AmountConfirmedByUserId)

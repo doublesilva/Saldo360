@@ -77,6 +77,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialRecurrence> FinancialRecurrences => Set<FinancialRecurrence>();
     public DbSet<FinancialRecurrenceMaterialization> FinancialRecurrenceMaterializations => Set<FinancialRecurrenceMaterialization>();
     public DbSet<FinancialObligationSettlement> FinancialObligationSettlements => Set<FinancialObligationSettlement>();
+    public DbSet<FinancialAmountConfirmationEvent> FinancialAmountConfirmationEvents => Set<FinancialAmountConfirmationEvent>();
     public DbSet<FinancialPlanningScenario> FinancialPlanningScenarios => Set<FinancialPlanningScenario>();
     public DbSet<FinancialPlanningMonthlyParameter> FinancialPlanningMonthlyParameters => Set<FinancialPlanningMonthlyParameter>();
     public DbSet<FinancialDebt> FinancialDebts => Set<FinancialDebt>();

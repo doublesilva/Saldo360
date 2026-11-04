@@ -141,7 +141,7 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
             o.StableId, o.IsVirtual ? FinancialCalendarSource.RecurrenceOccurrence : FinancialCalendarSource.PlannedTransaction,
             o.Situation == ObligationSituation.NeedsReview ? FinancialCalendarStatus.NeedsReview : o.DueDate < filter.Today ? FinancialCalendarStatus.Overdue : FinancialCalendarStatus.Pending,
             o.Type, o.PlannedAmount, o.DueDate, o.Description, accountRefs.GetValueOrDefault(o.AccountId), categoryRefs.GetValueOrDefault(o.CategoryId), "BRL", null,
-            FinancialTransactionOrigin.Manual, o.RecurrenceId, o.OccurrenceNumber, o.DueDate, null, o.ReconciliationStatus, BaseAmount: o.BaseAmount, AmountSource: o.AmountSource.ToString())).ToList();
+            FinancialTransactionOrigin.Manual, o.RecurrenceId, o.OccurrenceNumber, o.DueDate, null, o.ReconciliationStatus, BaseAmount: o.BaseAmount, AmountSource: o.AmountSource.ToString(), ConfirmationSource: o.ConfirmationSource)).ToList();
         effectiveItems = effectiveItems.Select(i => reconciled.TryGetValue(i.Id, out var o)
             ? i with { ReconciliationStatus = "Reconciled", ActualAmount = i.Amount, ActualDate = i.Date, TransactionId = i.Id } : i).ToList();
         var virtualPending = obligations.Where(o => o.IsVirtual && o.IsPendingCashFlow && o.DueDate >= filter.From && o.DueDate <= filter.Through).ToList();
@@ -154,7 +154,7 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
 
         var items = effectiveItems
             .Concat(obligationItems)
-            .Concat(plannedItems.Select(i => obligationById.TryGetValue(i.Id, out var o) ? i with { RecurrenceId = i.RecurrenceId ?? o.RecurrenceId, BaseAmount = o.BaseAmount, AmountSource = o.AmountSource.ToString() } : i))
+            .Concat(plannedItems.Select(i => obligationById.TryGetValue(i.Id, out var o) ? i with { RecurrenceId = i.RecurrenceId ?? o.RecurrenceId, BaseAmount = o.BaseAmount, AmountSource = o.AmountSource.ToString(), ConfirmationSource = o.ConfirmationSource } : i))
             .Concat(debtItems)
             .OrderBy(item => item.Date)
             .ThenBy(item => item.Source)

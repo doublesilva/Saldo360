@@ -16,7 +16,7 @@ tests/
 client/                     React + TypeScript (Vite)
 dev/authelia/               Authelia local opcional (o provedor padrão é o Authelia do servidor)
 scripts/                    Setup do provedor de desenvolvimento e smoke test de login
-docs/                       Documentação de autenticação e dos módulos financeiros
+docs/                       Documentação de autenticação e dos módulos financeiros (diretriz permanente: [docs/DIRETRIZ-AUTOMACAO.md](docs/DIRETRIZ-AUTOMACAO.md); agentes: [AGENTS.md](AGENTS.md))
 docker-compose.yml          PostgreSQL (e Authelia local opcional, profile authelia-local)
 ```
 

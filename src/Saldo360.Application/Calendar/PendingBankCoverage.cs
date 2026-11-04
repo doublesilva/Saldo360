@@ -37,7 +37,11 @@ public static class PendingBankCoverage
         IReadOnlyList<PendingBankDebit> debits, IReadOnlyList<FixedObligation> obligations, IReadOnlyList<PendingBankCandidate> otherCandidates)
     {
         var expenses = obligations.Where(o => o.Type == CategoryType.Expense && o.IsPendingCashFlow).ToList();
-        var positive = debits.Where(d => d.Amount > 0m).ToList();
+        // Vínculo persistido (confirmação Pluggy automática ou vínculo manual): o débito já pertence a esta obrigação; não disputa par nem vira despesa adicional.
+        var linked = expenses.Where(o => o.SourceTransactionId != null).GroupBy(o => o.SourceTransactionId!.Value).ToDictionary(g => g.Key, g => g.First());
+        var linkedObligations = linked.Values.Select(o => o.StableId).ToHashSet();
+        expenses = expenses.Where(o => !linkedObligations.Contains(o.StableId)).ToList();
+        var positive = debits.Where(d => d.Amount > 0m && !linked.ContainsKey(d.Id)).ToList();
         var pairs = FixedObligationMatcher.UniquePairs(expenses, positive.Select(d => new SettlementCandidate(d.Id, d.AccountId, CategoryType.Expense, d.Description, d.Amount, d.Date)).ToList());
         var coveredBy = pairs.ToDictionary(p => p.Transaction.Id, p => p.Obligation);
         var used = pairs.Select(p => p.Obligation.StableId).ToHashSet();
@@ -49,6 +53,7 @@ public static class PendingBankCoverage
         return debits.Select(d =>
         {
             if (d.Amount <= 0m) return new PendingBankClassification(d, PendingBankCoverageState.Ignored, null, []);
+            if (linked.TryGetValue(d.Id, out var link)) return new PendingBankClassification(d, PendingBankCoverageState.Covered, link.StableId, []);
             if (coveredBy.TryGetValue(d.Id, out var obligation)) return new PendingBankClassification(d, PendingBankCoverageState.Covered, obligation.StableId, []);
             var near = candidates.Where(c => IsCandidate(d, c)).Select(c => c.Id).Distinct().ToList();
             return new PendingBankClassification(d, near.Count == 0 ? PendingBankCoverageState.Uncovered : PendingBankCoverageState.Ambiguous, null, near);

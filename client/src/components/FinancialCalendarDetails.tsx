@@ -7,6 +7,7 @@ import { cancelTransaction, getTransaction, type FinancialTransaction } from '..
 import { formatBrlDecimal, formatDate, subtractMoneyDecimal } from '../money'
 import { PlannedForm, RealizeForm } from './Planned'
 import { TransactionForm } from './Transactions'
+import { BankLinkPanel } from './BankLinkPanel'
 import { CompetenceAmountForm } from './CompetenceAmountForm'
 
 type Detail =
@@ -15,8 +16,9 @@ type Detail =
 
 type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'error'; message: string }
 type References = { accounts: FinancialAccount[]; categories: FinancialCategory[] }
-type Mode = 'details' | 'realize' | 'edit' | 'confirm'
+type Mode = 'details' | 'realize' | 'edit' | 'confirm' | 'link'
 
+const confirmationLabels = { Manual: 'Confirmado manualmente', PluggyAuto: 'Banco (automático)', ManualLink: 'Vínculo manual com o banco' } as const
 const typeLabels = { Income: 'Receita', Expense: 'Despesa' } as const
 const statusLabels = { Realized: 'Realizado', Pending: 'Pendente', Overdue: 'Vencido', NeedsReview: 'A revisar' } as const
 
@@ -149,7 +151,10 @@ export function FinancialCalendarDetails({
   )
   const actions = canAct ? item.allowedActions ?? [] : []
   // Despesa fixa ainda sem pagamento: o valor real da competência pode ser confirmado (projetado → real), sem pagar.
-  const canConfirmAmount = !!item.recurrenceId && item.type === 'Expense' && item.reconciliationStatus === 'Planned' && (item.status === 'Pending' || item.status === 'Overdue')
+  const hasBankSource = item.confirmationSource === 'PluggyAuto' || item.confirmationSource === 'ManualLink'
+  const unpaidRecurring = !!item.recurrenceId && item.type === 'Expense' && item.reconciliationStatus === 'Planned' && (item.status === 'Pending' || item.status === 'Overdue')
+  // O banco é a fonte do valor quando há vínculo automático ou manual: a confirmação manual fica só para quem não tem fonte bancária confiável.
+  const canConfirmAmount = unpaidRecurring && !hasBankSource
   const competence = (item.scheduledDate ?? item.date).slice(0, 7)
 
   const viewOrigin = async () => {
@@ -195,13 +200,7 @@ export function FinancialCalendarDetails({
             {actionError && <p className="field-error" role="alert">{actionError}</p>}
             {item.recurrenceId && <p className="notice">Origem: recorrência {item.recurrenceId}, ocorrência {item.occurrenceNumber}. Alterações afetam somente esta ocorrência, nunca a definição recorrente.</p>}
             {origin && <section aria-label="Previsão de origem"><h3>Previsão de origem</h3><p>{origin.description} — {formatBrlDecimal(origin.amount)} — {formatDate(origin.dueDate)} — {origin.status}</p></section>}
-            {canConfirmAmount && (
-              <div className="form__actions calendar-detail-panel__actions">
-                <button type="button" onClick={() => setMode('confirm')} disabled={busy}>
-                  {item.amountSource === 'Confirmed' ? 'Corrigir valor real' : 'Confirmar valor real'}
-                </button>
-              </div>
-            )}
+{unpaidRecurring && (              <div className="form__actions calendar-detail-panel__actions">                {canConfirmAmount && (                  <button type="button" onClick={() => setMode('confirm')} disabled={busy}>                    {item.amountSource === 'Confirmed' ? 'Corrigir valor real' : 'Confirmar valor real'}                  </button>                )}                {!hasBankSource && <button type="button" onClick={() => setMode('link')} disabled={busy}>Vincular agendamento do banco</button>}              </div>            )}
             {canAct && (
               <div className="form__actions calendar-detail-panel__actions">
                 {actions.includes('Realize') && loaded.source === 'PlannedTransaction' && (
@@ -231,6 +230,10 @@ export function FinancialCalendarDetails({
             onSaved={finish}
             onCancel={() => setMode('details')}
           />
+        )}
+
+        {mode === 'link' && item.recurrenceId && (
+          <BankLinkPanel workspaceId={workspaceId} recurrenceId={item.recurrenceId} competence={competence} onLinked={finish} onCancel={() => setMode('details')} />
         )}
 
         {mode === 'realize' && loaded?.source === 'PlannedTransaction' && (
@@ -311,6 +314,7 @@ function AmountBreakdown({ item }: { item: FinancialCalendarItem }) {
       <div><dt>Projetado (valor-base)</dt><dd>{formatBrlDecimal(base)}</dd></div>
       {item.amountSource === 'Adjustment' && <div><dt>Ajuste da competência</dt><dd>{formatBrlDecimal(item.amount)}</dd></div>}
       {confirmed && <div><dt>Real confirmado</dt><dd>{formatBrlDecimal(item.amount)}</dd></div>}
+      {confirmed && item.confirmationSource && <div><dt>Origem do valor</dt><dd>{confirmationLabels[item.confirmationSource]}</dd></div>}
       {difference !== null && <div><dt>Diferença para o projetado</dt><dd>{formatBrlDecimal(difference)}</dd></div>}
       <div><dt>Pagamento</dt><dd>{paid ? 'Pago' : 'Pendente de pagamento'}</dd></div>
     </>

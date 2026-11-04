@@ -57,7 +57,8 @@ public sealed record FinancialCalendarItemDto(
     DateOnly? ActualDate = null,
     Guid? TransactionId = null,
     decimal? BaseAmount = null,
-    string? AmountSource = null)
+    string? AmountSource = null,
+    string? ConfirmationSource = null)
 {
     // Advisory capabilities only. Existing commands revalidate state under their own locks.
     public IReadOnlyList<string> AllowedActions => Source switch

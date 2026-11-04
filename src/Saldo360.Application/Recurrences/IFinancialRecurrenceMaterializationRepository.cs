@@ -7,5 +7,7 @@ public interface IFinancialRecurrenceMaterializationRepository
     Task<bool> HasAnyAsync(Guid workspaceId, Guid recurrenceId, CancellationToken ct);
     Task<MaterializationResultDto> MaterializeAsync(FinancialRecurrence recurrence, IReadOnlyList<RecurrenceOccurrenceDto> occurrences, Guid userId, DateTimeOffset now, CancellationToken ct);
     Task<CompetenceAmountOutcome> ConfirmCompetenceAmountAsync(FinancialRecurrence recurrence, DateOnly competence, decimal amount, Guid userId, DateTimeOffset now, CancellationToken ct);
+    Task<CompetenceAmountOutcome> LinkBankTransactionAsync(FinancialRecurrence recurrence, DateOnly competence, Guid pluggyTransactionId, Guid userId, DateTimeOffset now, CancellationToken ct);
+    Task<IReadOnlyList<BankTransactionCandidate>> BankCandidatesAsync(FinancialRecurrence recurrence, DateOnly competence, CancellationToken ct);
     Task<IReadOnlyList<MaterializationQueryItem>> ListAsync(Guid workspaceId, Guid recurrenceId, DateOnly from, DateOnly through, CancellationToken ct);
 }

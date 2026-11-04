@@ -66,6 +66,29 @@ public sealed class FinancialRecurrenceService(IFinancialWorkspaceRepository wor
             _ => (null,null,false,outcome.Message),
         };
     }
+    public async Task<(CompetenceAmountResult? Result, IDictionary<string,string[]>? Errors, bool NotFound, string? Conflict)> LinkBankTransactionAsync(Guid workspaceId, Guid id, Guid userId, string? competence, Guid? transactionId, CancellationToken ct)
+    {
+        if (!await IsParticipant(workspaceId,userId,ct)) return (null,null,true,null);
+        var errors = new Dictionary<string,string[]>();
+        if (!DateOnly.TryParseExact(competence is null ? null : competence + "-01", "yyyy-MM-dd", out var month)) errors["competence"]=["Informe a competência no formato yyyy-MM."];
+        if (transactionId is null || transactionId == Guid.Empty) errors["transactionId"]=["Informe a transação bancária."];
+        if (errors.Count>0) return (null,errors,false,null);
+        var entity = await repository.FindEntityAsync(workspaceId,id,ct); if (entity is null) return (null,null,true,null);
+        var outcome = await materializations.LinkBankTransactionAsync(entity,month,transactionId!.Value,userId,time.GetUtcNow(),ct);
+        return outcome.Status switch
+        {
+            CompetenceAmountStatus.Ok => (outcome.Result,null,false,null),
+            CompetenceAmountStatus.InvalidCompetence => (null,new Dictionary<string,string[]> { ["transactionId"]=[outcome.Message!] },false,null),
+            _ => (null,null,false,outcome.Message),
+        };
+    }
+    public async Task<(IReadOnlyList<BankTransactionCandidate>? Items, IDictionary<string,string[]>? Errors, bool NotFound)> BankCandidatesAsync(Guid workspaceId, Guid id, Guid userId, string? competence, CancellationToken ct)
+    {
+        if (!await IsParticipant(workspaceId,userId,ct)) return (null,null,true);
+        if (!DateOnly.TryParseExact(competence is null ? null : competence + "-01", "yyyy-MM-dd", out var month)) return (null,new Dictionary<string,string[]> { ["competence"]=["Informe a competência no formato yyyy-MM."] },false);
+        var entity = await repository.FindEntityAsync(workspaceId,id,ct); if (entity is null) return (null,null,true);
+        return (await materializations.BankCandidatesAsync(entity,month,ct),null,false);
+    }
     public async Task<(IReadOnlyList<MaterializationQueryItem>? Items, string? Error, bool NotFound)> MaterializationsAsync(Guid workspaceId, Guid id, Guid userId, DateOnly? from, DateOnly? through, CancellationToken ct)
     {
         if (!await IsParticipant(workspaceId,userId,ct)) return (null,null,true);

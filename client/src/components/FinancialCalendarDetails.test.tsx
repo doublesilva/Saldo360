@@ -254,6 +254,37 @@ describe('FinancialCalendarDetails', () => {
       expect(screen.queryByRole('button', { name: /valor real/ })).toBeNull()
     })
 
+    it('valor vindo do banco mostra a origem e não oferece confirmação manual nem novo vínculo', () => {
+      mockApi()
+      render(<FinancialCalendarDetails workspaceId="family-1" item={recurrenceItem({ amount: '748.31', amountSource: 'Confirmed', confirmationSource: 'PluggyAuto' })} returnFocus={null} onClose={vi.fn()} onChanged={vi.fn()} />)
+      expect(screen.getByText('Origem do valor').nextSibling?.textContent).toBe('Banco (automático)')
+      expect(screen.getByText('Pagamento').nextSibling?.textContent).toBe('Pendente de pagamento')
+      expect(screen.queryByRole('button', { name: /valor real/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Vincular agendamento do banco' })).toBeNull()
+    })
+
+    it('sem fonte bancária segura permite vincular a um débito do banco, aplicando o valor sem segunda confirmação', async () => {
+      const { calls } = mockApi()
+      const onChanged = vi.fn()
+      calls.length = 0
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ url: String(input), init })
+        if (String(input).includes('/csrf')) return Response.json({ token: 't' })
+        if (String(input).includes('/bank-candidates')) return Response.json([{ transactionId: 'tx-1', date: '2026-12-06', amount: '748.31', description: 'SAIDA CREDIARIO AUTOM', status: 'Pending' }])
+        return Response.json({ recurrenceId: 'rec-1', competence: '2026-12', plannedTransactionId: 'p', dueDate: '2026-12-06', baseAmount: '750.00', adjustedAmount: '750.00', confirmedAmount: '748.31', confirmedAt: '2026-12-15T15:00:00Z', created: true, source: 'ManualLink' })
+      }))
+      render(<FinancialCalendarDetails workspaceId="family-1" item={recurrenceItem()} returnFocus={null} onClose={vi.fn()} onChanged={onChanged} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Vincular agendamento do banco' }))
+      const panel = await screen.findByRole('region', { name: 'Vincular agendamento do banco' })
+      expect(await within(panel).findByText(/SAIDA CREDIARIO AUTOM/)).toBeTruthy()
+      fireEvent.click(within(panel).getByRole('button', { name: 'Vincular' }))
+
+      await waitFor(() => expect(onChanged).toHaveBeenCalled())
+      const post = callsFor(calls, '/recurrences/rec-1/competences/2026-12/bank-link')[0]
+      expect(post.init?.method).toBe('POST')
+      expect(JSON.parse(String(post.init?.body))).toEqual({ transactionId: 'tx-1' })
+    })
     it('confirma o valor somente da competência, envia o decimal exato e recarrega a agenda', async () => {
       const { calls } = mockApi()
       const onChanged = vi.fn()

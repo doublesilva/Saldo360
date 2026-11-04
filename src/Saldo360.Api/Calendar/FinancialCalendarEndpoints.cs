@@ -392,6 +392,8 @@ public sealed record FinancialCalendarItemResponse(
     /// <summary>Despesa fixa: valor-base da recorrência e origem do valor vigente (Base, Adjustment ou Confirmed). Confirmar não é pagar. Nulos nos demais itens.</summary>
     public string? BaseAmount { get; init; }
     public string? AmountSource { get; init; }
+    /// <summary>Origem do valor confirmado: Manual, PluggyAuto (correspondência segura automática) ou ManualLink (vínculo manual). Nulo sem valor confirmado.</summary>
+    public string? ConfirmationSource { get; init; }
 
     public static FinancialCalendarItemResponse From(FinancialCalendarItemDto item) => new(
         item.Id,
@@ -409,5 +411,5 @@ public sealed record FinancialCalendarItemResponse(
         item.RecurrenceId,
         item.OccurrenceNumber,
         item.ScheduledDate,
-        item.AllowedActions) { PlannedTransferId = item.PlannedTransferId, ReconciliationStatus = item.ReconciliationStatus, ActualAmount = item.ActualAmount is { } a ? Money.Format(a) : null, ActualDate = item.ActualDate, TransactionId = item.TransactionId, BaseAmount = item.BaseAmount is { } b ? Money.Format(b) : null, AmountSource = item.AmountSource };
+        item.AllowedActions) { PlannedTransferId = item.PlannedTransferId, ReconciliationStatus = item.ReconciliationStatus, ActualAmount = item.ActualAmount is { } a ? Money.Format(a) : null, ActualDate = item.ActualDate, TransactionId = item.TransactionId, BaseAmount = item.BaseAmount is { } b ? Money.Format(b) : null, AmountSource = item.AmountSource, ConfirmationSource = item.ConfirmationSource };
 }

@@ -2743,6 +2743,77 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialAmountConfirmationEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateOnly?>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Details")
+                        .HasColumnType("text")
+                        .HasColumnName("details");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<decimal?>("NewAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("new_amount");
+
+                    b.Property<Guid?>("PlannedTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("planned_transaction_id");
+
+                    b.Property<decimal?>("PreviousAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("previous_amount");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid?>("RecurrenceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recurrence_id");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("source");
+
+                    b.Property<Guid?>("SourceTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_transaction_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_amount_confirmation_events");
+
+                    b.HasIndex("WorkspaceId", "SourceTransactionId", "Kind")
+                        .HasDatabaseName("ix_financial_amount_confirmation_events_workspace_id_source_tr");
+
+                    b.HasIndex("WorkspaceId", "RecurrenceId", "Competence", "CreatedAt")
+                        .HasDatabaseName("ix_financial_amount_confirmation_events_workspace_id_recurrenc");
+
+                    b.ToTable("financial_amount_confirmation_events", (string)null);
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialIncomeForecast", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3151,6 +3222,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("amount_confirmed_by_user_id");
 
+                    b.Property<Guid?>("AmountSourceTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("amount_source_transaction_id");
+
                     b.Property<DateTimeOffset?>("CancelledAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("cancelled_at");
@@ -3162,6 +3237,11 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("category_id");
+
+                    b.Property<string>("ConfirmationSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("amount_confirmation_source");
 
                     b.Property<decimal?>("ConfirmedAmount")
                         .HasColumnType("numeric")
@@ -3257,6 +3337,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasIndex("WorkspaceId", "AccountId")
                         .HasDatabaseName("ix_financial_planned_transactions_workspace_id_account_id");
 
+                    b.HasIndex("WorkspaceId", "AmountSourceTransactionId")
+                        .HasDatabaseName("ix_financial_planned_transactions_workspace_id_amount_source_t")
+                        .HasFilter("amount_source_transaction_id IS NOT NULL AND NOT is_cancelled");
+
                     b.HasIndex("WorkspaceId", "CategoryId", "Type")
                         .HasDatabaseName("ix_financial_planned_transactions_workspace_id_category_id_type");
 
@@ -3282,7 +3366,7 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_financial_planned_transactions_confirmed_amount_valid", "confirmed_amount IS NULL OR (confirmed_amount > 0 AND scale(confirmed_amount) <= 2 AND confirmed_amount < 10000000000000)");
 
-                            t.HasCheckConstraint("ck_financial_planned_transactions_confirmed_triple", "(confirmed_amount IS NULL AND amount_confirmed_at IS NULL AND amount_confirmed_by_user_id IS NULL) OR (confirmed_amount IS NOT NULL AND amount_confirmed_at IS NOT NULL AND amount_confirmed_by_user_id IS NOT NULL)");
+                            t.HasCheckConstraint("ck_financial_planned_transactions_confirmed_triple", "(confirmed_amount IS NULL AND amount_confirmed_at IS NULL AND amount_confirmed_by_user_id IS NULL AND amount_confirmation_source IS NULL AND amount_source_transaction_id IS NULL) OR (confirmed_amount IS NOT NULL AND amount_confirmed_at IS NOT NULL AND (amount_confirmed_by_user_id IS NOT NULL OR amount_confirmation_source = 'PluggyAuto') AND (amount_confirmation_source IN ('Manual', 'PluggyAuto', 'ManualLink') OR amount_confirmation_source IS NULL) AND (amount_source_transaction_id IS NOT NULL OR amount_confirmation_source IS NULL OR amount_confirmation_source = 'Manual'))");
 
                             t.HasCheckConstraint("ck_financial_planned_transactions_currency", "currency = 'BRL'");
 
@@ -6503,6 +6587,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_goal_allocations_financial_goals_workspace_id_goa");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialAmountConfirmationEvent", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_amount_confirmation_events_financial_workspaces_w");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialIncomeForecast", b =>
