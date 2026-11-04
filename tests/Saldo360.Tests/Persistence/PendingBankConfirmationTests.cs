@@ -136,6 +136,52 @@ public sealed class PendingBankConfirmationTests(PostgresFixture postgres) : IAs
     }
 
     [Fact]
+    public async Task UnreconciledPriorMonth_StillTeachesTheBankDescription_SoTheCrediarioIsConfirmedAndThenSettledByLink()
+    {
+        var recurrence = await AddRecurrenceAsync("Crediário Solar", 750m);
+        await AddUnlinkedPostedAsync("Saída CREDIARIO AUTOM", 748.31m, new DateOnly(2026, 10, 6)); // outubro: o matcher nunca a associou (nome 50%, valor ≠ 750,00)
+        var debit = await AddBankAsync("crediario-nov", "SAIDA CREDIARIO AUTOM", 748.31m, new DateOnly(2026, 11, 6), PluggyTransactionStatus.Pending);
+
+        var report = await ProcessAsync();
+
+        Assert.Equal(1, report.Confirmed);
+        await using (var db = Db())
+        {
+            var november = await Obligation(db, recurrence.Id, Nov);
+            Assert.Equal((748.31m, "PluggyAuto", debit), (november.PlannedAmount, november.ConfirmationSource, november.SourceTransactionId));
+            Assert.Equal(750m, (await Obligation(db, recurrence.Id, Dec)).PlannedAmount);
+        }
+        await PostAsync(debit, 748.31m, new DateOnly(2026, 11, 6));
+        await using (var db = Db()) await FixedObligationReconciler.ReconcileAsync(db, _ws.Id, Today, Now, default);
+        await using var verify = Db();
+        var paid = await Obligation(verify, recurrence.Id, Nov);
+        var snapshot = await new FinancialCalendarRepository(verify).ListAsync(_ws.Id, new(Nov, new DateOnly(2026, 11, 30), null, null, Today), default);
+        Assert.Equal((ObligationSituation.Realized, 748.31m), (paid.Situation, paid.ActualAmount));
+        Assert.Equal((748.31m, 0m), (snapshot.Summary.RealizedExpense, snapshot.Summary.PendingExpense)); // sem a duplicidade de 750,00 pendente + 748,31 pago
+    }
+
+    [Fact]
+    public async Task UnreconciledPriorMonth_WithAnAmbiguousOrDistantMovement_TeachesNothing()
+    {
+        var recurrence = await AddRecurrenceAsync("Crediário Solar", 750m);
+        await AddUnlinkedPostedAsync("Saída CREDIARIO AUTOM", 600m, new DateOnly(2026, 10, 6)); // valor fora da tolerância
+        await AddBankAsync("crediario-nov", "SAIDA CREDIARIO AUTOM", 748.31m, new DateOnly(2026, 11, 6), PluggyTransactionStatus.Pending);
+
+        var report = await ProcessAsync();
+
+        Assert.Equal((0, 1), (report.Confirmed, report.Ambiguous));
+        await using var db = Db();
+        Assert.Equal(750m, (await Obligation(db, recurrence.Id, Nov)).PlannedAmount);
+    }
+
+    private async Task AddUnlinkedPostedAsync(string description, decimal amount, DateOnly date)
+    {
+        await using var db = Db();
+        db.FinancialTransactions.Add(FinancialTransaction.CreateFromPluggy(_ws.Id, _account.Id, _category.Id, CategoryType.Expense, description, amount, date, _user, Now));
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
     public async Task PendingToPosted_KeepsTheConfirmedValue_AndPaymentSettlesWithoutANewExpense()
     {
         var recurrence = await AddRecurrenceAsync("Crediário Solar", 750m);

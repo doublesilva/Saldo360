@@ -102,6 +102,19 @@ public sealed class PendingBankMatcherTests
         Assert.Empty(PendingBankMatcher.Match([Debit("SAIDA CREDIARIO AUTOM", 748.31m, Nov(20))], [crediario], history)); // 14 dias
     }
 
+
+    [Fact]
+    public void PriorPeriodEvidence_OnlyAUniqueMovementOfTheSameAccountDateAndValueCountsForOneRecurrence()
+    {
+        var crediario = new PriorOccurrence(Guid.NewGuid(), Account, new DateOnly(2026, 10, 6), 750m);
+        var october = new PostedMovement(Guid.NewGuid(), Account, new DateOnly(2026, 10, 6), 748.31m, "Saída CREDIARIO AUTOM");
+
+        Assert.Equal("Saída CREDIARIO AUTOM", PriorPeriodEvidence.Select([crediario], [october])[crediario.RecurrenceId]);
+        Assert.Empty(PriorPeriodEvidence.Select([crediario], [october with { Amount = 600m }]));                                   // valor fora de 5%
+        Assert.Empty(PriorPeriodEvidence.Select([crediario], [october with { Date = new DateOnly(2026, 10, 12) }]));              // data fora de 3 dias
+        Assert.Empty(PriorPeriodEvidence.Select([crediario], [october, october with { Id = Guid.NewGuid(), Description = "OUTRO" }])); // duas candidatas: ambíguo
+        Assert.Empty(PriorPeriodEvidence.Select([crediario, crediario with { RecurrenceId = Guid.NewGuid() }], [october]));         // a mesma movimentação serviria a duas recorrências
+    }
     [Fact]
     public void TheDiagnosisExplainsWhatIsMissingToAutomate()
     {

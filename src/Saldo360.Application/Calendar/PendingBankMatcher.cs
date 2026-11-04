@@ -73,3 +73,30 @@ public static class PendingBankMatcher
         && Math.Abs(o.PlannedAmount - d.Amount) <= o.PlannedAmount * HistoryAmountTolerance
         && descriptions.Any(x => FixedObligationMatcher.DescriptionCompatible(x, d.Description));
 }
+
+/// <summary>Ocorrência esperada de uma recorrência no período anterior (conta, data e valor-base).</summary>
+public sealed record PriorOccurrence(Guid RecurrenceId, Guid AccountId, DateOnly Due, decimal Amount);
+
+/// <summary>Movimentação bancária efetivada (lançamento Pluggy) do período anterior, ainda sem vínculo com obrigação alguma.</summary>
+public sealed record PostedMovement(Guid Id, Guid AccountId, DateOnly Date, decimal Amount, string Description);
+
+/// <summary>
+/// Evidência do período anterior (PROJ-05): quando a competência passada nunca foi conciliada (o motor de conciliação não a associou), a movimentação efetivada que a cobriu ainda
+/// mostra como o banco escreve essa obrigação. Vale só com par ÚNICO nos dois sentidos: mesma conta, até <see cref="PendingBankMatcher.HistoryDays"/> dias da data esperada e valor até
+/// <see cref="PendingBankMatcher.HistoryAmountTolerance"/> do valor-base, sem que a mesma movimentação sirva a outra recorrência. A descrição dessa movimentação entra no histórico da
+/// recorrência e passa pelas mesmas regras de <see cref="PendingBankMatcher"/> (data, valor, unicidade); descrição ou valor isolados continuam sem associar nada.
+/// </summary>
+public static class PriorPeriodEvidence
+{
+    public static IReadOnlyDictionary<Guid, string> Select(IReadOnlyList<PriorOccurrence> occurrences, IReadOnlyList<PostedMovement> movements)
+    {
+        var edges = (from o in occurrences
+                     from m in movements
+                     where o.AccountId == m.AccountId && o.Amount > 0m
+                        && Math.Abs(o.Due.DayNumber - m.Date.DayNumber) <= PendingBankMatcher.HistoryDays
+                        && Math.Abs(o.Amount - m.Amount) <= o.Amount * PendingBankMatcher.HistoryAmountTolerance
+                     select (o, m)).ToList();
+        return edges.Where(e => edges.Count(x => x.o.RecurrenceId == e.o.RecurrenceId) == 1 && edges.Count(x => x.m.Id == e.m.Id) == 1)
+            .ToDictionary(e => e.o.RecurrenceId, e => e.m.Description);
+    }
+}

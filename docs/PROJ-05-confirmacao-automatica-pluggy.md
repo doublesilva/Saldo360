@@ -17,7 +17,7 @@ Sempre par **único** nos dois sentidos, na mesma conta.
 | Regra | Evidência | Exemplo |
 |---|---|---|
 | `SafeMatcher` | A correspondência segura já existente (`FixedObligationMatcher`: descrição compatível, janela de datas, valor esperado ou estimado) | "Conta de luz" estimada × "CONTA DE LUZ" |
-| `RecurrenceHistory` | A descrição bancária repete a de uma competência anterior **já paga da mesma recorrência**; até 3 dias da data esperada; valor até 5% de diferença; nenhuma outra obrigação plausível disputa o débito; nenhum outro débito com a mesma evidência | Crediário Solar × "SAIDA CREDIARIO AUTOM" |
+| `RecurrenceHistory` | A descrição bancária repete a de uma competência anterior **da mesma recorrência**: paga e conciliada, ou (evidência do período anterior) a movimentação efetivada do mês anterior que a cobriu mesmo sem conciliação, com par único por conta, data (±3 dias) e valor (±5% do valor-base); até 3 dias da data esperada; valor até 5% de diferença; nenhuma outra obrigação plausível disputa o débito; nenhum outro débito com a mesma evidência | Crediário Solar × "SAIDA CREDIARIO AUTOM" (outubro: "Saída CREDIARIO AUTOM", R$ 748,31, nunca conciliada) |
 
 O matcher existente **não foi flexibilizado**: valor igual ou descrição genérica isolados continuam sem associar. A regra histórica é o aprendizado das exceções: o que o banco escreveu quando a obrigação foi paga é a evidência. Sem histórico, nada é associado.
 
@@ -56,7 +56,7 @@ Aditiva: duas colunas nulas, tabela `financial_amount_confirmation_events` e doi
 
 ## Limitações
 
-- A regra histórica exige uma competência anterior **paga e conciliada** da mesma recorrência. Crediário Solar e ASTTI só serão associados automaticamente se o histórico de outubro tiver pagamento conciliado com a descrição bancária; senão ficam `Ambiguous` (diagnóstico registrado) ou entram pelo vínculo manual. Não foi validado com dados reais de produção.
+- A regra histórica usa a competência anterior paga e conciliada ou, na falta dela, a movimentação efetivada única do mês anterior (evidência do período anterior). Sem nenhuma das duas, o débito fica ambíguo com diagnóstico registrado. A ASTTI continua ambígua enquanto o débito pendente vier só como "boleto DDA PAG TIT": o valor confirmado seria igual ao base (sem efeito financeiro) e, ao efetivar, a descrição traz "ASTTI" e a conciliação existente associa sozinha.
 - Horizonte de 3 meses a partir do mês corrente; recorrências de cartão e as detectadas pelo Pluggy ficam de fora.
 - A confirmação automática cria a exceção de competência quando ela não existe; o criador registrado é o dono do workspace (o responsável pela confirmação fica nulo, e a origem `PluggyAuto` é o rastro).
 - Não há tela para consultar os diagnósticos `Ambiguous` nem desvincular um vínculo manual (corrige-se vinculando outra transação).

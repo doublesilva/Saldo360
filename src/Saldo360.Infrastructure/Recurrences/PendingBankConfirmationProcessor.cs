@@ -6,6 +6,7 @@ using Saldo360.Domain.Categories;
 using Saldo360.Domain.Pluggy;
 using Saldo360.Domain.Planning;
 using Saldo360.Domain.Recurrences;
+using Saldo360.Domain.Transactions;
 using Saldo360.Infrastructure.Calendar;
 using Saldo360.Infrastructure.Persistence;
 
@@ -65,7 +66,7 @@ internal static class PendingBankConfirmationProcessor
 
         var recurrenceIds = eligible.Select(o => o.RecurrenceId!.Value).Distinct().ToList();
         var recurrences = await db.FinancialRecurrences.Where(r => r.WorkspaceId == workspaceId && recurrenceIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
-        var history = await LoadHistoryAsync(db, workspaceId, recurrenceIds, ct);
+        var history = await LoadEvidenceAsync(db, workspaceId, monthStart, recurrences, await LoadHistoryAsync(db, workspaceId, recurrenceIds, ct), ct);
         var accountIds = eligible.Select(o => o.AccountId).Distinct().ToList();
         var rows = await LoadBankRowsAsync(db, workspaceId, accountIds, through, ct);
         var rowById = rows.ToDictionary(r => r.Id);
@@ -177,6 +178,37 @@ internal static class PendingBankConfirmationProcessor
             recorded++;
         }
         return recorded;
+    }
+
+    /// <summary>
+    /// Histórico completo de cada recorrência: descrições das competências anteriores pagas e conciliadas + (PROJ-05) a movimentação efetivada do mês anterior que cobriu a obrigação mesmo
+    /// sem ter sido conciliada (par único por conta, data e valor). Só recorrências sem conciliação do mês anterior precisam dessa segunda fonte.
+    /// </summary>
+    private static async Task<IReadOnlyDictionary<Guid, IReadOnlyList<string>>> LoadEvidenceAsync(Saldo360DbContext db, Guid workspaceId, DateOnly monthStart,
+        IReadOnlyDictionary<Guid, FinancialRecurrence> recurrences, IReadOnlyDictionary<Guid, IReadOnlyList<string>> settled, CancellationToken ct)
+    {
+        var previousStart = monthStart.AddMonths(-1); var previousEnd = monthStart.AddDays(-1);
+        var settledPrevious = (await db.FinancialObligationSettlements.AsNoTracking()
+            .Where(s => s.WorkspaceId == workspaceId && s.RemovedAt == null && s.RecurrenceId != null && s.Competence == previousStart).Select(s => s.RecurrenceId!.Value).ToListAsync(ct)).ToHashSet();
+        var occurrences = new List<PriorOccurrence>();
+        foreach (var r in recurrences.Values.Where(r => r.FinancialAccountId != null && !settledPrevious.Contains(r.Id)))
+        {
+            var found = FinancialRecurrenceCalendar.CalculateOccurrences(r, previousStart, previousEnd);
+            if (found.Count == 1) occurrences.Add(new(r.Id, r.FinancialAccountId!.Value, found[0].Date, r.Amount));
+        }
+        if (occurrences.Count == 0) return settled;
+        var from = occurrences.Min(o => o.Due).AddDays(-PendingBankMatcher.HistoryDays); var to = occurrences.Max(o => o.Due).AddDays(PendingBankMatcher.HistoryDays);
+        var linked = db.FinancialObligationSettlements.Where(s => s.WorkspaceId == workspaceId && s.RemovedAt == null).Select(s => s.FinancialTransactionId);
+        var movements = (await db.FinancialTransactions.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.Origin == FinancialTransactionOrigin.PluggyImport && t.Type == CategoryType.Expense && t.PlannedTransactionId == null
+                && t.TransactionDate >= from && t.TransactionDate <= to && !linked.Contains(t.Id))
+            .Select(t => new PostedMovement(t.Id, t.AccountId, t.TransactionDate, t.Amount, t.Description)).ToListAsync(ct));
+        var extra = PriorPeriodEvidence.Select(occurrences, movements);
+        if (extra.Count == 0) return settled;
+        var merged = settled.ToDictionary(p => p.Key, p => p.Value);
+        foreach (var (recurrenceId, description) in extra)
+            merged[recurrenceId] = merged.TryGetValue(recurrenceId, out var current) ? current.Append(description).Distinct().ToList() : [description];
+        return merged;
     }
 
     /// <summary>Descrições bancárias das competências anteriores JÁ PAGAS de cada recorrência: o que o banco escreveu quando essa obrigação foi efetivamente quitada.</summary>
