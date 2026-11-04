@@ -52,25 +52,29 @@ public static class IncomeInference
 public sealed record ProjectedPjTransfer(DateOnly Date, decimal Amount, bool DependsOnInferredIncome);
 
 /// <summary>
-/// Repasse PJ → PF projetado. Em cada data de recebimento previsto (e hoje), transfere 100% do que a PJ pode ceder: o MENOR saldo projetado da PJ daqui até o fim do horizonte
-/// (o saldo já reflete recebimentos, despesas pendentes, repasses previstos e os repasses projetados anteriores, então nada é subtraído duas vezes e os compromissos até o
-/// próximo recebimento e depois dele estão cobertos) menos a reserva de tributos (do mês e do anterior, quando não há obrigação tributária cadastrada) e a reserva operacional.
-/// Nunca consome reserva, nunca deixa a PJ negativa, nunca é negativo e usa centavos inteiros (truncados). Sem saldo conhecido num dia, não projeta.
+/// Repasse PJ → PF projetado. Gatilho financeiro: cada recebimento previsto que ainda projeta caixa (nunca "hoje" só porque a consulta o inclui). No dia do recebimento, transfere o que a
+/// PJ pode ceder: o MENOR saldo projetado da PJ na JANELA DE PROTEÇÃO, menos a reserva de tributos (do mês e do anterior, quando não há obrigação tributária cadastrada) e a reserva
+/// operacional. O saldo já reflete recebimentos, despesas pendentes, repasses previstos e repasses projetados anteriores, então nada é subtraído duas vezes.
+///
+/// Janela de proteção (determinística, independente do horizonte consultado): do recebimento até a véspera do próximo recebimento esperado (o seguinte cobre as obrigações dali em
+/// diante); sem próximo recebimento conhecido, até o fim do mês seguinte ao recebimento. Quem chama garante saldo diário até <c>dataThrough</c>, ao menos o fim do mês seguinte
+/// ao último gatilho. Nunca consome reserva, nunca deixa a PJ negativa (a PJ não tem limite), nunca é negativo e usa centavos inteiros (truncados). Sem saldo conhecido num dia da janela, não projeta.
 /// </summary>
 public static class PjTransferPlanner
 {
     public static IReadOnlyList<ProjectedPjTransfer> Plan(DateOnly today, DateOnly through, IReadOnlyDictionary<DateOnly, decimal> pjClosingByDate,
         IReadOnlyList<IncomeForecastOccurrence> occurrences, decimal operationalReserve, IReadOnlySet<DateOnly> taxObligationMonths, bool incomeInferred)
     {
-        var triggers = new SortedSet<DateOnly> { today };
-        foreach (var o in occurrences.Where(o => o.ProjectsCash && o.GrossAmount > 0m && o.PaymentDate > today && o.PaymentDate <= through)) triggers.Add(o.PaymentDate);
+        var triggers = occurrences.Where(o => o.ProjectsCash && o.PaymentDate >= today && o.PaymentDate <= through).Select(o => o.PaymentDate).Distinct().Order().ToList();
+        var expected = occurrences.Where(o => o.Status != IncomeForecastStatus.Dismissed && o.GrossAmount > 0m).Select(o => o.PaymentDate).Distinct().Order().ToList();
 
         var result = new List<ProjectedPjTransfer>();
         var cumulative = 0m;
         foreach (var date in triggers)
         {
+            var windowEnd = WindowEnd(date, expected);
             decimal? minimum = null;
-            for (var day = date; day <= through; day = day.AddDays(1))
+            for (var day = date; day <= windowEnd; day = day.AddDays(1))
             {
                 if (!pjClosingByDate.TryGetValue(day, out var closing)) { minimum = null; break; }
                 minimum = Math.Min(minimum ?? decimal.MaxValue, closing - cumulative);
@@ -78,10 +82,17 @@ public static class PjTransferPlanner
             if (minimum is not { } floor) continue;
             var transferable = decimal.Round(floor - TaxReserveAt(occurrences, taxObligationMonths, date) - operationalReserve, Money.MaxScale, MidpointRounding.ToZero);
             if (transferable <= 0m) continue;
-            result.Add(new(date, transferable, incomeInferred && occurrences.Any(o => o.ProjectsCash && o.GrossAmount > 0m && o.PaymentDate <= date)));
+            result.Add(new(date, transferable, incomeInferred));
             cumulative += transferable;
         }
         return result;
+    }
+
+    /// <summary>Véspera do próximo recebimento esperado ou, sem ele, o último dia do mês seguinte. Se o próximo recebimento é no mesmo dia, o dia do repasse é o único protegido.</summary>
+    public static DateOnly WindowEnd(DateOnly date, IReadOnlyList<DateOnly> expectedPayments)
+    {
+        var next = expectedPayments.Where(p => p > date).Select(p => (DateOnly?)p).FirstOrDefault();
+        return next is { } n ? n.AddDays(-1) : new DateOnly(date.Year, date.Month, 1).AddMonths(2).AddDays(-1);
     }
 
     private static decimal TaxReserveAt(IReadOnlyList<IncomeForecastOccurrence> occurrences, IReadOnlySet<DateOnly> taxObligationMonths, DateOnly date)

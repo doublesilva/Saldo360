@@ -20,10 +20,16 @@ internal static class PjTransferProjection
 
     public static DateOnly Horizon(DateOnly today) => new DateOnly(today.Year, today.Month, 1).AddMonths(HorizonMonths).AddDays(-1);
 
-    public static async Task<AutoTransferPlan?> PlanAsync(Saldo360DbContext db, Guid workspaceId, DateOnly today, CancellationToken ct)
+    /// <summary>Dados lidos além do horizonte (um mês), para que a janela de proteção do último repasse seja a mesma em qualquer horizonte e o resultado de uma data não dependa dele.</summary>
+    private static DateOnly DataThrough(DateOnly horizon) => new DateOnly(horizon.Year, horizon.Month, 1).AddMonths(2).AddDays(-1);
+
+    public static async Task<AutoTransferPlan?> PlanAsync(Saldo360DbContext db, Guid workspaceId, DateOnly today, CancellationToken ct) =>
+        await PlanAsync(db, workspaceId, today, Horizon(today), ct);
+
+    public static async Task<AutoTransferPlan?> PlanAsync(Saldo360DbContext db, Guid workspaceId, DateOnly today, DateOnly horizon, CancellationToken ct)
     {
-        var horizon = Horizon(today);
-        var forecast = await IncomeForecastLoader.LoadAsync(db, workspaceId, new DateOnly(today.Year, today.Month, 1), horizon, ct);
+        var dataThrough = DataThrough(horizon);
+        var forecast = await IncomeForecastLoader.LoadAsync(db, workspaceId, new DateOnly(today.Year, today.Month, 1), dataThrough, today, ct);
         if (!forecast.Effective) return null;
         var pjId = forecast.Settings!.AccountId;
         var pfId = await db.FinancialAccounts.AsNoTracking().Where(a => a.WorkspaceId == workspaceId && a.IsActive && a.Scope == FinancialScope.PF)
@@ -31,9 +37,9 @@ internal static class PjTransferProjection
         if (pfId is null || pfId == pjId) return null;
 
         // Saldo diário da PJ SEM o repasse projetado (já líquido de despesas pendentes, recebimentos previstos e repasses previstos).
-        var snapshot = await new FinancialCalendarBalanceRepository(db).ReadWithoutAutoTransfersAsync(workspaceId, pjId, horizon, today, ct);
+        var snapshot = await new FinancialCalendarBalanceRepository(db).ReadWithoutAutoTransfersAsync(workspaceId, pjId, dataThrough, today, ct);
         if (snapshot is null) return null;
-        var balances = FinancialCalendarBalanceService.CalculateBalances(new(today, horizon, pjId), today, snapshot);
+        var balances = FinancialCalendarBalanceService.CalculateBalances(new(today, dataThrough, pjId), today, snapshot);
         if (balances.UnavailableReason is not null) return new(pjId, pfId.Value, [], forecast);
         var closing = balances.Days.Where(d => d.ClosingBalance is not null).ToDictionary(d => d.Date, d => d.ClosingBalance!.Value);
         var transfers = PjTransferPlanner.Plan(today, horizon, closing, forecast.Occurrences, forecast.Settings.OperationalReserve, forecast.TaxObligationMonths, forecast.Inferred);

@@ -48,83 +48,103 @@ public sealed class PjTransferPlannerTests
 
     // ---- Repasse PJ → PF ------------------------------------------------------------------------------------------------------------------------
 
-    private static IReadOnlyDictionary<DateOnly, decimal> Closing(Func<DateOnly, decimal> balance)
+    private static IReadOnlyDictionary<DateOnly, decimal> Closing(Func<DateOnly, decimal> balance, DateOnly? until = null)
     {
         var days = new Dictionary<DateOnly, decimal>();
-        for (var day = Today; day <= Through; day = day.AddDays(1)) days[day] = balance(day);
+        for (var day = Today; day <= (until ?? Through); day = day.AddDays(1)) days[day] = balance(day);
         return days;
     }
 
-    private static IncomeForecastOccurrence Receipt(DateOnly payment, decimal gross, decimal tax = 0m, string status = IncomeForecastStatus.Forecast) =>
-        new(new DateOnly(payment.Year, payment.Month, 1).AddMonths(-1), payment, 20, 20, 0m, 0m, gross, tax, status, 0m, false, false, false);
+    private static IncomeForecastOccurrence Receipt(DateOnly payment, decimal gross, decimal tax = 0m, string status = IncomeForecastStatus.Forecast, bool overdue = false) =>
+        new(new DateOnly(payment.Year, payment.Month, 1).AddMonths(-1), payment, 20, 20, 0m, 0m, gross, tax, status, 0m, false, false, false,
+            status == IncomeForecastStatus.Forecast ? gross : 0m, 0m, overdue);
 
     private static readonly IReadOnlySet<DateOnly> NoTaxMonths = new HashSet<DateOnly>();
+    private static readonly DateOnly Nov10 = new(2026, 11, 10);
+    private static readonly DateOnly Dec10 = new(2026, 12, 10);
 
     [Fact]
-    public void ThePjSurplusIsTransferredEntirely_ButNeverTheReservesNorMoreThanTheLowestFutureBalance()
+    public void TheTransferHappensOnTheReceiptDay_NeverBecauseTodayWasIncluded_AndPreservesReservesAndPendingExpenses()
     {
-        // PJ com R$ 2.000 hoje; receita de R$ 15.000 no dia 10 (tributo de 11% = 1.650); despesa de R$ 2.260 por mês no dia 20.
-        var receiptDate = new DateOnly(2026, 11, 10);
-        var closing = Closing(d => d < receiptDate ? 2000m : d < new DateOnly(2026, 11, 20) ? 17000m : 14740m + 0m);
-        var plan = PjTransferPlanner.Plan(Today, Through, closing, [Receipt(receiptDate, 15000m, 1650m)], operationalReserve: 500m, NoTaxMonths, incomeInferred: false);
+        // PJ com R$ 2.000 hoje; receita de R$ 15.000 no dia 10 (tributo 1.650); despesa PJ pendente de 2.260 no dia 20; reserva operacional 500.
+        var closing = Closing(d => d < Nov10 ? 2000m : d < new DateOnly(2026, 11, 20) ? 17000m : 14740m);
 
-        Assert.Equal([Today, receiptDate], plan.Select(t => t.Date));
-        Assert.Equal(1500m, plan[0].Amount);                       // hoje: 2.000 − reserva operacional 500 (a reserva de tributos ainda não existe)
-        Assert.Equal(14740m - 1500m - 1650m - 500m, plan[1].Amount); // no dia 10: o menor saldo futuro (14.740) − já transferido − tributos − reserva
-        Assert.All(plan, t => Assert.Equal(t.Amount, decimal.Round(t.Amount, 2, MidpointRounding.ToZero))); // centavos inteiros
+        var plan = PjTransferPlanner.Plan(Today, Through, closing, [Receipt(Nov10, 15000m, 1650m)], operationalReserve: 500m, NoTaxMonths, incomeInferred: false);
+
+        var transfer = Assert.Single(plan); // nada em "hoje": não há gatilho financeiro
+        Assert.Equal((Nov10, 14740m - 1650m - 500m), (transfer.Date, transfer.Amount)); // menor saldo da janela − tributos − reserva: a despesa de 2.260 já está no saldo
+        Assert.Equal(transfer.Amount, decimal.Round(transfer.Amount, 2, MidpointRounding.ToZero));
     }
 
     [Fact]
-    public void TheTransferNeverMakesThePjNegativeNorConsumesTheReserve_EvenWhenAFutureCommitmentExceedsTheCash()
+    public void TheTransferNeverRelaysOnANegativePj_EvenWhenAKnownCommitmentExceedsTheCash()
     {
-        var closing = Closing(d => d < new DateOnly(2026, 12, 1) ? 3000m : -200m); // compromisso futuro deixaria a PJ negativa
-        var plan = PjTransferPlanner.Plan(Today, Through, closing, [], operationalReserve: 0m, NoTaxMonths, false);
+        var closing = Closing(d => d < new DateOnly(2026, 11, 25) ? 3000m : -200m); // compromisso conhecido deixaria a PJ negativa (sem limite contratado)
 
-        Assert.Empty(plan); // o mínimo futuro é negativo: nada sobra para transferir
+        Assert.Empty(PjTransferPlanner.Plan(Today, Through, closing, [Receipt(Nov10, 0.01m)], 0m, NoTaxMonths, false));
+        Assert.Empty(PjTransferPlanner.Plan(Today, Through, Closing(d => 5000m), [], 0m, NoTaxMonths, false)); // sem recebimento, sem repasse (hoje não é gatilho)
     }
 
     [Fact]
-    public void ARegisteredTaxObligationSuppressesTheTaxReserve_AndAReservePersistsIntoTheFollowingMonth()
+    public void TheProtectionWindowEndsAtTheNextExpectedReceipt_SoTheResultIsTheSameForAnyHorizon()
     {
-        var receiptDate = new DateOnly(2026, 11, 10);
+        // O saldo cai em 20/12, depois do próximo recebimento (10/12): essa queda é do repasse de dezembro, não do de novembro.
+        Func<DateOnly, decimal> balance = d => d < Dec10 ? 9000m : d < new DateOnly(2026, 12, 20) ? 20000m : 1000m;
+        var occurrences = new[] { Receipt(Nov10, 8000m), Receipt(Dec10, 11000m) };
+
+        var shortHorizon = PjTransferPlanner.Plan(Today, new DateOnly(2026, 11, 30), Closing(balance, new DateOnly(2027, 1, 31)), occurrences, 0m, NoTaxMonths, false);
+        var longHorizon = PjTransferPlanner.Plan(Today, new DateOnly(2027, 4, 30), Closing(balance, new DateOnly(2027, 5, 31)), occurrences, 0m, NoTaxMonths, false);
+
+        Assert.Equal(9000m, shortHorizon.Single(t => t.Date == Nov10).Amount);
+        Assert.Equal(shortHorizon.Single(t => t.Date == Nov10), longHorizon.Single(t => t.Date == Nov10)); // mesma competência, mesmo resultado em 6 ou 13 meses
+        Assert.Equal([Nov10], shortHorizon.Select(t => t.Date)); // dezembro fora do horizonte curto
+    }
+
+    [Fact]
+    public void ASecondTransferDiscountsWhatWasAlreadyTransferred_AndNeverCountsTheSameMoneyTwice()
+    {
+        var closing = Closing(d => d < Dec10 ? 9000m : 20000m);
+
+        var plan = PjTransferPlanner.Plan(Today, Through, closing, [Receipt(Nov10, 8000m), Receipt(Dec10, 11000m)], 0m, NoTaxMonths, false);
+
+        Assert.Equal([(Nov10, 9000m), (Dec10, 11000m)], plan.Select(t => (t.Date, t.Amount)));
+    }
+
+    [Fact]
+    public void ARegisteredTaxObligationSuppressesTheTaxReserve()
+    {
         var closing = Closing(d => 10000m);
-        var withReserve = PjTransferPlanner.Plan(Today, Through, closing, [Receipt(receiptDate, 15000m, 1650m)], 0m, NoTaxMonths, false);
-        var registered = PjTransferPlanner.Plan(Today, Through, closing, [Receipt(receiptDate, 15000m, 1650m)], 0m, new HashSet<DateOnly> { new(2026, 11, 1) }, false);
+        var withReserve = PjTransferPlanner.Plan(Today, Through, closing, [Receipt(Nov10, 15000m, 1650m)], 0m, NoTaxMonths, false);
+        var registered = PjTransferPlanner.Plan(Today, Through, closing, [Receipt(Nov10, 15000m, 1650m)], 0m, new HashSet<DateOnly> { new(2026, 11, 1) }, false);
 
-        Assert.Equal(10000m, withReserve[0].Amount);   // hoje a reserva do recebimento ainda não existe
-        Assert.Equal(Today, registered[0].Date);
-        Assert.Equal(10000m, registered.Sum(t => t.Amount));
-        Assert.Equal(10000m, withReserve.Sum(t => t.Amount)); // não há saldo adicional além do que já foi transferido hoje
+        Assert.Equal(10000m - 1650m, withReserve.Single().Amount);
+        Assert.Equal(10000m, registered.Single().Amount);
     }
 
     [Fact]
-    public void WithoutAKnownBalanceForEveryDayNothingIsProjected()
+    public void WithoutAKnownBalanceForEveryDayOfTheWindowNothingIsProjected()
     {
         var closing = Closing(d => 5000m).Where(p => p.Key != new DateOnly(2026, 12, 25)).ToDictionary(p => p.Key, p => p.Value);
 
-        Assert.Empty(PjTransferPlanner.Plan(Today, Through, closing, [], 0m, NoTaxMonths, false));
+        Assert.Empty(PjTransferPlanner.Plan(Today, Through, closing, [Receipt(Nov10, 1000m)], 0m, NoTaxMonths, false)); // janela de 10/11 a 31/12 inclui 25/12
     }
 
     [Fact]
-    public void ADismissedOrRealizedReceiptDoesNotTriggerATransfer_AndInferenceIsFlaggedOnlyAfterAnInferredReceipt()
+    public void AnOverdueResidualOrADismissedReceiptDoesNotTriggerATransfer_AndInferenceIsFlagged()
     {
-        var closing = Closing(d => d < new DateOnly(2026, 12, 10) ? 8000m : 23000m); // a previsão de 10/12 entra no saldo projetado
-        var forecast = Receipt(new DateOnly(2026, 12, 10), 15000m, 1650m);
-        var realized = Receipt(new DateOnly(2026, 11, 10), 15000m, 1650m, IncomeForecastStatus.Realized);
-        var dismissed = Receipt(new DateOnly(2027, 1, 10), 15000m, 1650m, IncomeForecastStatus.Dismissed);
+        var closing = Closing(d => 8000m);
+        var overdue = Receipt(new DateOnly(2026, 11, 1), 15000m, 0m, overdue: true) with { Residual = 7000m };
+        var dismissed = Receipt(new DateOnly(2027, 1, 10), 15000m, 0m, IncomeForecastStatus.Dismissed);
 
-        var plan = PjTransferPlanner.Plan(Today, Through, closing, [realized, forecast, dismissed], 0m, NoTaxMonths, incomeInferred: true);
-
-        Assert.Equal([Today, new DateOnly(2026, 12, 10)], plan.Select(t => t.Date));      // só hoje e a previsão ainda por vir disparam repasse
-        Assert.Equal([false, true], plan.Select(t => t.DependsOnInferredIncome));         // o de hoje não depende de receita inferida; o seguinte, sim
-        Assert.Equal([8000m, 23000m - 8000m - 3300m], plan.Select(t => t.Amount));                // reserva de tributos do recebimento realizado de novembro (carregada) + a do previsto
+        Assert.Empty(PjTransferPlanner.Plan(Today, Through, closing, [overdue, dismissed], 0m, NoTaxMonths, true));
+        Assert.True(PjTransferPlanner.Plan(Today, Through, closing, [Receipt(Nov10, 15000m)], 0m, NoTaxMonths, true).Single().DependsOnInferredIncome);
     }
 
     [Fact]
-    public void ThePlanIsDeterministic_SoRepeatedReadsNeverProjectADifferentTransfer()
+    public void ThePlanIsDeterministicAndIdempotent()
     {
         var closing = Closing(d => 7000m);
-        var occurrences = new[] { Receipt(new DateOnly(2026, 12, 10), 15000m, 1650m) };
+        var occurrences = new[] { Receipt(Dec10, 15000m, 1650m) };
 
         Assert.Equal(PjTransferPlanner.Plan(Today, Through, closing, occurrences, 100m, NoTaxMonths, true), PjTransferPlanner.Plan(Today, Through, closing, occurrences, 100m, NoTaxMonths, true));
     }

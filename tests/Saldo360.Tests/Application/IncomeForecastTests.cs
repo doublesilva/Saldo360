@@ -11,10 +11,12 @@ public sealed class IncomeForecastTests
     private static IncomeForecastSettings Settings(int day = 10, int offset = 1, decimal tax = 11m, decimal rate = 100m, decimal hours = 8m) =>
         new(Account, rate, hours, day, offset, tax, 0m, true);
 
-    private static IncomeForecastOccurrence Occur(DateOnly worked, IncomeForecastSettings? settings = null, IncomeForecastMonthOverride? adjust = null, decimal realized = 0m)
+    private static readonly DateOnly Today = new(2026, 11, 4);
+
+    private static IncomeForecastOccurrence Occur(DateOnly worked, IncomeForecastSettings? settings = null, IncomeForecastMonthOverride? adjust = null, decimal linked = 0m, decimal unidentified = 0m, DateOnly? today = null)
     {
         var s = settings ?? Settings();
-        return IncomeForecastCalculator.Occurrence(s, worked, IncomeForecastCalculator.BusinessDays(worked, []), adjust, realized);
+        return IncomeForecastCalculator.Occurrence(s, worked, IncomeForecastCalculator.BusinessDays(worked, []), adjust, new IncomeReceiptEvidence(linked, unidentified), today ?? Today);
     }
 
     [Theory]
@@ -75,15 +77,66 @@ public sealed class IncomeForecastTests
         Assert.Equal(IncomeForecastStatus.Dismissed, Occur(worked, adjust: new(worked, null, null, null, true)).Status);
     }
 
+    // Esperado (outubro trabalhado, recebimento em 10/11): 16.800,00; reserva de tributos 11%.
+    private static readonly DateOnly Worked = new(2026, 10, 1);
+
     [Fact]
-    public void RealizedRevenue_ReplacesTheForecast_FromHalfOfTheExpectedAmount()
+    public void ALinkedPartialReceipt_LeavesTheResidualToReceive_WithoutAHalfThresholdReplacement()
     {
-        var worked = new DateOnly(2026, 10, 1); // esperado 16.800,00
-        Assert.Equal(IncomeForecastStatus.Forecast, Occur(worked, realized: 8399.99m).Status);
-        var replaced = Occur(worked, realized: 8400m);
-        Assert.Equal(IncomeForecastStatus.Realized, replaced.Status);
-        Assert.False(replaced.ProjectsCash); // nunca as duas: a estimativa deixa de projetar caixa
-        Assert.Equal(924m, replaced.TaxReserve); // 11% do realizado
+        var partial = Occur(Worked, linked: 9000m);
+
+        Assert.Equal(IncomeForecastStatus.PartiallyReceived, partial.Status);
+        Assert.Equal((9000m, 7800m), (partial.RealizedAmount, partial.Residual));
+        Assert.True(partial.ProjectsCash);
+        Assert.Equal(7800m, partial.CashAmount); // só o residual entra no caixa; os 9.000 já estão no saldo bancário
+        Assert.Equal(1848m, partial.TaxReserve); // 11% sobre o esperado, uma única vez
+        Assert.Equal(IncomeForecastStatus.PartiallyReceived, Occur(Worked, linked: 8400m).Status); // exatamente a metade: continua parcial
+    }
+
+    [Fact]
+    public void AnUnrelatedReceipt_NeverSettlesTheForecast_AndIsReportedAsUnidentified()
+    {
+        var occurrence = Occur(Worked, unidentified: 16800m);
+
+        Assert.Equal(IncomeForecastStatus.Forecast, occurrence.Status);
+        Assert.Equal((0m, 16800m, 16800m), (occurrence.RealizedAmount, occurrence.Residual, occurrence.UnidentifiedAmount));
+    }
+
+    [Fact]
+    public void AFullLinkedReceipt_SettlesOnlyThatForecast_AndAnExcessKeepsTheEffectiveAmount()
+    {
+        var full = Occur(Worked, linked: 16800m);
+        var excess = Occur(Worked, linked: 17500m);
+
+        Assert.Equal((IncomeForecastStatus.Realized, false, 0m), (full.Status, full.ProjectsCash, full.Residual));
+        Assert.Equal((IncomeForecastStatus.Realized, 17500m, 700m, 0m), (excess.Status, excess.RealizedAmount, excess.Excess, excess.Residual)); // não limita ao previsto
+        Assert.Equal(1925m, excess.TaxReserve); // 11% de 17.500
+    }
+
+    [Fact]
+    public void AnOverdueResidual_StaysIdentified_ButNeverBecomesACashInflowToday()
+    {
+        var overdue = Occur(Worked, linked: 9000m, today: new DateOnly(2026, 11, 20)); // recebimento era 10/11
+        var untilToday = Occur(Worked, today: new DateOnly(2026, 11, 10)); // no próprio dia ainda projeta
+
+        Assert.Equal((7800m, true, false, 0m), (overdue.Residual, overdue.Overdue, overdue.ProjectsCash, overdue.CashAmount));
+        Assert.Equal(overdue.PaymentDate, new DateOnly(2026, 11, 10)); // nenhuma data nova inventada
+        Assert.True(untilToday.ProjectsCash);
+    }
+
+    [Fact]
+    public void Classify_LinksOnlyPayersSeenInPriorMonths_AndIgnoresYieldsAndRefunds()
+    {
+        var prior = new[] { new IncomeReceipt(new DateOnly(2026, 10, 9), 15000m, "PIX RECEBIDO  CLIENTE A") };
+        var month = new[]
+        {
+            new IncomeReceipt(new DateOnly(2026, 11, 10), 9000m, "pix recebido cliente a"),
+            new IncomeReceipt(new DateOnly(2026, 11, 11), 3000m, "PIX RECEBIDO OUTRO"),
+            new IncomeReceipt(new DateOnly(2026, 11, 12), 5m, "REND PAGO APLIC AUT MAIS"),
+        };
+
+        Assert.Equal(new IncomeReceiptEvidence(9000m, 3000m), IncomeForecastCalculator.Classify(month, prior));
+        Assert.Equal(new IncomeReceiptEvidence(0m, 12000m), IncomeForecastCalculator.Classify(month, [])); // sem histórico, nada vincula
     }
 
     [Fact]

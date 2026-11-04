@@ -93,7 +93,7 @@ internal sealed class MonthlyPlanRepository(Saldo360DbContext db) : IMonthlyPlan
         (await Saldo360.Infrastructure.Calendar.PjTransferProjection.PlanAsync(db, workspaceId, today, cancellationToken))?.Transfers ?? [];
 
     public Task<IncomeForecastView> LoadIncomeForecastAsync(Guid workspaceId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct) =>
-        IncomeForecastLoader.LoadAsync(db, workspaceId, from, through, ct);
+        IncomeForecastLoader.LoadAsync(db, workspaceId, from, through, today, ct);
 
     public async Task UpsertIncomeForecastAsync(Guid workspaceId, IncomeForecastSettings s, Guid userId, DateTimeOffset now, CancellationToken ct)
     {

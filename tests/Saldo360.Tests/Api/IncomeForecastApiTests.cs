@@ -60,8 +60,8 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
 
     private Task<HttpResponseMessage> PostAsync(Setup s, string path, object body) => SendWithCsrfAsync(HttpMethod.Post, $"{s.Root}/{path}", s.Session, body);
 
-    private async Task TransactionAsync(Setup s, Guid account, string type, string amount, DateOnly date) =>
-        await JsonAsync(await PostAsync(s, "transactions", new { accountId = account, categoryId = type == "Income" ? s.Income : s.Expense, type, amount, transactionDate = date, description = "Sintético" }), HttpStatusCode.Created);
+    private async Task TransactionAsync(Setup s, Guid account, string type, string amount, DateOnly date, string description = "Sintético") =>
+        await JsonAsync(await PostAsync(s, "transactions", new { accountId = account, categoryId = type == "Income" ? s.Income : s.Expense, type, amount, transactionDate = date, description }), HttpStatusCode.Created);
 
     private async Task PlannedAsync(Setup s, Guid account, string type, string amount, DateOnly due, string description = "Previsão") =>
         await JsonAsync(await PostAsync(s, "planned-transactions", new { accountId = account, categoryId = type == "Income" ? s.Income : s.Expense, type, amount, dueDate = due, description }), HttpStatusCode.Created);
@@ -152,14 +152,15 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
     }
 
     [Fact]
-    public async Task RealizedIncomeOnTheAccount_ReplacesTheForecast_NeverBoth()
+    public async Task LinkedIncomeOnTheAccount_SettlesOnlyThatForecast_NeverBoth()
     {
         var s = await ArrangeAsync();
-        await JsonAsync(await SaveForecastAsync(s));
+        await JsonAsync(await SaveForecastAsync(s, day: Today.Day));
         var before = Integrated(await SixMonthsAsync(s), 0);
         var expected = Num(before, "income", "expectedGross");
         Assert.Equal(expected, Num(before, "pj", "pendingIncome"));
 
+        await TransactionAsync(s, s.Pj, "Income", "100.00", ThisMonth.AddDays(-5)); // histórico do pagador no mês anterior (evidência)
         await TransactionAsync(s, s.Pj, "Income", expected.ToString("0.00", CultureInfo.InvariantCulture), Today); // o recebimento aconteceu
 
         var after = Integrated(await SixMonthsAsync(s), 0);
@@ -168,6 +169,25 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
         Assert.Equal(expected, Num(after, "income", "realizedIncome"));
         // O saldo projetado não duplica: abertura + realizado, sem a entrada estimada de novo.
         Assert.Equal(Num(after, "pj", "opening") + expected, Num(after, "pj", "closing") + Num(after, "pj", "pendingExpense") + Num(after, "transfers", "autoProjectedPjToPf"));
+    }
+
+    [Fact]
+    public async Task APartialLinkedReceipt_LeavesTheResidualProjected_AndAnUnrelatedDepositSettlesNothing()
+    {
+        var s = await ArrangeAsync();
+        await JsonAsync(await SaveForecastAsync(s, day: Today.Day));
+        var expected = Num(Integrated(await SixMonthsAsync(s), 0), "income", "expectedGross");
+        await TransactionAsync(s, s.Pj, "Income", "100.00", ThisMonth.AddDays(-5));
+        var partial = Math.Round(expected * 0.4m, 2);
+        await TransactionAsync(s, s.Pj, "Income", partial.ToString("0.00", CultureInfo.InvariantCulture), Today);
+        await TransactionAsync(s, s.Pj, "Income", "50000.00", Today, "DEPOSITO DESCONHECIDO"); // sem pagador conhecido: não liquida nada
+
+        var month = Integrated(await SixMonthsAsync(s), 0);
+
+        Assert.Equal("PartiallyReceived", Text(month, "income", "source"));
+        Assert.Equal(expected - partial, Num(month, "pj", "pendingIncome")); // só o residual segue a receber
+        Assert.Contains("IncomeReceiptUnidentified", month.GetProperty("quality").EnumerateArray().Select(q => q.GetString()));
+        Assert.False(month.GetProperty("complete").GetBoolean());
     }
 
     // ---- Tributos, despesas PJ e disponibilidade --------------------------------------------------------------------------------------------------

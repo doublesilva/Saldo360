@@ -58,6 +58,9 @@ public sealed partial class MonthlyPlanService
             if (forecast.Inferred) { quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeForecastInferred); quality.Add(MonthlyPlanCalculator.CoverageReasons.TaxReserveNotConfigured); }
             if (dependsOnInferred) quality.Add(MonthlyPlanCalculator.CoverageReasons.TransferDependsOnInferredIncome);
             if (income.Source == IncomeForecastStatus.Dismissed) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeForecastDismissed);
+            if (occurrences.Any(o => o.Overdue)) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeReceiptOverdue);
+            if (occurrences.Any(o => o.UnidentifiedAmount > 0m)) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeReceiptUnidentified);
+            if (occurrences.Any(o => o.Excess > 0m)) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeReceiptExceedsForecast);
             if (allCards.Count == 0) quality.Add(MonthlyPlanCalculator.CoverageReasons.NoCardsRegistered);
             if (!f.CreditCardProjectionComplete || !p.CreditCardProjectionComplete) quality.Add(PlanActualCalculator.Reasons.CardCoverageIncomplete);
             if (!f.DebtProjectionComplete || !p.DebtProjectionComplete) quality.Add(PlanActualCalculator.Reasons.DebtCoverageIncomplete);
@@ -89,18 +92,21 @@ public sealed partial class MonthlyPlanService
         if (!forecast.Effective) return new("NotConfigured", null, null, null, null, null, null, null, realized, false);
         if (occurrences.Count == 0) return new("None", null, null, null, null, null, null, null, realized, false);
         var o = occurrences[0];
-        var source = occurrences.All(x => x.Status == IncomeForecastStatus.Dismissed) ? IncomeForecastStatus.Dismissed
-            : occurrences.Any(x => x.Status == IncomeForecastStatus.Forecast) ? IncomeForecastStatus.Forecast : IncomeForecastStatus.Realized;
+        var source = SourceOf(occurrences);
         return new(source, Key(o.WorkedMonth), o.BusinessDays, o.BillableDays, o.HoursPerDay.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture), MonthlyPlanCalculator.Cents(o.HourlyRate),
             MonthlyPlanCalculator.Cents(occurrences.Sum(x => x.GrossAmount)), o.PaymentDate, realized, occurrences.Any(x => x.DaysAdjusted || x.AmountAdjusted || x.DateAdjusted));
     }
+
+    private static string SourceOf(IReadOnlyList<IncomeForecastOccurrence> occurrences) =>
+        occurrences.All(x => x.Status == IncomeForecastStatus.Dismissed) ? IncomeForecastStatus.Dismissed
+        : occurrences.Any(x => x.Status == IncomeForecastStatus.Forecast) ? IncomeForecastStatus.Forecast
+        : occurrences.Any(x => x.Status == IncomeForecastStatus.PartiallyReceived) ? IncomeForecastStatus.PartiallyReceived : IncomeForecastStatus.Realized;
 
     /// <summary>Receita inferida do histórico: sem valor/hora nem horas por dia (não foram configurados) e nunca apresentada como garantida; a origem é sempre sinalizada.</summary>
     private static IntegratedIncomeDto InferredIncomeFor(IReadOnlyList<IncomeForecastOccurrence> occurrences, string realized)
     {
         var o = occurrences[0];
-        var source = occurrences.All(x => x.Status == IncomeForecastStatus.Dismissed) ? IncomeForecastStatus.Dismissed
-            : occurrences.Any(x => x.Status == IncomeForecastStatus.Forecast) ? IncomeForecastStatus.Forecast : IncomeForecastStatus.Realized;
+        var source = SourceOf(occurrences);
         return new(source, Key(o.WorkedMonth), null, null, null, null, MonthlyPlanCalculator.Cents(occurrences.Sum(x => x.GrossAmount)), o.PaymentDate, realized,
             occurrences.Any(x => x.DaysAdjusted || x.AmountAdjusted || x.DateAdjusted), true);
     }

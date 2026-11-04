@@ -36,6 +36,12 @@ public static class MonthlyPlanCalculator
         public const string TaxReserveNotConfigured = "TaxReserveNotConfigured";
         /// <summary>O repasse PJ → PF projetado depende de receita inferida.</summary>
         public const string TransferDependsOnInferredIncome = "TransferDependsOnInferredIncome";
+        /// <summary>Há valor a receber com data vencida: continua identificado, mas não entra no caixa de hoje.</summary>
+        public const string IncomeReceiptOverdue = "IncomeReceiptOverdue";
+        /// <summary>Entrada bancária no mês do recebimento sem pagador reconhecido: não liquida a previsão e pode duplicá-la.</summary>
+        public const string IncomeReceiptUnidentified = "IncomeReceiptUnidentified";
+        /// <summary>Recebimento vinculado acima do esperado: o valor efetivo é preservado e divergente.</summary>
+        public const string IncomeReceiptExceedsForecast = "IncomeReceiptExceedsForecast";
     }
 
     public static class Pendencies

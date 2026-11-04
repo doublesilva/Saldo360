@@ -7,7 +7,7 @@ public sealed record IncomeForecastAccountOptionDto(Guid Id, string Name, string
 
 public sealed record IncomeForecastMonthDto(
     string WorkedCompetence, DateOnly PaymentDate, int BusinessDays, int BillableDays, string GrossAmount, string TaxReserve, string Status, string RealizedAmount,
-    bool DaysAdjusted, bool AmountAdjusted, bool DateAdjusted);
+    bool DaysAdjusted, bool AmountAdjusted, bool DateAdjusted, string Residual = "0.00", string UnidentifiedAmount = "0.00", bool Overdue = false, string Excess = "0.00");
 
 /// <summary>
 /// Configuração da previsão. <c>Exists</c> falso = rascunho com os valores iniciais sugeridos (nada gravado, nada projetado). <c>IsActive</c> é a aprovação: só então a

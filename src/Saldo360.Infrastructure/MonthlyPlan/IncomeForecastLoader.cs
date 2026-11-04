@@ -8,14 +8,14 @@ namespace Saldo360.Infrastructure.MonthlyPlan;
 
 /// <summary>
 /// PROJ-01: fonte ÚNICA da previsão de receita PJ. A projeção diária da Agenda e a visão integrada de seis meses leem daqui, então não há dois valores para o mesmo recebimento.
-/// Somente leitura: calcula na hora, não grava nem cria lançamento. A receita realizada da conta no mês do recebimento substitui a estimativa
-/// (<see cref="IncomeForecastCalculator.RealizedReplacementRatio"/>).
+/// Somente leitura: calcula na hora, não grava nem cria lançamento. Só o recebimento com evidência (<see cref="IncomeForecastCalculator.Classify"/>) liquida a competência,
+/// total ou parcialmente; o restante fica como residual ou como entrada não identificada.
 /// </summary>
 internal static class IncomeForecastLoader
 {
     private static readonly string[] TaxWords = ["DAS", "SIMPLES NACIONAL", "IMPOSTO", "TRIBUT", "DARF", "ISS ", "IRPJ", "CSLL"];
 
-    public static async Task<IncomeForecastView> LoadAsync(Saldo360DbContext db, Guid workspaceId, DateOnly from, DateOnly through, CancellationToken ct)
+    public static async Task<IncomeForecastView> LoadAsync(Saldo360DbContext db, Guid workspaceId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct)
     {
         var row = await db.FinancialIncomeForecasts.AsNoTracking().SingleOrDefaultAsync(f => f.WorkspaceId == workspaceId, ct);
         InferredIncome? inferred = null; IncomeForecastSettings settings;
@@ -35,12 +35,13 @@ internal static class IncomeForecastLoader
                 overrides[worked] = overrides.TryGetValue(worked, out var user) ? user with { ExpectedAmount = user.ExpectedAmount ?? inferred.MonthlyAmount } : new(worked, null, inferred.MonthlyAmount, null, false);
         var userNonWorking = await db.FinancialNonWorkingDays.AsNoTracking().Where(d => d.WorkspaceId == workspaceId && d.Date >= workedFrom && d.Date <= workedThrough.AddMonths(1)).Select(d => d.Date).ToListAsync(ct);
 
-        // Receita realizada da conta por mês (a mesma regra dos indicadores: devolução bancária não é receita; transferência não é lançamento).
-        var revenueRows = await Saldo360.Infrastructure.Transactions.FinancialTransactionKpi.Project(
-                db.FinancialTransactions.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.AccountId == settings.AccountId
-                    && t.TransactionDate >= new DateOnly(from.Year, from.Month, 1).AddMonths(-1) && t.TransactionDate <= through))
-            .Where(m => m.Revenue > 0m).Select(m => new { m.Date, m.Revenue }).ToListAsync(ct);
-        var revenueByMonth = revenueRows.GroupBy(r => new DateOnly(r.Date.Year, r.Date.Month, 1)).ToDictionary(g => g.Key, g => g.Sum(r => r.Revenue));
+        // Entradas da conta (a mesma regra dos indicadores: devolução bancária não é receita; transferência não é lançamento), com descrição para a conciliação por evidência.
+        // O histórico anterior (seis meses antes da janela) identifica o pagador; entrada sem pagador reconhecido nunca liquida a competência.
+        var historyFrom = new DateOnly(from.Year, from.Month, 1).AddMonths(-1 - IncomeInference.WindowMonths);
+        var receiptRows = await db.FinancialTransactions.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.AccountId == settings.AccountId && t.Type == CategoryType.Income
+                && t.Origin != Saldo360.Domain.Transactions.FinancialTransactionOrigin.PluggyRefund && t.TransactionDate >= historyFrom && t.TransactionDate <= through)
+            .Select(t => new IncomeReceipt(t.TransactionDate, t.Amount, t.Description)).ToListAsync(ct);
 
         var occurrences = new List<IncomeForecastOccurrence>();
         foreach (var worked in IncomeForecastCalculator.WorkedMonthsFor(settings, from, through))
@@ -48,8 +49,11 @@ internal static class IncomeForecastLoader
             overrides.TryGetValue(worked, out var adjust);
             var payment = adjust?.PaymentDate ?? IncomeForecastCalculator.PaymentDateFor(settings, worked);
             if (payment < from || payment > through) continue;
-            revenueByMonth.TryGetValue(new DateOnly(payment.Year, payment.Month, 1), out var realized);
-            occurrences.Add(IncomeForecastCalculator.Occurrence(settings, worked, IncomeForecastCalculator.BusinessDays(worked, userNonWorking), adjust, realized));
+            var paymentMonth = new DateOnly(payment.Year, payment.Month, 1);
+            var evidence = IncomeForecastCalculator.Classify(
+                receiptRows.Where(r => r.Date.Year == payment.Year && r.Date.Month == payment.Month),
+                receiptRows.Where(r => r.Date < paymentMonth && r.Date >= paymentMonth.AddMonths(-IncomeInference.WindowMonths)));
+            occurrences.Add(IncomeForecastCalculator.Occurrence(settings, worked, IncomeForecastCalculator.BusinessDays(worked, userNonWorking), adjust, evidence, today));
         }
         return new(settings, occurrences, await TaxObligationMonthsAsync(db, workspaceId, settings.AccountId, new DateOnly(from.Year, from.Month, 1), through, ct), inferred is not null, inferred?.MonthsUsed ?? 0);
     }

@@ -37,3 +37,20 @@ Os testes da PROJ-01 que fixavam o saldo da PF com um repasse previsto, a reserv
 - A PF usada é a conta PF ativa primária (ou a primeira); a PJ, a conta de recebimento configurada ou a PJ com mais recebimentos operacionais.
 - O repasse de "hoje" assume que a PJ cederia seu excedente imediatamente: é uma suposição de planejamento, não uma transferência.
 - Em produção hoje não há configuração nem repasses previstos: a primeira leitura passa a mostrar receita e repasse inferidos, todos sinalizados. A configuração do usuário (R$ 100/h, 8 h, dia 10, 11%) só é aplicada por ele ou com autorização.
+
+## Entrega 1 — Confiabilidade das receitas PJ e repasses (ajuste da PROJ-06)
+
+**Conciliação por evidência (substitui a regra de 50%).** `IncomeForecastCalculator.RealizedReplacementRatio` foi removido. As entradas operacionais da conta de recebimento no mês do recebimento são separadas por `IncomeForecastCalculator.Classify`: só é *vinculada* a entrada cujo pagador (descrição normalizada) já apareceu nos seis meses anteriores da conta; as demais ficam *não identificadas* e nunca liquidam a competência. Rendimentos, estornos e devoluções não contam.
+
+| Situação | Condição | Caixa projetado |
+|---|---|---|
+| `Forecast` | nada vinculado | esperado integral |
+| `PartiallyReceived` | 0 < vinculado < esperado | só o residual |
+| `Realized` | vinculado ≥ esperado (excedente preservado, `Excess`) | nada |
+| `Dismissed` | descartada pelo usuário | nada |
+
+Residual com data de recebimento anterior a hoje fica `Overdue`: continua identificado, mas **não** vira entrada de caixa hoje e nenhuma data nova é inventada. Cobertura parcial sinaliza `IncomeReceiptOverdue`, `IncomeReceiptUnidentified` (pode duplicar a previsão) e `IncomeReceiptExceedsForecast`. A reserva de tributos incide uma vez sobre o maior entre esperado e recebido.
+
+**Repasse.** O gatilho é só o recebimento previsto que ainda projeta caixa (o antigo gatilho "hoje" foi removido). A janela de proteção vai do recebimento até a véspera do próximo recebimento esperado (sem próximo, até o fim do mês seguinte); o resultado de uma data não depende da extensão da consulta, e a leitura de dados passa um mês do horizonte para cobrir a janela do último repasse. A PJ nunca fica negativa nem consome reservas. Sem schema novo nem migration.
+
+**Limitações.** O vínculo por pagador exige histórico (sem ele, nada é vinculado e a entrada é sinalizada). Tributo de receita inferida continua não configurado (sinalizado, não inventado).

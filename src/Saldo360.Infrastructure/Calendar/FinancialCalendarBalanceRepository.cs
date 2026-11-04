@@ -152,10 +152,10 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
 
         // Receita PJ por horas (PROJ-01): estimativa parametrizada, só quando a configuração foi ATIVADA pelo usuário. Entra como entrada pendente na data do recebimento, na conta
         // de recebimento; a receita realizada da conta no mês a substitui (nunca as duas) e a reserva de tributos não é débito aqui.
-        var forecast = await Saldo360.Infrastructure.MonthlyPlan.IncomeForecastLoader.LoadAsync(db, workspaceId, new DateOnly(today.Year, today.Month, 1), through, cancellationToken);
+        var forecast = await Saldo360.Infrastructure.MonthlyPlan.IncomeForecastLoader.LoadAsync(db, workspaceId, new DateOnly(today.Year, today.Month, 1), through, today, cancellationToken);
         if (forecast.Effective && (accountId == null || accountId == forecast.Settings!.AccountId))
-            pending = pending.Concat(forecast.Occurrences.Where(o => o.ProjectsCash && o.GrossAmount > 0m).GroupBy(o => o.PaymentDate)
-                .Select(g => new FinancialCalendarDailyTotals(g.Key, g.Sum(o => o.GrossAmount), 0m, 0m, 0m))).ToList();
+            pending = pending.Concat(forecast.Occurrences.Where(o => o.ProjectsCash).GroupBy(o => o.PaymentDate)
+                .Select(g => new FinancialCalendarDailyTotals(g.Key, g.Sum(o => o.CashAmount), 0m, 0m, 0m))).ToList();
 
         // Transferências PREVISTAS (pendentes: não canceladas e ainda sem transferência realizada associada): saída na origem e entrada no destino. Numa conta, só a ponta dela; no
         // consolidado, o líquido por dia (as duas pontas dentro do conjunto se anulam). Associada, a previsão deixa de projetar: o realizado já conta a transferência uma única vez.

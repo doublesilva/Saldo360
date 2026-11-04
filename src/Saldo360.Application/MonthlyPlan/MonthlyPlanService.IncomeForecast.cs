@@ -41,7 +41,8 @@ public sealed partial class MonthlyPlanService
             return new(false, false, suggested?.Id, suggested?.Name, "100.00", "8", 10, 1, "11.00", "0.00", [], options);
         }
         var months = view.Occurrences.OrderBy(o => o.PaymentDate).Select(o => new IncomeForecastMonthDto(Key(o.WorkedMonth), o.PaymentDate, o.BusinessDays, o.BillableDays, Decimal(o.GrossAmount),
-            Decimal(o.TaxReserve), o.Status, Decimal(o.RealizedAmount), o.DaysAdjusted, o.AmountAdjusted, o.DateAdjusted)).ToList();
+            Decimal(o.TaxReserve), o.Status, Decimal(o.RealizedAmount), o.DaysAdjusted, o.AmountAdjusted, o.DateAdjusted,
+            Decimal(o.Residual), Decimal(o.UnidentifiedAmount), o.Overdue, Decimal(o.Excess))).ToList();
         return new(true, s.IsActive, s.AccountId, all.FirstOrDefault(a => a.Id == s.AccountId)?.Name, Decimal(s.HourlyRate), s.HoursPerDay.ToString("0.##", CultureInfo.InvariantCulture),
             s.PaymentDay, s.PaymentOffsetMonths, Decimal(s.TaxReservePercent), Decimal(s.OperationalReserve), months, options);
     }

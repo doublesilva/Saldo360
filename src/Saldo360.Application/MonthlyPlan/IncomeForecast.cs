@@ -14,18 +14,35 @@ public static class IncomeForecastStatus
 {
     /// <summary>Estimativa parametrizada e ativada, ainda sem receita realizada correspondente.</summary>
     public const string Forecast = "Forecast";
-    /// <summary>A receita realizada da conta no mês do recebimento substitui a estimativa.</summary>
+    /// <summary>Recebimento vinculado cobre integralmente o valor esperado.</summary>
     public const string Realized = "Realized";
+    /// <summary>Há recebimento vinculado, mas menor que o esperado: o residual segue a receber.</summary>
+    public const string PartiallyReceived = "PartiallyReceived";
     public const string Dismissed = "Dismissed";
+}
+
+/// <summary>Entrada bancária operacional da conta de recebimento.</summary>
+public sealed record IncomeReceipt(DateOnly Date, decimal Amount, string Description);
+
+/// <summary>Recebimentos do mês de pagamento separados pela evidência: <c>Linked</c> tem origem reconhecida (pagador já visto em meses anteriores); <c>Unidentified</c> não prova pertencer à competência.</summary>
+public sealed record IncomeReceiptEvidence(decimal Linked, decimal Unidentified)
+{
+    public static IncomeReceiptEvidence None { get; } = new(0m, 0m);
 }
 
 /// <summary>Uma competência trabalhada e o seu recebimento. <c>TaxReserve</c> é só reserva de disponibilidade: nunca é débito no saldo bancário.</summary>
 public sealed record IncomeForecastOccurrence(
     DateOnly WorkedMonth, DateOnly PaymentDate, int BusinessDays, int BillableDays, decimal HourlyRate, decimal HoursPerDay, decimal GrossAmount, decimal TaxReserve,
-    string Status, decimal RealizedAmount, bool DaysAdjusted, bool AmountAdjusted, bool DateAdjusted)
+    string Status, decimal RealizedAmount, bool DaysAdjusted, bool AmountAdjusted, bool DateAdjusted, decimal Residual = 0m, decimal UnidentifiedAmount = 0m, bool Overdue = false)
 {
-    /// <summary>Só a estimativa ainda não realizada projeta entrada de caixa.</summary>
-    public bool ProjectsCash => Status == IncomeForecastStatus.Forecast;
+    /// <summary>Só o residual a receber, com data ainda não vencida, projeta entrada de caixa. Residual atrasado fica identificado, mas não vira entrada hoje.</summary>
+    public bool ProjectsCash => Status is IncomeForecastStatus.Forecast or IncomeForecastStatus.PartiallyReceived && !Overdue && Residual > 0m;
+
+    /// <summary>Valor que entra no caixa projetado na data do recebimento.</summary>
+    public decimal CashAmount => ProjectsCash ? Residual : 0m;
+
+    /// <summary>Recebimento vinculado acima do esperado: o valor efetivo é preservado e a divergência fica visível.</summary>
+    public decimal Excess => Status == IncomeForecastStatus.Dismissed ? 0m : Math.Max(0m, RealizedAmount - GrossAmount);
 }
 
 /// <summary>Configuração e ocorrências do período, mais os meses em que já existe obrigação tributária cadastrada (a reserva não se aplica de novo).</summary>
@@ -68,9 +85,6 @@ public static class SaoPauloHolidays
 
 public static class IncomeForecastCalculator
 {
-    /// <summary>A receita realizada que cobre ao menos esta fração do valor esperado, no mês do recebimento, substitui a estimativa (nunca as duas).</summary>
-    public const decimal RealizedReplacementRatio = 0.5m;
-
     public static DateOnly PaymentDateFor(IncomeForecastSettings settings, DateOnly workedMonth)
     {
         var month = workedMonth.AddMonths(settings.PaymentOffsetMonths);
@@ -87,17 +101,40 @@ public static class IncomeForecastCalculator
 
     public static decimal TaxReserve(decimal baseAmount, decimal percent) => decimal.Round(baseAmount * percent / 100m, Money.MaxScale, MidpointRounding.AwayFromZero);
 
-    public static IncomeForecastOccurrence Occurrence(IncomeForecastSettings settings, DateOnly workedMonth, int businessDays, IncomeForecastMonthOverride? adjust, decimal realizedInPaymentMonth)
+    /// <summary>
+    /// A receita só é liquidada pelo que tem evidência (<see cref="IncomeReceiptEvidence.Linked"/>): sem percentual de substituição. Vinculado parcial deixa o residual a receber;
+    /// vinculado acima do esperado preserva o valor efetivo. Residual com data anterior a <paramref name="today"/> continua identificado, mas não projeta entrada de caixa (nenhuma data nova é inventada).
+    /// A reserva de tributos incide uma única vez sobre o maior entre o esperado e o recebido.
+    /// </summary>
+    public static IncomeForecastOccurrence Occurrence(IncomeForecastSettings settings, DateOnly workedMonth, int businessDays, IncomeForecastMonthOverride? adjust, IncomeReceiptEvidence evidence, DateOnly today)
     {
         var days = adjust?.BillableDays ?? businessDays;
         var gross = adjust?.ExpectedAmount ?? MonthlyPlanCalculator.HourlyAmount(settings.HourlyRate, settings.HoursPerDay, days);
         var payment = adjust?.PaymentDate ?? PaymentDateFor(settings, workedMonth);
-        var status = adjust?.IsDismissed == true ? IncomeForecastStatus.Dismissed
-            : gross > 0m && realizedInPaymentMonth >= gross * RealizedReplacementRatio ? IncomeForecastStatus.Realized : IncomeForecastStatus.Forecast;
-        var reserveBase = status switch { IncomeForecastStatus.Realized => realizedInPaymentMonth, IncomeForecastStatus.Forecast => gross, _ => 0m };
-        return new(workedMonth, payment, businessDays, days, settings.HourlyRate, settings.HoursPerDay, gross, TaxReserve(reserveBase, settings.TaxReservePercent), status, realizedInPaymentMonth,
-            adjust?.BillableDays is not null, adjust?.ExpectedAmount is not null, adjust?.PaymentDate is not null);
+        var dismissed = adjust?.IsDismissed == true;
+        var status = dismissed ? IncomeForecastStatus.Dismissed
+            : gross > 0m && evidence.Linked >= gross ? IncomeForecastStatus.Realized
+            : evidence.Linked > 0m ? IncomeForecastStatus.PartiallyReceived : IncomeForecastStatus.Forecast;
+        var residual = dismissed ? 0m : Math.Max(0m, gross - evidence.Linked);
+        var reserveBase = dismissed ? 0m : Math.Max(gross, evidence.Linked);
+        return new(workedMonth, payment, businessDays, days, settings.HourlyRate, settings.HoursPerDay, gross, TaxReserve(reserveBase, settings.TaxReservePercent), status, evidence.Linked,
+            adjust?.BillableDays is not null, adjust?.ExpectedAmount is not null, adjust?.PaymentDate is not null, residual, dismissed ? 0m : evidence.Unidentified, residual > 0m && payment < today);
     }
+
+    /// <summary>
+    /// Separa as entradas do mês de pagamento pela evidência: operacionais (não rendimento/estorno) cujo pagador (descrição normalizada) já apareceu em meses anteriores da conta são vinculadas;
+    /// as demais ficam como não identificadas. Sem histórico do pagador, nada é vinculado.
+    /// </summary>
+    public static IncomeReceiptEvidence Classify(IEnumerable<IncomeReceipt> paymentMonthReceipts, IEnumerable<IncomeReceipt> priorReceipts)
+    {
+        var known = priorReceipts.Where(r => IncomeInference.IsOperational(r.Description)).Select(r => Normalize(r.Description)).ToHashSet();
+        decimal linked = 0m, unidentified = 0m;
+        foreach (var receipt in paymentMonthReceipts.Where(r => r.Amount > 0m && IncomeInference.IsOperational(r.Description)))
+            if (known.Contains(Normalize(receipt.Description))) linked += receipt.Amount; else unidentified += receipt.Amount;
+        return new(linked, unidentified);
+    }
+
+    private static string Normalize(string description) => string.Join(' ', description.ToUpperInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>Competências trabalhadas que podem ter recebimento no intervalo (com folga de um mês para datas ajustadas à mão).</summary>
     public static IEnumerable<DateOnly> WorkedMonthsFor(IncomeForecastSettings settings, DateOnly from, DateOnly through)
