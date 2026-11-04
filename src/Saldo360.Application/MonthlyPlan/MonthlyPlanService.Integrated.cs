@@ -58,6 +58,7 @@ public sealed partial class MonthlyPlanService
             if (forecast.Inferred) { quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeForecastInferred); quality.Add(MonthlyPlanCalculator.CoverageReasons.TaxReserveNotConfigured); }
             if (dependsOnInferred) quality.Add(MonthlyPlanCalculator.CoverageReasons.TransferDependsOnInferredIncome);
             if (income.Source == IncomeForecastStatus.Dismissed) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeForecastDismissed);
+            if (occurrences.Any(o => o.Ambiguous)) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeReceiptAmbiguous);
             if (occurrences.Any(o => o.Overdue)) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeReceiptOverdue);
             if (occurrences.Any(o => o.UnidentifiedAmount > 0m)) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeReceiptUnidentified);
             if (occurrences.Any(o => o.Excess > 0m)) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeReceiptExceedsForecast);

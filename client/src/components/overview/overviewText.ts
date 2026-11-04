@@ -57,6 +57,7 @@ export const reasonText: Record<string, string> = {
   IncomeReceiptOverdue: 'Há valor a receber com data vencida: segue identificado, mas não entra no caixa de hoje.',
   IncomeReceiptUnidentified: 'Há entrada bancária sem pagador reconhecido no mês do recebimento: não liquida a previsão e pode duplicá-la.',
   IncomeReceiptExceedsForecast: 'Recebimento acima do esperado: o valor efetivo foi preservado.',
+  IncomeReceiptAmbiguous: 'Mais de uma competência disputa o mesmo recebimento: a associação é ambígua e a projeção é parcial.',
   PlanNotAttributable: 'O orçamento por categoria vale para todas as contas; escolha “Todas as contas” para compará-lo.',
   PlanNotDefined: 'Não há valor planejado para este mês.',
   MissingPayerAccount: 'Há cartões sem conta pagadora.',

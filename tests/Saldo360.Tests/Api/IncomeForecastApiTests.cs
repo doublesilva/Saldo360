@@ -171,6 +171,23 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
         Assert.Equal(Num(after, "pj", "opening") + expected, Num(after, "pj", "closing") + Num(after, "pj", "pendingExpense") + Num(after, "transfers", "autoProjectedPjToPf"));
     }
 
+
+    [Fact]
+    public async Task TwoCompetencesPaidInTheSameMonth_NeverConsumeTheSameReceiptTwice_AndAreFlaggedAmbiguous()
+    {
+        var s = await ArrangeAsync();
+        await JsonAsync(await SaveForecastAsync(s, day: Today.Day));
+        await JsonAsync(await SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/income-forecast/months/{Month(ThisMonth.AddMonths(-2))}", s.Session, new { paymentDate = Today, isDismissed = false }));
+        var pendingBefore = Num(Integrated(await SixMonthsAsync(s), 0), "pj", "pendingIncome");
+        await TransactionAsync(s, s.Pj, "Income", "100.00", ThisMonth.AddDays(-5));
+        await TransactionAsync(s, s.Pj, "Income", "5000.00", Today); // um único depósito de pagador conhecido, duas competências com o mesmo mês de pagamento
+
+        var month = Integrated(await SixMonthsAsync(s), 0);
+
+        Assert.Equal(pendingBefore - 5000m, Num(month, "pj", "pendingIncome")); // consumido uma só vez
+        Assert.Contains("IncomeReceiptAmbiguous", month.GetProperty("quality").EnumerateArray().Select(q => q.GetString()));
+        Assert.False(month.GetProperty("complete").GetBoolean());
+    }
     [Fact]
     public async Task APartialLinkedReceipt_LeavesTheResidualProjected_AndAnUnrelatedDepositSettlesNothing()
     {

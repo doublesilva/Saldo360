@@ -42,6 +42,8 @@ public static class MonthlyPlanCalculator
         public const string IncomeReceiptUnidentified = "IncomeReceiptUnidentified";
         /// <summary>Recebimento vinculado acima do esperado: o valor efetivo é preservado e divergente.</summary>
         public const string IncomeReceiptExceedsForecast = "IncomeReceiptExceedsForecast";
+        /// <summary>Mais de uma competência disputa o mesmo recebimento vinculado: a associação não é certa e a projeção é parcial.</summary>
+        public const string IncomeReceiptAmbiguous = "IncomeReceiptAmbiguous";
     }
 
     public static class Pendencies

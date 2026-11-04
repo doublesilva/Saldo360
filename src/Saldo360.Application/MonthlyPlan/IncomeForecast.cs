@@ -33,7 +33,7 @@ public sealed record IncomeReceiptEvidence(decimal Linked, decimal Unidentified)
 /// <summary>Uma competência trabalhada e o seu recebimento. <c>TaxReserve</c> é só reserva de disponibilidade: nunca é débito no saldo bancário.</summary>
 public sealed record IncomeForecastOccurrence(
     DateOnly WorkedMonth, DateOnly PaymentDate, int BusinessDays, int BillableDays, decimal HourlyRate, decimal HoursPerDay, decimal GrossAmount, decimal TaxReserve,
-    string Status, decimal RealizedAmount, bool DaysAdjusted, bool AmountAdjusted, bool DateAdjusted, decimal Residual = 0m, decimal UnidentifiedAmount = 0m, bool Overdue = false)
+    string Status, decimal RealizedAmount, bool DaysAdjusted, bool AmountAdjusted, bool DateAdjusted, decimal Residual = 0m, decimal UnidentifiedAmount = 0m, bool Overdue = false, bool Ambiguous = false)
 {
     /// <summary>Só o residual a receber, com data ainda não vencida, projeta entrada de caixa. Residual atrasado fica identificado, mas não vira entrada hoje.</summary>
     public bool ProjectsCash => Status is IncomeForecastStatus.Forecast or IncomeForecastStatus.PartiallyReceived && !Overdue && Residual > 0m;

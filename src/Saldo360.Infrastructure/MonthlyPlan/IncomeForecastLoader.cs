@@ -43,17 +43,28 @@ internal static class IncomeForecastLoader
                 && t.Origin != Saldo360.Domain.Transactions.FinancialTransactionOrigin.PluggyRefund && t.TransactionDate >= historyFrom && t.TransactionDate <= through)
             .Select(t => new IncomeReceipt(t.TransactionDate, t.Amount, t.Description)).ToListAsync(ct);
 
-        var occurrences = new List<IncomeForecastOccurrence>();
+        // Cada recebimento vinculado é consumido uma única vez: competências com o mesmo mês de pagamento dividem o que entrou, da mais antiga para a mais nova. O histórico do pagador
+        // diz QUEM pagou, não QUAL competência: se há mais de uma competência disputando o mesmo dinheiro (mesmo mês ou valor atrasado anterior), o vínculo é sinalizado como ambíguo.
+        var pools = new Dictionary<DateOnly, IncomeReceiptEvidence>();
+        var candidates = new List<(DateOnly Worked, DateOnly Payment, IncomeForecastMonthOverride? Adjust)>();
         foreach (var worked in IncomeForecastCalculator.WorkedMonthsFor(settings, from, through))
         {
             overrides.TryGetValue(worked, out var adjust);
             var payment = adjust?.PaymentDate ?? IncomeForecastCalculator.PaymentDateFor(settings, worked);
-            if (payment < from || payment > through) continue;
+            if (payment >= from && payment <= through) candidates.Add((worked, payment, adjust));
+        }
+        var occurrences = new List<IncomeForecastOccurrence>();
+        foreach (var (worked, payment, adjust) in candidates.OrderBy(c => c.Payment).ThenBy(c => c.Worked))
+        {
             var paymentMonth = new DateOnly(payment.Year, payment.Month, 1);
-            var evidence = IncomeForecastCalculator.Classify(
-                receiptRows.Where(r => r.Date.Year == payment.Year && r.Date.Month == payment.Month),
-                receiptRows.Where(r => r.Date < paymentMonth && r.Date >= paymentMonth.AddMonths(-IncomeInference.WindowMonths)));
-            occurrences.Add(IncomeForecastCalculator.Occurrence(settings, worked, IncomeForecastCalculator.BusinessDays(worked, userNonWorking), adjust, evidence, today));
+            if (!pools.TryGetValue(paymentMonth, out var pool))
+                pool = IncomeForecastCalculator.Classify(
+                    receiptRows.Where(r => r.Date.Year == payment.Year && r.Date.Month == payment.Month),
+                    receiptRows.Where(r => r.Date < paymentMonth && r.Date >= paymentMonth.AddMonths(-IncomeInference.WindowMonths)));
+            var occurrence = IncomeForecastCalculator.Occurrence(settings, worked, IncomeForecastCalculator.BusinessDays(worked, userNonWorking), adjust, pool, today);
+            var competing = candidates.Count(c => new DateOnly(c.Payment.Year, c.Payment.Month, 1) == paymentMonth) > 1 || occurrences.Any(o => o.Overdue);
+            occurrences.Add(competing && pool.Linked > 0m ? occurrence with { Ambiguous = true } : occurrence);
+            pools[paymentMonth] = new(Math.Max(0m, pool.Linked - occurrence.GrossAmount), 0m);
         }
         return new(settings, occurrences, await TaxObligationMonthsAsync(db, workspaceId, settings.AccountId, new DateOnly(from.Year, from.Month, 1), through, ct), inferred is not null, inferred?.MonthsUsed ?? 0);
     }
