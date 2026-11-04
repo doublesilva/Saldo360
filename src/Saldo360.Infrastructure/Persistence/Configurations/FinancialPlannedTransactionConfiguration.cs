@@ -52,6 +52,19 @@ internal sealed class FinancialPlannedTransactionConfiguration : IEntityTypeConf
         builder.Property(planned => planned.NeedsHistoricalReview).HasDefaultValue(false);
         builder.ToTable(table => table.HasCheckConstraint("ck_financial_planned_transactions_exception_pair",
             "(exception_recurrence_id IS NULL AND exception_competence IS NULL) OR (exception_recurrence_id IS NOT NULL AND exception_competence IS NOT NULL AND EXTRACT(DAY FROM exception_competence) = 1)"));
+        // Valor real confirmado da competência (PROJ-04): três campos juntos ou nenhum; nulos para todos os registros existentes.
+        builder.Property(planned => planned.ConfirmedAmount).HasColumnType("numeric");
+        builder.ToTable(table =>
+        {
+            table.HasCheckConstraint("ck_financial_planned_transactions_confirmed_triple",
+                "(confirmed_amount IS NULL AND amount_confirmed_at IS NULL AND amount_confirmed_by_user_id IS NULL) OR (confirmed_amount IS NOT NULL AND amount_confirmed_at IS NOT NULL AND amount_confirmed_by_user_id IS NOT NULL)");
+            table.HasCheckConstraint("ck_financial_planned_transactions_confirmed_amount_valid",
+                $"confirmed_amount IS NULL OR (confirmed_amount > 0 AND scale(confirmed_amount) <= {Money.MaxScale} AND confirmed_amount < {Money.Limit})");
+        });
+        builder.HasOne<ApplicationUser>()
+            .WithMany()
+            .HasForeignKey(planned => planned.AmountConfirmedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(planned => new { planned.WorkspaceId, planned.ExceptionRecurrenceId, planned.ExceptionCompetence })
             .IsUnique().HasFilter("exception_recurrence_id IS NOT NULL AND NOT is_cancelled").HasDatabaseName("ux_financial_planned_transactions_recurrence_exception");
         builder.HasOne<Saldo360.Domain.Recurrences.FinancialRecurrence>()

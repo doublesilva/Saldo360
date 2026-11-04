@@ -68,6 +68,28 @@ public sealed class FinancialPlannedTransaction : Entity
     /// <summary>Competência anterior à implantação sem evidência de pagamento: fica "A revisar", fora de atraso e do saldo projetado até ser conciliada ou reconhecida.</summary>
     public bool NeedsHistoricalReview { get; private set; }
 
+    /// <summary>
+    /// Valor real confirmado da competência (conta/boleto recebido). Prevalece sobre <see cref="Amount"/> (ajuste da competência) e sobre o valor-base da recorrência;
+    /// não é pagamento: a obrigação continua pendente até ser paga. Null = nunca confirmado (exceções antigas continuam sendo apenas ajustes).
+    /// </summary>
+    public decimal? ConfirmedAmount { get; private set; }
+
+    public DateTimeOffset? AmountConfirmedAt { get; private set; }
+
+    public Guid? AmountConfirmedByUserId { get; private set; }
+
+    /// <summary>Valor vigente da previsão: confirmado, quando existe; senão o previsto/ajustado.</summary>
+    public decimal EffectiveAmount => ConfirmedAmount ?? Amount;
+
+    /// <summary>Registra (ou corrige) o valor real confirmado desta competência. Não altera <see cref="Amount"/>, a data nem as referências.</summary>
+    public void ConfirmCompetenceAmount(decimal amount, Guid userId, DateTimeOffset now)
+    {
+        if (IsCancelled) throw new InvalidOperationException("Previsão cancelada não pode ter valor real confirmado.");
+        if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount), "O valor confirmado deve ser maior que zero.");
+        if (Money.Validate(amount, "O valor confirmado") is { } error) throw new ArgumentOutOfRangeException(nameof(amount), error);
+        ConfirmedAmount = amount; AmountConfirmedAt = now; AmountConfirmedByUserId = userId;
+    }
+
     public void MarkAsCompetenceException(Guid recurrenceId, DateOnly competence)
     {
         ExceptionRecurrenceId = recurrenceId;

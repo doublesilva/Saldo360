@@ -153,10 +153,10 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             .Where(p => p.AccountId == accountId && p.DueDate <= through)
             .GroupBy(p => p.AccountId)
             .Select(g => new PlannedTotals(
-                g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Income ? p.Amount : 0m),
-                g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Expense ? p.Amount : 0m),
-                g.Sum(p => p.DueDate >= baseDate && p.Type == CategoryType.Income ? p.Amount : 0m),
-                g.Sum(p => p.DueDate >= baseDate && p.Type == CategoryType.Expense ? p.Amount : 0m)))
+                g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Income ? (p.ConfirmedAmount ?? p.Amount) : 0m),
+                g.Sum(p => p.DueDate < baseDate && p.Type == CategoryType.Expense ? (p.ConfirmedAmount ?? p.Amount) : 0m),
+                g.Sum(p => p.DueDate >= baseDate && p.Type == CategoryType.Income ? (p.ConfirmedAmount ?? p.Amount) : 0m),
+                g.Sum(p => p.DueDate >= baseDate && p.Type == CategoryType.Expense ? (p.ConfirmedAmount ?? p.Amount) : 0m)))
             .SingleOrDefaultAsync(cancellationToken) ?? new PlannedTotals(0m, 0m, 0m, 0m);
         var virtualPending = (await Saldo360.Infrastructure.Recurrences.FixedObligationReader.LoadVirtualPendingAsync(db, workspaceId,
             new DateOnly(baseDate.Year, baseDate.Month, 1), through, baseDate, cancellationToken)).Where(o => o.AccountId == accountId).ToList();

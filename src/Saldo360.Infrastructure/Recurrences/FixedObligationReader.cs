@@ -49,6 +49,9 @@ internal static class FixedObligationReader
                 && !db.FinancialPlannedInvoiceReconciliations.Any(r => r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null)
                 && !db.FinancialDebtInstallmentReconciliations.Any(r => r.WorkspaceId == p.WorkspaceId && r.PlannedTransactionId == p.Id && r.RemovedAt == null))
             .ToListAsync(ct);
+        var recurrences = await db.FinancialRecurrences.AsNoTracking()
+            .Where(r => r.WorkspaceId == workspaceId && r.FinancialAccountId != null && r.Origin == RecurrenceOrigin.Manual).ToListAsync(ct);
+        var baseAmountByRecurrence = recurrences.ToDictionary(r => r.Id, r => r.Amount);
         // Previsões que representam obrigações fixas: exceção de competência, ocorrência materializada, histórica a revisar ou já vinculada.
         foreach (var p in planned.Where(p => !p.IsCancelled))
         {
@@ -63,8 +66,12 @@ internal static class FixedObligationReader
             if (settlement != null) { var t = txById[settlement.FinancialTransactionId]; txId = t.Id; amount = t.Amount; date = t.TransactionDate; }
             else if (txByPlanned.TryGetValue(p.Id, out var rt)) { txId = rt.Id; amount = rt.Amount; date = rt.TransactionDate; }
             var situation = txId != null ? ObligationSituation.Realized : p.NeedsHistoricalReview ? ObligationSituation.NeedsReview : ObligationSituation.Planned;
+            // Prioridade do valor da competência: real confirmado > ajuste (exceção/previsão) > valor-base da recorrência. Confirmar não é pagar.
+            decimal? baseAmount = recurrenceId is { } rid && baseAmountByRecurrence.TryGetValue(rid, out var b) ? b : null;
+            var source = p.ConfirmedAmount != null ? ObligationAmountSource.Confirmed
+                : p.ExceptionRecurrenceId != null || (baseAmount != null && p.Amount != baseAmount) ? ObligationAmountSource.Adjustment : ObligationAmountSource.Base;
             result.Add(new(workspaceId, recurrenceId, mat?.OccurrenceNumber, competence, p.Id, p.AccountId, p.CategoryId, p.Type, p.Nature, p.Description,
-                p.Amount, false, p.DueDate, situation, false, amount, date, txId));
+                p.EffectiveAmount, false, p.DueDate, situation, false, amount, date, txId, baseAmount, source, p.Amount));
         }
 
         // Exceções (inclusive canceladas = mês pulado de propósito) suprimem a ocorrência virtual daquela competência.
@@ -72,8 +79,6 @@ internal static class FixedObligationReader
             .Where(p => p.WorkspaceId == workspaceId && p.ExceptionRecurrenceId != null).Select(p => new { p.ExceptionRecurrenceId, p.ExceptionCompetence }).ToListAsync(ct))
             .Select(p => (p.ExceptionRecurrenceId!.Value, p.ExceptionCompetence!.Value)).ToHashSet();
 
-        var recurrences = await db.FinancialRecurrences.AsNoTracking()
-            .Where(r => r.WorkspaceId == workspaceId && r.FinancialAccountId != null && r.Origin == RecurrenceOrigin.Manual).ToListAsync(ct);
         foreach (var r in recurrences)
         {
             foreach (var o in FinancialRecurrenceCalendar.CalculateOccurrences(r, from, through))
@@ -84,13 +89,13 @@ internal static class FixedObligationReader
                 {
                     var t = txById[s.FinancialTransactionId];
                     result.Add(new(workspaceId, r.Id, o.Sequence, competence, null, r.FinancialAccountId!.Value, r.FinancialCategoryId, r.Type, r.Nature, r.Description,
-                        r.Amount, r.IsEstimated, o.Date, ObligationSituation.Realized, true, t.Amount, t.TransactionDate, t.Id));
+                        r.Amount, r.IsEstimated, o.Date, ObligationSituation.Realized, true, t.Amount, t.TransactionDate, t.Id, r.Amount));
                     continue;
                 }
                 // Competência fechada sem evidência de pagamento: "a revisar", nunca dívida vencida confirmada.
                 var situation = competence < currentMonth ? ObligationSituation.NeedsReview : ObligationSituation.Planned;
                 result.Add(new(workspaceId, r.Id, o.Sequence, competence, null, r.FinancialAccountId!.Value, r.FinancialCategoryId, r.Type, r.Nature, r.Description,
-                    r.Amount, r.IsEstimated, o.Date, situation, true));
+                    r.Amount, r.IsEstimated, o.Date, situation, true, null, null, null, r.Amount));
             }
         }
         return result.OrderBy(i => i.DueDate).ThenBy(i => i.Description, StringComparer.Ordinal).ToList();

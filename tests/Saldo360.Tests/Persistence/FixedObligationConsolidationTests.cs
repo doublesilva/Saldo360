@@ -352,7 +352,6 @@ public sealed class FixedObligationConsolidationTests(PostgresFixture postgres) 
 public sealed class FixedObligationMigrationTests(PostgresFixture postgres)
 {
     private const string Previous = "20261101180947_AddPluggyDetectedCardRecurrences";
-    private const string Current = "20261101200304_AddFixedObligationConsolidation";
 
     [Fact]
     public async Task Migration_IsAdditive_PreservesExistingPlannedRows_AndRoundTrips()
@@ -375,7 +374,7 @@ public sealed class FixedObligationMigrationTests(PostgresFixture postgres)
             Assert.False(await ColumnExists(db, "financial_planned_transactions", "exception_recurrence_id"));
             Assert.False(await TableExists(db, "financial_obligation_settlements"));
             Assert.Equal(1, await db.Database.SqlQuery<int>($"SELECT COUNT(*)::int AS \"Value\" FROM financial_planned_transactions WHERE id = {plannedId}").SingleAsync());
-            await migrator.MigrateAsync(Current); // reaplica
+            await migrator.MigrateAsync(); // reaplica até a última (o modelo atual exige as migrations posteriores)
         }
         await using var verify = PostgresFixture.CreateDbContext(cs);
         var kept = await verify.FinancialPlannedTransactions.AsNoTracking().SingleAsync(p => p.Id == plannedId);

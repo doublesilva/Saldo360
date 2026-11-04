@@ -50,6 +50,22 @@ public sealed class FinancialRecurrenceService(IFinancialWorkspaceRepository wor
         try{return(await materializations.MaterializeAsync(entity,occurrences,userId,time.GetUtcNow(),ct),null,false,null);}
         catch(InvalidOperationException e){return(null,null,false,e.Message);}
     }
+    public async Task<(CompetenceAmountResult? Result, IDictionary<string,string[]>? Errors, bool NotFound, string? Conflict)> ConfirmCompetenceAmountAsync(Guid workspaceId, Guid id, Guid userId, string? competence, decimal? amount, CancellationToken ct)
+    {
+        if (!await IsParticipant(workspaceId,userId,ct)) return (null,null,true,null);
+        var errors = new Dictionary<string,string[]>();
+        if (!DateOnly.TryParseExact(competence is null ? null : competence + "-01", "yyyy-MM-dd", out var month)) errors["competence"]=["Informe a competência no formato yyyy-MM."];
+        if (amount is null || amount <= 0) errors["amount"]=["O valor deve ser maior que zero."]; else if (Money.Validate(amount.Value,"O valor") is { } amountError) errors["amount"]=[amountError];
+        if (errors.Count>0) return (null,errors,false,null);
+        var entity = await repository.FindEntityAsync(workspaceId,id,ct); if (entity is null) return (null,null,true,null);
+        var outcome = await materializations.ConfirmCompetenceAmountAsync(entity,month,amount!.Value,userId,time.GetUtcNow(),ct);
+        return outcome.Status switch
+        {
+            CompetenceAmountStatus.Ok => (outcome.Result,null,false,null),
+            CompetenceAmountStatus.InvalidCompetence => (null,new Dictionary<string,string[]> { ["competence"]=[outcome.Message!] },false,null),
+            _ => (null,null,false,outcome.Message),
+        };
+    }
     public async Task<(IReadOnlyList<MaterializationQueryItem>? Items, string? Error, bool NotFound)> MaterializationsAsync(Guid workspaceId, Guid id, Guid userId, DateOnly? from, DateOnly? through, CancellationToken ct)
     {
         if (!await IsParticipant(workspaceId,userId,ct)) return (null,null,true);

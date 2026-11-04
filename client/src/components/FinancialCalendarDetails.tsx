@@ -4,9 +4,10 @@ import { listCategories, type FinancialCategory } from '../api/categories'
 import type { FinancialCalendarItem } from '../api/financialCalendar'
 import { cancelPlanned, getPlanned, type PlannedTransaction } from '../api/planned'
 import { cancelTransaction, getTransaction, type FinancialTransaction } from '../api/transactions'
-import { formatBrlDecimal, formatDate } from '../money'
+import { formatBrlDecimal, formatDate, subtractMoneyDecimal } from '../money'
 import { PlannedForm, RealizeForm } from './Planned'
 import { TransactionForm } from './Transactions'
+import { CompetenceAmountForm } from './CompetenceAmountForm'
 
 type Detail =
   | { source: 'PlannedTransaction'; value: PlannedTransaction }
@@ -14,7 +15,7 @@ type Detail =
 
 type Load<T> = { kind: 'loading' } | { kind: 'loaded'; data: T } | { kind: 'error'; message: string }
 type References = { accounts: FinancialAccount[]; categories: FinancialCategory[] }
-type Mode = 'details' | 'realize' | 'edit'
+type Mode = 'details' | 'realize' | 'edit' | 'confirm'
 
 const typeLabels = { Income: 'Receita', Expense: 'Despesa' } as const
 const statusLabels = { Realized: 'Realizado', Pending: 'Pendente', Overdue: 'Vencido', NeedsReview: 'A revisar' } as const
@@ -147,6 +148,9 @@ export function FinancialCalendarDetails({
     loaded.source === 'PlannedTransaction' ? loaded.value.status === 'Pending' : !loaded.value.isCancelled
   )
   const actions = canAct ? item.allowedActions ?? [] : []
+  // Despesa fixa ainda sem pagamento: o valor real da competência pode ser confirmado (projetado → real), sem pagar.
+  const canConfirmAmount = !!item.recurrenceId && item.type === 'Expense' && item.reconciliationStatus === 'Planned' && (item.status === 'Pending' || item.status === 'Overdue')
+  const competence = (item.scheduledDate ?? item.date).slice(0, 7)
 
   const viewOrigin = async () => {
     if (!loaded || loaded.source !== 'Transaction' || !loaded.value.plannedTransactionId) return
@@ -191,6 +195,13 @@ export function FinancialCalendarDetails({
             {actionError && <p className="field-error" role="alert">{actionError}</p>}
             {item.recurrenceId && <p className="notice">Origem: recorrência {item.recurrenceId}, ocorrência {item.occurrenceNumber}. Alterações afetam somente esta ocorrência, nunca a definição recorrente.</p>}
             {origin && <section aria-label="Previsão de origem"><h3>Previsão de origem</h3><p>{origin.description} — {formatBrlDecimal(origin.amount)} — {formatDate(origin.dueDate)} — {origin.status}</p></section>}
+            {canConfirmAmount && (
+              <div className="form__actions calendar-detail-panel__actions">
+                <button type="button" onClick={() => setMode('confirm')} disabled={busy}>
+                  {item.amountSource === 'Confirmed' ? 'Corrigir valor real' : 'Confirmar valor real'}
+                </button>
+              </div>
+            )}
             {canAct && (
               <div className="form__actions calendar-detail-panel__actions">
                 {actions.includes('Realize') && loaded.source === 'PlannedTransaction' && (
@@ -208,6 +219,18 @@ export function FinancialCalendarDetails({
               </div>
             )}
           </>
+        )}
+
+        {mode === 'confirm' && item.recurrenceId && (
+          <CompetenceAmountForm
+            workspaceId={workspaceId}
+            recurrenceId={item.recurrenceId}
+            competence={competence}
+            currentAmount={item.amount}
+            baseAmount={item.baseAmount}
+            onSaved={finish}
+            onCancel={() => setMode('details')}
+          />
         )}
 
         {mode === 'realize' && loaded?.source === 'PlannedTransaction' && (
@@ -256,7 +279,7 @@ function itemFromDetail(original: FinancialCalendarItem, detail: Detail): Financ
     return {
       ...original,
       type: detail.value.type,
-      amount: detail.value.amount,
+      amount: original.amountSource === 'Confirmed' ? original.amount : detail.value.amount,
       date: detail.value.dueDate,
       description: detail.value.description,
       account: detail.value.account,
@@ -277,6 +300,23 @@ function itemFromDetail(original: FinancialCalendarItem, detail: Detail): Financ
   }
 }
 
+/** Projetado (valor-base) × real confirmado da competência, e se já foi pago. Confirmado não é pago. */
+function AmountBreakdown({ item }: { item: FinancialCalendarItem }) {
+  const base = item.baseAmount as string
+  const confirmed = item.amountSource === 'Confirmed'
+  const paid = item.reconciliationStatus === 'Reconciled' || item.status === 'Realized'
+  const difference = confirmed ? subtractMoneyDecimal(item.amount, base) : null
+  return (
+    <>
+      <div><dt>Projetado (valor-base)</dt><dd>{formatBrlDecimal(base)}</dd></div>
+      {item.amountSource === 'Adjustment' && <div><dt>Ajuste da competência</dt><dd>{formatBrlDecimal(item.amount)}</dd></div>}
+      {confirmed && <div><dt>Real confirmado</dt><dd>{formatBrlDecimal(item.amount)}</dd></div>}
+      {difference !== null && <div><dt>Diferença para o projetado</dt><dd>{formatBrlDecimal(difference)}</dd></div>}
+      <div><dt>Pagamento</dt><dd>{paid ? 'Pago' : 'Pendente de pagamento'}</dd></div>
+    </>
+  )
+}
+
 function DetailFields({ item, status }: { item: FinancialCalendarItem; status?: string }) {
   return (
     <dl className="calendar-detail-list">
@@ -288,6 +328,7 @@ function DetailFields({ item, status }: { item: FinancialCalendarItem; status?: 
       {item.category && <div><dt>Categoria</dt><dd>{item.category.name}{item.category.isActive ? '' : ' (inativa)'}</dd></div>}
       <div><dt>Origem</dt><dd>{item.source === 'DebtInstallment' ? 'Parcela de dívida' : item.source === 'Transaction' ? 'Lançamento' : 'Previsão'}</dd></div>
       <div><dt>Situação</dt><dd>{status ?? statusLabels[item.status]}</dd></div>
+      {item.recurrenceId && item.baseAmount && <AmountBreakdown item={item} />}
     </dl>
   )
 }

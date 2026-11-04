@@ -23,6 +23,29 @@ public sealed class PendingBankCoverageTests
     private static PendingBankCoverageState State(IReadOnlyList<PendingBankClassification> result, PendingBankDebit debit) => result.Single(r => r.Debit.Id == debit.Id).State;
 
     [Fact]
+    public void AConfirmedCompetenceValueCoversTheBankDebit_OnlyWhenTheDescriptionIsAlsoCompatible()
+    {
+        var crediario = Debit("SAIDA CREDIARIO AUTOM", 748.31m, Nov(6));
+        var asBase = Obligation("Crediário", 750m, Nov(6));
+        var confirmed = Obligation("Crediário", 748.31m, Nov(6), virtualOccurrence: false);
+        var otherName = Obligation("Crediário Solar", 748.31m, Nov(6), virtualOccurrence: false);
+
+        Assert.Equal(PendingBankCoverageState.Ambiguous, State(PendingBankCoverage.Classify([crediario], [asBase], []), crediario));
+        Assert.Equal(PendingBankCoverageState.Ambiguous, State(PendingBankCoverage.Classify([crediario], [otherName], []), crediario)); // valor igual não basta: a descrição genérica não associa sozinha
+        var covered = Assert.Single(PendingBankCoverage.Classify([crediario], [confirmed], []));
+        Assert.Equal((PendingBankCoverageState.Covered, confirmed.StableId), (covered.State, covered.CoveredBy));
+    }
+
+    [Fact]
+    public void AGenericBoletoNeverCoversAnObligationByValueAlone_EvenWhenTheValueIsConfirmed()
+    {
+        var boleto = Debit("Pagamento de boleto DDA", 140m, Nov(10));
+        var asti = Obligation("ASTTI", 140m, Nov(10), virtualOccurrence: false);
+
+        Assert.Equal(PendingBankCoverageState.Ambiguous, State(PendingBankCoverage.Classify([boleto], [asti], []), boleto));
+    }
+
+    [Fact]
     public void ADebitWithAUniqueSafeMatchIsCoveredAndAddsNothing()
     {
         var dmae = Debit("Débito automático DA DMAE-P", 138.60m, Nov(11));

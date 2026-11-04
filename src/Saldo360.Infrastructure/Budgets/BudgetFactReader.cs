@@ -52,7 +52,7 @@ internal static class BudgetFactReader
         var planned = await (from p in db.PendingPlanned(workspaceId)
                              join a in db.FinancialAccounts.AsNoTracking() on p.AccountId equals a.Id
                              where p.Type == CategoryType.Expense && p.DueDate >= first && p.DueDate < through
-                             select new { p.Id, p.DueDate, p.Amount, p.CategoryId, p.Nature, p.Description, p.AccountId, AccountName = a.Name }).ToListAsync(ct);
+                             select new { p.Id, p.DueDate, Amount = p.ConfirmedAmount ?? p.Amount, p.CategoryId, p.Nature, p.Description, p.AccountId, AccountName = a.Name }).ToListAsync(ct);
         facts.AddRange(planned.Select(p => new BudgetFact(BudgetFactOrigin.PlannedTransaction, p.Id, p.DueDate, p.Amount, BudgetFactState.Pending, p.CategoryId, p.Nature,
             p.Description, AccountId: p.AccountId, AccountName: p.AccountName)));
         // Ocorrências virtuais de recorrência (despesa fixa ainda sem pagamento): previsto adicional; "a revisar" e pagas vinculadas não consomem de novo.

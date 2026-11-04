@@ -3143,6 +3143,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric")
                         .HasColumnName("amount");
 
+                    b.Property<DateTimeOffset?>("AmountConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("amount_confirmed_at");
+
+                    b.Property<Guid?>("AmountConfirmedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("amount_confirmed_by_user_id");
+
                     b.Property<DateTimeOffset?>("CancelledAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("cancelled_at");
@@ -3154,6 +3162,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("category_id");
+
+                    b.Property<decimal?>("ConfirmedAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("confirmed_amount");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -3230,6 +3242,9 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("WorkspaceId", "Id")
                         .HasName("ak_financial_planned_transactions_workspace_id_id");
 
+                    b.HasIndex("AmountConfirmedByUserId")
+                        .HasDatabaseName("ix_financial_planned_transactions_amount_confirmed_by_user_id");
+
                     b.HasIndex("CancelledByUserId")
                         .HasDatabaseName("ix_financial_planned_transactions_cancelled_by_user_id");
 
@@ -3264,6 +3279,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_planned_transactions_cancelled_at", "is_cancelled = (cancelled_at IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_financial_planned_transactions_cancelled_pair", "(cancelled_at IS NULL) = (cancelled_by_user_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_confirmed_amount_valid", "confirmed_amount IS NULL OR (confirmed_amount > 0 AND scale(confirmed_amount) <= 2 AND confirmed_amount < 10000000000000)");
+
+                            t.HasCheckConstraint("ck_financial_planned_transactions_confirmed_triple", "(confirmed_amount IS NULL AND amount_confirmed_at IS NULL AND amount_confirmed_by_user_id IS NULL) OR (confirmed_amount IS NOT NULL AND amount_confirmed_at IS NOT NULL AND amount_confirmed_by_user_id IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_financial_planned_transactions_currency", "currency = 'BRL'");
 
@@ -6563,6 +6582,12 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialPlannedTransaction", b =>
                 {
+                    b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AmountConfirmedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_financial_planned_transactions_application_users_amount_con");
+
                     b.HasOne("Saldo360.Domain.Users.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("CancelledByUserId")

@@ -32,6 +32,9 @@ export interface FinancialCalendarItem {
   actualAmount?: string | null
   actualDate?: string | null
   transactionId?: string | null
+  /** Despesa fixa: valor-base da recorrência e origem do valor vigente. Confirmar o valor não é pagar. */
+  baseAmount?: string | null
+  amountSource?: 'Base' | 'Adjustment' | 'Confirmed' | null
 }
 
 /** Totais calculados pela API. A UI apenas os formata. */

@@ -75,7 +75,7 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
                 FinancialCalendarSource.PlannedTransaction,
                 p.DueDate < filter.Today ? FinancialCalendarStatus.Overdue : FinancialCalendarStatus.Pending,
                 p.Type,
-                p.Amount,
+                p.ConfirmedAmount ?? p.Amount,
                 p.DueDate,
                 p.Description,
                 new TransactionReferenceDto(a.Id, a.Name, a.IsActive),
@@ -116,10 +116,10 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
         var pendingTotals = await pendingPlannedTransactions
             .GroupBy(_ => 1)
             .Select(group => new PendingTotals(
-                group.Sum(item => item.Type == CategoryType.Income ? item.Amount : 0m),
-                group.Sum(item => item.Type == CategoryType.Expense ? item.Amount : 0m),
-                group.Sum(item => item.Type == CategoryType.Income && item.DueDate < filter.Today ? item.Amount : 0m),
-                group.Sum(item => item.Type == CategoryType.Expense && item.DueDate < filter.Today ? item.Amount : 0m)))
+                group.Sum(item => item.Type == CategoryType.Income ? (item.ConfirmedAmount ?? item.Amount) : 0m),
+                group.Sum(item => item.Type == CategoryType.Expense ? (item.ConfirmedAmount ?? item.Amount) : 0m),
+                group.Sum(item => item.Type == CategoryType.Income && item.DueDate < filter.Today ? (item.ConfirmedAmount ?? item.Amount) : 0m),
+                group.Sum(item => item.Type == CategoryType.Expense && item.DueDate < filter.Today ? (item.ConfirmedAmount ?? item.Amount) : 0m)))
             .SingleOrDefaultAsync(cancellationToken) ?? new PendingTotals(0m, 0m, 0m, 0m);
         var debtPending = debtRows.Sum(x => x.remaining);
         var debtOverdue = debtRows.Where(x => x.i.DueDate < filter.Today).Sum(x => x.remaining);
@@ -128,6 +128,7 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
         // vinculada, o lançamento efetivo ganha a situação "Reconciled" (sem criar evento equivalente); a virtual/previsão correspondente some.
         var obligations = (await FixedObligationReader.LoadAsync(db, workspaceId, filter.From.AddMonths(-1), filter.Through.AddMonths(1), filter.Today, cancellationToken))
             .Where(o => (filter.AccountId == null || o.AccountId == filter.AccountId) && (filter.Type == null || o.Type == filter.Type)).ToList();
+        var obligationById = obligations.GroupBy(o => o.StableId).ToDictionary(g => g.Key, g => g.First());
         var reconciled = obligations.Where(o => o.TransactionId != null).GroupBy(o => o.TransactionId!.Value).ToDictionary(g => g.Key, g => g.First());
         var shown = obligations.Where(o => o.DueDate >= filter.From && o.DueDate <= filter.Through && o.Situation != ObligationSituation.Realized && (o.IsVirtual || o.Situation == ObligationSituation.NeedsReview)).ToList();
         var accountIds = shown.Select(o => o.AccountId).Distinct().ToList();
@@ -140,7 +141,7 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
             o.StableId, o.IsVirtual ? FinancialCalendarSource.RecurrenceOccurrence : FinancialCalendarSource.PlannedTransaction,
             o.Situation == ObligationSituation.NeedsReview ? FinancialCalendarStatus.NeedsReview : o.DueDate < filter.Today ? FinancialCalendarStatus.Overdue : FinancialCalendarStatus.Pending,
             o.Type, o.PlannedAmount, o.DueDate, o.Description, accountRefs.GetValueOrDefault(o.AccountId), categoryRefs.GetValueOrDefault(o.CategoryId), "BRL", null,
-            FinancialTransactionOrigin.Manual, o.RecurrenceId, o.OccurrenceNumber, o.DueDate, null, o.ReconciliationStatus)).ToList();
+            FinancialTransactionOrigin.Manual, o.RecurrenceId, o.OccurrenceNumber, o.DueDate, null, o.ReconciliationStatus, BaseAmount: o.BaseAmount, AmountSource: o.AmountSource.ToString())).ToList();
         effectiveItems = effectiveItems.Select(i => reconciled.TryGetValue(i.Id, out var o)
             ? i with { ReconciliationStatus = "Reconciled", ActualAmount = i.Amount, ActualDate = i.Date, TransactionId = i.Id } : i).ToList();
         var virtualPending = obligations.Where(o => o.IsVirtual && o.IsPendingCashFlow && o.DueDate >= filter.From && o.DueDate <= filter.Through).ToList();
@@ -153,7 +154,7 @@ internal sealed class FinancialCalendarRepository(Saldo360DbContext db) : IFinan
 
         var items = effectiveItems
             .Concat(obligationItems)
-            .Concat(plannedItems)
+            .Concat(plannedItems.Select(i => obligationById.TryGetValue(i.Id, out var o) ? i with { RecurrenceId = i.RecurrenceId ?? o.RecurrenceId, BaseAmount = o.BaseAmount, AmountSource = o.AmountSource.ToString() } : i))
             .Concat(debtItems)
             .OrderBy(item => item.Date)
             .ThenBy(item => item.Source)

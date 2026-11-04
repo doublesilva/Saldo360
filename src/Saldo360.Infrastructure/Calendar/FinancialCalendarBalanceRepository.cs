@@ -128,8 +128,8 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             .Select(daily => new
             {
                 Date = daily.Key,
-                Income = daily.Sum(item => item.Type == CategoryType.Income ? item.Amount : 0m),
-                Expense = daily.Sum(item => item.Type == CategoryType.Expense ? item.Amount : 0m),
+                Income = daily.Sum(item => item.Type == CategoryType.Income ? (item.ConfirmedAmount ?? item.Amount) : 0m),
+                Expense = daily.Sum(item => item.Type == CategoryType.Expense ? (item.ConfirmedAmount ?? item.Amount) : 0m),
             })
             .OrderBy(row => row.Date)
             .ToListAsync(cancellationToken);
@@ -202,7 +202,7 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             var plainPlanned = await db.PendingPlanned(workspaceId).Where(p => p.Type == CategoryType.Expense && p.DueDate >= lower && p.DueDate <= upper && selectedAccountIds.Contains(p.AccountId)).ToListAsync(cancellationToken);
             var fixedObligations = (await FixedObligationReader.LoadAsync(db, workspaceId, lower, upper, today, cancellationToken))
                 .Concat(plainPlanned.Select(p => new Saldo360.Application.Recurrences.FixedObligation(workspaceId, null, null, new(p.DueDate.Year, p.DueDate.Month, 1), p.Id, p.AccountId, p.CategoryId, p.Type, p.Nature,
-                    p.Description, p.Amount, false, p.DueDate, Saldo360.Application.Recurrences.ObligationSituation.Planned, false)))
+                    p.Description, p.ConfirmedAmount ?? p.Amount, false, p.DueDate, Saldo360.Application.Recurrences.ObligationSituation.Planned, false)))
                 .GroupBy(o => o.StableId).Select(g => g.First()).ToList();
             var otherCandidates = debtRows.Where(r => r.ResponsibleAccountId != null).Select(r => new PendingBankCandidate(r.Id, r.ResponsibleAccountId!.Value, r.remaining, r.DueDate, "DebtInstallment"))
                 .Concat(plannedTransfers.Select(t => new PendingBankCandidate(Guid.Empty, t.SourceAccountId, t.Amount, t.DueDate, "PlannedTransfer")))

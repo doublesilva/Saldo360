@@ -218,6 +218,66 @@ afterEach(() => {
 })
 
 describe('FinancialCalendarDetails', () => {
+  describe('valor real por competência (PROJ-04)', () => {
+    const recurrenceItem = (overrides: Partial<FinancialCalendarItem> = {}): FinancialCalendarItem => ({
+      ...calendarItem(overdue),
+      id: 'obligation-nov',
+      source: 'RecurrenceOccurrence',
+      status: 'Pending',
+      amount: '750.00',
+      date: '2026-12-06',
+      scheduledDate: '2026-12-06',
+      description: 'Crediário Solar',
+      recurrenceId: 'rec-1',
+      occurrenceNumber: 3,
+      reconciliationStatus: 'Planned',
+      baseAmount: '750.00',
+      amountSource: 'Base',
+      allowedActions: [],
+      ...overrides,
+    })
+
+    it('mostra projetado, real confirmado, diferença e pendente de pagamento (confirmar não é pagar)', () => {
+      mockApi()
+      render(<FinancialCalendarDetails workspaceId="family-1" item={recurrenceItem({ amount: '748.31', amountSource: 'Confirmed' })} returnFocus={null} onClose={vi.fn()} onChanged={vi.fn()} />)
+      expect(screen.getByText('Projetado (valor-base)').nextSibling?.textContent).toContain('750,00')
+      expect(screen.getByText('Real confirmado').nextSibling?.textContent).toContain('748,31')
+      expect(screen.getByText('Diferença para o projetado').nextSibling?.textContent).toContain('1,69')
+      expect(screen.getByText('Pagamento').nextSibling?.textContent).toBe('Pendente de pagamento')
+      expect(screen.getByRole('button', { name: 'Corrigir valor real' })).toBeTruthy()
+    })
+
+    it('uma competência paga mostra Pago e não oferece nova confirmação', () => {
+      mockApi()
+      render(<FinancialCalendarDetails workspaceId="family-1" item={recurrenceItem({ reconciliationStatus: 'Reconciled', status: 'Realized' })} returnFocus={null} onClose={vi.fn()} onChanged={vi.fn()} />)
+      expect(screen.getByText('Pagamento').nextSibling?.textContent).toBe('Pago')
+      expect(screen.queryByRole('button', { name: /valor real/ })).toBeNull()
+    })
+
+    it('confirma o valor somente da competência, envia o decimal exato e recarrega a agenda', async () => {
+      const { calls } = mockApi()
+      const onChanged = vi.fn()
+      calls.length = 0
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ url: String(input), init })
+        if (String(input).includes('/csrf')) return Response.json({ token: 't' })
+        return Response.json({ recurrenceId: 'rec-1', competence: '2026-12', plannedTransactionId: 'p', dueDate: '2026-12-06', baseAmount: '750.00', adjustedAmount: '750.00', confirmedAmount: '748.31', confirmedAt: '2026-12-15T15:00:00Z', created: true })
+      }))
+      render(<FinancialCalendarDetails workspaceId="family-1" item={recurrenceItem()} returnFocus={null} onClose={vi.fn()} onChanged={onChanged} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar valor real' }))
+      const form = screen.getByRole('form', { name: 'Confirmar valor real da competência' })
+      expect(within(form).getByText(/somente para 12\/2026/)).toBeTruthy()
+      fireEvent.change(within(form).getByLabelText('Valor real confirmado'), { target: { value: '748,31' } })
+      fireEvent.click(within(form).getByRole('button', { name: 'Confirmar valor' }))
+
+      await waitFor(() => expect(onChanged).toHaveBeenCalled())
+      const put = callsFor(calls, '/recurrences/rec-1/competences/2026-12/confirmed-amount')[0]
+      expect(put.init?.method).toBe('PUT')
+      expect(JSON.parse(String(put.init?.body))).toEqual({ amount: '748.31' })
+    })
+  })
+
   it('parcela de dívida sem conta é consultiva, nunca consultada como lançamento', async () => {
     const { calls } = mockApi()
     render(<FinancialCalendarDetails workspaceId="family-1" item={{ ...calendarItem(overdue), source: 'DebtInstallment', account: null, allowedActions: [] }} returnFocus={null} onClose={vi.fn()} onChanged={vi.fn()} />)

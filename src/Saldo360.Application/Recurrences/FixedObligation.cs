@@ -8,6 +8,9 @@ namespace Saldo360.Application.Recurrences;
 /// </summary>
 public enum ObligationSituation { Planned, Realized, NeedsReview }
 
+/// <summary>Origem do valor vigente da competência: <c>Base</c> = valor da recorrência; <c>Adjustment</c> = exceção/previsão da competência sem confirmação; <c>Confirmed</c> = valor real confirmado (não é pagamento).</summary>
+public enum ObligationAmountSource { Base, Adjustment, Confirmed }
+
 /// <summary>
 /// Uma obrigação mensal (despesa fixa) numa competência: UM registro por (recorrência, competência) ou por previsão avulsa.
 /// O valor previsto já é o da exceção da competência, quando existe (nunca soma).
@@ -16,7 +19,8 @@ public sealed record FixedObligation(
     Guid WorkspaceId, Guid? RecurrenceId, int? OccurrenceNumber, DateOnly Competence, Guid? PlannedTransactionId,
     Guid AccountId, Guid CategoryId, CategoryType Type, ExpenseNature Nature, string Description,
     decimal PlannedAmount, bool IsEstimated, DateOnly DueDate, ObligationSituation Situation, bool IsVirtual,
-    decimal? ActualAmount = null, DateOnly? ActualDate = null, Guid? TransactionId = null)
+    decimal? ActualAmount = null, DateOnly? ActualDate = null, Guid? TransactionId = null,
+    decimal? BaseAmount = null, ObligationAmountSource AmountSource = ObligationAmountSource.Base, decimal? AdjustedAmount = null)
 {
     /// <summary>ValorConsolidado = COALESCE(realizado vinculado, previsto). Previsto e realizado nunca são somados.</summary>
     public decimal Consolidated => ActualAmount ?? PlannedAmount;
