@@ -49,6 +49,9 @@ public interface IMonthlyPlanRepository
     /// <summary>Repasses entre as duas contas por mês: previstos ainda sem transferência associada e realizados. Somente leitura.</summary>
     Task<IReadOnlyList<TransferMonthFlow>> TransferFlowsAsync(Guid workspaceId, Guid sourceAccountId, Guid destinationAccountId, DateOnly from, DateOnly through, CancellationToken cancellationToken);
 
+    /// <summary>Repasse PJ → PF projetado pela automação (PROJ-06), no horizonte fixo de seis meses. Somente leitura: nada é gravado e nenhuma transferência é executada.</summary>
+    Task<IReadOnlyList<ProjectedPjTransfer>> ProjectedPjTransfersAsync(Guid workspaceId, DateOnly today, CancellationToken cancellationToken);
+
     /// <summary>Despesas fixas ainda pendentes (previsão consolidada) da conta, por mês de vencimento.</summary>
     Task<IReadOnlyDictionary<DateOnly, decimal>> PendingFixedByMonthAsync(Guid workspaceId, Guid accountId, DateOnly from, DateOnly through, DateOnly today, CancellationToken cancellationToken);
 }

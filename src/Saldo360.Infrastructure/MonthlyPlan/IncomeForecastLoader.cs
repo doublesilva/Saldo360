@@ -18,12 +18,21 @@ internal static class IncomeForecastLoader
     public static async Task<IncomeForecastView> LoadAsync(Saldo360DbContext db, Guid workspaceId, DateOnly from, DateOnly through, CancellationToken ct)
     {
         var row = await db.FinancialIncomeForecasts.AsNoTracking().SingleOrDefaultAsync(f => f.WorkspaceId == workspaceId, ct);
-        if (row is null) return IncomeForecastView.None;
-        var settings = new IncomeForecastSettings(row.AccountId, row.HourlyRate, row.HoursPerDay, row.PaymentDay, row.PaymentOffsetMonths, row.TaxReservePercent, row.OperationalReserve, row.IsActive);
+        InferredIncome? inferred = null; IncomeForecastSettings settings;
+        if (row is null)
+        {
+            var inference = await InferAsync(db, workspaceId, from, ct);
+            if (inference is null) return IncomeForecastView.None;
+            (settings, inferred) = inference.Value;
+        }
+        else settings = new IncomeForecastSettings(row.AccountId, row.HourlyRate, row.HoursPerDay, row.PaymentDay, row.PaymentOffsetMonths, row.TaxReservePercent, row.OperationalReserve, row.IsActive);
 
         var workedFrom = from.AddMonths(-settings.PaymentOffsetMonths - 2); var workedThrough = through.AddMonths(2);
         var overrides = (await db.FinancialIncomeForecastMonths.AsNoTracking().Where(m => m.WorkspaceId == workspaceId && m.Competence >= workedFrom && m.Competence <= workedThrough).ToListAsync(ct))
             .ToDictionary(m => m.Competence, m => new IncomeForecastMonthOverride(m.Competence, m.BillableDays, m.ExpectedAmount, m.PaymentDate, m.IsDismissed));
+        if (inferred is not null)
+            foreach (var worked in IncomeForecastCalculator.WorkedMonthsFor(settings, from, through))
+                overrides[worked] = overrides.TryGetValue(worked, out var user) ? user with { ExpectedAmount = user.ExpectedAmount ?? inferred.MonthlyAmount } : new(worked, null, inferred.MonthlyAmount, null, false);
         var userNonWorking = await db.FinancialNonWorkingDays.AsNoTracking().Where(d => d.WorkspaceId == workspaceId && d.Date >= workedFrom && d.Date <= workedThrough.AddMonths(1)).Select(d => d.Date).ToListAsync(ct);
 
         // Receita realizada da conta por mês (a mesma regra dos indicadores: devolução bancária não é receita; transferência não é lançamento).
@@ -42,7 +51,33 @@ internal static class IncomeForecastLoader
             revenueByMonth.TryGetValue(new DateOnly(payment.Year, payment.Month, 1), out var realized);
             occurrences.Add(IncomeForecastCalculator.Occurrence(settings, worked, IncomeForecastCalculator.BusinessDays(worked, userNonWorking), adjust, realized));
         }
-        return new(settings, occurrences, await TaxObligationMonthsAsync(db, workspaceId, settings.AccountId, new DateOnly(from.Year, from.Month, 1), through, ct));
+        return new(settings, occurrences, await TaxObligationMonthsAsync(db, workspaceId, settings.AccountId, new DateOnly(from.Year, from.Month, 1), through, ct), inferred is not null, inferred?.MonthsUsed ?? 0);
+    }
+
+    /// <summary>
+    /// Sem configuração (PROJ-06): usa o faturamento profissional recente da conta PJ com mais recebimentos operacionais. Exclui rendimentos, estornos e devoluções (por descrição e
+    /// origem) e entradas que espelham uma saída de mesmo valor em outra conta do próprio orçamento (transferência interna). Sem meses suficientes, não infere. Tributos não são
+    /// inferidos (reserva 0%): ficam sinalizados como não configurados.
+    /// </summary>
+    private static async Task<(IncomeForecastSettings Settings, InferredIncome Inferred)?> InferAsync(Saldo360DbContext db, Guid workspaceId, DateOnly from, CancellationToken ct)
+    {
+        var currentMonth = new DateOnly(from.Year, from.Month, 1);
+        var start = currentMonth.AddMonths(-IncomeInference.WindowMonths); var end = currentMonth.AddDays(-1);
+        var pjAccounts = await db.FinancialAccounts.AsNoTracking().Where(a => a.WorkspaceId == workspaceId && a.IsActive && a.Scope == Saldo360.Domain.Accounts.FinancialScope.PJ).Select(a => a.Id).ToListAsync(ct);
+        if (pjAccounts.Count == 0) return null;
+        var incomes = await db.FinancialTransactions.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.Type == CategoryType.Income && t.Origin != Saldo360.Domain.Transactions.FinancialTransactionOrigin.PluggyRefund
+                && pjAccounts.Contains(t.AccountId) && t.TransactionDate >= start && t.TransactionDate <= end)
+            .Select(t => new { t.AccountId, t.TransactionDate, t.Amount, t.Description }).ToListAsync(ct);
+        if (incomes.Count == 0) return null;
+        var outgoing = await db.FinancialTransactions.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.Type == CategoryType.Expense && t.TransactionDate >= start.AddDays(-3) && t.TransactionDate <= end.AddDays(3))
+            .Select(t => new { t.AccountId, t.TransactionDate, t.Amount }).ToListAsync(ct);
+        var operational = incomes.Where(i => !outgoing.Any(o => o.AccountId != i.AccountId && o.Amount == i.Amount && Math.Abs(o.TransactionDate.DayNumber - i.TransactionDate.DayNumber) <= 3)).ToList();
+        var account = operational.Where(i => IncomeInference.IsOperational(i.Description)).GroupBy(i => i.AccountId).OrderByDescending(g => g.Sum(i => i.Amount)).Select(g => g.Key).Cast<Guid?>().FirstOrDefault();
+        if (account is null) return null;
+        var inferred = IncomeInference.Infer(operational.Where(i => i.AccountId == account).Select(i => new OperationalReceipt(i.TransactionDate, i.Amount, i.Description)), currentMonth);
+        return inferred is null ? null : (new IncomeForecastSettings(account.Value, 0m, 0m, inferred.PaymentDay, 0, 0m, 0m, true), inferred);
     }
 
     private static bool IsTax(string description)

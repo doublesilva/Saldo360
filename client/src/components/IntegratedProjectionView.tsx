@@ -27,6 +27,7 @@ const rows: Row[] = [
   { group: 'Disponibilidade PJ', label: 'Repasse sugerido (não cadastrado)', cell: m => money(m.pj.suggestedTransfer) },
   { group: 'Transferências PJ → PF', label: 'Prevista', cell: m => money(m.transfers.plannedPjToPf) },
   { group: 'Transferências PJ → PF', label: 'Realizada', cell: m => money(m.transfers.realizedPjToPf) },
+  { group: 'Transferências PJ → PF', label: 'Projetada pela automação (planejamento)', cell: m => money(m.transfers.autoProjectedPjToPf ?? '0.00') + (m.transfers.dependsOnInferredIncome ? ' (depende de receita inferida)' : '') },
   { group: 'Despesas PF', label: 'Fixas pendentes', cell: m => money(m.pf.fixedPending) },
   { group: 'Despesas PF', label: 'Cartões (faturas existentes)', cell: m => money(m.pf.cardsOutstanding) },
   { group: 'Despesas PF', label: 'Demais compromissos', cell: m => money(m.pf.otherPending) },

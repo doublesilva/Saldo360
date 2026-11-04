@@ -29,7 +29,7 @@ public sealed record IncomeForecastOccurrence(
 }
 
 /// <summary>Configuração e ocorrências do período, mais os meses em que já existe obrigação tributária cadastrada (a reserva não se aplica de novo).</summary>
-public sealed record IncomeForecastView(IncomeForecastSettings? Settings, IReadOnlyList<IncomeForecastOccurrence> Occurrences, IReadOnlySet<DateOnly> TaxObligationMonths)
+public sealed record IncomeForecastView(IncomeForecastSettings? Settings, IReadOnlyList<IncomeForecastOccurrence> Occurrences, IReadOnlySet<DateOnly> TaxObligationMonths, bool Inferred = false, int InferredMonths = 0)
 {
     public static IncomeForecastView None { get; } = new(null, [], new HashSet<DateOnly>());
     public bool Effective => Settings is { IsActive: true };

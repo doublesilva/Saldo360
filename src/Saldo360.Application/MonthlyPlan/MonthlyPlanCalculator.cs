@@ -31,6 +31,11 @@ public static class MonthlyPlanCalculator
         public const string NoCardsRegistered = "NoCardsRegistered";
         public const string IncomeForecastNotConfigured = "IncomeForecastNotConfigured";
         public const string IncomeForecastDismissed = "IncomeForecastDismissed";
+        /// <summary>Sem configuração, a receita vem da mediana do faturamento profissional recente: estimativa inferida, nunca garantida.</summary>
+        public const string IncomeForecastInferred = "IncomeForecastInferred";
+        public const string TaxReserveNotConfigured = "TaxReserveNotConfigured";
+        /// <summary>O repasse PJ → PF projetado depende de receita inferida.</summary>
+        public const string TransferDependsOnInferredIncome = "TransferDependsOnInferredIncome";
     }
 
     public static class Pendencies

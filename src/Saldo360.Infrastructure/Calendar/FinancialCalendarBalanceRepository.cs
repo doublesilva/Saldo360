@@ -16,7 +16,7 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         DateOnly through,
         DateOnly today,
         CancellationToken cancellationToken) =>
-        ReadCoreAsync(workspaceId, accountId, null, through, today, cancellationToken);
+        ReadWithPlanAsync(workspaceId, accountId, null, through, today, cancellationToken);
 
     public Task<FinancialCalendarBalanceSnapshot?> ReadMonthlyAsync(
         Guid workspaceId,
@@ -25,7 +25,14 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         DateOnly through,
         DateOnly today,
         CancellationToken cancellationToken) =>
-        ReadCoreAsync(workspaceId, accountId, from, through, today, cancellationToken);
+        ReadWithPlanAsync(workspaceId, accountId, from, through, today, cancellationToken);
+
+    /// <summary>Leitura da PJ para o planejamento do repasse: o mesmo saldo, SEM o repasse projetado (evita recursão e dupla contagem).</summary>
+    public Task<FinancialCalendarBalanceSnapshot?> ReadWithoutAutoTransfersAsync(Guid workspaceId, Guid? accountId, DateOnly through, DateOnly today, CancellationToken cancellationToken) =>
+        ReadCoreAsync(workspaceId, accountId, null, through, today, null, cancellationToken);
+
+    private async Task<FinancialCalendarBalanceSnapshot?> ReadWithPlanAsync(Guid workspaceId, Guid? accountId, DateOnly? periodFrom, DateOnly through, DateOnly today, CancellationToken cancellationToken) =>
+        await ReadCoreAsync(workspaceId, accountId, periodFrom, through, today, await PjTransferProjection.PlanAsync(db, workspaceId, today, cancellationToken), cancellationToken);
 
     private async Task<FinancialCalendarBalanceSnapshot?> ReadCoreAsync(
         Guid workspaceId,
@@ -33,6 +40,7 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         DateOnly? periodFrom,
         DateOnly through,
         DateOnly today,
+        AutoTransferPlan? autoPlan,
         CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(
@@ -163,6 +171,15 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             .Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, 0m, accountId is null ? Math.Max(0m, row.In - row.Out) : row.In, accountId is null ? Math.Max(0m, row.Out - row.In) : row.Out))
             .ToList();
         pending = pending.Concat(plannedTransferRows).ToList();
+
+        // Repasse PJ → PF PROJETADO (PROJ-06): saída na PJ e entrada na PF, só planejamento (nenhuma transferência real). Mesma regra das transferências previstas: numa conta, só a
+        // ponta dela; no consolidado as duas pontas se anulam (neutro). Nunca é receita nem despesa.
+        if (autoPlan is { Transfers.Count: > 0 })
+            pending = pending.Concat(autoPlan.Transfers.GroupBy(item => item.Date)
+                .Select(daily => new { Date = daily.Key, Amount = daily.Sum(item => item.Amount) })
+                .Select(daily => new { daily.Date, In = selectedIds.Contains(autoPlan.PfAccountId) ? daily.Amount : 0m, Out = selectedIds.Contains(autoPlan.PjAccountId) ? daily.Amount : 0m })
+                .Where(row => row.In != 0m || row.Out != 0m)
+                .Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, 0m, accountId is null ? Math.Max(0m, row.In - row.Out) : row.In, accountId is null ? Math.Max(0m, row.Out - row.In) : row.Out))).ToList();
 
         var selectedAccountIds = await selectedAccounts.Select(account => account.Id).ToListAsync(cancellationToken);
         var debtRows = await (from installment in db.FinancialDebtInstallments.AsNoTracking()

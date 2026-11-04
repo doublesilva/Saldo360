@@ -28,7 +28,7 @@ public sealed record IncomeForecastMonthRequest(int? BillableDays, string? Expec
 /// <summary><c>Source</c>: Forecast (estimativa ativada), Realized (receita realizada substitui), Dismissed, NotConfigured (sem configuração aprovada) ou None (sem recebimento no mês).</summary>
 public sealed record IntegratedIncomeDto(
     string Source, string? WorkedCompetence, int? BusinessDays, int? BillableDays, string? HoursPerDay, string? HourlyRate, string? ExpectedGross, DateOnly? PaymentDate,
-    string RealizedIncome, bool Adjusted);
+    string RealizedIncome, bool Adjusted, bool Inferred = false);
 
 /// <summary>
 /// Disponibilidade PJ. <c>Closing</c> é o saldo bancário projetado (já líquido de despesas pendentes e repasses previstos); <c>Available</c> = Closing − tributos − reserva
@@ -38,7 +38,8 @@ public sealed record IntegratedPjDto(
     string? Opening, string PendingIncome, string PendingExpense, string TaxReserve, bool TaxObligationRegistered, string OperationalReserve, string? Closing, string? Available,
     string? SuggestedTransfer);
 
-public sealed record IntegratedTransfersDto(string PlannedPjToPf, string RealizedPjToPf);
+/// <summary><c>AutoProjectedPjToPf</c> é o repasse PJ → PF PROJETADO pela automação (só planejamento; nenhuma transferência real). <c>DependsOnInferredIncome</c> indica que ele se apoia em receita inferida.
+public sealed record IntegratedTransfersDto(string PlannedPjToPf, string RealizedPjToPf, string AutoProjectedPjToPf = "0.00", bool DependsOnInferredIncome = false);
 
 public sealed record IntegratedPfDto(
     string? Opening, string? Closing, string Entries, string Exits, string Result, string FixedPending, string CardsOutstanding, string OtherPending, string TransfersIn, string PendingBankUncovered = "0.00", string PendingBankAmbiguous = "0.00");
@@ -53,4 +54,4 @@ public sealed record IntegratedMonthDto(
 
 /// <summary><c>RecoveryOverPeriod</c> = limite usado na abertura do primeiro mês − limite usado no fechamento projetado do último (negativo = piora); nulo sem saldos.</summary>
 public sealed record IntegratedProjectionDto(
-    bool IncomeForecastActive, Guid? PjAccountId, string? PjAccountName, Guid? PfAccountId, string? PfAccountName, string? RecoveryOverPeriod, IReadOnlyList<IntegratedMonthDto> Months);
+    bool IncomeForecastActive, Guid? PjAccountId, string? PjAccountName, Guid? PfAccountId, string? PfAccountName, string? RecoveryOverPeriod, IReadOnlyList<IntegratedMonthDto> Months, bool IncomeInferred = false);

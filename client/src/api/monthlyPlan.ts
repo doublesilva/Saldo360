@@ -52,12 +52,12 @@ export interface PlanMonth {
 }
 /** PROJ-01: projeção integrada das contas PJ e PF. Cada valor é calculado pelo backend; o navegador só apresenta. */
 export type IncomeSource = 'Forecast' | 'Realized' | 'Dismissed' | 'NotConfigured' | 'None'
-export interface IntegratedIncome { source: IncomeSource; workedCompetence: string | null; businessDays: number | null; billableDays: number | null; hoursPerDay: string | null; hourlyRate: string | null; expectedGross: string | null; paymentDate: string | null; realizedIncome: string; adjusted: boolean }
+export interface IntegratedIncome { source: IncomeSource; workedCompetence: string | null; businessDays: number | null; billableDays: number | null; hoursPerDay: string | null; hourlyRate: string | null; expectedGross: string | null; paymentDate: string | null; realizedIncome: string; adjusted: boolean; inferred?: boolean }
 export interface IntegratedPj { opening: string | null; pendingIncome: string; pendingExpense: string; taxReserve: string; taxObligationRegistered: boolean; operationalReserve: string; closing: string | null; available: string | null; suggestedTransfer: string | null }
 export interface IntegratedPf { opening: string | null; closing: string | null; entries: string; exits: string; result: string; fixedPending: string; cardsOutstanding: string; otherPending: string; transfersIn: string }
 export interface IntegratedOverdraft { limit: string | null; usedStart: string; usedEnd: string; available: string | null; excess: string; recovery: string; target: string | null; targetState: 'Fixed' | 'Provisional' | 'None'; achievementPercent: string | null }
-export interface IntegratedMonth { competence: string; periodKind: 'Past' | 'Current' | 'Future'; income: IntegratedIncome; pj: IntegratedPj; transfers: { plannedPjToPf: string; realizedPjToPf: string }; pf: IntegratedPf; overdraft: IntegratedOverdraft | null; cards: PlanCards; complete: boolean; quality: string[] }
-export interface IntegratedProjection { incomeForecastActive: boolean; pjAccountId: string | null; pjAccountName: string | null; pfAccountId: string | null; pfAccountName: string | null; recoveryOverPeriod: string | null; months: IntegratedMonth[] }
+export interface IntegratedMonth { competence: string; periodKind: 'Past' | 'Current' | 'Future'; income: IntegratedIncome; pj: IntegratedPj; transfers: { plannedPjToPf: string; realizedPjToPf: string; autoProjectedPjToPf?: string; dependsOnInferredIncome?: boolean }; pf: IntegratedPf; overdraft: IntegratedOverdraft | null; cards: PlanCards; complete: boolean; quality: string[] }
+export interface IntegratedProjection { incomeForecastActive: boolean; pjAccountId: string | null; pjAccountName: string | null; pfAccountId: string | null; pfAccountName: string | null; recoveryOverPeriod: string | null; months: IntegratedMonth[]; incomeInferred?: boolean }
 export interface SixMonthPlan {
   from: string; through: string; asOf: string; scope: PlanActualScope; months: PlanMonth[]
   summary: { highestRiskMonths: string[]; monthsWithoutPlan: number; monthsWithRisk: number; plannedResult: string | null; projectedResult: string }

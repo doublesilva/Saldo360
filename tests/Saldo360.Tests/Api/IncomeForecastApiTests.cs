@@ -167,7 +167,7 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
         Assert.Equal(0m, Num(after, "pj", "pendingIncome")); // a estimativa deixou de projetar
         Assert.Equal(expected, Num(after, "income", "realizedIncome"));
         // O saldo projetado não duplica: abertura + realizado, sem a entrada estimada de novo.
-        Assert.Equal(Num(after, "pj", "opening") + expected, Num(after, "pj", "closing") + Num(after, "pj", "pendingExpense"));
+        Assert.Equal(Num(after, "pj", "opening") + expected, Num(after, "pj", "closing") + Num(after, "pj", "pendingExpense") + Num(after, "transfers", "autoProjectedPjToPf"));
     }
 
     // ---- Tributos, despesas PJ e disponibilidade --------------------------------------------------------------------------------------------------
@@ -183,7 +183,9 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
 
         var expectedTax = Math.Round(Num(withTax, "income", "expectedGross") * 0.11m, 2);
         Assert.Equal(expectedTax, Num(withTax, "pj", "taxReserve"));
-        Assert.Equal(Num(noTax, "pj", "closing"), Num(withTax, "pj", "closing")); // saldo bancário igual: reserva não é débito
+        // Reserva não é débito: o saldo bancário ANTES do repasse projetado é igual; o repasse automático só deixa de levar o valor reservado (PROJ-06).
+        Assert.Equal(Num(noTax, "pj", "closing") + Num(noTax, "transfers", "autoProjectedPjToPf"), Num(withTax, "pj", "closing") + Num(withTax, "transfers", "autoProjectedPjToPf"));
+        Assert.True(Num(withTax, "pj", "closing") >= expectedTax + 1000m); // o repasse nunca consome tributos nem reserva operacional
         Assert.Equal(Num(withTax, "pj", "closing") - expectedTax - 1000m, Num(withTax, "pj", "available"));
         Assert.Equal(Math.Max(0m, Math.Floor(Num(withTax, "pj", "available") * 100m) / 100m), Num(withTax, "pj", "suggestedTransfer"));
     }
@@ -211,7 +213,7 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
     // ---- Transferências PJ → PF ----------------------------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task PlannedTransfer_ReducesPjAndRaisesPfByTheSameAmount_AndLeavesTheConsolidatedUntouched()
+    public async Task PlannedTransfer_ReplacesPartOfTheAutomaticTransfer_AndLeavesTheConsolidatedUntouched()
     {
         var s = await ArrangeAsync();
         await JsonAsync(await SaveForecastAsync(s));
@@ -224,9 +226,11 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
 
         var plan = await SixMonthsAsync(s);
         Assert.Equal("3000.00", Text(Integrated(plan, 0), "transfers", "plannedPjToPf"));
-        Assert.Equal(Num(Integrated(baseline, 0), "pj", "closing") - 3000m, Num(Integrated(plan, 0), "pj", "closing"));
-        Assert.Equal(Num(Integrated(baseline, 0), "pf", "closing") + 3000m, Num(Integrated(plan, 0), "pf", "closing"));
-        Assert.Equal(3000m, Num(Integrated(plan, 0), "pf", "transfersIn"));
+        // PROJ-06: o repasse previsto SUBSTITUI parte do repasse automático (a mesma disponibilidade nunca vira duas transferências): o total para a PF e os saldos não mudam.
+        Assert.Equal(Num(Integrated(baseline, 0), "transfers", "autoProjectedPjToPf") - 3000m, Num(Integrated(plan, 0), "transfers", "autoProjectedPjToPf"));
+        Assert.Equal(Num(Integrated(baseline, 0), "pj", "closing"), Num(Integrated(plan, 0), "pj", "closing"));
+        Assert.Equal(Num(Integrated(baseline, 0), "pf", "closing"), Num(Integrated(plan, 0), "pf", "closing"));
+        Assert.Equal(Num(Integrated(baseline, 0), "pf", "transfersIn"), Num(Integrated(plan, 0), "pf", "transfersIn"));
         // Repasse não é receita nem despesa do PF: entradas e saídas ficam como antes.
         Assert.Equal((Num(Integrated(baseline, 0), "pf", "entries"), Num(Integrated(baseline, 0), "pf", "exits")), (Num(Integrated(plan, 0), "pf", "entries"), Num(Integrated(plan, 0), "pf", "exits")));
         // No consolidado familiar o repasse é neutro: mesmo saldo, mesmas receitas e despesas.

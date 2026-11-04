@@ -13,6 +13,8 @@ Nada é gravado em leitura; nenhum lançamento, previsão avulsa ou snapshot é 
 - A receita **realizada** na conta de recebimento no mês do recebimento, igual ou acima de 50% do esperado, substitui a estimativa (nunca as duas).
 - A estimativa entra como entrada pendente na data do recebimento, na conta de recebimento (Agenda, indicadores e seis meses leem do mesmo carregador: `IncomeForecastLoader`).
 
+> **PROJ-06:** sem configuração a receita é inferida do histórico e o repasse PJ → PF é projetado automaticamente (só planejamento); veja [PROJ-06](PROJ-06-previsao-receita-pj-repasse.md). O "repasse sugerido" abaixo passa a ser o residual depois do repasse projetado.
+
 ## Disponibilidade PJ
 
 - `ReservaTributos = Receita do mês × 11%` (percentual configurável). **Não é débito** do saldo bancário e não se aplica quando existe despesa tributária cadastrada na conta (DAS, Simples, imposto, DARF…).
