@@ -247,7 +247,7 @@ public sealed class MonthlyPlanCalculatorTests
         var basis = PlanActualCalculator.Consumption(realizedExpense: 1500m, cardPayments: 400m, pendingExpense: 1000m, cardOutstanding: 300m, slices, pendingBankExpense: 50m);
 
         Assert.Equal((1100m, 700m, 1800m), (basis.BankExpenses, basis.CardConfirmed, basis.Realized));
-        Assert.Equal((700m, 50m, 120m, 80m, 950m), (basis.PendingNonCard, basis.PendingBank, basis.CardPendingKnown, basis.CardEstimated, basis.Pending));
+        Assert.Equal((650m, 50m, 120m, 80m, 900m), (basis.PendingNonCard, basis.PendingBank, basis.CardPendingKnown, basis.CardEstimated, basis.Pending));
         // Sem obrigação de cartão informada, nada é descontado dos pendentes.
         Assert.Equal(1000m, PlanActualCalculator.Consumption(1500m, 400m, 1000m, null, [], 0m).PendingNonCard);
     }

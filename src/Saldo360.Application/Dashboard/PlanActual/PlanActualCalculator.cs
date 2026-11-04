@@ -62,6 +62,7 @@ public static class PlanActualCalculator
         public const string FuturePeriod = "FuturePeriod";
         public const string NoCards = "NoCards";
         public const string MissingPayerAccount = "MissingPayerAccount";
+        public const string PendingBankAmbiguous = "PendingBankAmbiguous";
     }
 
     public static string Cents(decimal value) => Money.Format(decimal.Round(value, Money.MaxScale, MidpointRounding.AwayFromZero));
@@ -70,13 +71,14 @@ public static class PlanActualCalculator
 
     /// <summary>
     /// Consumo da competência a partir da projeção mensal da Agenda e das fatias de cartão: o pagamento de fatura sai do realizado bancário (o consumo do
-    /// cartão entra pela fatura, uma única vez) e a obrigação de cartão pendente sai dos pendentes (entra pelas compras e parcelas).
+    /// cartão entra pela fatura, uma única vez) e a obrigação de cartão pendente sai dos pendentes (entra pelas compras e parcelas). O débito bancário pendente sem
+    /// cobertura (PROJ-03) já está dentro de <paramref name="pendingExpense"/> (a agenda o soma uma vez): aqui só é separado, para aparecer como componente próprio.
     /// </summary>
     public static ConsumptionBase Consumption(decimal realizedExpense, decimal cardPayments, decimal pendingExpense, decimal? cardOutstanding, IReadOnlyList<CardSlice> slices, decimal pendingBankExpense)
     {
         var outstanding = cardOutstanding ?? 0m;
         return new(realizedExpense - cardPayments, cardPayments, slices.Sum(s => s.Confirmed), slices.Sum(s => s.PendingKnown), slices.Sum(s => s.Estimated),
-            pendingExpense - outstanding, pendingBankExpense, outstanding);
+            pendingExpense - outstanding - pendingBankExpense, pendingBankExpense, outstanding);
     }
 
     public static string PeriodKind(DateOnly month, DateOnly today) =>

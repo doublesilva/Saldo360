@@ -41,7 +41,7 @@ public sealed record IntegratedPjDto(
 public sealed record IntegratedTransfersDto(string PlannedPjToPf, string RealizedPjToPf);
 
 public sealed record IntegratedPfDto(
-    string? Opening, string? Closing, string Entries, string Exits, string Result, string FixedPending, string CardsOutstanding, string OtherPending, string TransfersIn);
+    string? Opening, string? Closing, string Entries, string Exits, string Result, string FixedPending, string CardsOutstanding, string OtherPending, string TransfersIn, string PendingBankUncovered = "0.00", string PendingBankAmbiguous = "0.00");
 
 /// <summary><c>TargetState</c>: Fixed (meta já gravada, preservada), Provisional (calculada na leitura, nada gravado) ou None (conta sem uso do limite na abertura).</summary>
 public sealed record IntegratedOverdraftDto(

@@ -14,18 +14,16 @@ namespace Saldo360.Application.Dashboard.PlanActual;
 
 /// <summary>Previsões (planejado original) do período: valor e quantidade por tipo. Quantidade zero significa "não definido", nunca um zero fictício.</summary>
 public sealed record PlannedFacts(decimal Income, int IncomeCount, decimal Expense, int ExpenseCount);
-/// <summary>Movimentações PENDING da Pluggy (ainda não efetivadas): não são realizado; entram só como compromisso conhecido de despesa.</summary>
-public sealed record PendingBankFacts(decimal Income, decimal Expense);
 /// <summary>Movimentações em revisão por conta (todas e as do mês) e as dos cartões por conta pagadora.</summary>
 public sealed record ReviewFacts(IReadOnlyDictionary<Guid, int> Total, IReadOnlyDictionary<Guid, int> InMonth, IReadOnlyDictionary<Guid, int> CardByPayer);
 /// <summary>Conexão Pluggy que alimenta uma conta bancária ou os cartões pagos por uma conta.</summary>
 public sealed record ConnectionLink(Guid ConnectionId, Guid? AccountId, Guid? CardPayerAccountId);
 
 /// <summary>Fatos de uma competência que alimentam o planejado e o projetado de despesas: previsões, movimentações PENDING da Pluggy e metas. A meta de cartões é a "Todos os cartões" do orçamento (R03), a única fonte.</summary>
-public sealed record PlanBasisFacts(PlannedFacts Planned, PendingBankFacts PendingBank, decimal? CardBudgetTarget, decimal? AggregateTotalExpenses);
+public sealed record PlanBasisFacts(PlannedFacts Planned, decimal? CardBudgetTarget, decimal? AggregateTotalExpenses);
 
 public sealed record PlanActualFacts(
-    PlannedFacts Planned, PendingBankFacts PendingBank, decimal? CardBudgetTarget, decimal? AggregateTotalExpenses,
+    PlannedFacts Planned, decimal? CardBudgetTarget, decimal? AggregateTotalExpenses,
     ReviewFacts Review, IReadOnlyList<ConnectionLink> Connections, IReadOnlySet<Guid> AccountsWithActivity);
 
 /// <summary>Impressão digital barata dos dados que alimentam o painel: se mudar durante a montagem, a montagem é refeita.</summary>
@@ -142,6 +140,7 @@ public sealed class PlanActualService(
         var cardsIncomplete = !m.CreditCardProjectionComplete || cards.Any(c => !c.Projection.Coverage.Complete);
         if (cardsIncomplete) coverageReasons.Add(PlanActualCalculator.Reasons.CardCoverageIncomplete);
         if (!m.DebtProjectionComplete) coverageReasons.Add(PlanActualCalculator.Reasons.DebtCoverageIncomplete);
+        if (m.PendingBankAmbiguous > 0m) coverageReasons.Add(PlanActualCalculator.Reasons.PendingBankAmbiguous);
         var caveats = coverageReasons.Where(r => r is PlanActualCalculator.Reasons.MovementsInReview or PlanActualCalculator.Reasons.PartialPeriod).ToList();
         var coverage = new CoverageDto(coverageReasons.Count == 0, reviewTotal, reviewInMonth, cardReview, affects, partialPeriod, coverageAccounts, coverageReasons);
 
@@ -154,7 +153,7 @@ public sealed class PlanActualService(
 
         // ---- Despesas (consumo e fluxo de caixa) ----------------------------------------------------------------------------
         var slices = cards.Select(c => PlanActualCalculator.Slice(c.Projection, c.Bills, competence)).ToList();
-        var basis = PlanActualCalculator.Consumption(m.RealizedExpense, m.CardPayments, m.PendingExpense, m.CreditCardOutstanding, slices, facts.PendingBank.Expense);
+        var basis = PlanActualCalculator.Consumption(m.RealizedExpense, m.CardPayments, m.PendingExpense, m.CreditCardOutstanding, slices, m.PendingBankUncovered);
         var bankExpenses = basis.BankExpenses;
         var cardOutstanding = basis.CardOutstanding;
         var pendingNonCard = basis.PendingNonCard;
@@ -165,9 +164,10 @@ public sealed class PlanActualService(
         var cashReasons = new List<string>(expenseReasons);
         decimal? plannedCash = facts.Planned.ExpenseCount > 0 ? facts.Planned.Expense : null;
         if (plannedCash is null) cashReasons.Add(PlanActualCalculator.Reasons.PlanNotDefined);
-        var cash = PlanActualCalculator.Indicator(plannedCash, "PlannedTransactions", m.RealizedExpense, m.PendingExpense + facts.PendingBank.Expense,
+        var cash = PlanActualCalculator.Indicator(plannedCash, "PlannedTransactions", m.RealizedExpense, m.PendingExpense,
             [new("BankExpenses", PlanActualCalculator.Cents(bankExpenses)), new("CardInvoicePayments", PlanActualCalculator.Cents(m.CardPayments)), new("PendingPlanned", PlanActualCalculator.Cents(pendingNonCard)),
-             new("PendingCardInvoices", PlanActualCalculator.Cents(cardOutstanding)), new("PendingBank", PlanActualCalculator.Cents(facts.PendingBank.Expense))], cashReasons);
+             new("PendingCardInvoices", PlanActualCalculator.Cents(cardOutstanding)), new("PendingBank", PlanActualCalculator.Cents(m.PendingBankUncovered)),
+             new("PendingBankAmbiguous", PlanActualCalculator.Cents(m.PendingBankAmbiguous))], cashReasons);
 
         var consumptionReasons = new List<string>(expenseReasons);
         var (plannedConsumption, consumptionSource) = MonthlyPlanCalculator.PlannedConsumption(plan, m.BudgetTarget, facts.AggregateTotalExpenses, selected is null);
@@ -177,7 +177,7 @@ public sealed class PlanActualService(
         var cardPending = basis.CardPendingKnown + basis.CardEstimated;
         var consumption = PlanActualCalculator.Indicator(plannedConsumption, consumptionSource, basis.Realized, basis.Pending,
             [new("BankExpenses", PlanActualCalculator.Cents(bankExpenses)), new("CardPurchases", PlanActualCalculator.Cents(cardConfirmed)), new("PendingPlanned", PlanActualCalculator.Cents(pendingNonCard)),
-             new("PendingBank", PlanActualCalculator.Cents(facts.PendingBank.Expense)), new("PendingCardPurchases", PlanActualCalculator.Cents(slices.Sum(s => s.PendingKnown))),
+             new("PendingBank", PlanActualCalculator.Cents(m.PendingBankUncovered)), new("PendingCardPurchases", PlanActualCalculator.Cents(slices.Sum(s => s.PendingKnown))),
              new("EstimatedCardInstallments", PlanActualCalculator.Cents(slices.Sum(s => s.Estimated)))], consumptionReasons);
         var expenses = new ExpensesDto("Consumption", consumption, cash);
 

@@ -36,21 +36,6 @@ internal sealed class PlanActualRepository(Saldo360DbContext db) : IPlanActualRe
             .Select(g => new { Type = g.Key, Total = g.Sum(r => r.Total), Count = g.Sum(r => r.Count) }).ToList();
         var income = plannedRows.FirstOrDefault(r => r.Type == CategoryType.Income); var expense = plannedRows.FirstOrDefault(r => r.Type == CategoryType.Expense);
 
-        // Datas importadas são dias civis no padrão do motor de lançamentos (UTC).
-        var startUtc = new DateTimeOffset(start.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); var endUtc = startUtc.AddMonths(1);
-        var pendingRows = await (from t in db.PluggyImportedTransactions.AsNoTracking()
-                                 join l in db.PluggyAccountLinks.AsNoTracking() on new { t.ConnectionId, t.PluggyAccountId } equals new { l.ConnectionId, l.PluggyAccountId }
-                                 where t.WorkspaceId == workspaceId && l.WorkspaceId == workspaceId && l.Kind == PluggyLinkedAccountKind.Bank && l.FinancialAccountId != null
-                                    && (scope == null || scope.Contains(l.FinancialAccountId.Value))
-                                    && t.Status == PluggyTransactionStatus.Pending && t.MissingSyncCount == 0 && t.Date != null && t.Date >= startUtc && t.Date < endUtc
-                                    && (t.Currency == null || t.Currency == "BRL") && t.Amount != null
-                                 select new { t.Type, t.Amount, t.Date, l.ImportFrom }).ToListAsync(ct);
-        // Antes da data de importação configurada o movimento não vale (mesmo critério do motor de lançamentos).
-        var pending = pendingRows.Where(p => p.ImportFrom is not { } from || Saldo360.Application.Pluggy.PluggyFinancialMapper.BusinessDate(p.Date!.Value) >= from)
-            .Select(p => new { p.Type, Amount = Math.Abs(p.Amount!.Value) }).ToList();
-        var pendingBank = new PendingBankFacts(pending.Where(p => string.Equals(p.Type, "CREDIT", StringComparison.OrdinalIgnoreCase)).Sum(p => p.Amount),
-            pending.Where(p => string.Equals(p.Type, "DEBIT", StringComparison.OrdinalIgnoreCase)).Sum(p => p.Amount));
-
         // Único limite de cartões: a meta "Todos os cartões" do orçamento do mês. O total de despesas segue sendo a referência agregada importada (fora da R03).
         var cardTarget = await (from t in db.FinancialBudgetTargets.AsNoTracking()
                                 join b in db.FinancialBudgets.AsNoTracking() on t.BudgetId equals b.Id
@@ -60,7 +45,7 @@ internal sealed class PlanActualRepository(Saldo360DbContext db) : IPlanActualRe
         var totalExpenses = await db.FinancialMonthlyAggregateTargets.AsNoTracking()
             .Where(t => t.WorkspaceId == workspaceId && t.Competence == start && t.TargetType == MonthlyAggregateTargetType.TotalExpenses)
             .Select(t => (decimal?)t.Amount).FirstOrDefaultAsync(ct);
-        return new(new(income?.Total ?? 0m, income?.Count ?? 0, expense?.Total ?? 0m, expense?.Count ?? 0), pendingBank, cardTarget, totalExpenses);
+        return new(new(income?.Total ?? 0m, income?.Count ?? 0, expense?.Total ?? 0m, expense?.Count ?? 0), cardTarget, totalExpenses);
     }
 
     public async Task<PlanActualFacts> LoadAsync(Guid workspaceId, DateOnly month, IReadOnlyList<Guid>? scopeAccountIds, CancellationToken ct)
@@ -96,7 +81,7 @@ internal sealed class PlanActualRepository(Saldo360DbContext db) : IPlanActualRe
             .Select(t => t.SourceAccountId).Concat(db.FinancialTransfers.AsNoTracking().Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.TransferDate >= start && t.TransferDate <= end).Select(t => t.DestinationAccountId))
             .Distinct().ToListAsync(ct);
 
-        return new(basis.Planned, basis.PendingBank, basis.CardBudgetTarget, basis.AggregateTotalExpenses,
+        return new(basis.Planned, basis.CardBudgetTarget, basis.AggregateTotalExpenses,
             reviewFacts, connections, activeIds.Concat(transferIds).ToHashSet());
     }
 

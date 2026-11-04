@@ -39,6 +39,7 @@ export const qualityText: Record<string, string> = {
   IncomeForecastDismissed: 'A previsão deste recebimento foi descartada.',
   CardCoverageIncomplete: 'Faturas de cartão ainda não fechadas pelo banco.',
   DebtCoverageIncomplete: 'Parcelas de dívida sem conta responsável.',
+  PendingBankAmbiguous: 'Há débito bancário pendente que pode já estar na agenda: não foi somado ao saldo projetado.',
 }
 export const incomeSourceLabels: Record<string, string> = {
   Forecast: 'Estimativa aprovada', Realized: 'Realizada (substitui a estimativa)', Dismissed: 'Descartada', NotConfigured: 'Sem previsão aprovada', None: 'Sem recebimento no mês',

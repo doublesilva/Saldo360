@@ -79,12 +79,17 @@ public sealed class FinancialCalendarMonthlyProjectionService(
                 (snapshot.CardPayments ?? []).Where(row => row.Date >= month && row.Date <= monthThrough).Sum(row => row.Expense),
                 budget?.Targets.Sum(x => x.Planned),
                 budget?.Targets.Sum(x => x.Realized + x.Committed + x.CreditCardCommitted), budgetStatus,
-                monthThrough < today ? "Historical" : month <= today ? "Current" : "Future", balances.DebtProjectionComplete));
+                monthThrough < today ? "Historical" : month <= today ? "Current" : "Future", balances.DebtProjectionComplete,
+                PendingBankSum(snapshot, PendingBankCoverageState.Uncovered, month, monthThrough),
+                PendingBankSum(snapshot, PendingBankCoverageState.Ambiguous, month, monthThrough)));
         }
 
         return new FinancialCalendarMonthlyProjectionResult(
             new FinancialCalendarMonthlyProjection(query.From, months), null, false);
     }
+
+    private static decimal PendingBankSum(FinancialCalendarBalanceSnapshot snapshot, PendingBankCoverageState state, DateOnly from, DateOnly through) =>
+        (snapshot.PendingBank ?? []).Where(c => c.State == state && c.Debit.Date >= from && c.Debit.Date <= through).Sum(c => c.Debit.Amount);
 
     private static (decimal Income, decimal Expense) Sum(IEnumerable<FinancialCalendarDailyTotals> rows) =>
         rows.Aggregate((Income: 0m, Expense: 0m), (total, row) =>

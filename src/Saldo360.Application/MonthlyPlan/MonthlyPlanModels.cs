@@ -67,7 +67,8 @@ public sealed record HourlyIncomeDto(string Competence, string HourlyRate, strin
 public sealed record CopyPlanResultDto(
     string FromCompetence, string ToCompetence, int LinesCopied, int LinesSkipped, int LimitsCopied, int LimitsSkipped, IReadOnlyList<Guid> RecalculatedHourlyLines);
 
-public sealed record MonthCoverageDto(bool DataComplete, string ObligationsCoverage, IReadOnlyList<string> Reasons);
+/// <summary><c>PendingBankAmbiguous</c> (PROJ-03): débitos bancários pendentes com compromisso candidato mas sem par seguro; fora do saldo, sinalizados e nunca somados como despesa adicional.</summary>
+public sealed record MonthCoverageDto(bool DataComplete, string ObligationsCoverage, IReadOnlyList<string> Reasons, string PendingBankAmbiguous = "0.00");
 
 public sealed record PlanMonthDto(
     string Competence, string PeriodKind, string? PlannedIncome, string? PlannedIncomeSource, string ProjectedIncome, string RealizedIncome,

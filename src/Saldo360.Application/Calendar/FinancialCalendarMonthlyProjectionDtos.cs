@@ -22,7 +22,9 @@ public sealed record FinancialCalendarMonthlyProjectionMonth(
     decimal? BudgetConsumption = null,
     string BudgetStatus = "NotDefined",
     string PeriodKind = "Future",
-    bool DebtProjectionComplete = true)
+    bool DebtProjectionComplete = true,
+    decimal PendingBankUncovered = 0m,
+    decimal PendingBankAmbiguous = 0m)
 {
     public decimal TotalIncome => RealizedIncome + PendingIncome;
     public decimal TotalExpense => RealizedExpense + PendingExpense;

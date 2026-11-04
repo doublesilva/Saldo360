@@ -30,7 +30,8 @@ public sealed record FinancialCalendarBalanceSnapshot(
     IReadOnlyList<FinancialCalendarDailyTotals>? DebtObligations = null,
     bool HasUnallocatedDebtObligations = false,
     IReadOnlyList<FinancialCalendarDailyTotals>? CardPayments = null,
-    IReadOnlyList<Saldo360.Application.Budgets.FinancialBudgetExecutionSource>? Budgets = null);
+    IReadOnlyList<Saldo360.Application.Budgets.FinancialBudgetExecutionSource>? Budgets = null,
+    IReadOnlyList<PendingBankClassification>? PendingBank = null);
 
 public sealed record FinancialCalendarBalanceDay(
     DateOnly Date,

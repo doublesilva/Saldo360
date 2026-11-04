@@ -173,20 +173,43 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                               let paid = db.FinancialDebtPayments.Where(payment => payment.WorkspaceId == workspaceId && payment.InstallmentId == installment.Id && payment.CancelledAt == null).Sum(payment => (decimal?)payment.Amount) ?? 0m
                               let remaining = installment.ScheduledAmount - paid
                               where remaining > 0m
-                              select new { installment.DueDate, debt.ResponsibleAccountId, remaining }).ToListAsync(cancellationToken);
+                              select new { installment.Id, installment.DueDate, debt.ResponsibleAccountId, remaining }).ToListAsync(cancellationToken);
         var debtPending = debtRows.GroupBy(row => row.DueDate).Select(group => new FinancialCalendarDailyTotals(group.Key, 0m, group.Sum(row => row.remaining), 0m, 0m)).ToList();
         var hasUnallocatedDebt = debtRows.Any(row => row.ResponsibleAccountId == null || !selectedAccountIds.Contains(row.ResponsibleAccountId.Value));
 
         // Obrigações dos cartões (T09.4): a mesma fonte do módulo de cartões. Fatura fechada pelo banco vale o total bancário; aberta e futura usam a
         // projeção (compras pendentes, parcelas devolvidas e estimadas); pagamentos reduzem uma única vez. Cada obrigação vai para a conta pagadora.
         var cardPending = new List<FinancialCalendarDailyTotals>();
+        var cardCandidates = new List<PendingBankCandidate>();
         var allCardObligations = false;
         foreach (var item in await Saldo360.Infrastructure.CreditCards.CardProjectionRepository.ReadItemsAsync(db, workspaceId, today, cancellationToken))
         {
+            if (item.DueDate is { } candidateDue && item.PayerAccountId is { } candidatePayer && item.Remaining > 0m) cardCandidates.Add(new(Guid.Empty, candidatePayer, item.Remaining, candidateDue, "CardInvoice"));
             if (item.DueDate is { } itemDue && itemDue > through) continue;
             var allocated = item.PayerAccountId is { } payer && selectedAccountIds.Contains(payer);
             if (!allocated || (item.Kind == Saldo360.Application.CreditCards.Projection.ObligationKind.KnownImported && item.DueDate is null)) allCardObligations = true;
             if (allocated && item.DueDate is { } due && item.Remaining > 0m) cardPending.Add(new FinancialCalendarDailyTotals(due, 0m, item.Remaining, 0m, 0m));
+        }
+
+        // PendingBank (PROJ-03): débito bancário pendente da Pluggy. Coberto pela agenda = nada a somar; sem candidata = entra uma única vez; ambíguo = fica fora do saldo e é sinalizado.
+        var pendingDebits = await PendingBankReader.LoadDebitsAsync(db, workspaceId, selectedAccountIds, through, cancellationToken);
+        IReadOnlyList<PendingBankClassification> pendingBank = [];
+        if (pendingDebits.Count > 0)
+        {
+            var lower = pendingDebits.Min(d => d.Date).AddDays(-Saldo360.Application.Recurrences.FixedObligationMatcher.DaysAfter - 1);
+            var upper = through.AddDays(Saldo360.Application.Recurrences.FixedObligationMatcher.DaysBefore);
+            // Obrigações da agenda: recorrências/previsões fixas (leitor único) + previsões avulsas pendentes (mesma regra de pendência da agenda). Cada uma conta uma vez.
+            var plainPlanned = await db.PendingPlanned(workspaceId).Where(p => p.Type == CategoryType.Expense && p.DueDate >= lower && p.DueDate <= upper && selectedAccountIds.Contains(p.AccountId)).ToListAsync(cancellationToken);
+            var fixedObligations = (await FixedObligationReader.LoadAsync(db, workspaceId, lower, upper, today, cancellationToken))
+                .Concat(plainPlanned.Select(p => new Saldo360.Application.Recurrences.FixedObligation(workspaceId, null, null, new(p.DueDate.Year, p.DueDate.Month, 1), p.Id, p.AccountId, p.CategoryId, p.Type, p.Nature,
+                    p.Description, p.Amount, false, p.DueDate, Saldo360.Application.Recurrences.ObligationSituation.Planned, false)))
+                .GroupBy(o => o.StableId).Select(g => g.First()).ToList();
+            var otherCandidates = debtRows.Where(r => r.ResponsibleAccountId != null).Select(r => new PendingBankCandidate(r.Id, r.ResponsibleAccountId!.Value, r.remaining, r.DueDate, "DebtInstallment"))
+                .Concat(plannedTransfers.Select(t => new PendingBankCandidate(Guid.Empty, t.SourceAccountId, t.Amount, t.DueDate, "PlannedTransfer")))
+                .Concat(cardCandidates).ToList();
+            pendingBank = PendingBankCoverage.Classify(pendingDebits, fixedObligations, otherCandidates);
+            pending = pending.Concat(pendingBank.Where(c => c.State == PendingBankCoverageState.Uncovered).GroupBy(c => c.Debit.Date)
+                .Select(g => new FinancialCalendarDailyTotals(g.Key, 0m, g.Sum(c => c.Debit.Amount), 0m, 0m))).ToList();
         }
 
         IReadOnlyList<FinancialCalendarDailyTotals> periodRealized = [];
@@ -219,6 +242,6 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations, debtPending, hasUnallocatedDebt, cardPayments, budgets);
+        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations, debtPending, hasUnallocatedDebt, cardPayments, budgets, pendingBank);
     }
 }

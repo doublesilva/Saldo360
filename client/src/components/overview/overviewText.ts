@@ -50,6 +50,7 @@ export const reasonText: Record<string, string> = {
   PartialPeriod: 'O histórico importado não cobre o mês inteiro.',
   CardCoverageIncomplete: 'Parte das obrigações dos cartões ainda é estimativa ou aguarda a fatura do banco.',
   DebtCoverageIncomplete: 'Há parcelas de dívida sem conta responsável.',
+  PendingBankAmbiguous: 'Há débito bancário pendente que pode já estar na agenda: não foi somado ao saldo projetado.',
   PlanNotAttributable: 'O orçamento por categoria vale para todas as contas; escolha “Todas as contas” para compará-lo.',
   PlanNotDefined: 'Não há valor planejado para este mês.',
   MissingPayerAccount: 'Há cartões sem conta pagadora.',

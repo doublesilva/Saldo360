@@ -51,7 +51,7 @@ public sealed partial class MonthlyPlanService
             var key = Key(m.Month);
             var basisFacts = await planActualRepository.LoadBasisAsync(workspaceId, m.Month, scopeIds, ct);
             var slices = cards.Select(c => PlanActualCalculator.Slice(c.Projection, c.Bills, key)).ToList();
-            var consumption = PlanActualCalculator.Consumption(m.RealizedExpense, m.CardPayments, m.PendingExpense, m.CreditCardOutstanding, slices, basisFacts.PendingBank.Expense);
+            var consumption = PlanActualCalculator.Consumption(m.RealizedExpense, m.CardPayments, m.PendingExpense, m.CreditCardOutstanding, slices, m.PendingBankUncovered);
             var monthFacts = new PlanFacts(planFacts.Lines.Where(l => l.Competence == m.Month).ToList(), planFacts.Limits.Where(l => l.Competence == m.Month).ToList());
             var totals = MonthlyPlanCalculator.Planned(monthFacts, selected?.Id);
             var (plannedIncome, incomeSource) = MonthlyPlanCalculator.PlannedIncome(totals, basisFacts.Planned);
@@ -68,6 +68,7 @@ public sealed partial class MonthlyPlanService
             var reasons = new List<string>();
             if (!m.CreditCardProjectionComplete || cards.Any(c => !c.Projection.Coverage.Complete)) reasons.Add(PlanActualCalculator.Reasons.CardCoverageIncomplete);
             if (!m.DebtProjectionComplete) reasons.Add(PlanActualCalculator.Reasons.DebtCoverageIncomplete);
+            if (m.PendingBankAmbiguous > 0m) reasons.Add(PlanActualCalculator.Reasons.PendingBankAmbiguous);
             if (m.UnavailableReason is { } unavailable) reasons.Add(PlanActualCalculator.Reasons.ProjectionUnavailable + ":" + unavailable);
             // Fontes ausentes (PROJ-01): sem cartões cadastrados ou sem previsão de receita aprovada, o fechamento é parcial, nunca "completo".
             if (allCards.Count == 0) reasons.Add(MonthlyPlanCalculator.CoverageReasons.NoCardsRegistered);
@@ -81,7 +82,7 @@ public sealed partial class MonthlyPlanService
                 totals.ReserveLines > 0 ? MonthlyPlanCalculator.Cents(totals.Reserve) : null, MonthlyPlanCalculator.CentsOrNull(plannedResult), MonthlyPlanCalculator.Cents(projectedResult),
                 MonthlyPlanCalculator.Cents(realizedResult), MonthlyPlanCalculator.Cents(m.PendingExpense), MonthlyPlanCalculator.CentsOrNull(m.ClosingBalance), MonthlyPlanCalculator.CentsOrNull(m.MinimumProjectedBalance),
                 m.FirstNegativeProjectedDate, m.Status, risk, riskReasons,
-                new(complete, MonthlyPlanCalculator.ObligationsCoverage(m.ClosingBalance, m.MinimumProjectedBalance, m.FirstNegativeProjectedDate), reasons)));
+                new(complete, MonthlyPlanCalculator.ObligationsCoverage(m.ClosingBalance, m.MinimumProjectedBalance, m.FirstNegativeProjectedDate), reasons, MonthlyPlanCalculator.Cents(m.PendingBankAmbiguous))));
         }
 
         var ranked = months.Where(x => MonthlyPlanCalculator.RiskRank(x.Risk) >= 2)

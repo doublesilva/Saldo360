@@ -56,6 +56,7 @@ public sealed partial class MonthlyPlanService
             if (allCards.Count == 0) quality.Add(MonthlyPlanCalculator.CoverageReasons.NoCardsRegistered);
             if (!f.CreditCardProjectionComplete || !p.CreditCardProjectionComplete) quality.Add(PlanActualCalculator.Reasons.CardCoverageIncomplete);
             if (!f.DebtProjectionComplete || !p.DebtProjectionComplete) quality.Add(PlanActualCalculator.Reasons.DebtCoverageIncomplete);
+            if (f.PendingBankAmbiguous > 0m) quality.Add(PlanActualCalculator.Reasons.PendingBankAmbiguous);
             foreach (var unavailable in new[] { f.UnavailableReason, p.UnavailableReason }.OfType<BalanceUnavailableReason>().Distinct()) quality.Add(PlanActualCalculator.Reasons.ProjectionUnavailable + ":" + unavailable);
 
             months.Add(new(Key(f.Month), PlanPeriodKind(f.PeriodKind), income,
@@ -65,7 +66,7 @@ public sealed partial class MonthlyPlanService
                 new(MonthlyPlanCalculator.Cents(plannedTransfer), MonthlyPlanCalculator.Cents(realizedTransfer)),
                 new(MonthlyPlanCalculator.CentsOrNull(f.OpeningBalance), MonthlyPlanCalculator.CentsOrNull(f.ClosingBalance), MonthlyPlanCalculator.Cents(entries), MonthlyPlanCalculator.Cents(exits),
                     MonthlyPlanCalculator.Cents(entries - exits), MonthlyPlanCalculator.Cents(fixedAmount), MonthlyPlanCalculator.Cents(cards), MonthlyPlanCalculator.Cents(other),
-                    MonthlyPlanCalculator.Cents(plannedTransfer + realizedTransfer)),
+                    MonthlyPlanCalculator.Cents(plannedTransfer + realizedTransfer), MonthlyPlanCalculator.Cents(f.PendingBankUncovered), MonthlyPlanCalculator.Cents(f.PendingBankAmbiguous)),
                 overdraft, cardTarget, quality.Count == 0, quality));
         }
 
