@@ -5,6 +5,10 @@
   {
    "include": [
     "Saldo360.Tests.Api.AccountProjectionEndpointsTests",
+    "Saldo360.Tests.Api.BudgetControlOverviewTests",
+    "Saldo360.Tests.Api.FinancialDecisionOverviewTests",
+    "Saldo360.Tests.Application.BudgetControlCalculatorTests",
+    "Saldo360.Tests.Application.FinancialDecisionCalculatorTests",
     "Saldo360.Tests.Api.FamilyEndpointsTests",
     "Saldo360.Tests.Api.FinancialCalendarEndpointsTests",
     "Saldo360.Tests.Api.HealthEndpointTests",
