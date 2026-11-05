@@ -4,6 +4,7 @@
  "shards": [
   {
    "include": [
+    "Saldo360.Tests.Api.IncomeForecastApiTests",
     "Saldo360.Tests.Api.AccountProjectionEndpointsTests",
     "Saldo360.Tests.Api.BudgetControlOverviewTests",
     "Saldo360.Tests.Api.FinancialDecisionOverviewTests",
@@ -44,6 +45,7 @@
   },
   {
    "include": [
+    "Saldo360.Tests.Pluggy.PluggyFinancialIntegrationTests",
     "Saldo360.Tests.Api.FinancialCategoryEndpointsTests",
     "Saldo360.Tests.Api.FinancialDebtEndpointsTests",
     "Saldo360.Tests.Api.FinancialResetConcurrencyTests",
