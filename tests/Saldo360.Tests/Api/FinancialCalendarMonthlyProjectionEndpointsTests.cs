@@ -190,7 +190,7 @@ public sealed class FinancialCalendarMonthlyProjectionEndpointsTests(PostgresFix
         Assert.Equal(HttpStatusCode.BadRequest,
             (await SendAsync(HttpMethod.Get, $"/api/financial-workspaces/{_family.Id}/financial-calendar/monthly-projection?from=2026-1", _ownerSecondSession)).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,
-            (await SendAsync(HttpMethod.Get, Url(null, ThisMonth, 13), _ownerSecondSession)).StatusCode);
+            (await SendAsync(HttpMethod.Get, Url(null, ThisMonth, 37), _ownerSecondSession)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await SendAsync(HttpMethod.Get, Url(configured, ThisMonth, 1), _outsider)).StatusCode);
 
