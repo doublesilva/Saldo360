@@ -185,10 +185,25 @@
 .ov-decision__list { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .25rem; font-size: .78rem; }
 .ov-decision__list li { display: flex; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
 .ov-decision details summary { cursor: pointer; font-size: .8rem; }
-.ov-decision .ov-negative { color: var(--fail); }
+.ov-decision .ov-negative, .ov-budgetctl .ov-negative { color: var(--fail); }
 @media (min-width: 48rem) { .ov-decision__context { position: sticky; top: 0; z-index: 2; } }
 @media (max-width: 75rem) { .ov-decision__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 42rem) { .ov-decision__cards { grid-template-columns: minmax(0, 1fr); gap: .6rem; } .ov-decision__context { gap: .25rem .9rem; } }
+
+/* T11.2: consumo do orçamento, pressões e ações. 3 colunas no desktop, 2 no tablet, 1 no celular; pressões e ações lado a lado só no desktop. */
+.ov-budgetctl { display: grid; gap: .85rem; margin-bottom: 1.1rem; }
+.ov-budgetctl h2 { margin: 0; font-size: 1.05rem; }
+.ov-budgetctl__cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .85rem; }
+.ov-budgetctl__pressures { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: .85rem; }
+.ov-pressure__list { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
+.ov-pressure { display: grid; gap: .25rem; padding-bottom: .6rem; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.ov-pressure:last-child { border-bottom: 0; padding-bottom: 0; }
+.ov-pressure p { margin: 0; }
+.ov-pressure__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem .75rem; }
+.ov-pressure__head span { font-variant-numeric: tabular-nums; font-weight: 600; }
+@media (max-width: 75rem) { .ov-budgetctl__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 64rem) { .ov-budgetctl__pressures { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 42rem) { .ov-budgetctl__cards { grid-template-columns: minmax(0, 1fr); gap: .6rem; } }
 
 /* Entrega 3: card resumido de recuperação do limite projetada. */
 .ov-projected-recovery .ov-inline-filter { display: grid; gap: .2rem; font-size: .8rem; color: var(--muted); }

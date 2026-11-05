@@ -116,6 +116,28 @@ export interface FinancialDecision {
   snapshotConsistent: boolean; notes: string[]
 }
 
+/** T11.2: consumo do orçamento (aditivo; null quando indisponível). Dois grupos exclusivos (cartões e fora dos cartões); tudo calculado no servidor, null = não definido (nunca zero). */
+export type BudgetGroupState = 'Complete' | 'Partial' | 'TargetNotDefined' | 'TargetNotAttributable' | 'NoCards'
+export type BudgetGroupStatus = 'WithinBudget' | 'Exceeded' | 'NoTarget'
+export interface BudgetControlGroup {
+  key: 'Cards' | 'OutsideCards'; state: BudgetGroupState; target: string | null; realized: string; committed: string; estimated: string; projected: string
+  margin: string | null; excess: string | null; excessRealized: string | null; realizedPercent: string | null; projectedPercent: string | null; status: BudgetGroupStatus; reasons: string[]
+}
+export interface BudgetControlTotal {
+  targetDefined: boolean; target: string | null; realized: string; committed: string; estimated: string; projected: string; margin: string | null; excess: string | null
+  realizedPercent: string | null; projectedPercent: string | null; status: BudgetGroupStatus
+}
+export type BudgetAction = 'OpenCards' | 'OpenBudget' | 'OpenAgenda' | 'OpenPlanning' | 'OpenReview' | 'OpenAccounts'
+export interface BudgetPressure {
+  rank: number; kind: string; subject: string | null; amount: string | null; amountKind: 'OverTarget' | 'Overdue' | 'Charged' | 'NotEstimable'; referenceAmount: string | null; referenceKind: string
+  impact: 'Budget' | 'Cash' | 'BudgetAndCash' | 'NotEstimable'; quality: 'Confirmed' | 'Projected' | 'Estimated' | 'Preliminary' | 'NotEstimable'; action: BudgetAction; actionContext: string | null
+}
+export interface BudgetRecommendation { code: string; action: BudgetAction; actionContext: string | null }
+export interface BudgetControl {
+  state: 'Complete' | 'Partial' | 'TargetNotDefined'; competence: string; period: DecisionPeriod; scopeKind: 'primary' | 'all' | 'account'; targetsAttributable: boolean
+  total: BudgetControlTotal; cards: BudgetControlGroup; outsideCards: BudgetControlGroup; pressures: BudgetPressure[]; recommendations: BudgetRecommendation[]; notes: string[]
+}
+
 export interface DashboardOverview {
   competence: string; asOf: string; scopeKind: 'primary' | 'all' | 'account'; scopeAccountId: string | null
   accounts: OverviewAccounts; commitments: OverviewCommitments; goals: OverviewGoals; budget: OverviewBudget; recent: OverviewRecent; classification: OverviewClassification
@@ -125,6 +147,8 @@ export interface DashboardOverview {
   cashFlow?: OverviewCashFlow | null
   /** Aditivo (T11.1): compromissos restantes, cobertura, margem segura e meta, todos da MESMA leitura. */
   decision?: FinancialDecision | null
+  /** Aditivo (T11.2): consumo do orçamento, principais pressões e ações recomendadas. */
+  budgetControl?: BudgetControl | null
 }
 
 export function getDashboardOverview(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<DashboardOverview> {

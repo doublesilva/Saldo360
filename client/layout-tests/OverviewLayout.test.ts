@@ -35,6 +35,18 @@ describe('Responsividade da Visão Geral', () => {
     expect(css).toMatch(/\.ov-decision__context\s*\{[^}]*overflow-wrap:\s*anywhere/)
   })
 
+  it('consumo do orçamento (T11.2): 3 colunas em 1920/1440, 2 em 768, 1 em 390/360, pressões empilhadas no tablet, e vem logo após a segurança financeira', () => {
+    expect(css).toMatch(/\.ov-budgetctl__cards\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/)
+    expect(css).toMatch(/@media \(max-width: 75rem\)\s*\{\s*\.ov-budgetctl__cards\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/)
+    expect(css).toMatch(/@media \(max-width: 64rem\)\s*\{\s*\.ov-budgetctl__pressures\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
+    expect(css).toMatch(/@media \(max-width: 42rem\)\s*\{\s*\.ov-budgetctl__cards\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
+    expect(css).toMatch(/\.ov-pressure\s*\{[^}]*overflow-wrap:\s*anywhere/)
+    const page = src('components/overview/Overview.tsx')
+    const order = ['<OverviewDecisionSection', '<OverviewBudgetControlSection', '<OverviewCashFlowSection'].map(tag => page.indexOf(tag))
+    expect(order.every(index => index > 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+  })
+
   it('as barras da evolução financeira não são sobrescritas por outra regra .ov-bar (altura total, coluna flex)', () => {
     const rules = [...css.matchAll(/(?:^|\n)\.ov-bar\s*\{([^}]*)\}/g)].map(match => match[1])
     expect(rules).toHaveLength(1)
