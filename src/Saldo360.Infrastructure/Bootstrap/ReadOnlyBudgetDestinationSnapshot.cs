@@ -63,7 +63,7 @@ public sealed record ReadOnlyBudgetDestinationSnapshot(int SchemaVersion, Guid W
         if (AppliedMigrations.Contains("20261031213935_AddPlannedTransfers", StringComparer.Ordinal)) expected.Add("financial_planned_transfers");
         if (AppliedMigrations.Contains("20261101200304_AddFixedObligationConsolidation", StringComparer.Ordinal)) expected.Add("financial_obligation_settlements");
         if (AppliedMigrations.Contains("20261102171709_AddIncomeForecast", StringComparer.Ordinal))
-            foreach (var table in new[] { "financial_income_forecasts", "financial_income_forecast_months" }) expected.Add(table);
+            foreach (var table in new[] { "financial_income_forecasts", "financial_income_forecast_months", "financial_food_provisions" }) expected.Add(table);
         if (AppliedMigrations.Contains("20261104124341_AddPluggyAmountConfirmation", StringComparer.Ordinal)) expected.Add("financial_amount_confirmation_events");
         if (AppliedMigrations.Contains("20261029214648_AddMonthlyPlanning", StringComparer.Ordinal))
             foreach (var table in new[] { "financial_plan_lines", "financial_plan_history", "financial_non_working_days" }) expected.Add(table);

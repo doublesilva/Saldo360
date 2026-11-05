@@ -19,6 +19,8 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
 {
     /// <summary>Leitor para repositórios que já têm o contexto e não recebem o leitor por injeção.</summary>
     internal static CardProjectionRepository Create(Saldo360DbContext db) => new(db, new FinancialCreditCardRepository(db), new FinancialCreditCardPurchaseRepository(db));
+    /// <summary>Cobrança recorrente detectada é projetada até o maior horizonte da projeção consolidada (36 meses) mais um mês de folga; a leitura recorta pelo período pedido. Compras futuras nunca são inventadas.</summary>
+    public const int RecurringHorizonMonths = 37;
 
     /// <summary>Mesmos fatos, mesmo motor: as obrigações que Agenda, saldo projetado e Dashboard consomem.</summary>
     internal static async Task<IReadOnlyList<CardObligationItem>> ReadItemsAsync(Saldo360DbContext db, Guid workspaceId, DateOnly today, CancellationToken ct) =>
@@ -134,7 +136,7 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
             var recurring = new List<RecurringChargeFact>();
             foreach (var recurrence in detectedRecurrences.Where(r => r.FinancialCreditCardId == dto.Id))
             {
-                var occurrences = FinancialRecurrenceCalendar.CalculateOccurrences(recurrence, today, today.AddMonths(7));
+                var occurrences = FinancialRecurrenceCalendar.CalculateOccurrences(recurrence, today, today.AddMonths(RecurringHorizonMonths));
                 foreach (var occurrence in occurrences)
                 {
                     var cycle = CardCycleSchedule.Resolve(cardBills.Select(b => new PluggyBillFact(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency)).ToList(), today, dto.ClosingDay, dto.DueDay).CycleFor(occurrence.Date);

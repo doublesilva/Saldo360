@@ -101,13 +101,14 @@ internal static class FinancialResetFixture
         var nonWorkingDay = FinancialNonWorkingDay.Create(w, date, NonWorkingDayKind.Holiday, "Synthetic", u, now);
         var incomeForecast = FinancialIncomeForecast.Create(w, account.Id, 100m, 8m, 10, 1, 11m, 0m, true, u, now);
         var incomeForecastMonth = FinancialIncomeForecastMonth.Create(w, new DateOnly(date.Year, date.Month, 1), 10, null, null, false, u, now);
+        var foodProvision = FinancialFoodProvision.Create(w, null, 2000m, [category.Id], u, now);
         var pluggyChange = PluggyTransactionChange.Create(pluggyTransaction, pluggyTransaction.Observe(pluggySnapshot with { Status = PluggyTransactionStatus.Posted }, pluggyRun.Id, now), pluggyRun.Id, now);
         var confirmationEvent = Saldo360.Domain.Planning.FinancialAmountConfirmationEvent.Create(w, recurrence.Id, date, null, Saldo360.Domain.Planning.AmountConfirmationEventKind.Ambiguous, null, null, 10m, null, "Synthetic", null, now);
         var recoverySnapshot = OverdraftRecoverySnapshot.Create(w, account.Id, new DateOnly(date.Year, date.Month, 1), -100m, date, 0m, 0m, -50m, "Complete", string.Empty, now);
         db.AddRange(recoverySnapshot, confirmationEvent, account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, refundTransaction, bankRefund, transfer, plannedTransfer,
             recurrence, materialization, settlement, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
-            scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyTransaction2, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyPosting2, pluggyRejection, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState, automationSettings, categorizationRun, cardTarget, planLine, planHistory, nonWorkingDay, incomeForecast, incomeForecastMonth);
+            scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyTransaction2, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyPosting2, pluggyRejection, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState, automationSettings, categorizationRun, cardTarget, planLine, planHistory, nonWorkingDay, incomeForecast, incomeForecastMonth, foodProvision);
         await db.SaveChangesAsync();
         await OfficialInvoiceFixture.CloseAsync(db, invoice.Id);
         db.AddRange(cardTx, payment); await db.SaveChangesAsync();

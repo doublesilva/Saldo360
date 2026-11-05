@@ -28,6 +28,7 @@ internal static class PjTransferProjection
 
     public static async Task<AutoTransferPlan?> PlanAsync(Saldo360DbContext db, Guid workspaceId, DateOnly today, DateOnly horizon, CancellationToken ct)
     {
+        horizon = horizon > Horizon(today) ? horizon : Horizon(today); // nunca abaixo do horizonte padrão; o resultado de uma data não depende dele
         var dataThrough = DataThrough(horizon);
         var forecast = await IncomeForecastLoader.LoadAsync(db, workspaceId, new DateOnly(today.Year, today.Month, 1), dataThrough, today, ct);
         if (!forecast.Effective) return null;

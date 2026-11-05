@@ -9,6 +9,8 @@ public sealed class FinancialCalendarMonthlyProjectionService(
     IFinancialCalendarBalanceRepository repository,
     TimeProvider timeProvider)
 {
+    public const int MaxMonths = 36;
+
     public async Task<FinancialCalendarMonthlyProjectionResult> GetAsync(
         Guid workspaceId,
         Guid userId,
@@ -21,11 +23,11 @@ public sealed class FinancialCalendarMonthlyProjectionService(
             return FinancialCalendarMonthlyProjectionResult.NotFoundResult;
         }
 
-        if (query.Months is < 1 or > 12)
+        if (query.Months is < 1 or > MaxMonths)
         {
             return new FinancialCalendarMonthlyProjectionResult(null, new Dictionary<string, string[]>
             {
-                ["months"] = ["A quantidade de meses deve estar entre 1 e 12."],
+                ["months"] = [$"A quantidade de meses deve estar entre 1 e {MaxMonths}."],
             }, false);
         }
 

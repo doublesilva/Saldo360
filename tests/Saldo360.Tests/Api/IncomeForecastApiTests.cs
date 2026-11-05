@@ -370,4 +370,105 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, $"{s.Plan}/income-forecast", other.Session)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/income-forecast", other.Session, new { accountId = other.Pj, hourlyRate = "1.00", hoursPerDay = "1", paymentDay = 1, paymentOffsetMonths = 0, taxReservePercent = "0.00", isActive = true })).StatusCode);
     }
+
+    // ---- Projeção consolidada (Entrega 2) ---------------------------------------------------------------------------------------------------------
+
+    private async Task<JsonElement> ProjectionAsync(Setup s, int months, DateOnly? from = null) =>
+        await JsonAsync(await SendAsync(HttpMethod.Get, $"{s.Plan}/projection?months={months}" + (from is { } f ? $"&from={Month(f)}" : ""), s.Session));
+
+    private static JsonElement Scenario(JsonElement projection, string name) => projection.GetProperty("scenarios").EnumerateArray().Single(x => x.GetProperty("name").GetString() == name).GetProperty("months");
+
+    [Fact]
+    public async Task TheProjection_IsIdenticalInTheCoincidingMonths_ForAnyHorizon_AndItsReadsWriteNothing()
+    {
+        var s = await ArrangeAsync("proj02");
+        await JsonAsync(await SaveForecastAsync(s, day: 10));
+        await PlannedAsync(s, s.Pf, "Expense", "1500.00", ThisMonth.AddMonths(3).AddDays(4));
+        var before = await CountsAsync();
+
+        var six = await ProjectionAsync(s, 6); var thirteen = await ProjectionAsync(s, 13); var twentyFour = await ProjectionAsync(s, 24);
+
+        Assert.Equal((6, 13, 24), (Scenario(six, "Current").GetArrayLength(), Scenario(thirteen, "Current").GetArrayLength(), Scenario(twentyFour, "Current").GetArrayLength()));
+        foreach (var scenario in new[] { "Current", "Ceilings" })
+            for (var i = 0; i < 6; i++)
+            {
+                var a = Scenario(six, scenario)[i]; var b = Scenario(thirteen, scenario)[i]; var c = Scenario(twentyFour, scenario)[i];
+                foreach (var other in new[] { b, c })
+                {
+                    Assert.Equal(Text(a, "pf", "closing"), Text(other, "pf", "closing"));
+                    Assert.Equal(Text(a, "pj", "closing"), Text(other, "pj", "closing"));
+                    Assert.Equal(Text(a, "transfers", "autoProjectedPjToPf"), Text(other, "transfers", "autoProjectedPjToPf"));
+                    Assert.Equal(Text(a, "income", "expectedGross"), Text(other, "income", "expectedGross"));
+                    Assert.Equal(Text(a, "overdraft", "cumulativeRecovery"), Text(other, "overdraft", "cumulativeRecovery"));
+                }
+            }
+        for (var i = 6; i < 13; i++) Assert.Equal(Text(Scenario(thirteen, "Current")[i], "pf", "closing"), Text(Scenario(twentyFour, "Current")[i], "pf", "closing"));
+        Assert.Equal(before, await CountsAsync()); // leitura não cria nem altera registros financeiros
+    }
+
+    [Fact]
+    public async Task AProjectionStartingInAFutureMonth_CarriesTheBalanceOfTheMonthsBeforeIt_AndEachClosingFeedsTheNextOpening()
+    {
+        var s = await ArrangeAsync("proj03");
+        await JsonAsync(await SaveForecastAsync(s, day: 10));
+        var full = Scenario(await ProjectionAsync(s, 6), "Current");
+        var future = Scenario(await ProjectionAsync(s, 3, ThisMonth.AddMonths(3)), "Current");
+
+        for (var i = 0; i < 3; i++) Assert.Equal(Text(full[3 + i], "pf", "closing"), Text(future[i], "pf", "closing")); // não recomeça do zero
+        Assert.Equal(Text(full[2], "pf", "closing"), Text(future[0], "pf", "opening"));
+        for (var i = 1; i < 6; i++) Assert.Equal(Text(full[i - 1], "pf", "closing"), Text(full[i], "pf", "opening"));
+    }
+
+    [Fact]
+    public async Task TheProjectionRejectsAHorizonOutsideOneToThirtySixMonths()
+    {
+        var s = await ArrangeAsync("proj04");
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, $"{s.Plan}/projection?months=37", s.Session)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, $"{s.Plan}/projection?months=0", s.Session)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Get, $"{s.Plan}/projection?months=36", s.Session)).StatusCode);
+    }
+
+    private async Task<Guid> FoodCategoryAsync(Setup s) => (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{s.Root}/categories", s.Session, new { name = "Alimentação", type = "Expense" }))).Id;
+
+    [Fact]
+    public async Task TheFoodProvision_IsConfigurable_AdjustableByCompetence_AndOnlyEstimatesTheMissingDifference()
+    {
+        var s = await ArrangeAsync("proj05");
+        var withoutCategories = await ProjectionAsync(s, 3);
+        Assert.Contains("FoodProvisionCategoriesNotConfigured", withoutCategories.GetProperty("notes").EnumerateArray().Select(n => n.GetString())); // sem categoria alimentar: não aplica, sinaliza
+
+        var food = await FoodCategoryAsync(s);
+        var inferred = await ProjectionAsync(s, 3);
+        var next = ThisMonth.AddMonths(1);
+        Assert.Contains("FoodCategoriesInferred", inferred.GetProperty("notes").EnumerateArray().Select(n => n.GetString()));
+        Assert.Equal(2000m, Num(Scenario(inferred, "Current")[1], "pf", "cardConsumptionComplement")); // padrão inicial de R$ 2.000, nada reconhecido ainda
+
+        await JsonAsync(await SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/food-provision", s.Session, new { monthlyAmount = "2500.00", categoryIds = new[] { food } }));
+        await JsonAsync(await SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/food-provision/months/{Month(next)}", s.Session, new { monthlyAmount = "1500.00" }));
+        var configured = await ProjectionAsync(s, 3);
+
+        Assert.Equal(2500m, Num(Scenario(configured, "Current")[0], "pf", "cardConsumptionComplement"));
+        Assert.Equal(1500m, Num(Scenario(configured, "Current")[1], "pf", "cardConsumptionComplement")); // ajuste da competência
+        Assert.DoesNotContain("FoodCategoriesInferred", configured.GetProperty("notes").EnumerateArray().Select(n => n.GetString()));
+        var ceilings = Scenario(configured, "Ceilings")[1];
+        Assert.True(Num(ceilings, "budget", "cardProjected") >= 1500m);
+
+        var current = await JsonAsync(await SendAsync(HttpMethod.Get, $"{s.Plan}/food-provision", s.Session));
+        Assert.Equal("2500.00", Text(current, "monthlyAmount"));
+        await JsonAsync(await SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/food-provision", s.Session, new { monthlyAmount = "100.00", categoryIds = new[] { Guid.NewGuid() } }), HttpStatusCode.BadRequest); // categoria que não é do orçamento
+    }
+
+    [Fact]
+    public async Task AProjectedOverdraftUse_FlagsUnestimatedChargesInsteadOfAssumingZero()
+    {
+        var negative = await ArrangeAsync("proj06", pfOpening: "-5000.00");
+        var positive = await ArrangeAsync("proj07", pfOpening: "900000.00");
+
+        var withUse = Scenario(await ProjectionAsync(negative, 2), "Current")[0];
+        var without = Scenario(await ProjectionAsync(positive, 2), "Current")[0];
+
+        Assert.Contains("OverdraftChargesNotEstimated", withUse.GetProperty("quality").EnumerateArray().Select(q => q.GetString()));
+        Assert.DoesNotContain("OverdraftChargesNotEstimated", without.GetProperty("quality").EnumerateArray().Select(q => q.GetString()));
+    }
 }

@@ -32,7 +32,7 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         ReadCoreAsync(workspaceId, accountId, null, through, today, null, cancellationToken);
 
     private async Task<FinancialCalendarBalanceSnapshot?> ReadWithPlanAsync(Guid workspaceId, Guid? accountId, DateOnly? periodFrom, DateOnly through, DateOnly today, CancellationToken cancellationToken) =>
-        await ReadCoreAsync(workspaceId, accountId, periodFrom, through, today, await PjTransferProjection.PlanAsync(db, workspaceId, today, cancellationToken), cancellationToken);
+        await ReadCoreAsync(workspaceId, accountId, periodFrom, through, today, await PjTransferProjection.PlanAsync(db, workspaceId, today, through, cancellationToken), cancellationToken);
 
     private async Task<FinancialCalendarBalanceSnapshot?> ReadCoreAsync(
         Guid workspaceId,

@@ -50,7 +50,13 @@ public interface IMonthlyPlanRepository
     Task<IReadOnlyList<TransferMonthFlow>> TransferFlowsAsync(Guid workspaceId, Guid sourceAccountId, Guid destinationAccountId, DateOnly from, DateOnly through, CancellationToken cancellationToken);
 
     /// <summary>Repasse PJ → PF projetado pela automação (PROJ-06), no horizonte fixo de seis meses. Somente leitura: nada é gravado e nenhuma transferência é executada.</summary>
-    Task<IReadOnlyList<ProjectedPjTransfer>> ProjectedPjTransfersAsync(Guid workspaceId, DateOnly today, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ProjectedPjTransfer>> ProjectedPjTransfersAsync(Guid workspaceId, DateOnly today, CancellationToken cancellationToken, DateOnly? through = null);
+
+    /// <summary>Provisão de alimentação no cartão (Entrega 2): parâmetros do orçamento e o já reconhecido nas faturas por competência (somente leitura).</summary>
+    Task<FoodProvisionFacts> FoodProvisionAsync(Guid workspaceId, DateOnly from, DateOnly through, CancellationToken cancellationToken);
+    Task<bool> AreExpenseCategoriesAsync(Guid workspaceId, IReadOnlyCollection<Guid> categoryIds, CancellationToken cancellationToken);
+    Task UpsertFoodProvisionAsync(Guid workspaceId, DateOnly? competence, decimal amount, IReadOnlyCollection<Guid> categoryIds, Guid userId, DateTimeOffset now, CancellationToken cancellationToken);
+    Task RemoveFoodProvisionMonthAsync(Guid workspaceId, DateOnly competence, CancellationToken cancellationToken);
 
     /// <summary>Despesas fixas ainda pendentes (previsão consolidada) da conta, por mês de vencimento.</summary>
     Task<IReadOnlyDictionary<DateOnly, decimal>> PendingFixedByMonthAsync(Guid workspaceId, Guid accountId, DateOnly from, DateOnly through, DateOnly today, CancellationToken cancellationToken);

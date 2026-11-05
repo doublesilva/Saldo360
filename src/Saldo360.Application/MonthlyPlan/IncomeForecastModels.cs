@@ -55,3 +55,23 @@ public sealed record IntegratedMonthDto(
 /// <summary><c>RecoveryOverPeriod</c> = limite usado na abertura do primeiro mês − limite usado no fechamento projetado do último (negativo = piora); nulo sem saldos.</summary>
 public sealed record IntegratedProjectionDto(
     bool IncomeForecastActive, Guid? PjAccountId, string? PjAccountName, Guid? PfAccountId, string? PfAccountName, string? RecoveryOverPeriod, IReadOnlyList<IntegratedMonthDto> Months, bool IncomeInferred = false);
+
+// ---- Provisão de alimentação (Entrega 2) -----------------------------------------------------------------------------------------------------------
+
+/// <summary>
+/// Parâmetros e fatos da provisão de alimentação no cartão. <c>CategoriesInferred</c>: sem categorias configuradas, usam-se as categorias de despesa cujo nome contém "aliment"
+/// (sinalizado). Sem nenhuma categoria alimentar, a provisão não é aplicada (<c>CategoryIds</c> vazio). <c>Known</c> é o já reconhecido nas faturas, por competência.
+/// </summary>
+public sealed record FoodProvisionFacts(
+    decimal DefaultAmount, bool AmountConfigured, IReadOnlySet<Guid> CategoryIds, bool CategoriesInferred, IReadOnlyDictionary<DateOnly, decimal> MonthAmounts,
+    IReadOnlyDictionary<DateOnly, decimal> Known)
+{
+    public bool Applicable => CategoryIds.Count > 0;
+    public decimal AmountFor(DateOnly month) => MonthAmounts.TryGetValue(month, out var amount) ? amount : DefaultAmount;
+}
+
+public sealed record FoodProvisionDto(string MonthlyAmount, bool AmountConfigured, IReadOnlyList<Guid> CategoryIds, bool CategoriesInferred, IReadOnlyDictionary<string, string> MonthAmounts);
+
+public sealed record FoodProvisionRequest(string? MonthlyAmount, IReadOnlyList<Guid>? CategoryIds);
+
+public sealed record FoodProvisionMonthRequest(string? MonthlyAmount);

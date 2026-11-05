@@ -9,6 +9,7 @@ namespace Saldo360.Api.MonthlyPlan;
 /// <list type="bullet">
 /// <item><c>GET monthly-plan?competence=yyyy-MM&amp;scope=primary|all|account&amp;accountId=</c>: o mês, com a realização do Dashboard.</item>
 /// <item><c>GET monthly-plan/six-months?from=yyyy-MM&amp;scope=&amp;accountId=</c>: o mês e os cinco seguintes.</item>
+/// <item><c>GET monthly-plan/projection?from=yyyy-MM&amp;months=1..36</c> (Entrega 2): projeção consolidada com os cenários Atual e Tetos.</item>
 /// <item><c>POST|PUT|DELETE monthly-plan/lines[/{id}]</c>: receitas, despesas e transferências previstas.</item>
 /// <item><c>PUT|DELETE monthly-plan/category-limits</c>: limite mensal por categoria.</item>
 /// <item><c>GET monthly-plan/history?competence=&amp;subjectId=</c>, <c>POST monthly-plan/copy</c>.</item>
@@ -28,6 +29,11 @@ public static class MonthlyPlanEndpoints
         });
         group.MapGet("", Get);
         group.MapGet("/six-months", SixMonths);
+        group.MapGet("/projection", Projection);
+        group.MapGet("/food-provision", FoodProvision);
+        group.MapPut("/food-provision", SaveFoodProvision).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapPut("/food-provision/months/{competence}", SaveFoodProvisionMonth).AddEndpointFilter<ValidateCsrfTokenFilter>();
+        group.MapDelete("/food-provision/months/{competence}", RemoveFoodProvisionMonth).AddEndpointFilter<ValidateCsrfTokenFilter>();
         group.MapGet("/history", History);
         group.MapGet("/working-days", WorkingDays);
         group.MapGet("/hourly-income", HourlyIncome);
@@ -62,6 +68,9 @@ public static class MonthlyPlanEndpoints
 
     private static Task<IResult> SixMonths(Guid workspaceId, string? from, string? scope, Guid? accountId, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
         Run(user, ct, id => service.SixMonthsAsync(workspaceId, id, from, scope, accountId, ct));
+
+    private static Task<IResult> Projection(Guid workspaceId, string? from, int? months, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
+        Run(user, ct, id => service.ProjectionAsync(workspaceId, id, from, months, ct));
 
     private static Task<IResult> History(Guid workspaceId, string? competence, Guid? subjectId, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
         Run(user, ct, id => service.HistoryAsync(workspaceId, id, competence, subjectId, ct));
@@ -104,6 +113,18 @@ public static class MonthlyPlanEndpoints
 
     private static Task<IResult> SaveForecastMonth(Guid workspaceId, string competence, IncomeForecastMonthRequest request, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
         Run(user, ct, id => service.SaveForecastMonthAsync(workspaceId, id, competence, request, ct));
+
+    private static Task<IResult> FoodProvision(Guid workspaceId, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
+        Run(user, ct, id => service.GetFoodProvisionAsync(workspaceId, id, ct));
+
+    private static Task<IResult> SaveFoodProvision(Guid workspaceId, FoodProvisionRequest request, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
+        Run(user, ct, id => service.SaveFoodProvisionAsync(workspaceId, id, request, ct));
+
+    private static Task<IResult> SaveFoodProvisionMonth(Guid workspaceId, string competence, FoodProvisionMonthRequest request, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
+        Run(user, ct, id => service.SaveFoodProvisionMonthAsync(workspaceId, id, competence, request, ct));
+
+    private static Task<IResult> RemoveFoodProvisionMonth(Guid workspaceId, string competence, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
+        Run(user, ct, id => service.RemoveFoodProvisionMonthAsync(workspaceId, id, competence, ct));
 
     private static Task<IResult> RemoveForecastMonth(Guid workspaceId, string competence, CurrentUser user, MonthlyPlanService service, CancellationToken ct) =>
         Run(user, ct, id => service.RemoveForecastMonthAsync(workspaceId, id, competence, ct));

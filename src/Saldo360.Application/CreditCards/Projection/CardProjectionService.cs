@@ -62,7 +62,7 @@ public sealed record CardProjectionResult<T>(CardProjectionAccess Access, T? Val
 /// <summary>Consultas de leitura sobre a projeção das obrigações dos cartões. Nenhum cálculo financeiro acontece no navegador.</summary>
 public sealed class CardProjectionService(IFinancialWorkspaceRepository workspaces, ICardProjectionRepository repository, TimeProvider time)
 {
-    public const int MaxMonths = 12;
+    public const int MaxMonths = 36;
 
     public async Task<CardProjectionResult<CardInvoiceOverviewDto>> InvoiceOverviewAsync(Guid workspaceId, Guid userId, string? competence, CancellationToken ct)
     {

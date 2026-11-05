@@ -13,20 +13,22 @@ public sealed partial class MonthlyPlanService
     // sem duplicar o realizado. Aqui só se compõe a leitura (receita PJ estimada, reservas, disponibilidade, conta PF e recuperação do limite). Nada é gravado.
 
     private async Task<IntegratedProjectionDto?> IntegratedAsync(Guid workspaceId, Guid userId, DateOnly first, DateOnly last, DateOnly today, IReadOnlyList<FinancialAccountDto> all,
-        IReadOnlyList<(Saldo360.Application.CreditCards.Projection.CardProjection Projection, IReadOnlyList<Saldo360.Application.Pluggy.PluggyBillFact> Bills)> allCards, CancellationToken ct)
+        IReadOnlyList<(Saldo360.Application.CreditCards.Projection.CardProjection Projection, IReadOnlyList<Saldo360.Application.Pluggy.PluggyBillFact> Bills)> allCards, CancellationToken ct,
+        List<ScenarioMonthFacts>? scenarioFacts = null)
     {
-        var through = last.AddMonths(1).AddDays(-1); // `last` é o primeiro dia do sexto mês
+        var through = last.AddMonths(1).AddDays(-1); // `last` é o primeiro dia do último mês
+        var monthCount = (last.Year - first.Year) * 12 + last.Month - first.Month + 1;
         var forecast = await repository.LoadIncomeForecastAsync(workspaceId, first, through, today, ct);
         var pj = all.FirstOrDefault(a => a.IsActive && a.Id == forecast.Settings?.AccountId) ?? DefaultPjAccount(all);
         var pf = all.FirstOrDefault(a => a.IsActive && a.IsPrimary && a.FinancialScope == FinancialScope.PF) ?? all.FirstOrDefault(a => a.IsActive && a.FinancialScope == FinancialScope.PF);
         if (pj is null || pf is null) return null;
 
-        var pjProjection = await monthlyProjection.GetAsync(workspaceId, userId, new(first, 6, pj.Id), ct, today);
-        var pfProjection = await monthlyProjection.GetAsync(workspaceId, userId, new(first, 6, pf.Id), ct, today);
+        var pjProjection = await monthlyProjection.GetAsync(workspaceId, userId, new(first, monthCount, pj.Id), ct, today);
+        var pfProjection = await monthlyProjection.GetAsync(workspaceId, userId, new(first, monthCount, pf.Id), ct, today);
         if (pjProjection.Projection is null || pfProjection.Projection is null) return null;
         var flows = (await repository.TransferFlowsAsync(workspaceId, pj.Id, pf.Id, first, through, ct)).ToDictionary(f => f.Month);
         var fixedPending = await repository.PendingFixedByMonthAsync(workspaceId, pf.Id, first, through, today, ct);
-        var autoTransfers = await repository.ProjectedPjTransfersAsync(workspaceId, today, ct);
+        var autoTransfers = await repository.ProjectedPjTransfersAsync(workspaceId, today, ct, through);
 
         var months = new List<IntegratedMonthDto>();
         for (var index = 0; index < pfProjection.Projection.Months.Count; index++)
@@ -52,7 +54,15 @@ public sealed partial class MonthlyPlanService
             var overdraft = await OverdraftAsync(workspaceId, pf, f, today, ct);
             // Meta única "Todos os cartões" (consumo por competência da fatura): meta de consumo, separada do fluxo de caixa e nunca usada como fatura prevista.
             var cardSlices = allCards.Select(c => PlanActualCalculator.Slice(c.Projection, c.Bills, Key(f.Month))).ToList();
-            var cardTarget = PlanActualService.BuildCardTarget(null, cardSlices, allCards.Select(c => c.Projection).ToList(), (await planActualRepository.LoadBasisAsync(workspaceId, f.Month, null, ct)).CardBudgetTarget, f.CreditCardProjectionComplete);
+            var basis = await planActualRepository.LoadBasisAsync(workspaceId, f.Month, null, ct);
+            var cardTarget = PlanActualService.BuildCardTarget(null, cardSlices, allCards.Select(c => c.Projection).ToList(), basis.CardBudgetTarget, f.CreditCardProjectionComplete);
+            if (scenarioFacts is not null)
+            {
+                var consumption = PlanActualCalculator.Consumption(f.RealizedExpense, f.CardPayments, f.PendingExpense, f.CreditCardOutstanding, cardSlices, f.PendingBankUncovered);
+                var dues = allCards.SelectMany(c => c.Projection.Invoices).Where(i => i.Competence == Key(f.Month)).Select(i => (DateOnly?)i.Due).ToList();
+                scenarioFacts.Add(new(f.Month, f.OpeningBalance, f.ClosingBalance, cardSlices.Sum(s => s.Projected), consumption.BankExpenses + consumption.PendingNonCard + consumption.PendingBank,
+                    basis.CardBudgetTarget, basis.AggregateTotalExpenses, dues.Count == 0 ? null : new DateOnly(dues.Max()!.Value.Year, dues.Max()!.Value.Month, 1)));
+            }
             var quality = new List<string>();
             if (!forecast.Effective) quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeForecastNotConfigured);
             if (forecast.Inferred) { quality.Add(MonthlyPlanCalculator.CoverageReasons.IncomeForecastInferred); quality.Add(MonthlyPlanCalculator.CoverageReasons.TaxReserveNotConfigured); }

@@ -2814,6 +2814,58 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                     b.ToTable("financial_amount_confirmation_events", (string)null);
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialFoodProvision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.PrimitiveCollection<Guid[]>("CategoryIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("category_ids");
+
+                    b.Property<DateOnly?>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<decimal>("MonthlyAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("monthly_amount");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_food_provisions");
+
+                    b.HasIndex("WorkspaceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_food_provisions_workspace_default")
+                        .HasFilter("competence IS NULL");
+
+                    b.HasIndex("WorkspaceId", "Competence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_food_provisions_workspace_competence")
+                        .HasFilter("competence IS NOT NULL");
+
+                    b.ToTable("financial_food_provisions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_food_provision_amount", "monthly_amount >= 0 AND scale(monthly_amount) <= 2");
+
+                            t.HasCheckConstraint("ck_food_provision_competence", "competence IS NULL OR EXTRACT(DAY FROM competence) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialIncomeForecast", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6597,6 +6649,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_amount_confirmation_events_financial_workspaces_w");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Planning.FinancialFoodProvision", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_food_provisions_financial_workspaces_workspace_id");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Planning.FinancialIncomeForecast", b =>

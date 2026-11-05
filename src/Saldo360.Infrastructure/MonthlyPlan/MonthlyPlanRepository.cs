@@ -89,8 +89,58 @@ internal sealed class MonthlyPlanRepository(Saldo360DbContext db) : IMonthlyPlan
 
     // ---- PROJ-01 ----------------------------------------------------------------------------------------------------------------------------------
 
-    public async Task<IReadOnlyList<ProjectedPjTransfer>> ProjectedPjTransfersAsync(Guid workspaceId, DateOnly today, CancellationToken cancellationToken) =>
-        (await Saldo360.Infrastructure.Calendar.PjTransferProjection.PlanAsync(db, workspaceId, today, cancellationToken))?.Transfers ?? [];
+    public async Task<IReadOnlyList<ProjectedPjTransfer>> ProjectedPjTransfersAsync(Guid workspaceId, DateOnly today, CancellationToken cancellationToken, DateOnly? through = null) =>
+        (await Saldo360.Infrastructure.Calendar.PjTransferProjection.PlanAsync(db, workspaceId, today, through ?? Saldo360.Infrastructure.Calendar.PjTransferProjection.Horizon(today), cancellationToken))?.Transfers ?? [];
+
+    public async Task<bool> AreExpenseCategoriesAsync(Guid workspaceId, IReadOnlyCollection<Guid> categoryIds, CancellationToken ct) =>
+        await db.FinancialCategories.AsNoTracking().CountAsync(c => c.WorkspaceId == workspaceId && c.Type == Saldo360.Domain.Categories.CategoryType.Expense && categoryIds.Contains(c.Id), ct) == categoryIds.Count;
+
+    public async Task UpsertFoodProvisionAsync(Guid workspaceId, DateOnly? competence, decimal amount, IReadOnlyCollection<Guid> categoryIds, Guid userId, DateTimeOffset now, CancellationToken ct)
+    {
+        var existing = await db.FinancialFoodProvisions.SingleOrDefaultAsync(r => r.WorkspaceId == workspaceId && r.Competence == competence, ct);
+        if (existing is null) db.FinancialFoodProvisions.Add(Saldo360.Domain.Planning.FinancialFoodProvision.Create(workspaceId, competence, amount, categoryIds, userId, now));
+        else existing.Revise(amount, categoryIds, userId, now);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task RemoveFoodProvisionMonthAsync(Guid workspaceId, DateOnly competence, CancellationToken ct)
+    {
+        var existing = await db.FinancialFoodProvisions.SingleOrDefaultAsync(r => r.WorkspaceId == workspaceId && r.Competence == competence, ct);
+        if (existing is null) return;
+        db.FinancialFoodProvisions.Remove(existing);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<FoodProvisionFacts> FoodProvisionAsync(Guid workspaceId, DateOnly from, DateOnly through, CancellationToken ct)
+    {
+        var rows = await db.FinancialFoodProvisions.AsNoTracking().Where(r => r.WorkspaceId == workspaceId).ToListAsync(ct);
+        var standard = rows.FirstOrDefault(r => r.Competence == null);
+        var categories = standard?.CategoryIds.ToHashSet() ?? [];
+        var inferred = false;
+        if (categories.Count == 0)
+        {
+            // A coluna de nome usa collation não determinística (sem LIKE/ILIKE): o filtro por nome é feito em memória sobre as categorias de despesa do orçamento.
+            categories = (await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId && c.Type == Saldo360.Domain.Categories.CategoryType.Expense)
+                .Select(c => new { c.Id, c.Name }).ToListAsync(ct)).Where(c => c.Name.Contains("aliment", StringComparison.OrdinalIgnoreCase)).Select(c => c.Id).ToHashSet();
+            inferred = categories.Count > 0;
+        }
+        var known = new Dictionary<DateOnly, decimal>();
+        if (categories.Count > 0)
+        {
+            var competences = Enumerable.Range(0, Math.Max(1, (through.Year - from.Year) * 12 + through.Month - from.Month + 1)).Select(i => from.AddMonths(i).ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)).ToList();
+            var amounts = await (from i in db.FinancialCreditCardInstallments.AsNoTracking()
+                                 join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id
+                                 join v in db.FinancialCreditCardInvoices.AsNoTracking() on i.InvoiceId equals v.Id
+                                 where i.WorkspaceId == workspaceId && p.WorkspaceId == workspaceId && i.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
+                                    && p.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active && competences.Contains(v.Competence)
+                                    && categories.Contains(i.OfficialCategoryId ?? p.CategoryId)
+                                 group i.Amount by v.Competence into g
+                                 select new { Competence = g.Key, Amount = g.Sum() }).ToListAsync(ct);
+            foreach (var a in amounts) known[DateOnly.ParseExact(a.Competence + "-01", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)] = a.Amount;
+        }
+        return new(standard?.MonthlyAmount ?? Saldo360.Domain.Planning.FinancialFoodProvision.DefaultMonthlyAmount, standard is not null, categories, inferred,
+            rows.Where(r => r.Competence != null).ToDictionary(r => r.Competence!.Value, r => r.MonthlyAmount), known);
+    }
 
     public Task<IncomeForecastView> LoadIncomeForecastAsync(Guid workspaceId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct) =>
         IncomeForecastLoader.LoadAsync(db, workspaceId, from, through, today, ct);

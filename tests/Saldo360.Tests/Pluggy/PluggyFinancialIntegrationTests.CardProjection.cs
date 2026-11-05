@@ -241,7 +241,8 @@ public sealed partial class PluggyFinancialIntegrationTests
         Assert.Equal(HttpStatusCode.NotFound, foreignCard.StatusCode);
         Assert.All(theirs.GetProperty("items").EnumerateArray(), m => Assert.Equal(("0.00", 0), (Money(m, "obligation"), m.GetProperty("cards").GetInt32())));
         Assert.Equal(HttpStatusCode.BadRequest, (await GetAsync(c, $"/api/financial-workspaces/{c.Workspace}/credit-cards/obligation-projection?months=0")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await GetAsync(c, $"/api/financial-workspaces/{c.Workspace}/credit-cards/obligation-projection?months=13")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await GetAsync(c, $"/api/financial-workspaces/{c.Workspace}/credit-cards/obligation-projection?months=37")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await GetAsync(c, $"/api/financial-workspaces/{c.Workspace}/credit-cards/obligation-projection?months=36")).StatusCode); // horizonte estendido até 36 meses
         Assert.Equal(HttpStatusCode.BadRequest, (await GetAsync(c, $"/api/financial-workspaces/{c.Workspace}/credit-cards/invoice-overview?competence=2026-13")).StatusCode);
     }
 
