@@ -4,6 +4,7 @@ import { PersonalFinance } from '../PersonalFinance'
 import { planActual } from '../planActualFixtures'
 import { sixMonths } from '../monthlyPlanFixtures'
 import { overview } from './overviewFixtures'
+import { projection } from '../projectionFixtures'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -18,6 +19,9 @@ function mockApp() {
     if (url.includes('/financial-dashboard/plan-actual')) return json(planActual)
     if (url.includes('/financial-dashboard/overview')) return json(overview)
     if (url.includes('/monthly-plan/six-months')) return json(sixMonths)
+    if (url.includes('/monthly-plan/food-provision')) return json({ monthlyAmount: '2000.00', amountConfigured: false, categoryIds: [], categoriesInferred: false, monthAmounts: {} })
+    if (url.includes('/monthly-plan/income-forecast')) return json({ exists: false, isActive: false, accountId: null, accountName: null, hourlyRate: '0.00', hoursPerDay: '8', paymentDay: 5, paymentOffsetMonths: 1, taxReservePercent: '0.00', operationalReserve: '0.00', months: [], accounts: [] })
+    if (url.includes('/monthly-plan/projection')) { const query = new URL(url, 'http://x').searchParams; return json(projection(query.get('from')!, Number(query.get('months')))) }
     if (url.includes('/transactions?')) return json({ items: [], page: 1, pageSize: 20, totalCount: 0 })
     if (url.includes('/accounts') || url.includes('/categories')) return json([])
     if (url.includes('/financial-calendar/balances')) return json({ from: '2026-11-01', through: '2026-11-30', accountId: null, openingBalance: null, unavailableReason: null, days: [], risk: { minimumProjectedBalance: null, firstNegativeProjectedDate: null, endingProjectedBalance: null } })
@@ -33,6 +37,16 @@ describe('Visão Geral → detalhe (R01)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Novo lançamento' }))
     expect(await screen.findByRole('heading', { level: 3, name: 'Novo lançamento' })).toBeTruthy()
     expect(screen.getByRole('heading', { level: 1, name: 'Lançamentos' })).toBeTruthy()
+  })
+
+  it('o card de recuperação do limite abre o Planejamento na Projeção financeira', async () => {
+    mockApp(); render(<PersonalFinance />)
+    const card = await screen.findByRole('region', { name: 'Recuperação do limite projetada' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Abrir a Projeção financeira' }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Planejamento' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Projeção financeira' }).getAttribute('aria-selected')).toBe('true')
+    expect(await screen.findByLabelText('Indicadores do cenário Atual')).toBeTruthy()
+    await waitFor(() => expect(calls.some(url => url.includes('/monthly-plan/projection?') && url.includes('months=6'))).toBe(true))
   })
 
   it('o compromisso abre a Agenda no mês do vencimento', async () => {

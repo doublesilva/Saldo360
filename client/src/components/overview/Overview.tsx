@@ -11,14 +11,15 @@ import type { BudgetGroup } from '../budget/budgetText'
 import type { ExpenseNature } from '../../api/expenseNature'
 import { OverviewCommitmentsBlock, OverviewGoalsBlock, OverviewRecentBlock } from './OverviewAside'
 import { OverviewRecovery } from './OverviewRecovery'
+import { OverviewProjectedRecovery } from './OverviewProjectedRecovery'
 import { OverviewCashFlowSection, OverviewCompetenceSection } from './OverviewCashFlow'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
 import { useLoad } from './useLoad'
 import '../../Overview.css'
 
-export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions' | 'transfers' | 'automation'
+export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions' | 'transfers' | 'automation' | 'planning'
 /** Contexto levado ao detalhe: o mês da Agenda, a competência do orçamento ou o recorte da lista de lançamentos. */
-export interface OverviewNavigation { month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature; type?: 'Transfer' }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
+export interface OverviewNavigation { planningTab?: 'projection'; month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature; type?: 'Transfer' }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
 
 export interface OverviewSelection { competence: string; scope: PlanActualScopeChoice }
 
@@ -86,6 +87,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
     <div className="ov-layout">
       <div className="ov-main">
         {planData && <div className="ov-slot"><OverviewRecovery key={`${planData.competence}:${planData.scope.accountId ?? planData.scope.kind}`} workspaceId={workspaceId} data={planData} onAccounts={() => onNavigate('accounts')} onProjection={() => openAgenda()} /></div>}
+        <div className="ov-slot ov-slot--projected-recovery"><OverviewProjectedRecovery workspaceId={workspaceId} competence={competence} refreshKey={refreshKey} onOpen={() => onNavigate('planning', { planningTab: 'projection' })} /></div>
         <div className="ov-slot ov-slot--evolution">
         {evolutionData ? <div className={evolution.load.state === 'loading' ? 'ov-stale' : undefined}><OverviewEvolution plan={evolutionData} /></div>
           : evolution.load.state === 'error' ? <section className="ov-card"><h3>Evolução financeira</h3><OperationalError error={evolution.load.error} onRetry={evolution.retry} retryLabel="Recarregar a evolução" /></section>

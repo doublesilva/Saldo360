@@ -355,7 +355,7 @@ describe('PlanningHub — seis meses', () => {
     const fetchMock = stub(stubs)
     render(<PlanningHub workspaceId="w" />)
     await screen.findByRole('article', { name: 'Receitas: planejado, projetado e realizado' })
-    fireEvent.click(screen.getByRole('tab', { name: 'Seis meses' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Seis meses (detalhado)' }))
     await screen.findByRole('table')
     return fetchMock
   }
@@ -456,7 +456,7 @@ describe('PlanningHub — calendário de dias úteis e cenários', () => {
     render(<PlanningHub workspaceId="w" />)
     await screen.findByRole('article', { name: 'Receitas: planejado, projetado e realizado' })
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Cenários' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Cenários configuráveis' }))
 
     expect(await screen.findByRole('heading', { name: 'Planejamento financeiro' })).toBeTruthy()
     expect(screen.queryByLabelText('Conta do planejamento')).toBeNull()

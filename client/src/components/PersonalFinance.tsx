@@ -53,6 +53,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
   const budgets = (value: string) => { setCompetence(value); setBudgetGroup(undefined); setSection('budgets') }
   // Orçamento → central de automação: abre a lista de revisão com as despesas do período sem tipo definido, inclusive as compras de cartão importadas.
   const [goalId, setGoalId] = useState<string | undefined>()
+  const [planningEntry, setPlanningEntry] = useState<{ key: number; tab?: 'projection' }>({ key: 0 })
   const [automationEntry, setAutomationEntry] = useState<AutomationEntry | undefined>()
   const reviewClassification = (range: { from: string; to: string }) => { setAutomationEntry({ key: Date.now(), tab: 'automations', review: { kind: 'nature', ...range } }); setSection('automation') }
   const workspaceId = workspace.id
@@ -63,6 +64,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     setBudgetGroup(target === 'budgets' ? context?.budgetGroup : undefined)
     setTransactionContext(target === 'transactions' ? { key: Date.now(), filters: context?.transactions, newTransaction: context?.newTransaction } : null)
     setGoalId(target === 'goals' ? context?.goalId : undefined)
+    if (target === 'planning') setPlanningEntry({ key: Date.now(), tab: context?.planningTab })
     if (target === 'automation') setAutomationEntry({ key: Date.now(), tab: context?.automationTab, review: context?.review })
     setSection(target)
   }
@@ -81,7 +83,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     {section === 'budgets' && <FinancialBudgetsPage key={`${competence}:${budgetGroup}`} workspaceId={workspaceId} initialCompetence={competence} initialGroup={budgetGroup} refreshKey={version} onNavigateToAgenda={agenda} onReviewClassification={reviewClassification} />}
     {section === 'cards' && <FinancialCreditCardsPage workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'recurrences' && <FinancialRecurrences workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToAgenda={agenda} />}
-    {section === 'planning' && <PlanningHub workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
+    {section === 'planning' && <PlanningHub key={planningEntry.key} initialTab={planningEntry.tab} workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'debts' && <FinancialDebts workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'goals' && <FinancialGoals key={goalId} initialGoalId={goalId} workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToPlanning={() => setSection('planning')} />}
     {section === 'accounts' && <Accounts workspaceId={workspaceId} members={[{ userId: workspace.ownerUserId, displayName: 'Você', isCurrentUser: true }]} balanceVersion={version} onOpenStatement={(filters) => { setTransactionContext({ key: Date.now(), filters: { from: filters.from, to: filters.to, accountId: filters.accountId, type: filters.type } }); setSection('transactions') }} />}

@@ -168,3 +168,8 @@
 @media (max-width: 75rem) { .ov-cash__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 64rem) { .ov-cash__why-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 42rem) { .ov-cash__cards { gap: .6rem; } .ov-cash .ov-table td { white-space: normal; } }
+
+/* Entrega 3: card resumido de recuperação do limite projetada. */
+.ov-projected-recovery .ov-inline-filter { display: grid; gap: .2rem; font-size: .8rem; color: var(--muted); }
+.ov-projected-recovery dl { margin: 0; }
+.ov-projected-recovery__scenario dd { overflow-wrap: anywhere; }
