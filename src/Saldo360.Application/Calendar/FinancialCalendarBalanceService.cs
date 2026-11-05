@@ -40,6 +40,14 @@ public sealed class FinancialCalendarBalanceService(
         return new FinancialCalendarBalanceResult(CalculateBalances(query, today, snapshot), null, false);
     }
 
+    /// <summary>Leitura única (um snapshot) para a análise de decisão: devolve o snapshot junto da evolução diária, para que ambos descrevam a mesma posição.</summary>
+    public async Task<(FinancialCalendarBalanceSnapshot Snapshot, DateOnly Today)?> ReadSnapshotAsync(
+        Guid workspaceId, Guid? accountId, DateOnly through, DateOnly today, CancellationToken cancellationToken)
+    {
+        var snapshot = await repository.ReadAsync(workspaceId, accountId, through, today, cancellationToken);
+        return snapshot is null ? null : (snapshot, today);
+    }
+
     public static FinancialCalendarBalances CalculateBalances(
         FinancialCalendarBalanceQuery query,
         DateOnly today,

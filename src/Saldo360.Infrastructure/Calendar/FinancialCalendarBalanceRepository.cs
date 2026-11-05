@@ -153,9 +153,14 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         // Receita PJ por horas (PROJ-01): estimativa parametrizada, só quando a configuração foi ATIVADA pelo usuário. Entra como entrada pendente na data do recebimento, na conta
         // de recebimento; a receita realizada da conta no mês a substitui (nunca as duas) e a reserva de tributos não é débito aqui.
         var forecast = await Saldo360.Infrastructure.MonthlyPlan.IncomeForecastLoader.LoadAsync(db, workspaceId, new DateOnly(today.Year, today.Month, 1), through, today, cancellationToken);
+        var inferred = new List<FinancialCalendarDailyTotals>();
         if (forecast.Effective && (accountId == null || accountId == forecast.Settings!.AccountId))
-            pending = pending.Concat(forecast.Occurrences.Where(o => o.ProjectsCash).GroupBy(o => o.PaymentDate)
-                .Select(g => new FinancialCalendarDailyTotals(g.Key, g.Sum(o => o.CashAmount), 0m, 0m, 0m))).ToList();
+        {
+            var forecastRows = forecast.Occurrences.Where(o => o.ProjectsCash).GroupBy(o => o.PaymentDate)
+                .Select(g => new FinancialCalendarDailyTotals(g.Key, g.Sum(o => o.CashAmount), 0m, 0m, 0m)).ToList();
+            pending = pending.Concat(forecastRows).ToList();
+            inferred.AddRange(forecastRows);
+        }
 
         // Transferências PREVISTAS (pendentes: não canceladas e ainda sem transferência realizada associada): saída na origem e entrada no destino. Numa conta, só a ponta dela; no
         // consolidado, o líquido por dia (as duas pontas dentro do conjunto se anulam). Associada, a previsão deixa de projetar: o realizado já conta a transferência uma única vez.
@@ -175,11 +180,15 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         // Repasse PJ → PF PROJETADO (PROJ-06): saída na PJ e entrada na PF, só planejamento (nenhuma transferência real). Mesma regra das transferências previstas: numa conta, só a
         // ponta dela; no consolidado as duas pontas se anulam (neutro). Nunca é receita nem despesa.
         if (autoPlan is { Transfers.Count: > 0 })
-            pending = pending.Concat(autoPlan.Transfers.GroupBy(item => item.Date)
+        {
+            var autoRows = autoPlan.Transfers.GroupBy(item => item.Date)
                 .Select(daily => new { Date = daily.Key, Amount = daily.Sum(item => item.Amount) })
                 .Select(daily => new { daily.Date, In = selectedIds.Contains(autoPlan.PfAccountId) ? daily.Amount : 0m, Out = selectedIds.Contains(autoPlan.PjAccountId) ? daily.Amount : 0m })
                 .Where(row => row.In != 0m || row.Out != 0m)
-                .Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, 0m, accountId is null ? Math.Max(0m, row.In - row.Out) : row.In, accountId is null ? Math.Max(0m, row.Out - row.In) : row.Out))).ToList();
+                .Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, 0m, accountId is null ? Math.Max(0m, row.In - row.Out) : row.In, accountId is null ? Math.Max(0m, row.Out - row.In) : row.Out)).ToList();
+            pending = pending.Concat(autoRows).ToList();
+            inferred.AddRange(autoRows);
+        }
 
         var selectedAccountIds = await selectedAccounts.Select(account => account.Id).ToListAsync(cancellationToken);
         var debtRows = await (from installment in db.FinancialDebtInstallments.AsNoTracking()
@@ -193,14 +202,24 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                               select new { installment.Id, installment.DueDate, debt.ResponsibleAccountId, remaining }).ToListAsync(cancellationToken);
         var debtPending = debtRows.GroupBy(row => row.DueDate).Select(group => new FinancialCalendarDailyTotals(group.Key, 0m, group.Sum(row => row.remaining), 0m, 0m)).ToList();
         var hasUnallocatedDebt = debtRows.Any(row => row.ResponsibleAccountId == null || !selectedAccountIds.Contains(row.ResponsibleAccountId.Value));
+        // Parcela sem conta responsável não aparece no filtro por conta: é lida à parte para a cobertura ser sinalizada como incompleta, nunca atribuída a uma conta.
+        var debtWithoutResponsible = await (from installment in db.FinancialDebtInstallments.AsNoTracking()
+                                            join debt in db.FinancialDebts.AsNoTracking() on new { installment.WorkspaceId, DebtId = installment.DebtId } equals new { debt.WorkspaceId, DebtId = debt.Id }
+                                            where installment.WorkspaceId == workspaceId && debt.Status != Saldo360.Domain.Debts.DebtStatus.Archived
+                                                && installment.CancelledAt == null && installment.DueDate <= through && debt.ResponsibleAccountId == null
+                                            let paid = db.FinancialDebtPayments.Where(payment => payment.WorkspaceId == workspaceId && payment.InstallmentId == installment.Id && payment.CancelledAt == null).Sum(payment => (decimal?)payment.Amount) ?? 0m
+                                            where installment.ScheduledAmount - paid > 0m
+                                            select installment.Id).AnyAsync(cancellationToken);
 
         // Obrigações dos cartões (T09.4): a mesma fonte do módulo de cartões. Fatura fechada pelo banco vale o total bancário; aberta e futura usam a
         // projeção (compras pendentes, parcelas devolvidas e estimadas); pagamentos reduzem uma única vez. Cada obrigação vai para a conta pagadora.
         var cardPending = new List<FinancialCalendarDailyTotals>();
         var cardCandidates = new List<PendingBankCandidate>();
         var allCardObligations = false;
+        var cardWithoutPayer = false;
         foreach (var item in await Saldo360.Infrastructure.CreditCards.CardProjectionRepository.ReadItemsAsync(db, workspaceId, today, cancellationToken))
         {
+            if (item.PayerAccountId is null && item.Remaining > 0m && (item.DueDate is null || item.DueDate <= through)) cardWithoutPayer = true;
             if (item.DueDate is { } candidateDue && item.PayerAccountId is { } candidatePayer && item.Remaining > 0m) cardCandidates.Add(new(Guid.Empty, candidatePayer, item.Remaining, candidateDue, "CardInvoice"));
             if (item.DueDate is { } itemDue && itemDue > through) continue;
             var allocated = item.PayerAccountId is { } payer && selectedAccountIds.Contains(payer);
@@ -259,6 +278,6 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations, debtPending, hasUnallocatedDebt, cardPayments, budgets, pendingBank);
+        return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations, debtPending, hasUnallocatedDebt, cardPayments, budgets, pendingBank, inferred, cardWithoutPayer, debtWithoutResponsible);
     }
 }

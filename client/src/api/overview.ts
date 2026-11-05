@@ -80,6 +80,42 @@ export interface OverviewCashFlow {
   recovery?: OverviewRecovery | null
 }
 
+/** T11.1: decisão financeira (aditivo; null quando indisponível, servidores antigos não enviam). Tudo calculado no servidor; valores são texto decimal exato, null = indisponível. */
+export type DecisionPeriod = 'Current' | 'Future' | 'Closed'
+export type CoverageState = 'Covered' | 'CoveredWithCredit' | 'Insufficient' | 'Unavailable'
+export interface DecisionContext {
+  competence: string; currentCompetence: string; period: DecisionPeriod; scopeKind: 'primary' | 'all' | 'account'; accountId: string | null; accountName: string | null; accountScope: string | null
+  referenceDate: string; bankPositionDate: string | null; bankObservedAt: string | null; lastSyncedAt: string | null
+  accounts: { accountId: string; name: string; scope: string; isPrimary: boolean }[]; bankBalance: string | null; overdraftUsed: string | null
+}
+export interface DecisionCommitments {
+  period: DecisionPeriod; reliability: 'Complete' | 'Preliminary'; total: string; overdue: string; inCompetence: string; beforeCompetence: string; paidInMonth: string | null
+  byNature: { nature: string; overdue: string; inCompetence: string; beforeCompetence: string; total: string; count: number }[]
+  byDueDate: { date: string; amount: string }[]; caveats: string[]
+}
+export interface DecisionAccountCoverage {
+  accountId: string; name: string; scope: string; state: CoverageState; reliability: string; guaranteedState: CoverageState; dependsOnInferredIncome: boolean
+  minimumBalance: string | null; minimumDate: string | null; firstNegativeDate: string | null; firstBeyondLimitDate: string | null; limit: string | null
+  creditNeeded: string | null; deficit: string | null; unavailableReason: string | null; caveats: string[]; projectedClosing: string | null
+}
+export interface DecisionCoverage {
+  state: CoverageState; reliability: string; period: DecisionPeriod; minimumBalance: string | null; firstNegativeDate: string | null; firstBeyondLimitDate: string | null; deficit: string | null
+  obligationsConsidered: string; expectedInflows: { date: string; amount: string; kind: 'Income' | 'Transfer'; certainty: 'Registered' | 'Inferred' }[]
+  caveats: string[]; unavailableReason: string | null; accounts: DecisionAccountCoverage[]; projectedClosing: string | null
+}
+export interface DecisionSafeMargin {
+  state: 'Calculated' | 'Preliminary' | 'Unavailable'; amount: string | null; scope: 'CashSpend'; referenceDate: string; bindingConstraint: string | null
+  constraints: { kind: string; applied: boolean; slack: string | null; binding: boolean; reason: string | null }[]; reasons: string[]; notes: string[]
+}
+export interface DecisionRecovery {
+  state: 'Provisional' | 'Fixed' | 'Pending' | 'NotRegistered' | 'NotApplicable' | 'Unavailable'; reason: string | null; openingUsed: string | null; target: string | null
+  targetFixedAt: string | null; legacyTarget: boolean; effectiveRecovery: string | null; projectedRecovery: string | null; gapToTarget: string | null; expectedClosingUsed: string | null; band: RecoveryBand | null
+}
+export interface FinancialDecision {
+  state: 'Complete' | 'Partial'; context: DecisionContext; commitments: DecisionCommitments; coverage: DecisionCoverage; safeMargin: DecisionSafeMargin; recovery: DecisionRecovery
+  snapshotConsistent: boolean; notes: string[]
+}
+
 export interface DashboardOverview {
   competence: string; asOf: string; scopeKind: 'primary' | 'all' | 'account'; scopeAccountId: string | null
   accounts: OverviewAccounts; commitments: OverviewCommitments; goals: OverviewGoals; budget: OverviewBudget; recent: OverviewRecent; classification: OverviewClassification
@@ -87,6 +123,8 @@ export interface DashboardOverview {
   transfers?: OverviewTransfers | null
   /** Aditivo: fluxo de caixa (null quando indisponível; servidores antigos não enviam). */
   cashFlow?: OverviewCashFlow | null
+  /** Aditivo (T11.1): compromissos restantes, cobertura, margem segura e meta, todos da MESMA leitura. */
+  decision?: FinancialDecision | null
 }
 
 export function getDashboardOverview(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<DashboardOverview> {

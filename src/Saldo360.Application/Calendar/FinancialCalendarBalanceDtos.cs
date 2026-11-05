@@ -31,7 +31,21 @@ public sealed record FinancialCalendarBalanceSnapshot(
     bool HasUnallocatedDebtObligations = false,
     IReadOnlyList<FinancialCalendarDailyTotals>? CardPayments = null,
     IReadOnlyList<Saldo360.Application.Budgets.FinancialBudgetExecutionSource>? Budgets = null,
-    IReadOnlyList<PendingBankClassification>? PendingBank = null);
+    IReadOnlyList<PendingBankClassification>? PendingBank = null,
+    IReadOnlyList<FinancialCalendarDailyTotals>? InferredPending = null,
+    bool HasCardObligationsWithoutPayer = false,
+    bool HasDebtObligationsWithoutResponsible = false)
+{
+    /// <summary>
+    /// O mesmo snapshot sem as previsões INFERIDAS (receita PJ estimada por horas e repasse PJ → PF projetado a partir dela), que já estão somadas em <c>Pending</c>.
+    /// Serve à análise conservadora (T11.1): entrada inferida nunca é entrada garantida. Não altera nenhum dado lido.
+    /// </summary>
+    public FinancialCalendarBalanceSnapshot WithoutInferred() => InferredPending is not { Count: > 0 } inferred ? this : this with
+    {
+        Pending = (Pending ?? []).Concat(inferred.Select(row => new FinancialCalendarDailyTotals(row.Date, -row.Income, -row.Expense, -row.TransferIn, -row.TransferOut))).ToList(),
+        InferredPending = [],
+    };
+}
 
 public sealed record FinancialCalendarBalanceDay(
     DateOnly Date,

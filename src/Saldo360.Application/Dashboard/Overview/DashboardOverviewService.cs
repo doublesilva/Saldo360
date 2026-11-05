@@ -79,7 +79,8 @@ public sealed record OverviewTransfersDto(string State, string Received, string 
     string? Refunds = null, string? CashExpenses = null);
 
 public sealed record DashboardOverviewDto(string Competence, DateOnly AsOf, string ScopeKind, Guid? ScopeAccountId, OverviewAccountsDto Accounts, OverviewCommitmentsDto Commitments, OverviewGoalsDto Goals,
-    OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null, OverviewCashFlowDto? CashFlow = null);
+    OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null, OverviewCashFlowDto? CashFlow = null,
+    FinancialDecisionDto? Decision = null);
 
 public sealed partial class DashboardOverviewService(
     IFinancialWorkspaceRepository workspaces,
@@ -96,6 +97,7 @@ public sealed partial class DashboardOverviewService(
     IFinancialTransferRepository transferRepository,
     Saldo360.Application.Accounts.Reconciliation.AccountBalanceReconciliationService reconciliation,
     IOverdraftRecoveryRepository recoveryRepository,
+    FinancialCalendarBalanceService calendarBalances,
     TimeProvider time)
 {
     public const int HorizonDays = 30;
@@ -142,7 +144,8 @@ public sealed partial class DashboardOverviewService(
         var transfers = await BuildTransfersAsync(workspaceId, userId, month, requested, selected?.Id, accounts, ct);
         var byCompetence = await BuildCompetenceAsync(workspaceId, userId, month, requested, selected?.Id, ct);
         var cashFlow = await BuildCashFlowAsync(workspaceId, userId, month, selected?.Id, today, byCompetence, ct);
-        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow));
+        var decision = await BuildDecisionAsync(workspaceId, month, selected, all, kind, today, cashFlow, ct);
+        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow, decision));
     }
 
     private async Task<OverviewTransfersDto> BuildTransfersAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, OverviewAccountsDto accounts, CancellationToken ct)

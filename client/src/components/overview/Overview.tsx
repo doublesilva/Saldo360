@@ -11,6 +11,7 @@ import type { BudgetGroup } from '../budget/budgetText'
 import type { ExpenseNature } from '../../api/expenseNature'
 import { OverviewCommitmentsBlock, OverviewGoalsBlock, OverviewRecentBlock } from './OverviewAside'
 import { OverviewRecovery } from './OverviewRecovery'
+import { OverviewDecisionSection } from './OverviewDecision'
 import { OverviewProjectedRecovery } from './OverviewProjectedRecovery'
 import { OverviewCashFlowSection, OverviewCompetenceSection } from './OverviewCashFlow'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
@@ -74,6 +75,8 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
         <button type="button" className="button--primary" onClick={() => onNavigate('transactions', { newTransaction: true })}>Novo lançamento</button>
       </div>
     </header>
+
+    {overviewData?.decision && <OverviewDecisionSection decision={overviewData.decision} onNavigate={(section, context) => onNavigate(section, context)} />}
 
     {overviewData?.cashFlow && <OverviewCashFlowSection flow={overviewData.cashFlow} scopeAccountId={overviewData.scopeAccountId} onNavigate={(section, context) => onNavigate(section, context)} />}
 

@@ -26,6 +26,15 @@ describe('Responsividade da Visão Geral', () => {
     expect(css).toMatch(/\.ov-slot--commitments\s*\{\s*order:\s*1/)
   })
 
+  it('segurança financeira (T11.1): 3 colunas em 1920/1440, 2 em 768 e 1 em 390/360, contexto fixo só a partir do tablet e sem larguras fixas', () => {
+    expect(css).toMatch(/\.ov-decision__cards\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/)
+    expect(css).toMatch(/@media \(max-width: 75rem\)\s*\{\s*\.ov-decision__cards\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/) // 1200px: 768px cai aqui
+    expect(css).toMatch(/@media \(max-width: 42rem\)\s*\{\s*\.ov-decision__cards\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/) // 672px: 390 e 360
+    expect(css).toMatch(/@media \(min-width: 48rem\)\s*\{\s*\.ov-decision__context\s*\{[^}]*position:\s*sticky/)
+    expect(css.match(/position:\s*sticky/g)?.length ?? 0).toBeLessThanOrEqual(1) // o único sticky é o do contexto, dentro do @media
+    expect(css).toMatch(/\.ov-decision__context\s*\{[^}]*overflow-wrap:\s*anywhere/)
+  })
+
   it('as barras da evolução financeira não são sobrescritas por outra regra .ov-bar (altura total, coluna flex)', () => {
     const rules = [...css.matchAll(/(?:^|\n)\.ov-bar\s*\{([^}]*)\}/g)].map(match => match[1])
     expect(rules).toHaveLength(1)

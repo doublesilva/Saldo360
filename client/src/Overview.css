@@ -169,6 +169,27 @@
 @media (max-width: 64rem) { .ov-cash__why-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 42rem) { .ov-cash__cards { gap: .6rem; } .ov-cash .ov-table td { white-space: normal; } }
 
+/* T11.1: segurança financeira. Contexto compacto (fica visível ao rolar a partir de 48rem; no celular não ocupa espaço fixo), 3 colunas no desktop, 2 no tablet, 1 no celular. */
+.ov-decision { display: grid; gap: .85rem; margin-bottom: 1.1rem; }
+.ov-decision h2 { margin: 0; font-size: 1.05rem; }
+.ov-decision__context { display: flex; flex-wrap: wrap; gap: .35rem 1.25rem; margin: 0; padding: .55rem .8rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--surface); font-size: .82rem; overflow-wrap: anywhere; }
+.ov-decision__context > div { display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; min-width: 0; }
+.ov-decision__context dt { color: var(--muted); }
+.ov-decision__context dt::after { content: ':'; }
+.ov-decision__context dd { margin: 0; font-weight: 600; }
+.ov-decision__cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .85rem; }
+.ov-decision__message { font-size: 1.05rem; overflow-wrap: anywhere; }
+.ov-decision__coverage--Insufficient { border-color: var(--fail); }
+.ov-decision__coverage--CoveredWithCredit { border-color: var(--warning); }
+.ov-decision__caveats { margin: 0; padding-left: 1.1rem; font-size: .78rem; color: var(--muted); display: grid; gap: .2rem; }
+.ov-decision__list { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .25rem; font-size: .78rem; }
+.ov-decision__list li { display: flex; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.ov-decision details summary { cursor: pointer; font-size: .8rem; }
+.ov-decision .ov-negative { color: var(--fail); }
+@media (min-width: 48rem) { .ov-decision__context { position: sticky; top: 0; z-index: 2; } }
+@media (max-width: 75rem) { .ov-decision__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 42rem) { .ov-decision__cards { grid-template-columns: minmax(0, 1fr); gap: .6rem; } .ov-decision__context { gap: .25rem .9rem; } }
+
 /* Entrega 3: card resumido de recuperação do limite projetada. */
 .ov-projected-recovery .ov-inline-filter { display: grid; gap: .2rem; font-size: .8rem; color: var(--muted); }
 .ov-projected-recovery dl { margin: 0; }
