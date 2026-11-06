@@ -19,12 +19,21 @@ internal sealed class MonthlyPlanRepository(Saldo360DbContext db) : IMonthlyPlan
                 l.ExpectedDate, l.HourlyRate, l.HoursPerDay, l.BillableDays, l.UpdatedAt))
             .ToListAsync(ct);
 
-        var limits = await (from t in db.FinancialBudgetTargets.AsNoTracking()
-                            join b in db.FinancialBudgets.AsNoTracking() on t.BudgetId equals b.Id
-                            join c in db.FinancialCategories.AsNoTracking() on t.CategoryId equals c.Id
-                            where t.WorkspaceId == workspaceId && t.GroupingType == BudgetTargetGroupingType.Category && t.CategoryId != null && !t.IsArchived && !b.IsArchived && b.Competence >= first && b.Competence <= last
-                            orderby b.Competence, c.Name, t.Id
-                            select new { t.Id, t.BudgetId, b.Competence, CategoryId = t.CategoryId!.Value, CategoryName = c.Name, t.PlannedAmount }).ToListAsync(ct);
+        // T12.1: os limites por categoria vêm do resolvedor ÚNICO de metas efetivas (exceção da competência, padrão vigente ou registro mensal histórico), então competências sem
+        // orçamento mensal materializado mostram as metas herdadas, exceções substituem o padrão e metas suspensas continuam suspensas. Ler nunca grava nem cria orçamento.
+        var layers = await Saldo360.Infrastructure.Budgets.BudgetLayerReader.ReadAsync(db, workspaceId, first, last.AddMonths(1), ct);
+        var effective = new List<(DateOnly Competence, Guid BudgetId, Saldo360.Application.Budgets.EffectiveTarget Target)>();
+        for (var month = first; month <= last; month = month.AddMonths(1))
+        {
+            var resolved = Saldo360.Application.Budgets.EffectiveBudgetResolver.Resolve(workspaceId, layers, month);
+            effective.AddRange(resolved.Categories.Select(t => (month, resolved.BudgetId ?? Guid.Empty, t)));
+        }
+        var categoryIds = effective.Select(e => e.Target.CategoryId!.Value).Distinct().ToList();
+        var categoryNames = categoryIds.Count == 0 ? new Dictionary<Guid, string>()
+            : await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId && categoryIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+        var limits = effective.Where(e => categoryNames.ContainsKey(e.Target.CategoryId!.Value))
+            .Select(e => new { Id = e.Target.Id, BudgetId = e.BudgetId, Competence = e.Competence, CategoryId = e.Target.CategoryId!.Value, CategoryName = categoryNames[e.Target.CategoryId!.Value], PlannedAmount = e.Target.Amount!.Value })
+            .OrderBy(l => l.Competence).ThenBy(l => l.CategoryName, StringComparer.CurrentCultureIgnoreCase).ThenBy(l => l.Id).ToList();
 
         // O valor original de um limite é o da primeira entrada do histórico: o criado, ou o anterior à primeira revisão (metas anteriores ao histórico).
         var ids = limits.Select(l => l.Id).ToList();

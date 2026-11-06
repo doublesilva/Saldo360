@@ -90,7 +90,9 @@ public static class EffectiveBudgetResolver
         if (exception is { Action: BudgetRuleAction.Remove }) return new(id, target, categoryId, null, TargetOrigin.Customized, true, null, null);
 
         // 2. Registro mensal histórico (anterior à recorrência), preservado como ajuste explícito daquela competência. Meta arquivada = retirada de propósito.
-        if (legacy is not null)
+        // Um evento "restaurar" mais recente significa "voltar ao padrão vigente": com padrão em vigor, ele se sobrepõe ao registro histórico (que continua gravado, intacto).
+        var restoredToStandard = exception is { Action: BudgetRuleAction.Restore } && StandardInForce(layers, competence, target, categoryId);
+        if (legacy is not null && !restoredToStandard)
         {
             if (target == BudgetRuleTarget.TotalExpenses)
             {
@@ -108,6 +110,14 @@ public static class EffectiveBudgetResolver
         // 4. Nenhuma configuração.
         return new(id, target, categoryId, null, TargetOrigin.Undefined, false, null, null);
     }
+
+    /// <summary>Existe padrão (alteração com vigência até a competência) para a meta? Inclui a retirada do padrão: ela também é o padrão daquela vigência.</summary>
+    public static bool StandardInForce(BudgetLayers layers, DateOnly competence, BudgetRuleTarget target, Guid? categoryId) =>
+        layers.Changes.Any(c => c.Scope == BudgetRuleScope.FromCompetence && c.Target == target && c.CategoryId == categoryId && c.Competence <= competence);
+
+    /// <summary>A competência tem registro mensal histórico (orçamento mensal materializado) para a meta?</summary>
+    public static bool HasHistoricalRecord(BudgetLayers layers, DateOnly competence, BudgetRuleTarget target, Guid? categoryId) =>
+        layers.Legacy.GetValueOrDefault(competence) is { } legacy && (target == BudgetRuleTarget.TotalExpenses ? legacy.TotalExpenses is not null : legacy.Targets.Any(t => t.Target == target && t.CategoryId == categoryId));
 
     /// <summary>Validações da configuração efetiva de uma competência: total menor que cartões, e categoria junto da sua subcategoria (gasto contado duas vezes).</summary>
     public static IReadOnlyList<string> Validate(EffectiveBudgetMonth month, IReadOnlyDictionary<Guid, Guid?> categoryParents)

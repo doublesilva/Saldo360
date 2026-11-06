@@ -121,7 +121,9 @@ public sealed class RecurringBudgetTests(PostgresFixture postgres) : PostgresApi
         Assert.Equal(HttpStatusCode.OK, (await ChangeAsync(1, "AllCards", "ThisMonth", "Restore")).StatusCode);
         var restored = Target(await EffectiveAsync(1), "AllCards");
         Assert.Equal("5000.00", Amount(restored)); Assert.Equal("Inherited", Origin(restored));
-        Assert.Equal(HttpStatusCode.Conflict, (await ChangeAsync(1, "AllCards", "ThisMonth", "Restore")).StatusCode); // não há mais exceção
+        var before = await CountsAsync();
+        Assert.Equal(HttpStatusCode.OK, (await ChangeAsync(1, "AllCards", "ThisMonth", "Restore")).StatusCode); // restaurar de novo é idempotente
+        Assert.Equal(before, await CountsAsync()); // e não grava nenhum evento
     }
 
     [Fact]

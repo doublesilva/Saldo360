@@ -9,9 +9,6 @@ public sealed record RuleHistoryRow(BudgetRuleScope Scope, BudgetRuleTarget Targ
 
 public interface IBudgetRuleRepository
 {
-    /// <summary>Próxima revisão da chave (maior existente + 1). Duas alterações concorrentes calculam o mesmo valor e só uma é gravada (índice único).</summary>
-    Task<int> NextRevisionAsync(Guid workspaceId, BudgetRuleScope scope, BudgetRuleTarget target, Guid? categoryId, DateOnly competence, CancellationToken cancellationToken);
-
     /// <summary>Grava todas as alterações em uma única transação. Falso quando outra alteração concorrente ocupou a mesma revisão (nada é gravado).</summary>
     Task<bool> TryAddAsync(IReadOnlyList<FinancialBudgetRuleChange> changes, CancellationToken cancellationToken);
 

@@ -269,6 +269,7 @@
     "Saldo360.Tests.Api.FinancialCategoryEndpointsTests",
     "Saldo360.Tests.Api.FinancialResetEndpointsTests",
     "Saldo360.Tests.Api.OidcCallbackTests",
+    "Saldo360.Tests.Api.RecurringBudgetPlanTests",
     "Saldo360.Tests.Api.RequestObservabilityMiddlewareTests",
     "Saldo360.Tests.Application.BudgetBootstrapDomainTests",
     "Saldo360.Tests.Application.BudgetControlCalculatorTests",

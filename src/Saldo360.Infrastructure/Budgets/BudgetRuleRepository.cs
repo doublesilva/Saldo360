@@ -9,11 +9,6 @@ namespace Saldo360.Infrastructure.Budgets;
 
 internal sealed class BudgetRuleRepository(Saldo360DbContext db) : IBudgetRuleRepository
 {
-    public async Task<int> NextRevisionAsync(Guid workspaceId, BudgetRuleScope scope, BudgetRuleTarget target, Guid? categoryId, DateOnly competence, CancellationToken cancellationToken) =>
-        (await db.FinancialBudgetRuleChanges.AsNoTracking()
-            .Where(c => c.WorkspaceId == workspaceId && c.Scope == scope && c.Target == target && c.CategoryId == categoryId && c.Competence == competence)
-            .MaxAsync(c => (int?)c.Revision, cancellationToken) ?? 0) + 1;
-
     public async Task<bool> TryAddAsync(IReadOnlyList<FinancialBudgetRuleChange> changes, CancellationToken cancellationToken)
     {
         db.FinancialBudgetRuleChanges.AddRange(changes);

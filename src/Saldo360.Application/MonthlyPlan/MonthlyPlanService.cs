@@ -20,7 +20,7 @@ namespace Saldo360.Application.MonthlyPlan;
 public sealed partial class MonthlyPlanService(
     IFinancialWorkspaceRepository workspaces, IFinancialAccountRepository accounts, IFinancialBudgetRepository budgetRepository, FinancialBudgetService budgetService,
     FinancialBudgetExecutionService budgetExecution, IMonthlyPlanRepository repository, PlanActualService dashboard, FinancialCalendarMonthlyProjectionService monthlyProjection,
-    CardProjectionService cardProjection, IPlanActualRepository planActualRepository, IOverdraftRecoveryRepository recoveryRepository, TimeProvider time)
+    CardProjectionService cardProjection, IPlanActualRepository planActualRepository, IOverdraftRecoveryRepository recoveryRepository, EffectiveBudgetService effectiveBudgets, TimeProvider time)
 {
     private const int HistoryLimit = 200;
 
@@ -80,7 +80,8 @@ public sealed partial class MonthlyPlanService(
         var lines = visible.Select(l => ToDto(l, lookups, business)).ToList();
 
         Dictionary<Guid, FinancialBudgetTargetExecutionDto> execution = [];
-        if (facts.Limits.Count > 0 && await budgetExecution.GetAsync(workspaceId, facts.Limits[0].BudgetId, userId, ct) is { } executed)
+        // T12.1: a execução é por competência sobre as metas efetivas (o limite herdado não tem orçamento mensal materializado).
+        if (facts.Limits.Count > 0 && await budgetExecution.GetByCompetenceAsync(workspaceId, month, userId, ct) is { } executed)
             execution = executed.Targets.ToDictionary(t => t.TargetId);
         var limits = facts.Limits.Select(l =>
         {

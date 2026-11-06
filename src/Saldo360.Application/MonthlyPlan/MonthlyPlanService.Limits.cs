@@ -21,6 +21,18 @@ public sealed partial class MonthlyPlanService
         if (await budgetRepository.GetCategoryAsync(workspaceId, categoryId, ct) is not { } category) return MonthlyPlanResult<CategoryLimitDto>.NotFound;
         if (!category.IsExpense) return MonthlyPlanResult<CategoryLimitDto>.Invalid("categoryId", "O limite deve referenciar uma categoria de despesa.");
 
+        // T12.1: limite herdado do padrão (ou com exceção do mês) é alterado como exceção "somente este mês" no orçamento efetivo — a mesma regra e o mesmo resolvedor do restante do sistema.
+        // Gravar um orçamento mensal por baixo ficaria encoberto pela precedência (a exceção vence o registro mensal).
+        var effectiveNow = (await effectiveBudgets.BuildAsync(workspaceId, month, ct)).Targets.FirstOrDefault(t => t.Target == nameof(BudgetRuleTarget.Category) && t.CategoryId == categoryId);
+        if (effectiveNow is { Origin: TargetOrigin.Inherited or TargetOrigin.Customized })
+        {
+            var changed = await effectiveBudgets.ChangeAsync(workspaceId, userId, new(Key(month), nameof(BudgetRuleTarget.Category), categoryId, "ThisMonth", nameof(BudgetRuleAction.Set), amount, request.Note), ct);
+            if (changed.Access != EffectiveAccess.Allowed) return FromEffective<CategoryLimitDto>(changed);
+            return await LimitResultAsync(workspaceId, month, categoryId, ct);
+        }
+        // Categoria principal e subcategoria nunca coexistem no mesmo mês, inclusive contra as metas herdadas (o orçamento mensal só enxerga as suas).
+        if (await effectiveBudgets.OverlapsAsync(workspaceId, month, categoryId, ct)) return MonthlyPlanResult<CategoryLimitDto>.Conflict(BudgetResult.OverlappingTargetMessage);
+
         var budget = (await budgetRepository.ListAsync(workspaceId, month, true, ct)).FirstOrDefault();
         if (budget is { IsArchived: true }) return MonthlyPlanResult<CategoryLimitDto>.Conflict(BudgetResult.ArchivedMessage);
         if (budget is null)
@@ -39,6 +51,11 @@ public sealed partial class MonthlyPlanService
         else saved = await budgetService.UpdateTargetAsync(workspaceId, budget.Id, existing.Id, userId, existing.Name, amount, ct, request.Note);
         if (saved.Access != BudgetAccess.Allowed) return From<CategoryLimitDto>(saved);
 
+        return await LimitResultAsync(workspaceId, month, categoryId, ct);
+    }
+
+    private async Task<MonthlyPlanResult<CategoryLimitDto>> LimitResultAsync(Guid workspaceId, DateOnly month, Guid categoryId, CancellationToken ct)
+    {
         var facts = await repository.LoadAsync(workspaceId, month, month, ct);
         var limit = facts.Limits.First(l => l.CategoryId == categoryId);
         var itemized = MonthlyPlanCalculator.Itemized(facts, categoryId);
@@ -46,11 +63,26 @@ public sealed partial class MonthlyPlanService
             limit.OriginalAmount is { } o ? MonthlyPlanCalculator.Cents(o) : null, limit.OriginalAmount is { } original && original != limit.Amount, MonthlyPlanCalculator.Cents(itemized), itemized > limit.Amount, null));
     }
 
+    private static MonthlyPlanResult<T> FromEffective<T>(EffectiveResult<EffectiveBudgetDto> failure) where T : class => failure.Access switch
+    {
+        EffectiveAccess.Invalid => MonthlyPlanResult<T>.Invalid(failure.Errors!),
+        EffectiveAccess.Conflict => MonthlyPlanResult<T>.Conflict(failure.Message!),
+        _ => MonthlyPlanResult<T>.NotFound,
+    };
+
     /// <summary>Remove (arquiva) o limite da categoria na competência. O histórico permanece.</summary>
     public async Task<MonthlyPlanResult<CategoryLimitDto>> RemoveCategoryLimitAsync(Guid workspaceId, Guid userId, string? competence, Guid categoryId, string? note, CancellationToken ct)
     {
         if (!await IsParticipantAsync(workspaceId, userId, ct)) return MonthlyPlanResult<CategoryLimitDto>.NotFound;
         if (!TryMonth(competence, out var month)) return MonthlyPlanResult<CategoryLimitDto>.Invalid("competence", "Use uma competência válida no formato yyyy-MM.");
+        // T12.1: limite herdado (ou com exceção do mês) é suspenso somente neste mês, por um novo evento; o padrão e os outros meses não mudam.
+        var inherited = (await effectiveBudgets.BuildAsync(workspaceId, month, ct)).Targets.FirstOrDefault(t => t.Target == nameof(BudgetRuleTarget.Category) && t.CategoryId == categoryId);
+        if (inherited is { Origin: TargetOrigin.Inherited or TargetOrigin.Customized, Amount: not null })
+        {
+            var suspended = await effectiveBudgets.ChangeAsync(workspaceId, userId, new(Key(month), nameof(BudgetRuleTarget.Category), categoryId, "ThisMonth", nameof(BudgetRuleAction.Remove), null, note), ct);
+            if (suspended.Access != EffectiveAccess.Allowed) return FromEffective<CategoryLimitDto>(suspended);
+            return MonthlyPlanResult<CategoryLimitDto>.Ok(new(inherited.Id, categoryId, inherited.Name, inherited.Amount, null, false, MonthlyPlanCalculator.Cents(0m), false, null));
+        }
         var budget = (await budgetRepository.ListAsync(workspaceId, month, true, ct)).FirstOrDefault();
         var target = budget?.Targets.FirstOrDefault(t => t.Category != null && t.Category.Id == categoryId);
         if (budget is null || target is null) return MonthlyPlanResult<CategoryLimitDto>.NotFound;
@@ -127,6 +159,7 @@ public sealed partial class MonthlyPlanService
                 if (targetBudget is null) newBudget = FinancialBudget.Create(workspaceId, to, null, userId, now);
                 var budgetId = targetBudget?.Id ?? newBudget!.Id;
                 var taken = targetBudget?.Targets.Where(t => t.Category != null).Select(t => t.Category!.Id).ToHashSet() ?? [];
+                taken.UnionWith(destination.Limits.Select(l => l.CategoryId)); // já efetivos no destino (herdados ou exceção): copiar duplicaria e encobriria a herança
                 foreach (var limit in source.Limits)
                 {
                     if (taken.Contains(limit.CategoryId) || await budgetRepository.GetCategoryAsync(workspaceId, limit.CategoryId, ct) is not { IsActive: true }) { skippedLimits++; continue; }

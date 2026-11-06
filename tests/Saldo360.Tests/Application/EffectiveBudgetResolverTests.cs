@@ -168,6 +168,53 @@ public sealed class EffectiveBudgetResolverTests
         Assert.Equal(3300m, resolved.FixedTarget); Assert.Equal(TargetOrigin.Historical, resolved.Find(BudgetRuleTarget.FixedExpenses)!.Origin);
     }
 
+    // ---- Restaurar ao padrão (T12.1, encerramento) -------------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void RestoringOverAHistoricalRecordReturnsToTheStandardInForceWhileTheRecordStaysIntact()
+    {
+        var historical = new LegacyMonthFact(M(2026, 11), Guid.NewGuid(), [new(BudgetRuleTarget.AllCards, null, 4200m, false, Guid.NewGuid())], null);
+        var standard = Standard(BudgetRuleTarget.AllCards, M(2026, 10), 5000m);
+        Assert.Equal(TargetOrigin.Historical, Card(Layers([standard], [historical]), M(2026, 11)).Origin);
+
+        var restored = Layers([standard, Exception(BudgetRuleTarget.AllCards, M(2026, 11), null, action: BudgetRuleAction.Restore)], [historical]);
+        var card = Card(restored, M(2026, 11));
+        Assert.Equal(5000m, card.Amount); Assert.Equal(TargetOrigin.Inherited, card.Origin); Assert.Equal(M(2026, 10), card.StandardFrom);
+        Assert.Equal(4200m, restored.Legacy[M(2026, 11)].Targets.Single().Amount); // o registro histórico não foi tocado
+    }
+
+    [Fact]
+    public void WithoutAStandardInForceRestoreDoesNotHideTheHistoricalRecord()
+    {
+        var historical = new LegacyMonthFact(M(2026, 11), Guid.NewGuid(), [new(BudgetRuleTarget.AllCards, null, 4200m, false, Guid.NewGuid())], null);
+        var layers = Layers([Exception(BudgetRuleTarget.AllCards, M(2026, 11), null, action: BudgetRuleAction.Restore)], [historical]);
+        Assert.Equal(4200m, Card(layers, M(2026, 11)).Amount); Assert.Equal(TargetOrigin.Historical, Card(layers, M(2026, 11)).Origin);
+        Assert.False(EffectiveBudgetResolver.StandardInForce(layers, M(2026, 11), BudgetRuleTarget.AllCards, null));
+        Assert.True(EffectiveBudgetResolver.HasHistoricalRecord(layers, M(2026, 11), BudgetRuleTarget.AllCards, null));
+    }
+
+    [Fact]
+    public void AnEditAfterARestoreWinsAgainAndALaterRestoreUndoesIt()
+    {
+        var historical = new LegacyMonthFact(M(2026, 11), Guid.NewGuid(), [new(BudgetRuleTarget.AllCards, null, 4200m, false, Guid.NewGuid())], null);
+        var standard = Standard(BudgetRuleTarget.AllCards, M(2026, 10), 5000m);
+        var restore = Exception(BudgetRuleTarget.AllCards, M(2026, 11), null, revision: 1, action: BudgetRuleAction.Restore);
+        var edit = Exception(BudgetRuleTarget.AllCards, M(2026, 11), 4800m, revision: 2);
+        var again = Exception(BudgetRuleTarget.AllCards, M(2026, 11), null, revision: 3, action: BudgetRuleAction.Restore);
+        Assert.Equal(4800m, Card(Layers([standard, restore, edit], [historical]), M(2026, 11)).Amount);
+        Assert.Equal(TargetOrigin.Customized, Card(Layers([standard, restore, edit], [historical]), M(2026, 11)).Origin);
+        Assert.Equal(5000m, Card(Layers([standard, restore, edit, again], [historical]), M(2026, 11)).Amount);
+    }
+
+    [Fact]
+    public void RestoringTheTotalOverAHistoricalAggregateAlsoFollowsTheStandard()
+    {
+        var historical = new LegacyMonthFact(M(2026, 11), null, [], 11000m);
+        var standard = Standard(BudgetRuleTarget.TotalExpenses, M(2026, 10), 12500m);
+        var layers = Layers([standard, Exception(BudgetRuleTarget.TotalExpenses, M(2026, 11), null, action: BudgetRuleAction.Restore)], [historical]);
+        Assert.Equal(12500m, EffectiveBudgetResolver.Resolve(Workspace, layers, M(2026, 11)).TotalExpenses);
+    }
+
     // ---- Validação, identificação e pontos de mudança ---------------------------------------------------------------------------------------------------
 
     [Fact]

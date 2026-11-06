@@ -45,6 +45,8 @@ public sealed class EffectiveBudgetService(
     /// <summary>Quantos meses à frente as alterações são conferidas (o padrão vale indefinidamente; as mudanças de vigência e exceções cadastradas é que importam).</summary>
     public const int ValidationHorizonMonths = 60;
     public const int HistoryLimit = 100;
+    public const string ClosedHistoricalMessage = "Competência encerrada com registro mensal histórico: o valor foi preservado e não pode ser restaurado ao padrão.";
+    public const string NoStandardMessage = "Não há padrão vigente para restaurar nesta meta: personalize o mês para substituir o registro mensal.";
     public const string ConcurrentMessage = "Outra alteração simultânea ocupou esta revisão. Atualize a tela e tente novamente.";
 
     public static string NameOf(BudgetRuleTarget target) => target switch
@@ -102,6 +104,17 @@ public sealed class EffectiveBudgetService(
         return EffectiveResult<IReadOnlyList<BudgetRuleHistoryDto>>.Ok(items);
     }
 
+    /// <summary>Categoria principal e subcategoria no mesmo mês contariam o mesmo gasto duas vezes: confere contra TODAS as metas efetivas (herdadas, exceções e históricas).</summary>
+    public async Task<bool> OverlapsAsync(Guid workspaceId, DateOnly month, Guid categoryId, CancellationToken cancellationToken)
+    {
+        var layers = await layerReader.ReadAsync(workspaceId, month, month.AddMonths(1), cancellationToken);
+        var active = EffectiveBudgetResolver.Resolve(workspaceId, layers, month).Categories.Select(t => t.CategoryId!.Value).Where(id => id != categoryId).ToHashSet();
+        if (active.Count == 0) return false;
+        var names = await rules.CategoryNamesAsync(workspaceId, [categoryId, .. active], cancellationToken);
+        var parentOfNew = names.GetValueOrDefault(categoryId)?.ParentId;
+        return active.Any(id => id == parentOfNew || names.GetValueOrDefault(id)?.ParentId == categoryId);
+    }
+
     // ---- Alteração --------------------------------------------------------------------------------------------------------------------------------------
 
     public async Task<EffectiveResult<EffectiveBudgetDto>> ChangeAsync(Guid workspaceId, Guid userId, BudgetChangeRequest? request, CancellationToken cancellationToken)
@@ -140,21 +153,32 @@ public sealed class EffectiveBudgetService(
 
         if (action == BudgetRuleAction.Remove && current is not { Defined: true })
             return EffectiveResult<EffectiveBudgetDto>.Conflict("Não há meta definida para retirar nesta competência.");
-        if (action == BudgetRuleAction.Restore && activeException is null)
-            return EffectiveResult<EffectiveBudgetDto>.Conflict(current?.Origin == TargetOrigin.Historical
-                ? "O valor desta competência é um registro mensal anterior, preservado: personalize o mês para substituí-lo."
-                : "Esta competência não tem exceção para restaurar.");
+        if (action == BudgetRuleAction.Restore)
+        {
+            // Restaurar é um NOVO evento (nada é apagado nem alterado) e funciona mesmo com outros eventos na competência: o valor efetivo volta a ser o padrão vigente. Também se sobrepõe ao
+            // registro mensal histórico quando há padrão em vigor — exceto em competência encerrada, cujo registro histórico é preservado. Sem nada a desfazer, a chamada é idempotente.
+            var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
+            var historical = EffectiveBudgetResolver.HasHistoricalRecord(layers, month, target, request.CategoryId);
+            var standard = EffectiveBudgetResolver.StandardInForce(layers, month, target, request.CategoryId);
+            if (historical && month < new DateOnly(today.Year, today.Month, 1)) return EffectiveResult<EffectiveBudgetDto>.Conflict(ClosedHistoricalMessage);
+            var overridesHistorical = historical && standard && current?.Origin == TargetOrigin.Historical;
+            if (activeException is null && !overridesHistorical)
+            {
+                if (current?.Origin == TargetOrigin.Historical) return EffectiveResult<EffectiveBudgetDto>.Conflict(NoStandardMessage);
+                return EffectiveResult<EffectiveBudgetDto>.Ok(await BuildAsync(workspaceId, month, cancellationToken));
+            }
+        }
 
         var now = timeProvider.GetUtcNow();
         var added = new List<FinancialBudgetRuleChange>
         {
-            FinancialBudgetRuleChange.Create(workspaceId, scope, target, request.CategoryId, month, await rules.NextRevisionAsync(workspaceId, scope, target, request.CategoryId, month, cancellationToken),
+            FinancialBudgetRuleChange.Create(workspaceId, scope, target, request.CategoryId, month, NextRevision(layers, scope, target, request.CategoryId, month),
                 action, action == BudgetRuleAction.Set ? request.Amount : null, request.Note, userId, now),
         };
         // "Este mês e os próximos" vale também para o mês de partida: uma exceção ativa dele é desfeita (as exceções de meses posteriores continuam).
         if (!thisMonth && activeException is not null)
             added.Add(FinancialBudgetRuleChange.Create(workspaceId, BudgetRuleScope.OnlyCompetence, target, request.CategoryId, month,
-                await rules.NextRevisionAsync(workspaceId, BudgetRuleScope.OnlyCompetence, target, request.CategoryId, month, cancellationToken), BudgetRuleAction.Restore, null, request.Note, userId, now));
+                NextRevision(layers, BudgetRuleScope.OnlyCompetence, target, request.CategoryId, month), BudgetRuleAction.Restore, null, request.Note, userId, now));
 
         var problems = NewErrors(workspaceId, layers, added, month, extraParents);
         if (problems.Count > 0) return EffectiveResult<EffectiveBudgetDto>.Invalid(new Dictionary<string, string[]> { ["budget"] = problems.ToArray() });
@@ -197,7 +221,7 @@ public sealed class EffectiveBudgetService(
         var added = new List<FinancialBudgetRuleChange>();
         foreach (var (target, categoryId, amount) in chosen)
             added.Add(FinancialBudgetRuleChange.Create(workspaceId, BudgetRuleScope.FromCompetence, target, categoryId, start,
-                await rules.NextRevisionAsync(workspaceId, BudgetRuleScope.FromCompetence, target, categoryId, start, cancellationToken), BudgetRuleAction.Set, amount,
+                NextRevision(layers, BudgetRuleScope.FromCompetence, target, categoryId, start), BudgetRuleAction.Set, amount,
                 $"Referência: {sourceMonth:yyyy-MM}", userId, now));
         var names = await rules.CategoryNamesAsync(workspaceId, chosen.Where(c => c.CategoryId != null).Select(c => c.CategoryId!.Value).ToList(), cancellationToken);
         var problems = NewErrors(workspaceId, layers, added, start, names.ToDictionary(p => p.Key, p => p.Value.ParentId));
@@ -224,6 +248,13 @@ public sealed class EffectiveBudgetService(
     }
 
     // ---- Validação do estado resultante -----------------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Próxima revisão da chave, derivada do MESMO instantâneo (<paramref name="layers"/>) usado para decidir a alteração. Controle de versão otimista: duas alterações concorrentes que viram o
+    /// mesmo estado calculam a mesma revisão e o índice único grava só uma (a outra recebe 409 e, ao reler, vê o novo estado). Uma consulta separada permitiria uma decisão desatualizada gravar depois.
+    /// </summary>
+    private static int NextRevision(BudgetLayers layers, BudgetRuleScope scope, BudgetRuleTarget target, Guid? categoryId, DateOnly competence) =>
+        layers.Changes.Where(c => c.Scope == scope && c.Target == target && c.CategoryId == categoryId && c.Competence == competence).Select(c => c.Revision).DefaultIfEmpty(0).Max() + 1;
 
     private static RuleChangeFact? LatestException(BudgetLayers layers, BudgetRuleTarget target, Guid? categoryId, DateOnly month)
     {
