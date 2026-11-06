@@ -190,3 +190,22 @@ export function getDashboardOverview(workspaceId: string, competence: string, sc
     return data
   })
 }
+
+/**
+ * Cartões do orçamento PF na competência, sob demanda (mesma base de `pfBudgetControl.cards.projected`). `invoiceState`: Closed, Open, Future ou ClosingUnconfirmed (nunca tratado como fechada);
+ * `paymentState` (Unpaid, Partial, Paid, Overpaid) é separado do estado da fatura. `total` = soma dos cartões + provisão alimentar ainda não alocada; divergência com `official` = Partial.
+ */
+export interface BudgetCardItem {
+  cardId: string; name: string; projected: string; confirmed: string; pendingKnown: string; estimated: string
+  invoiceState: 'Closed' | 'Open' | 'Future' | 'ClosingUnconfirmed'; closing: string | null; due: string | null; datesEstimated: boolean
+  quality: 'Confirmed' | 'Projected' | 'Incomplete'; paymentState: 'Unpaid' | 'Partial' | 'Paid' | 'Overpaid' | null
+}
+export interface BudgetCards {
+  state: 'Complete' | 'Partial'; competence: string; total: string; allocated: string; unallocatedFood: string; official: string | null
+  cards: BudgetCardItem[]; reasons: ('MissingPayerAccount' | 'UnexplainedDifference' | 'OfficialTotalUnavailable' | string)[]
+}
+
+export function getBudgetCards(workspaceId: string, competence: string, signal?: AbortSignal): Promise<BudgetCards> {
+  return requestJson<BudgetCards>(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-dashboard/budget-cards?${new URLSearchParams({ competence })}`,
+    { signal, headers: { Accept: 'application/json' } }, { fallback: 'Falha ao carregar os cartões do orçamento.' })
+}

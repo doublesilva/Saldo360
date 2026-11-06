@@ -1,4 +1,6 @@
 import type { BudgetControl, BudgetGroupStatus } from '../../api/overview'
+import { useState } from 'react'
+import { OverviewBudgetCardDetails } from './OverviewBudgetCardDetails'
 import { OperationalError, OperationalLoading } from '../OperationalFeedback'
 import { barWidth, money, percentNow, percentText } from './overviewText'
 
@@ -14,19 +16,19 @@ const icons = {
 
 interface Row { key: string; title: string; icon: keyof typeof icons; status: BudgetGroupStatus; target: string | null; projected: string; projectedPercent: string | null; margin: string | null; excess: string | null }
 
-export function OverviewBudgetProgress({ control, fixedTarget, scopeLabel, monthLabel, loading, error, retry, onOpenBudget }: {
-  control: BudgetControl | null; fixedTarget: string | null; scopeLabel: string; monthLabel: string; loading: boolean; error: unknown; retry: () => void; onOpenBudget: () => void
+export function OverviewBudgetProgress({ control, fixedTarget, scopeLabel, monthLabel, workspaceId, competence, loading, error, retry, onOpenBudget, onOpenCards }: {
+  control: BudgetControl | null; fixedTarget: string | null; scopeLabel: string; monthLabel: string; workspaceId: string; competence: string; loading: boolean; error: unknown; retry: () => void; onOpenBudget: () => void; onOpenCards: () => void
 }) {
   return <section className="ov-card ov-budget" aria-labelledby="ov-budget-title">
     <header className="ov-card__head"><div><h3 id="ov-budget-title">Orçamento mensal</h3><p className="ov-meta">{scopeLabel ? `${scopeLabel} · ` : ''}{monthLabel}</p></div>
       <button type="button" className="ov-link" onClick={onOpenBudget}>Ver detalhes ›</button></header>
     {error ? <OperationalError error={error} onRetry={retry} retryLabel="Recarregar" />
       : !control ? loading ? <OperationalLoading>Carregando o orçamento…</OperationalLoading> : <p className="ov-empty">O orçamento não está disponível.</p>
-        : <Body control={control} fixedTarget={fixedTarget} onOpenBudget={onOpenBudget} />}
+        : <Body control={control} fixedTarget={fixedTarget} onOpenBudget={onOpenBudget} workspaceId={workspaceId} competence={competence} onOpenCards={onOpenCards} />}
   </section>
 }
 
-function Body({ control, fixedTarget, onOpenBudget }: { control: BudgetControl; fixedTarget: string | null; onOpenBudget: () => void }) {
+function Body({ control, fixedTarget, onOpenBudget, workspaceId, competence, onOpenCards }: { control: BudgetControl; fixedTarget: string | null; onOpenBudget: () => void; workspaceId: string; competence: string; onOpenCards: () => void }) {
   const { total, cards, outsideCards } = control
   const rows: Row[] = [
     { ...total, key: 'total', title: 'Meta total', icon: 'target' },
@@ -36,21 +38,25 @@ function Body({ control, fixedTarget, onOpenBudget }: { control: BudgetControl; 
   // A meta é global: numa conta isolada só o consumo aparece, sem percentual de atingimento.
   const global = !control.targetsAttributable
   return <>
-    <ul className="ov-goal-rows">{rows.map(row => <GoalRow key={row.key} row={row} global={global} />)}</ul>
+    <ul className="ov-goal-rows">{rows.map(row => <GoalRow key={row.key} row={row} global={global} details={row.key === 'cards' && !global ? { workspaceId, competence, onOpenCards } : null} />)}</ul>
     {global && <p className="ov-meta">A meta mensal vale para todas as contas: aqui aparece só o consumo desta conta.</p>}
     {!global && !total.targetDefined && <button type="button" onClick={onOpenBudget}>Configurar orçamento</button>}
     {!global && fixedTarget !== null && <p className="ov-budget__fixed"><span>Meta complementar: despesas fixas</span><strong className="ov-mono">{money(fixedTarget)}</strong></p>}
   </>
 }
 
-function GoalRow({ row, global }: { row: Row; global: boolean }) {
+function GoalRow({ row, global, details }: { row: Row; global: boolean; details: { workspaceId: string; competence: string; onOpenCards: () => void } | null }) {
+  const [open, setOpen] = useState(false)
+  const panel = `ov-card-details-${row.key}`
   const tone = global || row.target === null ? 'none' : row.status === 'Exceeded' ? 'over' : 'within'
   const difference = global ? 'Meta global' : row.target === null ? 'Meta não configurada'
     : row.status === 'Exceeded' ? `${money(row.excess)} acima da meta` : `${money(row.margin)} abaixo da meta`
   return <li className={`ov-goal-row ov-goal-row--${tone}`} aria-label={row.title}>
     <span className="ov-goal-row__icon">{icons[row.icon]}</span>
     <div className="ov-goal-row__body">
-      <div className="ov-goal-row__head"><strong>{row.title}</strong>
+      <div className="ov-goal-row__head">{details
+        ? <button type="button" className="ov-goal-row__toggle" aria-expanded={open} aria-controls={panel} onClick={() => setOpen(value => !value)}><strong>{row.title}</strong><span className="ov-goal-row__chevron" aria-hidden="true">{open ? '▴' : '▾'}</span></button>
+        : <strong>{row.title}</strong>}
         <span className="ov-goal-row__pct">{tone === 'none' ? '' : percentText(row.projectedPercent) ?? '—'}</span></div>
       <div className="ov-track ov-track--thick" role="progressbar" aria-label={`Total previsto de ${row.title}`} aria-valuemin={0} aria-valuemax={100}
         aria-valuenow={tone === 'none' ? 0 : percentNow(row.projectedPercent)} aria-valuetext={tone === 'none' ? difference : `${percentText(row.projectedPercent) ?? 'sem percentual'} da meta`}>
@@ -58,6 +64,7 @@ function GoalRow({ row, global }: { row: Row; global: boolean }) {
       <div className="ov-goal-row__foot">
         <span className="ov-mono">{money(row.projected)}{tone !== 'none' && <> / {money(row.target)}</>}</span>
         <span className="ov-goal-row__diff">{difference}</span></div>
+      {details && open && <OverviewBudgetCardDetails id={panel} workspaceId={details.workspaceId} competence={details.competence} onOpenCards={details.onOpenCards} />}
     </div>
   </li>
 }

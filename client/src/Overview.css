@@ -258,3 +258,14 @@
   .ov-filters select { flex: 1 1 12rem; }
   .ov-new { flex: 1 1 100%; }
 }
+
+/* Detalhamento dos cartões (expansão inline do Orçamento mensal) */
+.ov .ov-goal-row__toggle { display: inline-flex; align-items: center; gap: .4rem; min-height: auto; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+.ov-goal-row__chevron { color: var(--ov-muted); font-size: .75rem; }
+.ov-cardrows__panel { display: grid; gap: .6rem; padding: .75rem; border: 1px solid var(--ov-border); border-radius: var(--ov-radius); background: var(--ov-muted-bg); }
+.ov-cardrows { display: grid; gap: .25rem; }
+.ov .ov-cardrows__button { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .75rem; width: 100%; padding: .4rem 0; border: 0; background: none; text-align: left; }
+.ov-cardrows__main { display: grid; gap: .15rem; min-width: 0; }
+.ov-cardrows__main strong { font-size: .875rem; font-weight: 600; overflow-wrap: anywhere; }
+.ov-cardrows__main small { color: var(--ov-muted); font-size: .75rem; overflow-wrap: anywhere; }
+.ov-cardrows__extra { display: flex; justify-content: space-between; gap: .75rem; padding-top: .5rem; border-top: 1px solid var(--ov-border); font-size: .8125rem; color: var(--ov-muted); }

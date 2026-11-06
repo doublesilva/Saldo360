@@ -94,7 +94,8 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
         <OverviewEvolutionSection workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} />
         <div className="ov-budget-area">
           <OverviewBudgetProgress control={data?.pfBudgetControl ?? null} fixedTarget={data?.budget.state === 'Complete' ? data.budget.fixed?.planned ?? null : null}
-            scopeLabel="Orçamento PF · Todas as contas PF" monthLabel={monthTitle(competence)} {...overviewBlock} onOpenBudget={() => onNavigate('budgets', { competence })} />
+            scopeLabel="Orçamento PF · Todas as contas PF" monthLabel={monthTitle(competence)} workspaceId={workspaceId} competence={competence} {...overviewBlock}
+            onOpenBudget={() => onNavigate('budgets', { competence })} onOpenCards={() => onNavigate('cards')} />
           <OverviewExpenseDistribution workspaceId={workspaceId} competence={competence} scope={scope} monthLabel={monthTitle(competence)} scopeText={scopeText}
             distribution={data?.expenseDistribution ?? null} {...overviewBlock} />
         </div>

@@ -230,4 +230,35 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
         var overview = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, $"{Root}/financial-dashboard/overview?competence={Month}&scope=all", _session)).Content.ReadAsStringAsync()).RootElement;
         Assert.DoesNotContain(overview.GetProperty("accounts").GetProperty("items").EnumerateArray(), a => a.GetProperty("name").GetString() is "PF antiga" or "PJ antiga");
     }
+
+    private async Task<Guid> CardPaidByAsync(string name, Guid? payer) => (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/credit-cards", _session,
+        new { name, issuer = "Banco", creditLimit = "10000.00", closingDay = 5, dueDay = 10, defaultPaymentAccountId = payer }))).Id;
+
+    [Fact]
+    public async Task BudgetCardsDetailReconcilesWithThePfBudgetAndKeepsPjAndUnassignedCardsOut()
+    {
+        await ArrangeAsync("bc-cartoes");
+        var pfOld = await NewAccountAsync("PF antiga", "PF"); var pj = await NewAccountAsync("Itaú PJ", "PJ");
+        var big = await CardPaidByAsync("Cartão grande", _account); var old = await CardPaidByAsync("Cartão da antiga", pfOld);
+        var pjCard = await CardPaidByAsync("Cartão PJ", pj); var unpaid = await CardPaidByAsync("Sem pagador", null);
+        await PurchaseAsync(big, "900.00"); await PurchaseAsync(old, "300.00"); await PurchaseAsync(pjCard, "5000.00"); await PurchaseAsync(unpaid, "400.00");
+        await using (var db = Db()) await db.FinancialAccounts.Where(a => a.Id == pfOld).ExecuteUpdateAsync(set => set.SetProperty(a => a.IsActive, false));
+        await ConfigureBudgetAsync("5000.00", 12500m);
+
+        var response = await SendAsync(HttpMethod.Get, $"{Root}/financial-dashboard/budget-cards?competence={Month}", _session);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var detail = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+
+        // Só os cartões das contas PF (inclusive a inativa), do maior valor para o menor; o cartão PJ e o sem pagador ficam fora.
+        Assert.Equal(["Cartão grande", "Cartão da antiga"], detail.GetProperty("cards").EnumerateArray().Select(c => c.GetProperty("name").GetString()!));
+        Assert.Equal(["900.00", "300.00"], detail.GetProperty("cards").EnumerateArray().Select(c => c.GetProperty("projected").GetString()!));
+        Assert.All(detail.GetProperty("cards").EnumerateArray(), c => { Assert.NotEqual("Closed", c.GetProperty("invoiceState").GetString()); Assert.Equal("Unpaid", c.GetProperty("paymentState").GetString()); });
+        Assert.Contains("MissingPayerAccount", detail.GetProperty("reasons").EnumerateArray().Select(r => r.GetString()));
+        // Concilia com o orçamento PF: o total do detalhamento é o mesmo de pfBudgetControl.cards.projected, sem nada contado duas vezes.
+        var pf = await PfControlAsync("account", _account);
+        Assert.Equal(Text(pf, "cards", "projected"), detail.GetProperty("total").GetString()); Assert.Equal(detail.GetProperty("total").GetString(), detail.GetProperty("official").GetString());
+        Assert.DoesNotContain("UnexplainedDifference", detail.GetProperty("reasons").EnumerateArray().Select(r => r.GetString()));
+        Assert.Equal("1200.00", Text(detail, "allocated")); Assert.Equal("Complete", Text(detail, "state"));
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, $"{Root}/financial-dashboard/budget-cards?competence=2026-13", _session)).StatusCode);
+    }
 }
