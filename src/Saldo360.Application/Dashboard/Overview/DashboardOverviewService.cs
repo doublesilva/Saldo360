@@ -165,7 +165,7 @@ public sealed partial class DashboardOverviewService(
         var cashFlow = await BuildCashFlowAsync(workspaceId, userId, month, selected?.Id, today, byCompetence, ct);
         var decision = await BuildDecisionAsync(workspaceId, month, selected, all, kind, today, cashFlow, ct);
         var budgetControl = await BuildBudgetControlAsync(workspaceId, userId, month, requested, selected, kind, today, budget, classification, decision, ct);
-        var distribution = await BuildExpenseDistributionAsync(workspaceId, month, selected?.Id, byCompetence, ExpenseDistributionCalculator.OverviewTop, ct);
+        var distribution = await BuildExpenseDistributionAsync(workspaceId, userId, month, requested, selected?.Id, ExpenseDistributionCalculator.OverviewTop, ct);
         return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow, decision, budgetControl, distribution));
     }
 

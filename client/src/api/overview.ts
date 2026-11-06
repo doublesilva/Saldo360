@@ -147,10 +147,13 @@ export interface BudgetControl {
  * quando existem, as linhas somam 100,0. `reference` = "Despesas do mês" do mesmo escopo; divergência vira `Partial` com o motivo. No `overview` vêm as cinco maiores categorias;
  * `getExpenseDistribution` traz todas.
  */
-export interface ExpenseCategoryShare { categoryId: string | null; name: string; amount: string; percentage: string | null; kind: 'Category' | 'Others' | 'Uncategorized'; categoryCount: number }
+export interface ExpenseCategoryShare { categoryId: string | null; name: string; amount: string; percentage: string | null; kind: 'Category' | 'Others' | 'Uncategorized'; categoryCount: number; gross: string }
+export interface ExpenseReconciliation { bucket: 'Bank' | 'Cards'; distributed: string; reference: string; difference: string }
 export interface ExpenseDistribution {
   state: 'Complete' | 'Partial' | 'Unavailable'; competence: string; total: string | null; reference: string | null; categories: ExpenseCategoryShare[]
-  reasons: ('TotalDiffersFromExpenses' | 'ReferenceUnavailable' | 'PercentagesNotRepresentative' | string)[]; categoryCount: number
+  reasons: ('TotalDiffersFromExpenses' | 'ReferenceUnavailable' | 'BankBasisDiffers' | 'CardBasisDiffers' | string)[]; categoryCount: number
+  /** Só gastos, devoluções e estornos (negativo) à parte, e a conferência por bloco com "Despesas do mês". `total` = gastos + devoluções. */
+  gross: string; adjustments: string; reconciliation: ExpenseReconciliation[] | null
 }
 
 /** "Ver todas": a distribuição completa da mesma competência e escopo, sob demanda. */

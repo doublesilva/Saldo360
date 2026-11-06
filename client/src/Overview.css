@@ -156,6 +156,9 @@
 .ov-distribution__list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 3.25rem; align-items: center; gap: .65rem; font-size: .9375rem; }
 .ov-distribution__name { overflow-wrap: anywhere; }
 .ov-distribution__amount { font-weight: 600; text-align: right; }
+.ov-distribution__net { display: block; color: var(--ov-muted); font-size: .75rem; font-weight: 400; }
+.ov-distribution__adjust { display: flex; justify-content: space-between; gap: .75rem; padding-top: .75rem; border-top: 1px solid var(--ov-border); font-size: .875rem; color: var(--ov-muted); }
+.ov-note ul { margin-top: .25rem; padding-left: 1rem; list-style: disc; }
 .ov-distribution__pct { color: var(--ov-muted); font-size: .8125rem; text-align: right; font-family: var(--ov-mono); }
 .ov-swatch { width: .55rem; height: .55rem; border-radius: 50%; }
 .ov-cat-1 { background: var(--ov-cat-1); } .ov-cat-2 { background: var(--ov-cat-2); } .ov-cat-3 { background: var(--ov-cat-3); } .ov-cat-4 { background: var(--ov-cat-4); }

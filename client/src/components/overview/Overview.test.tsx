@@ -14,11 +14,11 @@ import { budgetControl, group } from './budgetControlFixtures'
 type Overrides = { plan?: PlanActualDashboard | Response; overview?: DashboardOverview | Response; evolution?: SixMonthPlan | Response; all?: ExpenseDistribution | Response }
 let calls: string[] = []
 
-const share = (categoryId: string | null, name: string, amount: string, percentage: string | null, kind: ExpenseCategoryShare['kind'] = 'Category', categoryCount = 1): ExpenseCategoryShare =>
-  ({ categoryId, name, amount, percentage, kind, categoryCount })
+const share = (categoryId: string | null, name: string, amount: string, percentage: string | null, kind: ExpenseCategoryShare['kind'] = 'Category', categoryCount = 1, gross = amount): ExpenseCategoryShare =>
+  ({ categoryId, name, amount, percentage, kind, categoryCount, gross })
 const distribution = (over: Partial<ExpenseDistribution> = {}): ExpenseDistribution => ({
   state: 'Complete', competence: '2026-10', total: '1200.00', reference: '1200.00', reasons: [],
-  categories: [share('h', 'Moradia', '700.00', '58.3'), share('f', 'Alimentação', '300.00', '25.0'), share(null, 'Sem categoria', '200.00', '16.7', 'Uncategorized', 0)], categoryCount: 2,
+  categories: [share('h', 'Moradia', '700.00', '58.3'), share('f', 'Alimentação', '300.00', '25.0'), share(null, 'Sem categoria', '200.00', '16.7', 'Uncategorized', 0)], categoryCount: 2, gross: '1200.00', adjustments: '0.00', reconciliation: null,
   ...over,
 })
 const withSummary = (over: Partial<DashboardOverview> = {}): DashboardOverview => ({ ...baseOverview, decision: decision(), budgetControl: budgetControl(), expenseDistribution: distribution(), ...over })
@@ -158,6 +158,14 @@ describe('Visão Geral — cheque especial e recuperação no bloco do saldo', (
     expect(text(none)).toContain('Ainda não é possível calcular'); expect(text(none)).not.toMatch(/R\$ 0,00/)
   })
 
+  it('recuperação negativa é apresentada como aumento da utilização do limite', async () => {
+    const base = decision()
+    mockApi({ plan: overdraftPlan(), overview: withDecision({ recovery: { ...base.recovery, effectiveRecovery: '-300.00', projectedRecovery: '-800.00' } }) }); renderPage()
+    const overdraft = await screen.findByLabelText('Cheque especial')
+    await waitFor(() => expect(text(overdraft)).toMatch(/Aumento da utilização\s*R\$ 300,00/))
+    expect(text(overdraft)).toMatch(/Aumento projetado\s*R\$ 800,00/); expect(text(overdraft)).not.toContain('Recuperado no mês'); expect(text(overdraft)).not.toContain('-R$')
+  })
+
   it('consolidado: valores somados conta a conta pelo servidor e meta acompanhada por conta', async () => {
     const base = decision()
     mockApi({ plan: { ...overdraftPlan({ usedLatest: '1800.00', contractedLimit: '8000.00' }), scope: { ...planActual.scope, kind: 'all', accountId: null, accountName: null } },
@@ -290,18 +298,23 @@ describe('Visão Geral — despesas por categoria', () => {
     expect(document.activeElement?.textContent).toBe('Ver todas ›')
   })
 
-  it('total que não confere é resultado parcial, sem categoria inventada; estornos maiores que as compras não geram barra enganosa', async () => {
-    mockApi({ overview: withSummary({ expenseDistribution: distribution({ state: 'Partial', total: '1000.00', reference: '1200.00', reasons: ['TotalDiffersFromExpenses'] }) }) }); renderPage()
+  it('total que não confere é parcial, explica a diferença por bloco e não inventa categoria', async () => {
+    mockApi({ overview: withSummary({ expenseDistribution: distribution({ state: 'Partial', total: '1000.00', reference: '1200.00', reasons: ['TotalDiffersFromExpenses', 'BankBasisDiffers', 'CardBasisDiffers'],
+      reconciliation: [{ bucket: 'Bank', distributed: '700.00', reference: '600.00', difference: '100.00' }, { bucket: 'Cards', distributed: '300.00', reference: '600.00', difference: '-300.00' }] }) }) }); renderPage()
     const partial = await findCard('Despesas por categoria')
     await waitFor(() => expect(text(partial)).toContain('Resultado parcial: o total difere das despesas do mês (R$ 1.200,00).'))
-    expect(within(partial).getAllByRole('listitem')).toHaveLength(3)
-    cleanup()
-    mockApi({ overview: withSummary({ expenseDistribution: distribution({ total: '400.00', reference: '400.00', reasons: ['PercentagesNotRepresentative'],
-      categories: [share('h', 'Moradia', '700.00', null), share('f', 'Alimentação', '-300.00', null)] }) }) }); renderPage()
-    const negative = await findCard('Despesas por categoria')
-    await waitFor(() => expect(text(negative)).toContain('-R$ 300,00'))
-    expect(negative.querySelector('.ov-stack')).toBeNull(); expect(text(negative)).not.toContain('%')
-    expect(text(negative)).toContain('Devoluções superam as compras')
+    expect(text(partial)).toContain('Banco: o indicador abate toda devolução recebida'); expect(text(partial)).toContain('Aqui R$ 700,00, no indicador R$ 600,00.')
+    expect(text(partial)).toContain('Cartões: o indicador usa o total do banco nas faturas fechadas'); expect(within(partial).getAllByRole('listitem').filter(item => item.closest('.ov-distribution__list'))).toHaveLength(3)
+  })
+
+  it('devoluções e estornos aparecem à parte e a barra continua com os gastos, mesmo com líquido negativo', async () => {
+    mockApi({ overview: withSummary({ expenseDistribution: distribution({ total: '700.00', reference: '700.00', gross: '1100.00', adjustments: '-400.00',
+      categories: [share('h', 'Moradia', '900.00', '81.8', 'Category', 1, '1000.00'), share('f', 'Alimentação', '-200.00', '9.1', 'Category', 1, '100.00')] }) }) }); renderPage()
+    const block = await findCard('Despesas por categoria')
+    await waitFor(() => expect(text(block)).toContain('Devoluções e estornos-R$ 400,00'))
+    expect(block.querySelectorAll('.ov-stack span')).toHaveLength(2)
+    expect(within(block).getAllByRole('listitem').map(item => text(item))).toEqual(['MoradiaR$ 1.000,00líquido R$ 900,0081,8%', 'AlimentaçãoR$ 100,00líquido -R$ 200,009,1%'])
+    expect(text(block)).toContain('Total gastoR$ 700,00'); expect(text(block)).not.toContain('Resultado parcial')
   })
 
   it('mês sem despesas e bloco indisponível', async () => {

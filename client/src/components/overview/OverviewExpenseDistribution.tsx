@@ -21,7 +21,7 @@ function Rows({ rows }: { rows: ExpenseCategoryShare[] }) {
   return <ul className="ov-distribution__list">{rows.map((row, index) => <li key={row.categoryId ?? row.kind}>
     <span className={`ov-swatch ov-cat-${colors[index]}`} aria-hidden="true" />
     <span className="ov-distribution__name">{row.name}{row.kind === 'Others' && <span className="visually-hidden"> ({row.categoryCount} categorias)</span>}</span>
-    <span className={`ov-mono ov-distribution__amount${isNegative(row.amount) ? ' ov-negative' : ''}`}>{money(row.amount)}</span>
+    <span className="ov-mono ov-distribution__amount">{money(row.gross)}{row.amount !== row.gross && <small className="ov-distribution__net">líquido {money(row.amount)}</small>}</span>
     {row.percentage !== null && <span className="ov-distribution__pct">{percentText(row.percentage)}</span>}
   </li>)}</ul>
 }
@@ -32,12 +32,20 @@ function Stack({ rows }: { rows: ExpenseCategoryShare[] }) {
   return <div className="ov-stack" aria-hidden="true">{rows.map((row, index) => <span key={row.categoryId ?? row.kind} className={`ov-cat-${colors[index]}`} style={{ flexGrow: 0, flexBasis: `${row.percentage}%` }} />)}</div>
 }
 
+const basisText = {
+  Bank: 'Banco: o indicador abate toda devolução recebida, e esta lista só as vinculadas a uma despesa.',
+  Cards: 'Cartões: o indicador usa o total do banco nas faturas fechadas, e esta lista soma as compras e ajustes lançados.',
+} as const
+
+/** Diferença com "Despesas do mês": quanto e em qual bloco, com a razão financeira de cada bloco (nunca uma categoria de compensação). */
 function Notes({ distribution }: { distribution: ExpenseDistribution }) {
-  const notes: string[] = []
-  if (distribution.reasons.includes('TotalDiffersFromExpenses')) notes.push(`Resultado parcial: o total difere das despesas do mês (${money(distribution.reference)}).`)
-  if (distribution.reasons.includes('ReferenceUnavailable')) notes.push('Resultado parcial: não foi possível conferir o total com as despesas do mês.')
-  if (distribution.reasons.includes('PercentagesNotRepresentative')) notes.push('Devoluções superam as compras de alguma categoria: os percentuais não são exibidos.')
-  return notes.length === 0 ? null : <>{notes.map(note => <p key={note} className="ov-note" role="status">{note}</p>)}</>
+  if (!distribution.reasons.includes('TotalDiffersFromExpenses') && !distribution.reasons.includes('ReferenceUnavailable')) return null
+  if (distribution.reasons.includes('ReferenceUnavailable')) return <p className="ov-note" role="status">Resultado parcial: não foi possível conferir o total com as despesas do mês.</p>
+  const buckets = (distribution.reconciliation ?? []).filter(item => item.difference !== '0.00')
+  return <div className="ov-note" role="status">
+    <p>Resultado parcial: o total difere das despesas do mês ({money(distribution.reference)}).</p>
+    <ul>{buckets.map(item => <li key={item.bucket}>{basisText[item.bucket]} Aqui {money(item.distributed)}, no indicador {money(item.reference)}.</li>)}</ul>
+  </div>
 }
 
 function Body({ distribution, monthLabel }: { distribution: ExpenseDistribution; monthLabel: string }) {
@@ -45,7 +53,8 @@ function Body({ distribution, monthLabel }: { distribution: ExpenseDistribution;
   return <>
     <div className="ov-distribution__total"><span className="ov-meta">Total gasto</span>
       <strong className={`ov-mono${isNegative(distribution.total) ? ' ov-negative' : ''}`}>{money(distribution.total)}</strong></div>
-    {distribution.categories.length === 0 ? <p className="ov-empty">Nenhuma despesa efetivada em {monthLabel}.</p> : <><Stack rows={distribution.categories} /><Rows rows={distribution.categories} /></>}
+    {distribution.categories.length === 0 ? <p className="ov-empty">Nenhuma despesa efetivada em {monthLabel}.</p> : <><Stack rows={distribution.categories} /><Rows rows={distribution.categories} />
+      {distribution.adjustments !== '0.00' && <p className="ov-distribution__adjust"><span>Devoluções e estornos</span><span className="ov-mono ov-negative">{money(distribution.adjustments)}</span></p>}</>}
     <Notes distribution={distribution} />
   </>
 }

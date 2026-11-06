@@ -86,10 +86,10 @@ function Overdraft({ plan, decision, onOpen }: { plan: PlanActualDashboard; deci
     {used !== null && limit !== null && isPositiveAmount(limit) && <div className="ov-meter ov-meter--danger" role="meter" aria-label="Limite do cheque especial utilizado"
       aria-valuetext={`${money(used)} de ${money(limit)}`} style={meterStyle(used, limit)}><span /></div>}
     {showRecovery && <dl className="ov-overdraft__recovery">
-      <div><dt>Recuperado no mês</dt><dd className={isNegative(recovered) ? 'ov-negative' : undefined}>{money(recovered)}</dd></div>
+      <div><dt>{isNegative(recovered) ? 'Aumento da utilização' : 'Recuperado no mês'}</dt><dd className={isNegative(recovered) ? 'ov-negative' : undefined}>{money(isNegative(recovered) ? recovered!.replace('-', '') : recovered)}</dd></div>
       <div><dt>{recovery?.state === 'Provisional' ? 'Meta provisória' : 'Meta do mês'}</dt>
         <dd data-unavailable={!hasTarget || undefined}>{hasTarget ? money(recovery.target) : consolidated ? 'Por conta' : 'Meta não configurada'}</dd></div>
-      <div><dt>Projetado</dt><dd data-unavailable={projected === null || undefined}>{projected === null ? 'Ainda não é possível calcular' : money(projected)}</dd></div>
+      <div><dt>{isNegative(projected) ? 'Aumento projetado' : 'Projetado'}</dt><dd className={isNegative(projected) ? 'ov-negative' : undefined} data-unavailable={projected === null || undefined}>{projected === null ? 'Ainda não é possível calcular' : money(isNegative(projected) ? projected.replace('-', '') : projected)}</dd></div>
     </dl>}
     <button type="button" className="ov-link" onClick={onOpen}>Recuperação no Planejamento ›</button>
   </div>

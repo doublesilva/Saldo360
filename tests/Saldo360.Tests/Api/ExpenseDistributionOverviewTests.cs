@@ -93,7 +93,8 @@ public sealed class ExpenseDistributionOverviewTests(PostgresFixture postgres) :
         // Aluguel (sub) + Moradia − devolução = 1400; cartão pela fatura; sem categoria explícito. Pagamento de fatura (999) e transferência (50) fora.
         Assert.Equal(["Moradia", "Alimentação", "Sem categoria"], Column(distribution, "name"));
         Assert.Equal(["1400.00", "1000.00", "200.00"], Column(distribution, "amount"));
-        Assert.Equal(["53.8", "38.5", "7.7"], Column(distribution, "percentage"));
+        Assert.Equal(["55.6", "37.0", "7.4"], Column(distribution, "percentage")); // participação nos gastos brutos (2700); a devolução de 100 aparece à parte
+        Assert.Equal("-100.00", distribution.GetProperty("adjustments").GetString()); Assert.Equal("2700.00", distribution.GetProperty("gross").GetString());
         Assert.Equal(_housing.ToString(), Column(distribution, "categoryId")[0]); Assert.Equal("null", Column(distribution, "categoryId")[2]);
         Assert.Equal("2600.00", distribution.GetProperty("total").GetString());
         // O total confere com "Despesas do mês" do mesmo escopo, que vem do Plano × Realizado.

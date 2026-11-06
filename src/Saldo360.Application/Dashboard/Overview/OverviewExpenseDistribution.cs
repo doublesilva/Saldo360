@@ -12,18 +12,26 @@ namespace Saldo360.Application.Dashboard.Overview;
 
 /// <summary>
 /// Uma linha da distribuição. <c>Kind</c>: Category (a categoria principal, com as subcategorias), Others ("Outras categorias": as que passam das maiores exibidas, só apresentação;
-/// <c>CategoryCount</c> diz quantas) ou Uncategorized ("Sem categoria", sempre separada e por último). <c>Percentage</c> = parte do total com uma casa decimal, distribuída pelo maior resto para
-/// que as linhas somem exatamente 100,0; nulo quando o total líquido não permite percentuais representativos (ver <c>PercentagesNotRepresentative</c>).
+/// <c>CategoryCount</c> diz quantas) ou Uncategorized ("Sem categoria", sempre separada e por último). <c>Gross</c> = só os gastos (fatos positivos) da linha e é a base da barra e dos
+/// percentuais; <c>Amount</c> = valor líquido (gastos menos devoluções e estornos dela), preservado. <c>Percentage</c> = parte do gasto bruto total, com uma casa decimal e distribuída pelo
+/// maior resto para somar exatamente 100,0; nulo só quando não houve nenhum gasto.
 /// </summary>
-public sealed record ExpenseCategoryShareDto(Guid? CategoryId, string Name, string Amount, string? Percentage, string Kind = ExpenseDistributionCalculator.Kinds.Category, int CategoryCount = 1);
+public sealed record ExpenseCategoryShareDto(Guid? CategoryId, string Name, string Amount, string? Percentage, string Kind = ExpenseDistributionCalculator.Kinds.Category, int CategoryCount = 1,
+    string Gross = "0.00");
+
+/// <summary>Um bloco da conferência com "Despesas do mês": o que a distribuição soma × o que o indicador soma, no mesmo escopo. <c>Bucket</c>: Bank (débitos, devoluções e dívidas) ou Cards (compras, encargos e créditos pela fatura).</summary>
+public sealed record ExpenseReconciliationDto(string Bucket, string Distributed, string Reference, string Difference);
 
 /// <summary>
-/// <c>State</c>: Complete, Partial (o total não confere com "Despesas do mês" ou a referência não pôde ser lida: <c>Reasons</c>) ou Unavailable (<c>Total</c> nulo, sem linhas).
-/// <c>Reference</c> = despesas realizadas por competência do mesmo escopo (Plano × Realizado), usada só para conferir o total; nada é ajustado para fechar a conta.
-/// <c>CategoryCount</c> = categorias principais com gasto (sem contar "Sem categoria"), mesmo quando parte delas está agrupada em "Outras categorias".
+/// <c>State</c>: Complete, Partial (o total não confere com "Despesas do mês" ou a referência não pôde ser lida: <c>Reasons</c>, <c>Reconciliation</c>) ou Unavailable (<c>Total</c> nulo, sem linhas).
+/// <c>Total</c> = líquido (gastos menos <c>Adjustments</c>); <c>Gross</c> = só gastos; <c>Adjustments</c> = devoluções e estornos (negativo ou zero), mostrados à parte. <c>Reference</c> = despesas
+/// realizadas por competência do mesmo escopo (Plano × Realizado); nada é ajustado para fechar a conta. <c>CategoryCount</c> = categorias principais com gasto, sem "Sem categoria".
 /// </summary>
 public sealed record ExpenseDistributionDto(string State, string Competence, string? Total, string? Reference, IReadOnlyList<ExpenseCategoryShareDto> Categories, IReadOnlyList<string> Reasons,
-    int CategoryCount = 0);
+    int CategoryCount = 0, string Gross = "0.00", string Adjustments = "0.00", IReadOnlyList<ExpenseReconciliationDto>? Reconciliation = null);
+
+/// <summary>Valores do indicador "Despesas do mês" por bloco (componentes <c>BankExpenses</c> e <c>CardPurchases</c> do Plano × Realizado).</summary>
+public sealed record ExpenseReference(decimal Total, decimal Bank, decimal Cards);
 
 public static class ExpenseDistributionCalculator
 {
@@ -44,16 +52,19 @@ public static class ExpenseDistributionCalculator
     {
         public const string TotalDiffersFromExpenses = "TotalDiffersFromExpenses";
         public const string ReferenceUnavailable = "ReferenceUnavailable";
-        public const string PercentagesNotRepresentative = "PercentagesNotRepresentative";
+        public const string BankBasisDiffers = "BankBasisDiffers";
+        public const string CardBasisDiffers = "CardBasisDiffers";
     }
 
+    private static bool IsCardBucket(BudgetFact f) => f.Origin is BudgetFactOrigin.CardInstallment or BudgetFactOrigin.CardAdjustment;
+
     /// <summary>
-    /// Distribui os fatos do mês. <paramref name="accountId"/> nulo = consolidado; senão, cartão conta pela conta que paga a fatura (<paramref name="cardPayers"/>, a mesma regra do
-    /// Plano × Realizado) e os demais registros pela conta do lançamento. <paramref name="reference"/> = "Despesas do mês" do mesmo escopo. <paramref name="top"/> limita as categorias
-    /// exibidas (o resto vira "Outras categorias"); nulo = todas.
+    /// Distribui os fatos do mês. <paramref name="accountId"/> nulo = consolidado; senão, cartão conta pela conta que paga a fatura (<paramref name="cardPayers"/>) e os demais registros pela conta do
+    /// lançamento. <paramref name="reference"/> = "Despesas do mês" e seus blocos. <paramref name="top"/> limita as categorias exibidas (o resto vira "Outras categorias"); nulo = todas.
+    /// A barra e os percentuais usam só os gastos; devoluções e estornos aparecem à parte e o total continua líquido.
     /// </summary>
     public static ExpenseDistributionDto Build(string competence, IReadOnlyList<BudgetFact> facts, IReadOnlyDictionary<Guid, FinancialCategoryDto> categories,
-        IReadOnlyDictionary<Guid, Guid> cardPayers, Guid? accountId, string? reference, int? top = null)
+        IReadOnlyDictionary<Guid, Guid> cardPayers, Guid? accountId, ExpenseReference? reference, int? top = null)
     {
         // Parcela histórica conhecida do cartão é "pendente conhecida" em Despesas do mês: fica fora do realizado para os dois totais conferirem.
         var realized = facts.Where(f => f.State is BudgetFactState.Realized or BudgetFactState.CardLaunched && f.Origin != BudgetFactOrigin.CardKnownInstallment)
@@ -66,33 +77,49 @@ public static class ExpenseDistributionCalculator
             return category.ParentCategoryId is { } parent && categories.TryGetValue(parent, out var main) ? (main.Id, main.Name) : (category.Id, category.Name);
         }
 
-        var groups = realized.GroupBy(f => MainOf(f.CategoryId)).Select(g => (g.Key.Id, g.Key.Name, Amount: g.Sum(f => f.Amount)))
-            .Where(g => g.Amount != 0m) // categoria cujas compras foram integralmente devolvidas não ocupa espaço
+        var groups = realized.GroupBy(f => MainOf(f.CategoryId))
+            .Select(g => (g.Key.Id, g.Key.Name, Gross: g.Where(f => f.Amount > 0m).Sum(f => f.Amount), Net: g.Sum(f => f.Amount)))
+            .Where(g => g.Gross > 0m) // sem gasto não há linha: a devolução dele continua no total e em "Devoluções e estornos"
             .ToList();
-        // Ordem determinística: maior valor líquido, depois nome e identificador (empates nunca trocam de lugar entre leituras).
-        var ranked = groups.Where(g => g.Id is not null).OrderByDescending(g => g.Amount).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Id).ToList();
-        var uncategorized = groups.Where(g => g.Id is null).Select(g => g.Amount).DefaultIfEmpty(0m).Sum();
+        // Ordem determinística: maior gasto, depois nome e identificador (empates nunca trocam de lugar entre leituras).
+        var ranked = groups.Where(g => g.Id is not null).OrderByDescending(g => g.Gross).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Id).ToList();
+        var uncategorized = groups.Where(g => g.Id is null).ToList();
 
-        var rows = new List<(Guid? Id, string Name, decimal Amount, string Kind, int Count)>();
+        var rows = new List<(Guid? Id, string Name, decimal Gross, decimal Net, string Kind, int Count)>();
         var shown = top is { } limit && ranked.Count > limit ? ranked.Take(limit).ToList() : ranked;
-        rows.AddRange(shown.Select(g => (g.Id, g.Name, g.Amount, Kinds.Category, 1)));
+        rows.AddRange(shown.Select(g => (g.Id, g.Name, g.Gross, g.Net, Kinds.Category, 1)));
         var rest = ranked.Skip(shown.Count).ToList();
-        if (rest.Count > 0) rows.Add((null, OtherCategories, rest.Sum(g => g.Amount), Kinds.Others, rest.Count));
-        if (uncategorized != 0m) rows.Add((null, Uncategorized, uncategorized, Kinds.Uncategorized, 0));
-        var total = decimal.Round(realized.Sum(f => f.Amount), Money.MaxScale, MidpointRounding.AwayFromZero);
+        if (rest.Count > 0) rows.Add((null, OtherCategories, rest.Sum(g => g.Gross), rest.Sum(g => g.Net), Kinds.Others, rest.Count));
+        if (uncategorized.Count > 0) rows.Add((null, Uncategorized, uncategorized.Sum(g => g.Gross), uncategorized.Sum(g => g.Net), Kinds.Uncategorized, 0));
+
+        var gross = realized.Where(f => f.Amount > 0m).Sum(f => f.Amount);
+        var adjustments = realized.Where(f => f.Amount < 0m).Sum(f => f.Amount);
+        var total = decimal.Round(gross + adjustments, Money.MaxScale, MidpointRounding.AwayFromZero);
 
         var reasons = new List<string>();
-        // Créditos maiores que as compras de uma linha (ou do mês) tornam "parte do total" sem sentido: os valores continuam exibidos, sem percentuais.
-        var representative = total > 0m && rows.All(r => r.Amount > 0m);
-        if (!representative && rows.Count > 0) reasons.Add(Reasons.PercentagesNotRepresentative);
+        List<ExpenseReconciliationDto>? reconciliation = null;
         if (reference is null) reasons.Add(Reasons.ReferenceUnavailable);
-        else if (decimal.Parse(reference, CultureInfo.InvariantCulture) != total) reasons.Add(Reasons.TotalDiffersFromExpenses);
+        else
+        {
+            if (reference.Total != total) reasons.Add(Reasons.TotalDiffersFromExpenses);
+            var cards = realized.Where(IsCardBucket).Sum(f => f.Amount); var bank = realized.Where(f => !IsCardBucket(f)).Sum(f => f.Amount);
+            reconciliation = [Bucket("Bank", bank, reference.Bank), Bucket("Cards", cards, reference.Cards)];
+            if (reference.Total != total)
+            {
+                if (bank != reference.Bank) reasons.Add(Reasons.BankBasisDiffers);
+                if (cards != reference.Cards) reasons.Add(Reasons.CardBasisDiffers);
+            }
+        }
 
-        var percentages = representative ? Shares(rows.Select(r => r.Amount).ToList(), total) : null;
-        var lines = rows.Select((r, index) => new ExpenseCategoryShareDto(r.Id, r.Name, PlanActualCalculator.Cents(r.Amount), percentages?[index], r.Kind, r.Count)).ToList();
-        var partial = reasons.Any(r => r is Reasons.TotalDiffersFromExpenses or Reasons.ReferenceUnavailable);
-        return new(partial ? "Partial" : "Complete", competence, PlanActualCalculator.Cents(total), reference, lines, reasons, ranked.Count);
+        var percentages = gross > 0m ? Shares(rows.Select(r => r.Gross).ToList(), gross) : null;
+        var lines = rows.Select((r, index) => new ExpenseCategoryShareDto(r.Id, r.Name, PlanActualCalculator.Cents(r.Net), percentages?[index], r.Kind, r.Count, PlanActualCalculator.Cents(r.Gross))).ToList();
+        var partial = reasons.Contains(Reasons.TotalDiffersFromExpenses) || reasons.Contains(Reasons.ReferenceUnavailable);
+        return new(partial ? "Partial" : "Complete", competence, PlanActualCalculator.Cents(total), reference is null ? null : PlanActualCalculator.Cents(reference.Total), lines, reasons, ranked.Count,
+            PlanActualCalculator.Cents(gross), PlanActualCalculator.Cents(adjustments), reconciliation);
     }
+
+    private static ExpenseReconciliationDto Bucket(string bucket, decimal distributed, decimal reference) =>
+        new(bucket, PlanActualCalculator.Cents(distributed), PlanActualCalculator.Cents(reference), PlanActualCalculator.Cents(distributed - reference));
 
     /// <summary>
     /// Percentuais com uma casa que somam exatamente 100,0 (método do maior resto, em décimos): cada linha recebe o piso e os décimos que faltam vão para os maiores restos, na ordem
@@ -110,7 +137,7 @@ public static class ExpenseDistributionCalculator
 
 public sealed partial class DashboardOverviewService
 {
-    private async Task<ExpenseDistributionDto> BuildExpenseDistributionAsync(Guid workspaceId, string month, Guid? accountId, OverviewCompetenceDto competence, int? top, CancellationToken ct)
+    private async Task<ExpenseDistributionDto> BuildExpenseDistributionAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, int? top, CancellationToken ct)
     {
         try
         {
@@ -119,11 +146,23 @@ public sealed partial class DashboardOverviewService
             var payers = accountId is null ? new Dictionary<Guid, Guid>()
                 : (await cardRepository.ListAsync(workspaceId, includeArchived: true, ct)).Where(c => c.DefaultPaymentAccountId is not null).ToDictionary(c => c.Id, c => c.DefaultPaymentAccountId!.Value);
             var categories = (await categoryRepository.ListAsync(workspaceId, includeInactive: true, ct)).ToDictionary(c => c.Id);
-            return ExpenseDistributionCalculator.Build(month, facts, categories, payers, accountId, competence.Expenses, top);
+            // "Despesas do mês" e seus blocos, do mesmo escopo, só para conferir: nada é ajustado para fechar a conta.
+            ExpenseReference? reference = null;
+            try
+            {
+                if ((await planActual.GetAsync(workspaceId, userId, month, requestedScope, accountId, ct)).Value is { } dashboard)
+                {
+                    var consumption = dashboard.Expenses.Consumption;
+                    decimal Component(string code) => consumption.Components.Where(c => c.Code == code).Select(c => Num(c.Amount)).FirstOrDefault();
+                    reference = new(Num(consumption.Realized), Component("BankExpenses"), Component("CardPurchases"));
+                }
+            }
+            catch (Exception) when (!ct.IsCancellationRequested) { /* sem a referência o bloco sai como parcial */ }
+            return ExpenseDistributionCalculator.Build(month, facts, categories, payers, accountId, reference, top);
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
-            return new("Unavailable", month, null, competence.Expenses, [], []); // complementar: nunca derruba os demais blocos
+            return new("Unavailable", month, null, null, [], []); // complementar: nunca derruba os demais blocos
         }
     }
 
@@ -135,8 +174,6 @@ public sealed partial class DashboardOverviewService
     {
         var resolved = await ResolveAsync(workspaceId, userId, competence, scope, accountId, ct);
         if (resolved.Error is { } error) return new(error.Access, null, error.Errors);
-        var (month, requested, selected) = (resolved.Month!, resolved.Requested!, resolved.Selected);
-        var byCompetence = await BuildCompetenceAsync(workspaceId, userId, month, requested, selected?.Id, ct);
-        return PlanActualResult<ExpenseDistributionDto>.Ok(await BuildExpenseDistributionAsync(workspaceId, month, selected?.Id, byCompetence, null, ct));
+        return PlanActualResult<ExpenseDistributionDto>.Ok(await BuildExpenseDistributionAsync(workspaceId, userId, resolved.Month!, resolved.Requested!, resolved.Selected?.Id, null, ct));
     }
 }
