@@ -17,8 +17,19 @@ public sealed class FinancialBudgetExecutionService(
     {
         if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is null) return null;
         var source = await executions.GetAsync(workspaceId, budgetId, cancellationToken);
-        if (source is null) return null;
+        return source is null ? null : Map(source);
+    }
 
+    /// <summary>T12.1: execução de uma competência pelas metas efetivas (herdadas, exceções e registros históricos), mesmo sem orçamento mensal materializado.</summary>
+    public async Task<FinancialBudgetExecutionDto?> GetByCompetenceAsync(Guid workspaceId, DateOnly competence, Guid userId, CancellationToken cancellationToken)
+    {
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is null) return null;
+        var source = await executions.GetEffectiveAsync(workspaceId, competence, cancellationToken);
+        return source is null ? null : Map(source);
+    }
+
+    private static FinancialBudgetExecutionDto Map(FinancialBudgetExecutionSource source)
+    {
         var targets = source.Targets
             .Select(item =>
             {
@@ -53,8 +64,20 @@ public sealed class FinancialBudgetExecutionService(
     {
         if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is null) return null;
         var source = await executions.GetCompositionAsync(workspaceId, budgetId, targetId, cancellationToken);
-        if (source is null) return null;
+        return source is null ? null : MapComposition(source, page, pageSize);
+    }
 
+    /// <summary>T12.1: composição de uma meta efetiva da competência (inclusive herdada), pela mesma lista e regra de cobertura do resumo.</summary>
+    public async Task<BudgetCompositionDto?> GetEffectiveCompositionAsync(
+        Guid workspaceId, DateOnly competence, Guid targetId, Guid userId, int? page, int? pageSize, CancellationToken cancellationToken)
+    {
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, cancellationToken) is null) return null;
+        var source = await executions.GetEffectiveCompositionAsync(workspaceId, competence, targetId, cancellationToken);
+        return source is null ? null : MapComposition(source, page, pageSize);
+    }
+
+    private static BudgetCompositionDto MapComposition(BudgetCompositionSource source, int? page, int? pageSize)
+    {
         var realized = source.Facts.Where(f => f.State == BudgetFactState.Realized).Sum(f => f.Amount);
         var pending = source.Facts.Where(f => f.State == BudgetFactState.Pending).Sum(f => f.Amount);
         var launched = source.Facts.Where(f => f.State == BudgetFactState.CardLaunched).Sum(f => f.Amount);

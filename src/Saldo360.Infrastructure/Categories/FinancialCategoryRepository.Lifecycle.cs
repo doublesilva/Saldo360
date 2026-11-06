@@ -142,6 +142,7 @@ internal sealed partial class FinancialCategoryRepository
         await Count("debtInstallments", "Parcelas de dívidas", db.FinancialDebtInstallments.Where(x => x.WorkspaceId == w && x.CategoryId != null && ids.Contains(x.CategoryId.Value)));
         await Count("planLines", "Linhas do planejamento mensal", db.FinancialPlanLines.Where(x => x.WorkspaceId == w && x.CategoryId != null && ids.Contains(x.CategoryId.Value)));
         await Count("budgetTargets", "Limites do orçamento", db.FinancialBudgetTargets.Where(x => x.WorkspaceId == w && x.CategoryId != null && ids.Contains(x.CategoryId.Value)));
+        await Count("budgetRules", "Metas do orçamento recorrente", db.FinancialBudgetRuleChanges.Where(x => x.WorkspaceId == w && x.CategoryId != null && ids.Contains(x.CategoryId.Value)));
         await Count("pluggyPostings", "Lançamentos importados (classificação)", db.PluggyPostings.Where(x => x.WorkspaceId == w && x.CategoryId != null && ids.Contains(x.CategoryId.Value)));
         return references;
     }

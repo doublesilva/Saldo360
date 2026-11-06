@@ -15,5 +15,11 @@ public interface IFinancialBudgetExecutionRepository
     /// <summary>Os registros que compõem uma meta, pela MESMA lista e regra de cobertura do resumo. Null se o orçamento ou a meta não existirem (ou estiverem arquivados).</summary>
     Task<BudgetCompositionSource?> GetCompositionAsync(
         Guid workspaceId, Guid budgetId, Guid targetId, CancellationToken cancellationToken);
+
+    /// <summary>T12.1: execução de UMA competência sobre as metas efetivas (exceção, padrão vigente ou registro histórico), com ou sem orçamento mensal materializado. Somente leitura.</summary>
+    Task<FinancialBudgetExecutionSource?> GetEffectiveAsync(Guid workspaceId, DateOnly competence, CancellationToken cancellationToken);
+
+    /// <summary>T12.1: composição de uma meta efetiva da competência (herdada ou não). Null se a meta não estiver definida naquele mês.</summary>
+    Task<BudgetCompositionSource?> GetEffectiveCompositionAsync(Guid workspaceId, DateOnly competence, Guid targetId, CancellationToken cancellationToken);
 }
 

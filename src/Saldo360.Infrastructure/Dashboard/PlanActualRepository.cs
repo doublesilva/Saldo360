@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Saldo360.Application.Budgets;
 using Saldo360.Application.Dashboard.PlanActual;
 using Saldo360.Domain.Budgets;
 using Saldo360.Domain.Categories;
@@ -36,15 +37,10 @@ internal sealed class PlanActualRepository(Saldo360DbContext db) : IPlanActualRe
             .Select(g => new { Type = g.Key, Total = g.Sum(r => r.Total), Count = g.Sum(r => r.Count) }).ToList();
         var income = plannedRows.FirstOrDefault(r => r.Type == CategoryType.Income); var expense = plannedRows.FirstOrDefault(r => r.Type == CategoryType.Expense);
 
-        // Único limite de cartões: a meta "Todos os cartões" do orçamento do mês. O total de despesas segue sendo a referência agregada importada (fora da R03).
-        var cardTarget = await (from t in db.FinancialBudgetTargets.AsNoTracking()
-                                join b in db.FinancialBudgets.AsNoTracking() on t.BudgetId equals b.Id
-                                where t.WorkspaceId == workspaceId && b.WorkspaceId == workspaceId && b.Competence == start && !b.IsArchived && !t.IsArchived
-                                    && t.GroupingType == BudgetTargetGroupingType.AllCards
-                                select (decimal?)t.PlannedAmount).FirstOrDefaultAsync(ct);
-        var totalExpenses = await db.FinancialMonthlyAggregateTargets.AsNoTracking()
-            .Where(t => t.WorkspaceId == workspaceId && t.Competence == start && t.TargetType == MonthlyAggregateTargetType.TotalExpenses)
-            .Select(t => (decimal?)t.Amount).FirstOrDefaultAsync(ct);
+        // T12.1: as metas efetivas do mês (meta de todos os cartões e total de despesas) vêm do resolvedor ÚNICO — exceção da competência, padrão vigente ou registro mensal histórico —, o mesmo
+        // que alimenta a página Orçamento, a Visão Geral e a projeção. Nada é gravado por esta leitura.
+        var effective = EffectiveBudgetResolver.Resolve(workspaceId, await Saldo360.Infrastructure.Budgets.BudgetLayerReader.ReadAsync(db, workspaceId, start, start.AddMonths(1), ct), start);
+        var cardTarget = effective.CardTarget; var totalExpenses = effective.TotalExpenses;
         return new(new(income?.Total ?? 0m, income?.Count ?? 0, expense?.Total ?? 0m, expense?.Count ?? 0), cardTarget, totalExpenses);
     }
 

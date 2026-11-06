@@ -97,6 +97,8 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.Bootstrap.IFinancialBootstrapExtensions, Saldo360.Infrastructure.Bootstrap.FinancialBootstrapExtensions>();
         services.AddScoped<Saldo360.Application.Bootstrap.IBootstrapProvenanceRepository, Saldo360.Infrastructure.Bootstrap.BootstrapProvenanceRepository>();
         services.AddScoped<IFinancialBudgetExecutionRepository, FinancialBudgetExecutionRepository>();
+        services.AddScoped<IBudgetLayerReader, Saldo360.Infrastructure.Budgets.BudgetLayerReader>();
+        services.AddScoped<IBudgetRuleRepository, Saldo360.Infrastructure.Budgets.BudgetRuleRepository>();
         services.AddScoped<IFinancialCreditCardRepository, FinancialCreditCardRepository>();
         services.AddScoped<IFinancialCreditCardPurchaseRepository, FinancialCreditCardPurchaseRepository>();
         services.AddScoped<Saldo360.Application.CreditCards.Projection.ICardProjectionRepository, CardProjectionRepository>();

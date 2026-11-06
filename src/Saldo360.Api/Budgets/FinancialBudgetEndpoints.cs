@@ -12,6 +12,7 @@ public static class FinancialBudgetEndpoints
     public static IEndpointRouteBuilder MapFinancialBudgetEndpoints(this IEndpointRouteBuilder app)
     {
         var budgets = app.MapGroup("/api/financial-workspaces/{workspaceId:guid}/budgets").RequireAuthorization();
+        budgets.MapEffectiveBudget();
         budgets.MapGet("/", List);
         budgets.MapGet("/{budgetId:guid}", Get);
         budgets.MapGet("/{budgetId:guid}/execution", GetExecution);

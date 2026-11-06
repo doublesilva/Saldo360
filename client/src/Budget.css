@@ -117,3 +117,20 @@
     gap: 0.15rem;
   }
 }
+
+/* T12.1: orçamento padrão (metas recorrentes). Linhas fluidas que quebram em telas estreitas; nenhuma largura fixa. */
+.rbp { display: grid; gap: .75rem; padding: 1rem; border: 1px solid var(--border); border-radius: .85rem; background: var(--surface); margin-bottom: 1rem; min-width: 0; }
+.rbp p { margin: 0; }
+.rbp__title { font-weight: 700; font-size: 1rem; }
+.rbp__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; align-items: flex-start; }
+.rbp__actions, .rbp__buttons { display: flex; flex-wrap: wrap; gap: .4rem .6rem; align-items: center; }
+.rbp__list { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.rbp__row { display: grid; gap: .3rem; padding: .6rem .75rem; border: 1px solid var(--border); border-radius: .6rem; overflow-wrap: anywhere; }
+.rbp__row--Customized { border-color: var(--warning); }
+.rbp__row--derived { background: var(--surface-muted); }
+.rbp__main { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .9rem; }
+.rbp__amount { font-variant-numeric: tabular-nums; font-weight: 600; }
+.rbp__warning { color: var(--warning); }
+.rbp__editor, .rbp__reference, .rbp__add { display: grid; gap: .5rem; padding: .6rem; border: 1px dashed var(--border); border-radius: .6rem; }
+.rbp__editor fieldset { display: grid; gap: .25rem; border: 0; margin: 0; padding: 0; }
+.rbp__history ul { margin: .4rem 0 0; padding-left: 1.1rem; display: grid; gap: .2rem; font-size: .8rem; }

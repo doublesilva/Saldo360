@@ -75,7 +75,7 @@ public sealed class FinancialBudgetExecutionPersistenceTests(PostgresFixture pos
         // registros. O total de consultas é constante: não cresce com o número de lançamentos (sem N+1), e o resumo e a composição usam essa mesma lista.
         int Selects(Capture c) => c.Commands.Count(command => command.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase));
         var baseline = Selects(capture);
-        Assert.Equal(19, baseline); // 12 + 7 leituras em lote constantes das despesas fixas (vínculos, movimentações vinculadas, materializações, previsões, exceções, recorrências e contas)
+        Assert.Equal(23, baseline); // 12 + 7 leituras em lote constantes das despesas fixas (vínculos, movimentações vinculadas, materializações, previsões, exceções, recorrências e contas) + 4 das camadas de metas efetivas (T12.1: alterações de regra, orçamentos mensais, metas e total agregado); o total segue constante (verificado abaixo)
         Assert.Empty(context.ChangeTracker.Entries());
         await using (var db = Db())
         {

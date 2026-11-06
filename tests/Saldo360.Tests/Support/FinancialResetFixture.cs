@@ -52,6 +52,7 @@ internal static class FinancialResetFixture
         var budget = FinancialBudget.Create(w, date, null, u, now);
         var target = FinancialBudgetTarget.Create(w, budget.Id, "Target", 100m, category.Id, u, now);
         var aggregateTarget = FinancialMonthlyAggregateTarget.Create(w, date, MonthlyAggregateTargetType.TotalExpenses, 100m, now);
+        var ruleChange = FinancialBudgetRuleChange.Create(w, BudgetRuleScope.FromCompetence, BudgetRuleTarget.AllCards, null, date, 1, BudgetRuleAction.Set, 100m, null, u, now);
         var provenance = Saldo360.Domain.Bootstrap.FinancialBootstrapProvenance.Create(w, "SyntheticFixture", "Synthetic", "aggregate-target", new string('e', 64), nameof(FinancialMonthlyAggregateTarget), aggregateTarget.Id, null, now);
         var card = FinancialCreditCard.Create(w, new("Card", "Issuer", "1234", u, 1000m, 10, 20, account.Id), u, now);
         var invoice = FinancialCreditCardInvoice.Create(w, card.Id, "2026-10", date, date.AddDays(9), date.AddDays(19), now);
@@ -106,7 +107,7 @@ internal static class FinancialResetFixture
         var confirmationEvent = Saldo360.Domain.Planning.FinancialAmountConfirmationEvent.Create(w, recurrence.Id, date, null, Saldo360.Domain.Planning.AmountConfirmationEventKind.Ambiguous, null, null, 10m, null, "Synthetic", null, now);
         var recoverySnapshot = OverdraftRecoverySnapshot.Create(w, account.Id, new DateOnly(date.Year, date.Month, 1), -100m, date, 0m, 0m, -50m, "Complete", string.Empty, now);
         db.AddRange(recoverySnapshot, confirmationEvent, account, destination, category, realized, recurring, invoicePlanned, debtPlanned, transaction, refundTransaction, bankRefund, transfer, plannedTransfer,
-            recurrence, materialization, settlement, budget, target, aggregateTarget, provenance, card, invoice, purchase, adjustment, batch,
+            recurrence, materialization, settlement, budget, target, aggregateTarget, ruleChange, provenance, card, invoice, purchase, adjustment, batch,
             imported, reconciliation, debt, installment, debtTx, debtPayment, debtReconciliation, goal, allocation,
             scenario, parameter, document, binding, checkpoint, service, identifier, pluggyLink, pluggyRun, pluggyTransaction, pluggyTransaction2, pluggyChange, pluggyAccountLink, pluggyPosting, pluggyPosting2, pluggyRejection, pluggyBill, pluggyBillPayment, balanceAnchor, pluggySyncState, automationSettings, categorizationRun, cardTarget, planLine, planHistory, nonWorkingDay, incomeForecast, incomeForecastMonth, foodProvision);
         await db.SaveChangesAsync();

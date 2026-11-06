@@ -45,6 +45,7 @@ public static class DependencyInjection
         services.AddScoped<FinancialCalendarMonthlyProjectionService>();
         services.AddScoped<FinancialBudgetService>();
         services.AddScoped<FinancialBudgetExecutionService>();
+        services.AddScoped<EffectiveBudgetService>();
         services.AddScoped<FinancialCreditCardService>();
         services.AddScoped<Saldo360.Application.CreditCards.Projection.CardProjectionService>();
         services.AddScoped<Saldo360.Application.Accounts.Reconciliation.AccountBalanceReconciliationService>();

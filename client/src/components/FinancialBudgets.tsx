@@ -15,6 +15,7 @@ import { addCalendarMonths, formatMonthYear, startOfMonth, todayInSaoPaulo } fro
 import { formatBrlDecimal } from '../money'
 import { BudgetTargetCard } from './budget/BudgetTargetCard'
 import { BudgetTargetForm } from './budget/BudgetTargetForm'
+import { RecurringBudgetPanel } from './budget/RecurringBudgetPanel'
 import { groupHints, groupTitles, groupingOfGroup, type BudgetGroup } from './budget/budgetText'
 import '../Budget.css'
 
@@ -130,6 +131,8 @@ export function FinancialBudgetsPage({ workspaceId, initialCompetence, initialGr
         </div>
       </div>
 
+      <RecurringBudgetPanel workspaceId={workspaceId} competence={competence} categories={categories} refreshKey={externalRefreshKey} onChanged={refresh} />
+
       {notice && <p className="notice" role="status">{notice}</p>}
       {state.kind === 'loading' && <p className="status status--pending">Carregando orçamento…</p>}
       {state.kind === 'error' && <p className="status status--down" role="alert">{state.message}</p>}
@@ -139,7 +142,7 @@ export function FinancialBudgetsPage({ workspaceId, initialCompetence, initialGr
       {state.kind === 'loaded' && active.length === 0 && !form && (
         <section className="budget-empty" aria-label="Sem metas">
           <p>Nenhuma meta definida para {formatMonthYear(`${competence}-01`)}.</p>
-          <p className="meta">Defina um limite para as despesas fixas, para todos os cartões somados ou para uma categoria.</p>
+          <p className="meta">Defina um limite para as despesas fixas, para todos os cartões somados ou para uma categoria. As metas do orçamento padrão (herdadas ou personalizadas) aparecem acima.</p>
           <button type="button" className="button--primary" onClick={() => setForm({})}>Nova meta</button>
         </section>
       )}

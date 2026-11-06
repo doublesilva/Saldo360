@@ -480,6 +480,89 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudgetRuleChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("action");
+
+                    b.Property<decimal?>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.Property<DateOnly>("Competence")
+                        .HasColumnType("date")
+                        .HasColumnName("competence");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("note");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("scope");
+
+                    b.Property<string>("Target")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("target");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_financial_budget_rule_changes");
+
+                    b.HasIndex("WorkspaceId", "Competence")
+                        .HasDatabaseName("ix_financial_budget_rule_changes_workspace_id_competence");
+
+                    b.HasIndex("WorkspaceId", "Scope", "Target", "CategoryId", "Competence", "Revision")
+                        .IsUnique()
+                        .HasDatabaseName("ux_budget_rule_changes_key_revision");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("WorkspaceId", "Scope", "Target", "CategoryId", "Competence", "Revision"), false);
+
+                    b.ToTable("financial_budget_rule_changes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_budget_rule_amount", "(action = 'Set' AND amount IS NOT NULL AND amount >= 0 AND scale(amount) <= 2) OR (action <> 'Set' AND amount IS NULL)");
+
+                            t.HasCheckConstraint("ck_budget_rule_category", "(target = 'Category') = (category_id IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_budget_rule_competence", "EXTRACT(DAY FROM competence) = 1");
+
+                            t.HasCheckConstraint("ck_budget_rule_restore", "action <> 'Restore' OR scope = 'OnlyCompetence'");
+
+                            t.HasCheckConstraint("ck_budget_rule_revision", "revision >= 1");
+                        });
+                });
+
             modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudgetTarget", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5958,6 +6041,16 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_financial_budgets_financial_workspaces_workspace_id");
+                });
+
+            modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudgetRuleChange", b =>
+                {
+                    b.HasOne("Saldo360.Domain.Workspaces.FinancialWorkspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_financial_budget_rule_changes_financial_workspaces_workspac");
                 });
 
             modelBuilder.Entity("Saldo360.Domain.Budgets.FinancialBudgetTarget", b =>

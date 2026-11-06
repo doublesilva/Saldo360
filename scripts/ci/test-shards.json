@@ -143,6 +143,8 @@
     "Saldo360.Tests.Api.FinancialWorkspaceEndpointsTests",
     "Saldo360.Tests.Api.HealthReadinessPostgresTests",
     "Saldo360.Tests.Api.IncomeInferenceApiTests",
+    "Saldo360.Tests.Api.RecurringBudgetTests",
+    "Saldo360.Tests.Application.EffectiveBudgetResolverTests",
     "Saldo360.Tests.Application.FinancialAccountDomainTests",
     "Saldo360.Tests.Application.FinancialTransactionDomainTests",
     "Saldo360.Tests.Application.FinancialTransferDomainTests",

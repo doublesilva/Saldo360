@@ -88,8 +88,8 @@ public sealed partial class DashboardOverviewService(
     FinancialCalendarService calendar,
     FinancialGoalService goalService,
     FinancialGoalAllocationService allocationService,
-    FinancialBudgetService budgetService,
     FinancialBudgetExecutionService budgetExecution,
+    EffectiveBudgetService effectiveBudgets,
     Saldo360.Application.CreditCards.Projection.CardProjectionService cardProjection,
     FinancialTransactionService transactionService,
     Saldo360.Application.Dashboard.PlanActual.PlanActualService planActual,
@@ -350,23 +350,27 @@ public sealed partial class DashboardOverviewService(
 
     private static OverviewBudgetCategoriesDto NoCategories() => new(0, null, null, 0, 0, []);
 
+    /// <summary>
+    /// T12.1: o orçamento do mês vem das metas EFETIVAS (exceção da competência, padrão vigente ou registro mensal histórico) e da execução calculada sobre elas: os mesmos limites da página
+    /// Orçamento e da projeção. Ler nunca cria um orçamento mensal.
+    /// </summary>
     private async Task<OverviewBudgetDto> BuildBudgetAsync(Guid workspaceId, Guid userId, string month, CancellationToken ct)
     {
         try
         {
-            var list = await budgetService.ListAsync(workspaceId, userId, month, includeArchived: false, ct);
-            if (list is null) return new("Unavailable", false, null, month, null, null, NoCategories());
-            var budget = list.FirstOrDefault(b => b.Targets.Any(t => !t.IsArchived)) ?? list.FirstOrDefault();
-            if (budget is null || budget.Targets.All(t => t.IsArchived)) return new("Complete", false, budget?.Id, month, null, null, NoCategories());
-            var execution = await budgetExecution.GetAsync(workspaceId, budget.Id, userId, ct);
-            if (execution is null) return new("Unavailable", true, budget.Id, month, null, null, NoCategories());
-            var active = budget.Targets.Where(t => !t.IsArchived).ToDictionary(t => t.Id);
-            var targets = execution.Targets.Where(t => active.ContainsKey(t.TargetId)).Select(t => ToOverviewTarget(active[t.TargetId], t)).ToList();
+            var first = new DateOnly(int.Parse(month[..4]), int.Parse(month[5..]), 1);
+            var effective = await effectiveBudgets.BuildAsync(workspaceId, first, ct);
+            var defined = effective.Targets.Where(t => t.Amount is not null && t.Target != nameof(Saldo360.Domain.Budgets.BudgetRuleTarget.TotalExpenses)).ToList();
+            if (defined.Count == 0) return new("Complete", false, effective.BudgetId, month, null, null, NoCategories());
+            var execution = await budgetExecution.GetByCompetenceAsync(workspaceId, first, userId, ct);
+            if (execution is null) return new("Unavailable", true, effective.BudgetId, month, null, null, NoCategories());
+            var byId = defined.ToDictionary(t => t.Id);
+            var targets = execution.Targets.Where(t => byId.ContainsKey(t.TargetId)).Select(t => ToOverviewTarget(byId[t.TargetId], t)).ToList();
             var categories = targets.Where(t => t.Group == nameof(Saldo360.Domain.Budgets.BudgetTargetGroupingType.Category))
                 .OrderByDescending(t => SeverityRank(t.Status)).ThenByDescending(t => t.Percent is not null && decimal.TryParse(t.Percent, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : -1m)
                 .ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
             var summary = execution.Categories;
-            return new("Complete", true, budget.Id, month,
+            return new("Complete", true, effective.BudgetId, month,
                 targets.FirstOrDefault(t => t.Group == nameof(Saldo360.Domain.Budgets.BudgetTargetGroupingType.FixedExpenses)),
                 targets.FirstOrDefault(t => t.Group == nameof(Saldo360.Domain.Budgets.BudgetTargetGroupingType.AllCards)),
                 new(categories.Count, categories.Count == 0 ? null : Money.Format(summary.Planned), categories.Count == 0 ? null : Money.Format(summary.Consumed),
@@ -378,7 +382,7 @@ public sealed partial class DashboardOverviewService(
         }
     }
 
-    private static OverviewBudgetTargetDto ToOverviewTarget(FinancialBudgetTargetDto target, FinancialBudgetTargetExecutionDto run)
+    private static OverviewBudgetTargetDto ToOverviewTarget(EffectiveTargetDto target, FinancialBudgetTargetExecutionDto run)
     {
         var amounts = run.Amounts;
         var reasons = new List<string>();
@@ -390,7 +394,7 @@ public sealed partial class DashboardOverviewService(
         }
         var state = reasons.Contains("NoCards") ? "Unavailable" : reasons.Count > 0 ? "Partial" : "Complete";
         var invariant = System.Globalization.CultureInfo.InvariantCulture;
-        return new(target.Id, target.GroupingType.ToString(), target.Category?.Id, target.Category?.Path ?? target.Name, Money.Format(amounts.Planned), Money.Format(amounts.Consumed),
+        return new(target.Id, run.GroupingType.ToString(), target.CategoryId, target.Name, Money.Format(amounts.Planned), Money.Format(amounts.Consumed),
             Money.Format(amounts.Committed), Money.Format(amounts.ProjectedConsumption), Money.Format(amounts.Available), Money.Format(amounts.AvailableProjected),
             Money.Format(amounts.ExceededAmount), amounts.ConsumptionPercentage is { } p ? p.ToString("0.0", invariant) : null, run.Status.ToString(), run.ProjectedStatus.ToString(), state, reasons);
     }

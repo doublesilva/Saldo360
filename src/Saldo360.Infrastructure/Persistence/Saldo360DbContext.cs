@@ -52,6 +52,7 @@ public sealed class Saldo360DbContext(DbContextOptions<Saldo360DbContext> option
     public DbSet<FinancialBudget> FinancialBudgets => Set<FinancialBudget>();
 
     public DbSet<FinancialBudgetTarget> FinancialBudgetTargets => Set<FinancialBudgetTarget>();
+    public DbSet<FinancialBudgetRuleChange> FinancialBudgetRuleChanges => Set<FinancialBudgetRuleChange>();
     public DbSet<Saldo360.Domain.Budgets.FinancialMonthlyAggregateTarget> FinancialMonthlyAggregateTargets => Set<Saldo360.Domain.Budgets.FinancialMonthlyAggregateTarget>();
     public DbSet<Saldo360.Domain.Planning.FinancialPlanLine> FinancialPlanLines => Set<Saldo360.Domain.Planning.FinancialPlanLine>();
     public DbSet<Saldo360.Domain.Planning.FinancialPlanHistoryEntry> FinancialPlanHistory => Set<Saldo360.Domain.Planning.FinancialPlanHistoryEntry>();
