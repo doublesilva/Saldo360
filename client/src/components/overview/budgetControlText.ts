@@ -1,14 +1,8 @@
-import type { BudgetAction, BudgetGroupState, BudgetPressure } from '../../api/overview'
+import type { BudgetAction, BudgetPressure } from '../../api/overview'
 
 // T11.2: textos do consumo do orçamento. Nenhum valor é calculado aqui: o servidor entrega valores, estados e ações; este módulo só os descreve.
 
 export const groupTitle = { Cards: 'Cartões de crédito', OutsideCards: 'Fora dos cartões' } as const
-
-export const groupStateText: Partial<Record<BudgetGroupState, string>> = {
-  TargetNotDefined: 'Meta não configurada', TargetNotAttributable: 'A meta é global e não se aplica a uma conta isolada', NoCards: 'Nenhum cartão cadastrado', Partial: 'Dados incompletos',
-}
-
-export const statusText = { WithinBudget: 'Dentro da meta', Exceeded: 'Acima da meta', NoTarget: 'Meta não configurada' } as const
 
 export function pressureText(pressure: BudgetPressure): string {
   switch (pressure.kind) {
@@ -24,12 +18,6 @@ export function pressureText(pressure: BudgetPressure): string {
   }
 }
 
-export const referenceText: Record<string, string> = {
-  CardsTarget: 'meta dos cartões', OutsideCardsTarget: 'meta fora dos cartões', FixedTarget: 'meta de despesas fixas', CategoryTarget: 'meta da categoria',
-}
-export const impactText: Record<BudgetPressure['impact'], string> = { Budget: 'Impacto no orçamento', Cash: 'Impacto no caixa', BudgetAndCash: 'Orçamento e caixa', NotEstimable: 'Impacto não estimável' }
-export const qualityText: Record<BudgetPressure['quality'], string> = { Confirmed: 'Confirmado', Projected: 'Projetado', Estimated: 'Inclui estimativa', Preliminary: 'Preliminar', NotEstimable: 'Não estimável' }
-
 export const actionText: Record<BudgetAction, string> = {
   OpenCards: 'Consultar faturas', OpenBudget: 'Abrir orçamento', OpenAgenda: 'Abrir Agenda', OpenPlanning: 'Abrir Projeção financeira', OpenReview: 'Classificar lançamentos', OpenAccounts: 'Ver contas',
 }
@@ -44,16 +32,6 @@ export const recommendationText: Record<string, string> = {
   CardTargetNotDefined: 'A meta dos cartões não foi definida; configure-a para dividir o orçamento.',
   OverdueExpenses: 'Há despesas vencidas ainda não liquidadas. Confira a Agenda.',
   CardCoverageIncomplete: 'Há faturas com cobertura incompleta: os valores dos cartões são preliminares.',
-}
-
-export const noteText: Record<string, string> = {
-  TargetsGlobalOnly: 'As metas do orçamento são globais. Selecione "Todas as contas" para compará-las.',
-  TotalBelowCardTarget: 'O orçamento total está abaixo da meta dos cartões: a meta fora dos cartões foi considerada zero.',
-}
-
-export const reasonText: Record<string, string> = {
-  CardCoverageIncomplete: 'cobertura de cartões incompleta', MissingPayerAccount: 'cartão sem conta pagadora', DebtCoverageIncomplete: 'dívidas sem conta responsável',
-  PendingBankAmbiguous: 'débito do banco sem vínculo seguro', MovementsInReview: 'movimentos em revisão', PartialPeriod: 'período parcial',
 }
 
 /** T12.2: origem da meta total vinda do resolvedor único da T12.1. `from` é a competência (AAAA-MM) em que o padrão começou a valer. */

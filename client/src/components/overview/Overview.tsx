@@ -1,22 +1,16 @@
-import { useCallback, useMemo, useState } from 'react'
-import { getPlanActual, type PlanActualScopeChoice } from '../../api/planActual'
-import { getDashboardOverview, type OverviewCommitment } from '../../api/overview'
-import { OperationalError, OperationalLoading } from '../OperationalFeedback'
-import { OverviewIncomeExpense } from './OverviewIndicators'
-import { OverviewEvolutionSection } from './OverviewEvolution'
-import { OverviewBudget } from './OverviewBudget'
+import { useCallback, useMemo } from 'react'
+import { getPlanActual, type PlanActualDashboard, type PlanActualScopeChoice } from '../../api/planActual'
+import { getDashboardOverview } from '../../api/overview'
 import type { BudgetGroup } from '../budget/budgetText'
 import type { ExpenseNature } from '../../api/expenseNature'
-import { OverviewCommitmentsBlock, OverviewGoalsBlock, OverviewRecentBlock } from './OverviewAside'
-import { OverviewRecovery } from './OverviewRecovery'
-import { OverviewSituationSection } from './OverviewDecision'
-import { OverviewBudgetSummarySection } from './OverviewBudgetControl'
-import { OverviewRecoverySummary } from './OverviewRecoverySummary'
-import { OverviewActionsSection } from './OverviewActions'
-import { OverviewProjectedRecovery } from './OverviewProjectedRecovery'
-import { OverviewCashFlowSection, OverviewCompetenceSection } from './OverviewCashFlow'
+import { addCalendarMonths } from '../../dates'
+import { OverviewHero } from './OverviewHero'
+import { OverviewAlerts } from './OverviewAlerts'
+import { OverviewEvolutionSection } from './OverviewEvolution'
+import { OverviewExpenseDistribution } from './OverviewExpenseDistribution'
+import { OverviewBudgetProgress } from './OverviewBudgetProgress'
+import { OverviewAccounts, OverviewGoals, OverviewRecent, OverviewUpcoming } from './OverviewLists'
 import { OverviewSyncLine } from './OverviewSync'
-import { Disclosure, type DetailKey } from './Disclosure'
 import { buildPriorityItems } from './priorityItems'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
 import { useLoad } from './useLoad'
@@ -28,128 +22,91 @@ export interface OverviewNavigation { planningTab?: 'projection'; month?: string
 
 export interface OverviewSelection { competence: string; scope: PlanActualScopeChoice }
 
+export type Go = (section: OverviewSection, context?: OverviewNavigation) => void
+/** Estado de uma consulta para um bloco: dado pronto, carregando ou falha com nova tentativa. Nenhum bloco mostra dado de outra competência ou conta. */
+export interface BlockLoad<T> { data: T | null; loading: boolean; error: unknown; retry: () => void }
+
 /**
- * Visão Geral (T12.2): um painel de decisões em quatro áreas, nesta ordem: situação financeira, orçamento, recuperação e onde agir. Os detalhes ficam em "Análises
- * detalhadas", expansíveis e só montadas quando abertas. Resumo: `plan-actual` e `financial-dashboard/overview`; a evolução (`monthly-plan/six-months`) e a projeção só
- * são consultadas quando o usuário abre o detalhe. Cada bloco carrega, falha e se recarrega sozinho, e nunca mostra dados de outra competência ou conta.
+ * Visão Geral no padrão do dashboard Folio: cabeçalho com competência e conta; o saldo bancário como informação principal, com o cheque especial e a recuperação do mês
+ * compactos e o resumo de receitas, despesas e fechamento; a evolução financeira; distribuição das despesas e orçamento lado a lado; últimos lançamentos; e, na coluna de
+ * apoio, contas, próximos compromissos e metas. Consultas: `plan-actual`, `financial-dashboard/overview` e `monthly-plan/six-months`. Todo valor vem do servidor.
  */
 export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionChange, onNavigate }: {
-  workspaceId: string; refreshKey?: number; selection: OverviewSelection; onSelectionChange: (selection: OverviewSelection) => void
-  onNavigate: (section: OverviewSection, context?: OverviewNavigation) => void
+  workspaceId: string; refreshKey?: number; selection: OverviewSelection; onSelectionChange: (selection: OverviewSelection) => void; onNavigate: Go
 }) {
   const { competence, scope } = selection
-  const scopeKey = `${scope.kind}:${scope.accountId ?? ''}`
-  const key = `${workspaceId}|${competence}|${scopeKey}|${refreshKey}`
-  const [opened, setOpened] = useState<Partial<Record<DetailKey, boolean>>>({})
+  const key = `${workspaceId}|${competence}|${scope.kind}:${scope.accountId ?? ''}|${refreshKey}`
 
   const plan = useLoad(key, useCallback((signal: AbortSignal) => getPlanActual(workspaceId, competence, scope, signal), [workspaceId, competence, scope]))
   const overview = useLoad(key, useCallback((signal: AbortSignal) => getDashboardOverview(workspaceId, competence, scope, signal), [workspaceId, competence, scope]))
 
   const planData = plan.load.state === 'loaded' ? plan.load.data : null
-  const overviewData = overview.load.state === 'loaded' ? overview.load.data : null
+  const data = overview.load.state === 'loaded' ? overview.load.data : null
+  const planBlock: BlockLoad<PlanActualDashboard> = { data: planData, loading: plan.load.state === 'loading', error: plan.load.state === 'error' ? plan.load.error : null, retry: plan.retry }
+  const overviewBlock = { loading: overview.load.state === 'loading', error: overview.load.state === 'error' ? overview.load.error : null, retry: overview.retry }
   // A API é a fonte da verdade do escopo: guarda-se a última lista de contas para o seletor não esvaziar durante a recarga.
   const choices = planData?.scope ?? plan.previous?.scope ?? null
   const reloadAll = () => { plan.retry(); overview.retry() }
 
-  const scopeText = overviewData
-    ? overviewData.scopeKind === 'all' || !overviewData.scopeAccountId ? 'Todas as contas'
-      : `${overviewData.scopeKind === 'primary' ? 'Conta principal · ' : ''}${overviewData.accounts.items.find(a => a.accountId === overviewData.scopeAccountId)?.name ?? 'Conta'}`
+  const scopeText = data
+    ? data.scopeKind === 'all' || !data.scopeAccountId ? 'Todas as contas'
+      : `${data.scopeKind === 'primary' ? 'Conta principal · ' : ''}${data.accounts.items.find(a => a.accountId === data.scopeAccountId)?.name ?? 'Conta'}`
     : planData ? scopeLabel(planData.scope) : ''
-  const openAgenda = (month?: string) => onNavigate('calendar', { month: month ?? competence })
-  const openCommitment = (item: OverviewCommitment) => openAgenda(item.date.slice(0, 7))
-  const go = (section: OverviewSection, context?: OverviewNavigation) => onNavigate(section, context)
-
-  const setOpen = (detail: DetailKey) => (open: boolean) => setOpened(current => current[detail] === open ? current : { ...current, [detail]: open })
-  const openDetail = (detail: DetailKey) => {
-    setOpened(current => ({ ...current, [detail]: true }))
-    setTimeout(() => document.getElementById(`ov-d-${detail}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 0)
-  }
-
-  const items = useMemo(() => buildPriorityItems({ competence, decision: overviewData?.decision ?? null, control: overviewData?.budgetControl ?? null, plan: planData, classification: overviewData?.classification ?? null }),
-    [competence, overviewData, planData])
-  const planState = { data: planData, loading: plan.load.state === 'loading', failed: plan.load.state === 'error' }
-  const cashFlow = overviewData?.cashFlow ?? null
+  const items = useMemo(() => buildPriorityItems({ competence, decision: data?.decision ?? null, control: data?.budgetControl ?? null, plan: planData, classification: data?.classification ?? null }),
+    [competence, data, planData])
+  const setCompetence = (value: string) => { if (/^\d{4}-\d{2}$/.test(value)) onSelectionChange({ competence: value, scope }) }
+  const step = (months: number) => setCompetence(addCalendarMonths(`${competence}-01`, months).slice(0, 7))
+  const recentRange = data ? { from: data.recent.from, to: data.recent.through, accountId: data.scopeAccountId } : null
 
   return <div className="ov" aria-live="polite">
     <header className="ov-header">
-      <div><p className="ov-eyebrow">{monthTitle(competence)}{planData ? ` · ${periodLabels[planData.periodKind]}` : ''}</p>
-        <p className="ov-scope">{scopeText || 'Carregando escopo…'}</p></div>
+      <div className="ov-header__title">
+        <h2>{monthTitle(competence)}{planData && <span className="ov-period">{periodLabels[planData.periodKind]}</span>}</h2>
+        <p className="ov-meta">{scopeText || 'Carregando conta…'}</p>
+      </div>
       <div className="ov-filters">
-        <label>Competência<input type="month" aria-label="Competência" required value={competence} onChange={event => { if (/^\d{4}-\d{2}$/.test(event.target.value)) onSelectionChange({ competence: event.target.value, scope }) }} /></label>
-        <label>Conta
-          <select aria-label="Conta ou consolidado" value={scope.kind === 'account' ? `account:${scope.accountId}` : scope.kind} onChange={event => {
-            const next = event.target.value
-            onSelectionChange({ competence, scope: next.startsWith('account:') ? { kind: 'account', accountId: next.slice('account:'.length) } : { kind: next as 'primary' | 'all' } })
-          }}>
-            <option value="primary">{choices?.primaryAccountName ? `Conta principal · ${choices.primaryAccountName}` : 'Conta principal'}</option>
-            <option value="all">Todas as contas (consolidado)</option>
-            {(choices?.accounts ?? []).map(account => <option key={account.accountId} value={`account:${account.accountId}`}>{account.name} · {account.scope}{account.isActive ? '' : ' (inativa)'}</option>)}
-          </select></label>
-        <button type="button" className="button--primary" onClick={() => onNavigate('transactions', { newTransaction: true })}>Novo lançamento</button>
+        <div className="ov-month" role="group" aria-label="Competência analisada">
+          <button type="button" className="ov-icon-button" aria-label="Mês anterior" onClick={() => step(-1)}>‹</button>
+          <input type="month" aria-label="Competência" required value={competence} onChange={event => setCompetence(event.target.value)} />
+          <button type="button" className="ov-icon-button" aria-label="Próximo mês" onClick={() => step(1)}>›</button>
+        </div>
+        <select aria-label="Conta ou consolidado" value={scope.kind === 'account' ? `account:${scope.accountId}` : scope.kind} onChange={event => {
+          const next = event.target.value
+          onSelectionChange({ competence, scope: next.startsWith('account:') ? { kind: 'account', accountId: next.slice('account:'.length) } : { kind: next as 'primary' | 'all' } })
+        }}>
+          <option value="primary">{choices?.primaryAccountName ? `Conta principal · ${choices.primaryAccountName}` : 'Conta principal'}</option>
+          <option value="all">Todas as contas (consolidado)</option>
+          {(choices?.accounts ?? []).map(account => <option key={account.accountId} value={`account:${account.accountId}`}>{account.name} · {account.scope}{account.isActive ? '' : ' (inativa)'}</option>)}
+        </select>
+        <button type="button" className="button--primary ov-new" onClick={() => onNavigate('transactions', { newTransaction: true })}>+ Novo lançamento</button>
       </div>
     </header>
 
-    <OverviewSituationSection competence={competence} decision={overviewData?.decision ?? null} plan={planState} scopeText={scopeText}
-      decisionStatus={overviewData ? (overviewData.decision ? 'ready' : 'unavailable') : overview.load.state === 'error' ? 'unavailable' : 'loading'}
-      coverageOpen={opened.coverage === true} onCoverageOpenChange={setOpen('coverage')} onNavigate={go}>
-      {plan.load.state === 'error' && <OperationalError error={plan.load.error} onRetry={plan.retry} retryLabel="Recarregar indicadores" />}
-      {overview.load.state === 'error' && <OperationalError error={overview.load.error} onRetry={overview.retry} retryLabel="Recarregar a Visão Geral" />}
-      {overview.load.state === 'loading' && !overviewData && <OperationalLoading>Carregando a situação financeira…</OperationalLoading>}
+    <OverviewHero competence={competence} plan={planBlock} decision={data?.decision ?? null} overview={overviewBlock} onNavigate={onNavigate}>
       {planData && <OverviewSyncLine workspaceId={workspaceId} sync={planData.sync} onSynced={reloadAll} />}
-    </OverviewSituationSection>
+    </OverviewHero>
 
-    {overviewData?.budgetControl && <OverviewBudgetSummarySection control={overviewData.budgetControl} competence={competence} pressuresOpen={opened.pressures === true} onPressuresOpenChange={setOpen('pressures')} onNavigate={go} />}
+    <OverviewAlerts items={items} onNavigate={onNavigate} onReload={reloadAll} />
 
-    {overviewData?.decision && <OverviewRecoverySummary recovery={overviewData.decision.recovery} onOpenDetail={() => openDetail('recovery')} onNavigate={go} />}
-
-    <OverviewActionsSection items={items} loading={!overviewData && overview.load.state === 'loading'} onNavigate={go} onReload={reloadAll} onOpenDetail={openDetail} />
-
-    <section className="ov-details-area" aria-labelledby="ov-details-title">
-      <header className="ov-area__head"><h2 id="ov-details-title">Análises detalhadas</h2>
-        <p className="ov-meta">Abra apenas o que precisar. Alertas de segurança financeira continuam visíveis acima.</p></header>
-
-      <Disclosure id="cashflow" title="Fluxo de caixa completo" hint="Entradas, saídas, saldo de abertura e fechamento" open={opened.cashflow === true} onOpenChange={setOpen('cashflow')}>
-        {cashFlow ? <OverviewCashFlowSection flow={cashFlow} scopeAccountId={overviewData?.scopeAccountId ?? null} onNavigate={go} /> : <DetailState loading={overview.load.state === 'loading'} error={overview.load.state === 'error' ? overview.load.error : null} retry={overview.retry} what="o fluxo de caixa" />}
-      </Disclosure>
-
-      <Disclosure id="competence" title="Receitas e despesas por competência" hint="Totais do mês, sem transferências" open={opened.competence === true} onOpenChange={setOpen('competence')}>
-        {planData ? <><OverviewIncomeExpense data={planData} byCompetence={cashFlow !== null} />{cashFlow && <OverviewCompetenceSection flow={cashFlow} />}</>
-          : <DetailState loading={plan.load.state === 'loading'} error={plan.load.state === 'error' ? plan.load.error : null} retry={plan.retry} what="as receitas e despesas" />}
-      </Disclosure>
-
-      <Disclosure id="evolution" title="Evolução financeira" hint="Receitas e despesas dos últimos e próximos meses" open={opened.evolution === true} onOpenChange={setOpen('evolution')}>
+    <div className="ov-grid">
+      <div className="ov-grid__main">
         <OverviewEvolutionSection workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} />
-      </Disclosure>
-
-      <Disclosure id="recovery" title="Recuperação detalhada" hint="Registrar a meta do mês, ver o histórico e a projeção do limite" open={opened.recovery === true} onOpenChange={setOpen('recovery')}>
-        {planData && <OverviewRecovery key={`${planData.competence}:${planData.scope.accountId ?? planData.scope.kind}`} workspaceId={workspaceId} data={planData} onAccounts={() => onNavigate('accounts')} onProjection={() => onNavigate('planning', { planningTab: 'projection' })} />}
-        <OverviewProjectedRecovery workspaceId={workspaceId} competence={competence} refreshKey={refreshKey} onOpen={() => onNavigate('planning', { planningTab: 'projection' })} />
-      </Disclosure>
-
-      <Disclosure id="budget" title="Metas por categoria e despesas fixas" hint="O orçamento completo tem a composição de cada meta" open={opened.budget === true} onOpenChange={setOpen('budget')}>
-        {overviewData ? <OverviewBudget competence={competence} budget={overviewData.budget} onOpenBudget={group => onNavigate('budgets', { competence, budgetGroup: group as BudgetGroup | undefined })} />
-          : <DetailState loading={overview.load.state === 'loading'} error={overview.load.state === 'error' ? overview.load.error : null} retry={overview.retry} what="as metas" />}
-      </Disclosure>
-
-      <Disclosure id="commitments" title="Próximos compromissos por vencimento" hint="Despesas pendentes e faturas de cartão" open={opened.commitments === true} onOpenChange={setOpen('commitments')}>
-        {overviewData ? <OverviewCommitmentsBlock commitments={overviewData.commitments} onOpenItem={openCommitment} onOpenAgenda={() => openAgenda()} onOpenCards={() => onNavigate('cards')} />
-          : <DetailState loading={overview.load.state === 'loading'} error={overview.load.state === 'error' ? overview.load.error : null} retry={overview.retry} what="os compromissos" />}
-      </Disclosure>
-
-      <Disclosure id="recent" title="Últimos lançamentos" hint="Lançamentos efetivos do mês" open={opened.recent === true} onOpenChange={setOpen('recent')}>
-        {overviewData ? <OverviewRecentBlock recent={overviewData.recent} competence={competence} scopeText={scopeText}
-          onOpenAll={() => onNavigate('transactions', { transactions: { from: overviewData.recent.from, to: overviewData.recent.through, accountId: overviewData.scopeAccountId }, newTransaction: overviewData.recent.items.length === 0 })} />
-          : <DetailState loading={overview.load.state === 'loading'} error={overview.load.state === 'error' ? overview.load.error : null} retry={overview.retry} what="os lançamentos" />}
-      </Disclosure>
-
-      <Disclosure id="goals" title="Metas e objetivos" hint="Reservas e prazos" open={opened.goals === true} onOpenChange={setOpen('goals')}>
-        {overviewData ? <OverviewGoalsBlock goals={overviewData.goals} onOpen={() => onNavigate('goals')} onOpenGoal={goalId => onNavigate('goals', { goalId })} />
-          : <DetailState loading={overview.load.state === 'loading'} error={overview.load.state === 'error' ? overview.load.error : null} retry={overview.retry} what="as metas e objetivos" />}
-      </Disclosure>
-    </section>
+        <div className="ov-pair">
+          <OverviewExpenseDistribution competence={competence} distribution={data?.expenseDistribution ?? null} {...overviewBlock}
+            onOpen={recentRange ? () => onNavigate('transactions', { transactions: recentRange }) : undefined} />
+          <OverviewBudgetProgress control={data?.budgetControl ?? null} {...overviewBlock}
+            onOpenBudget={() => onNavigate('budgets', { competence })} onShowAll={() => onSelectionChange({ competence, scope: { kind: 'all' } })} />
+        </div>
+        <OverviewRecent recent={data?.recent ?? null} {...overviewBlock}
+          onOpenAll={() => recentRange && onNavigate('transactions', { transactions: recentRange, newTransaction: data?.recent.items.length === 0 })} />
+      </div>
+      <aside className="ov-grid__side" aria-label="Contas, compromissos e metas">
+        <OverviewAccounts accounts={data?.accounts ?? null} {...overviewBlock} onOpen={() => onNavigate('accounts')} />
+        <OverviewUpcoming commitments={data?.commitments ?? null} {...overviewBlock}
+          onOpenAgenda={month => onNavigate('calendar', { month: month ?? competence })} onOpenCards={() => onNavigate('cards')} />
+        {data && data.goals.state === 'Complete' && data.goals.activeCount > 0
+          && <OverviewGoals goals={data.goals} onOpen={() => onNavigate('goals')} onOpenGoal={goalId => onNavigate('goals', { goalId })} />}
+      </aside>
+    </div>
   </div>
-}
-
-function DetailState({ loading, error, retry, what }: { loading: boolean; error: unknown; retry: () => void; what: string }) {
-  return error ? <OperationalError error={error} onRetry={retry} retryLabel="Recarregar" /> : loading ? <OperationalLoading>{`Carregando ${what}…`}</OperationalLoading> : null
 }

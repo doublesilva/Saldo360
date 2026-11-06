@@ -2,12 +2,11 @@ import type { BudgetAction, BudgetControl, BudgetPressure, FinancialDecision, Ov
 import type { PlanActualDashboard } from '../../api/planActual'
 import type { BudgetGroup } from '../budget/budgetText'
 import type { OverviewNavigation, OverviewSection } from './Overview'
-import type { DetailKey } from './Disclosure'
 import { actionText, pressureText, recommendationText } from './budgetControlText'
 import { caveat, coverageMessage, unavailableReason } from './decisionText'
 import { explain, isNegative, isPositiveAmount, money } from './overviewText'
 
-// T12.2: "Onde preciso agir". Escolhe e ordena o que o servidor já entregou (cobertura, recuperação, orçamento, confiabilidade). Nenhum valor é calculado aqui:
+// T12.2 / dashboard Folio: pontos de atenção. Escolhe e ordena o que o servidor já entregou (cobertura, recuperação, orçamento, confiabilidade). Nenhum valor é calculado aqui:
 // os valores exibidos são os textos decimais do servidor, e só se compara sinal ou presença.
 
 export interface Destination { section: OverviewSection; context?: OverviewNavigation }
@@ -15,7 +14,7 @@ export interface PriorityAction { label: string; to?: Destination; reload?: bool
 export interface PriorityCause { key: string; text: string; action?: PriorityAction }
 /** `rank`: 1 = risco de caixa ou da meta (sempre visível), 2 = excesso de orçamento, 3 = pendências que reduzem a confiabilidade. */
 export interface PriorityItem {
-  key: string; rank: 1 | 2 | 3; title: string; impact: string; action: PriorityAction | null; detail?: DetailKey; causes?: PriorityCause[]
+  key: string; rank: 1 | 2 | 3; title: string; impact: string; action: PriorityAction | null; causes?: PriorityCause[]
 }
 
 export const VISIBLE_ITEMS = 3
@@ -48,17 +47,17 @@ export function buildPriorityItems({ competence, decision, control, plan, classi
   if (decision) {
     const { coverage, commitments, recovery } = decision
     if (coverage.state === 'Insufficient') items.push({
-      key: 'coverage', rank: 1, title: coverageMessage(coverage), detail: 'coverage',
+      key: 'coverage', rank: 1, title: coverageMessage(coverage),
       impact: coverage.deficit !== null ? `Déficit estimado de ${money(coverage.deficit)}.` : 'O valor do déficit ainda não pode ser calculado.', action: { label: 'Ver evolução na Agenda', to: agenda },
     })
     else if (coverage.state === 'CoveredWithCredit') items.push({
-      key: 'coverage', rank: 1, title: coverageMessage(coverage), detail: 'coverage', impact: 'Depende de crédito do banco, que não é saldo seu.', action: { label: 'Ver evolução na Agenda', to: agenda },
+      key: 'coverage', rank: 1, title: coverageMessage(coverage), impact: 'Depende de crédito do banco, que não é saldo seu.', action: { label: 'Ver evolução na Agenda', to: agenda },
     })
     if (isPositiveAmount(commitments.overdue) && decision.context.period !== 'Closed') items.push({
-      key: 'overdue', rank: 1, title: 'Há compromissos vencidos e não pagos.', detail: 'commitments', impact: `${money(commitments.overdue)} em aberto.`, action: { label: 'Abrir a Agenda', to: agenda },
+      key: 'overdue', rank: 1, title: 'Há compromissos vencidos e não pagos.', impact: `${money(commitments.overdue)} em aberto.`, action: { label: 'Abrir a Agenda', to: agenda },
     })
     if ((recovery.state === 'Fixed' || recovery.state === 'Provisional') && isNegative(recovery.gapToTarget)) items.push({
-      key: 'recovery', rank: 1, detail: 'recovery', title: 'A recuperação projetada está abaixo da meta.',
+      key: 'recovery', rank: 1, title: 'A recuperação projetada está abaixo da meta.',
       impact: `Faltam ${money((recovery.gapToTarget ?? '').replace('-', ''))} para a meta${recovery.state === 'Provisional' ? ' provisória' : ''}.`, action: { label: 'Abrir a Projeção financeira', to: projection },
     })
   }
@@ -66,20 +65,20 @@ export function buildPriorityItems({ competence, decision, control, plan, classi
   if (control) {
     const total = control.total
     if (total.excess !== null && isPositiveAmount(total.excess)) items.push({
-      key: 'total-over', rank: 2, title: 'O total previsto de gastos passou da meta mensal.', detail: 'pressures', impact: `Excesso de ${money(total.excess)} sobre a meta.`,
+      key: 'total-over', rank: 2, title: 'O total previsto de gastos passou da meta mensal.', impact: `Excesso de ${money(total.excess)} sobre a meta.`,
       action: { label: actionText.OpenBudget, to: budgetDestination('OpenBudget', null, competence) },
     })
     for (const pressure of control.pressures) {
       if (!overTargetKinds.has(pressure.kind) && pressure.kind !== 'CardFinanceCharges' && pressure.kind !== 'IncomeNotReceived') continue
       items.push({
-        key: `pressure-${pressure.kind}-${pressure.subject ?? ''}`, rank: 2, title: pressureText(pressure), detail: 'pressures', impact: pressureImpact(pressure),
+        key: `pressure-${pressure.kind}-${pressure.subject ?? ''}`, rank: 2, title: pressureText(pressure), impact: pressureImpact(pressure),
         action: { label: actionText[pressure.action], to: budgetDestination(pressure.action, pressure.actionContext, competence) },
       })
     }
     for (const recommendation of control.recommendations) {
       if (handledElsewhere.has(recommendation.code) || overTargetKinds.has(recommendation.code) && control.pressures.some(p => p.kind === recommendation.code)) continue
       items.push({
-        key: `recommendation-${recommendation.code}`, rank: 2, title: recommendationText[recommendation.code] ?? recommendation.code, detail: 'pressures', impact: 'Recomendação do orçamento.',
+        key: `recommendation-${recommendation.code}`, rank: 2, title: recommendationText[recommendation.code] ?? recommendation.code, impact: 'Recomendação do orçamento.',
         action: { label: actionText[recommendation.action], to: budgetDestination(recommendation.action, recommendation.actionContext, competence) },
       })
     }

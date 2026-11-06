@@ -80,7 +80,7 @@ public sealed record OverviewTransfersDto(string State, string Received, string 
 
 public sealed record DashboardOverviewDto(string Competence, DateOnly AsOf, string ScopeKind, Guid? ScopeAccountId, OverviewAccountsDto Accounts, OverviewCommitmentsDto Commitments, OverviewGoalsDto Goals,
     OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null, OverviewCashFlowDto? CashFlow = null,
-    FinancialDecisionDto? Decision = null, BudgetControlDto? BudgetControl = null);
+    FinancialDecisionDto? Decision = null, BudgetControlDto? BudgetControl = null, ExpenseDistributionDto? ExpenseDistribution = null);
 
 public sealed partial class DashboardOverviewService(
     IFinancialWorkspaceRepository workspaces,
@@ -100,6 +100,9 @@ public sealed partial class DashboardOverviewService(
     FinancialCalendarBalanceService calendarBalances,
     IPlanActualRepository planBasis,
     Saldo360.Application.MonthlyPlan.IMonthlyPlanRepository monthlyPlan,
+    IFinancialBudgetExecutionRepository budgetFacts,
+    Saldo360.Application.Categories.IFinancialCategoryRepository categoryRepository,
+    Saldo360.Application.CreditCards.IFinancialCreditCardRepository cardRepository,
     TimeProvider time)
 {
     public const int HorizonDays = 30;
@@ -148,7 +151,8 @@ public sealed partial class DashboardOverviewService(
         var cashFlow = await BuildCashFlowAsync(workspaceId, userId, month, selected?.Id, today, byCompetence, ct);
         var decision = await BuildDecisionAsync(workspaceId, month, selected, all, kind, today, cashFlow, ct);
         var budgetControl = await BuildBudgetControlAsync(workspaceId, userId, month, requested, selected, kind, today, budget, classification, decision, ct);
-        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow, decision, budgetControl));
+        var distribution = await BuildExpenseDistributionAsync(workspaceId, month, selected?.Id, byCompetence, ct);
+        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow, decision, budgetControl, distribution));
     }
 
     private async Task<OverviewTransfersDto> BuildTransfersAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, OverviewAccountsDto accounts, CancellationToken ct)

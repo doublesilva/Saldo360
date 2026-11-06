@@ -141,6 +141,16 @@ export interface BudgetControl {
   totalTargetOrigin?: TargetOrigin | null; totalTargetFrom?: string | null
 }
 
+/**
+ * Distribuição das despesas realizadas do mês por categoria principal (dashboard Folio). Mesmos fatos do orçamento, agrupados no servidor; `categoryId` nulo = "Sem categoria".
+ * `percentage` nulo quando o total líquido não permite percentuais. `reference` = "Despesas do mês" do mesmo escopo; divergência vira `Partial` com o motivo.
+ */
+export interface ExpenseCategoryShare { categoryId: string | null; name: string; amount: string; percentage: string | null }
+export interface ExpenseDistribution {
+  state: 'Complete' | 'Partial' | 'Unavailable'; competence: string; total: string | null; reference: string | null; categories: ExpenseCategoryShare[]
+  reasons: ('TotalDiffersFromExpenses' | 'ReferenceUnavailable' | 'PercentagesNotRepresentative' | string)[]
+}
+
 export interface DashboardOverview {
   competence: string; asOf: string; scopeKind: 'primary' | 'all' | 'account'; scopeAccountId: string | null
   accounts: OverviewAccounts; commitments: OverviewCommitments; goals: OverviewGoals; budget: OverviewBudget; recent: OverviewRecent; classification: OverviewClassification
@@ -152,6 +162,8 @@ export interface DashboardOverview {
   decision?: FinancialDecision | null
   /** Aditivo (T11.2): consumo do orçamento, principais pressões e ações recomendadas. */
   budgetControl?: BudgetControl | null
+  /** Aditivo (dashboard Folio): para onde foram as despesas realizadas do mês. */
+  expenseDistribution?: ExpenseDistribution | null
 }
 
 export function getDashboardOverview(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<DashboardOverview> {

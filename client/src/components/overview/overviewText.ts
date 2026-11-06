@@ -1,6 +1,5 @@
 import { formatBrlDecimal, formatDate } from '../../money'
 import { formatMonthYear } from '../../dates'
-import type { BudgetStatus } from '../../api/overview'
 import type { PlanActualScope } from '../../api/planActual'
 
 // Textos e formatadores da Visão Geral. Valores monetários continuam sendo texto decimal exato: aqui só se formata, nunca se calcula.
@@ -32,13 +31,6 @@ export const shortMonth = (competence: string) => {
 export const dateTime = (iso: string | null) => iso
   ? `${formatDate(iso.slice(0, 10))} às ${new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`
   : null
-
-export const dayDistance = (days: number) =>
-  days === 0 ? 'vence hoje' : days === 1 ? 'vence amanhã' : days > 1 ? `vence em ${days} dias` : days === -1 ? 'venceu ontem' : `venceu há ${-days} dias`
-
-export const budgetStatusLabels: Record<BudgetStatus, string> = {
-  WithinBudget: 'Dentro do limite', ApproachingLimit: 'Perto do limite', LimitReached: 'Limite atingido', Exceeded: 'Excedido',
-}
 
 export const unavailableBalanceReasons: Record<string, string> = {
   OpeningBalanceNotConfigured: 'Sem saldo inicial configurado', BeforeOpeningBalanceDate: 'Anterior ao saldo inicial', Unavailable: 'Não foi possível calcular',
