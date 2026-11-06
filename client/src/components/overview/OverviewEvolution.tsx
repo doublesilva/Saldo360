@@ -1,5 +1,11 @@
 import type { PlanMonth, SixMonthPlan } from '../../api/monthlyPlan'
+import { useCallback } from 'react'
+import type { PlanActualScopeChoice } from '../../api/planActual'
+import { getSixMonthPlan } from '../../api/monthlyPlan'
+import { addCalendarMonths } from '../../dates'
+import { OperationalError, OperationalLoading } from '../OperationalFeedback'
 import { money, periodLabels, scopeLabel, shortMonth } from './overviewText'
+import { useLoad } from './useLoad'
 
 const kindLabels = { Past: 'Realizado', Current: 'Mês atual', Future: 'Projeção' } as const
 
@@ -51,4 +57,15 @@ export function OverviewEvolution({ plan }: { plan: SixMonthPlan }) {
         <tbody>{months.map(month => <tr key={month.competence}><th scope="row">{shortMonth(month.competence)}</th><td>{periodLabels[kindOf(month.periodKind)]}</td><td>{money(month.realizedIncome)}</td><td>{money(month.projectedIncome)}</td><td>{money(month.realizedExpense)}</td><td>{money(month.projectedExpense)}</td></tr>)}</tbody>
       </table></div></details>
   </section>
+}
+
+const EVOLUTION_MONTHS_BEFORE = 3
+
+/** A evolução tem a sua própria consulta (monthly-plan/six-months), que só é feita quando o usuário abre a seção. */
+export function OverviewEvolutionSection({ workspaceId, competence, scope, refreshKey }: { workspaceId: string; competence: string; scope: PlanActualScopeChoice; refreshKey: number }) {
+  const from = addCalendarMonths(`${competence}-01`, -EVOLUTION_MONTHS_BEFORE).slice(0, 7)
+  const { load, retry } = useLoad(`${workspaceId}|${from}|${scope.kind}:${scope.accountId ?? ''}|${refreshKey}`, useCallback((signal: AbortSignal) => getSixMonthPlan(workspaceId, from, scope, signal), [workspaceId, from, scope]))
+  // Só o dado da competência e do escopo atuais: nada de retrato anterior durante a troca.
+  if (load.state !== 'loaded') return load.state === 'error' ? <OperationalError error={load.error} onRetry={retry} retryLabel="Recarregar a evolução" /> : <OperationalLoading>Carregando a evolução…</OperationalLoading>
+  return <OverviewEvolution plan={load.data} />
 }

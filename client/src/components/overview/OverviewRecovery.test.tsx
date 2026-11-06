@@ -75,7 +75,7 @@ describe('OverviewRecovery', () => {
     const onAccounts = vi.fn()
     mock((_url, init) => init?.method === 'POST' ? Response.json(recovery()) : validation('snapshot', 'A meta do mês ainda não foi registrada.'))
     render(<OverviewRecovery workspaceId="w" data={single(null)} onAccounts={onAccounts} onProjection={noop} />)
-    expect(await screen.findByText(/Sem meta registrada/)).toBeTruthy()
+    expect(await screen.findByText(/Meta ainda não fixada e registrada/)).toBeTruthy()
     expect(screen.getByText(/Sem limite informado/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Informar limite' }))
     expect(onAccounts).toHaveBeenCalled()

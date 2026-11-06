@@ -1,109 +1,122 @@
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BudgetControl } from '../../api/overview'
 import { budgetControl, group } from './budgetControlFixtures'
-import { OverviewBudgetControlSection } from './OverviewBudgetControl'
+import { OverviewBudgetSummarySection } from './OverviewBudgetControl'
 
 afterEach(cleanup)
 
 const text = (element: Element | null) => (element?.textContent ?? '').replace(/[  ]/g, ' ')
-const draw = (value: BudgetControl, onNavigate = vi.fn()) => { render(<OverviewBudgetControlSection control={value} competence="2026-11" onNavigate={onNavigate} />); return onNavigate }
-const card = (name: string) => screen.getByRole('article', { name })
+function Harness({ value, onNavigate }: { value: BudgetControl; onNavigate: () => void }) {
+  const [open, setOpen] = useState(false)
+  return <OverviewBudgetSummarySection control={value} competence="2026-11" pressuresOpen={open} onPressuresOpenChange={setOpen} onNavigate={onNavigate} />
+}
+const draw = (value: BudgetControl, onNavigate = vi.fn()) => { render(<Harness value={value} onNavigate={onNavigate} />); return onNavigate }
+const summary = () => screen.getByRole('article', { name: 'Orçamento mensal' })
+const bars = () => screen.getByRole('list', { name: 'Cartões e fora dos cartões' })
 
-describe('Visão Geral — consumo do orçamento (T11.2)', () => {
-  it('mostra o orçamento definido, realizado, comprometido, estimado, projetado e a margem, separadamente', () => {
+describe('Meu orçamento (T11.2 / T12.2)', () => {
+  it('é um resumo: meta efetiva, já gasto, futuras conhecidas, estimativas, total previsto e margem, com a linguagem direta', () => {
     draw(budgetControl())
-    const total = card('Orçamento mensal')
-    expect(text(total)).toMatch(/Orçamento definido\s*R\$ 12\.500,00/); expect(text(total)).toMatch(/Despesas realizadas\s*R\$ 5\.000,00/)
-    expect(text(total)).toMatch(/Comprometidas, não realizadas\s*R\$ 1\.500,00/); expect(text(total)).toMatch(/Estimadas complementares\s*R\$ 1\.000,00/)
-    expect(text(total)).toMatch(/Consumo total projetado\s*R\$ 7\.500,00/); expect(text(total)).toMatch(/Margem até o orçamento\s*R\$ 5\.000,00/); expect(text(total)).toContain('Dentro da meta')
+    const total = summary()
+    expect(text(total)).toContain('Meta mensal efetiva'); expect(text(total)).toContain('R$ 12.500,00')
+    expect(text(total)).toMatch(/Já gasto\s*R\$ 5\.000,00/); expect(text(total)).toMatch(/Despesas futuras já conhecidas\s*R\$ 1\.500,00/); expect(text(total)).toMatch(/Estimativas complementares\s*R\$ 1\.000,00/)
+    expect(text(total)).toMatch(/Total previsto de gastos\s*R\$ 7\.500,00/); expect(text(total)).toMatch(/Margem em relação à meta\s*R\$ 5\.000,00/); expect(text(total)).toContain('Dentro da meta')
+    for (const old of ['Consumo total projetado', 'Comprometidas, não realizadas', 'Valor não estimável']) expect(text(document.body)).not.toContain(old)
   })
 
-  it('apresenta os dois grupos exclusivos com as suas metas, e a provisão alimentar nos cartões', () => {
+  it('não chama a margem do orçamento de dinheiro disponível', () => {
     draw(budgetControl())
-    const cards = card('Cartões de crédito'); const outside = card('Fora dos cartões')
-    expect(text(cards)).toMatch(/Orçamento definido\s*R\$ 5\.000,00/); expect(text(cards)).toContain('Estimadas (parcelas e provisão alimentar)')
-    expect(text(outside)).toMatch(/Orçamento definido\s*R\$ 7\.500,00/); expect(text(outside)).toMatch(/Consumo total projetado\s*R\$ 4\.000,00/)
-    expect(within(cards).getByRole('progressbar', { name: /Consumo projetado de Cartões de crédito/ }).getAttribute('aria-valuetext')).toBe('70,0%')
+    expect(text(summary())).toContain('não dinheiro disponível na conta'); expect(text(summary())).not.toMatch(/saldo disponível|dinheiro disponível:/i)
   })
 
-  it('explica que o consumo é por competência e que metas de categoria e fixas não são somadas', () => {
+  it('usa duas barras, cartões e fora dos cartões, em vez de três cards detalhados', () => {
     draw(budgetControl())
-    expect(screen.getByText(/pagamento da fatura afeta o caixa, mas não aumenta o consumo/)).not.toBeNull()
+    expect(screen.getAllByRole('article')).toHaveLength(1)
+    const items = within(bars()).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(text(items[0])).toContain('Cartões de crédito'); expect(text(items[0])).toContain('Total previsto R$ 3.500,00 de R$ 5.000,00'); expect(text(items[0])).toContain('Margem de R$ 1.500,00')
+    expect(text(items[1])).toContain('Fora dos cartões'); expect(text(items[1])).toContain('Total previsto R$ 4.000,00 de R$ 7.500,00')
+    expect(within(items[0]).getByRole('progressbar', { name: /Total previsto de Cartões de crédito/ }).getAttribute('aria-valuetext')).toBe('70,0%')
+  })
+
+  it('explica que o gasto é por competência e que categorias e fixas não são somadas', () => {
+    draw(budgetControl())
+    expect(screen.getByText(/pagamento da fatura afeta o caixa, mas não aumenta o gasto/)).not.toBeNull()
     expect(screen.getByText(/não são somadas a este total/)).not.toBeNull()
   })
 
-  it('excesso preservado: mostra o excesso, a etiqueta e o que já foi realizado acima da meta', () => {
-    const base = budgetControl()
-    draw({ ...base, cards: group('Cards', { realized: '5200.00', projected: '5200.00', excess: '200.00', excessRealized: '200.00', margin: '0.00', status: 'Exceeded', projectedPercent: '104.0' }) })
-    const cards = card('Cartões de crédito')
-    expect(text(cards)).toContain('Acima da meta'); expect(text(cards)).toMatch(/Excesso sobre o orçamento\s*R\$ 200,00/)
-    expect(text(cards)).toContain('Já realizado acima da meta em R$ 200,00')
+  it('mostra de onde vem a meta: herdada, personalizada, registro anterior ou não configurada', () => {
+    draw({ ...budgetControl(), totalTargetOrigin: 'Inherited', totalTargetFrom: '2026-10' })
+    expect(text(summary())).toContain('Meta herdada do padrão, em vigor desde Outubro de 2026')
+    cleanup(); draw({ ...budgetControl(), totalTargetOrigin: 'Customized' })
+    expect(text(summary())).toContain('Meta personalizada neste mês')
+    cleanup(); draw({ ...budgetControl(), totalTargetOrigin: 'Historical' })
+    expect(text(summary())).toContain('Meta do registro mensal anterior')
+    cleanup(); draw(budgetControl())
+    expect(text(summary())).not.toMatch(/herdada|personalizada|registro mensal/)
   })
 
-  it('orçamento não configurado: diz "Não definido" (nunca zero) e oferece definir as metas', () => {
+  it('excesso preservado: mostra o excesso, a etiqueta e o que já foi gasto acima da meta', () => {
     const base = budgetControl()
-    const onNavigate = draw({ ...base, state: 'TargetNotDefined', total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, projectedPercent: null, status: 'NoTarget' },
+    draw({ ...base, total: { ...base.total, excess: '300.00', margin: '0.00', status: 'Exceeded' }, cards: group('Cards', { realized: '5200.00', projected: '5200.00', excess: '200.00', excessRealized: '200.00', margin: '0.00', status: 'Exceeded', projectedPercent: '104.0' }) })
+    expect(text(summary())).toContain('Acima da meta'); expect(text(summary())).toMatch(/Excesso sobre a meta\s*R\$ 300,00/)
+    const cards = within(bars()).getAllByRole('listitem')[0]
+    expect(text(cards)).toContain('Excesso de R$ 200,00'); expect(text(cards)).toContain('Já gasto acima da meta em R$ 200,00')
+  })
+
+  it('competência sem meta configurada: diz "Meta não configurada" (nunca zero) e oferece definir as metas', () => {
+    const base = budgetControl()
+    const onNavigate = draw({ ...base, state: 'TargetNotDefined', totalTargetOrigin: 'Undefined', total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, projectedPercent: null, status: 'NoTarget' },
       cards: group('Cards', { state: 'TargetNotDefined', target: null, margin: null, excess: null, excessRealized: null, projectedPercent: null, status: 'NoTarget' }) })
-    const total = card('Orçamento mensal')
-    expect(text(total)).toContain('O orçamento total não foi definido.'); expect(text(total)).toMatch(/Orçamento definido\s*Não definido/); expect(text(total)).toContain('Sem meta')
-    expect(text(card('Cartões de crédito'))).toContain('Meta não definida')
-    fireEvent.click(within(total).getByRole('button', { name: 'Definir metas' }))
+    expect(text(summary())).toContain('Meta não configurada'); expect(text(summary())).toContain('O orçamento total não foi definido.'); expect(text(summary())).not.toMatch(/Sem meta/)
+    expect(text(within(bars()).getAllByRole('listitem')[0])).toContain('Meta não configurada')
+    fireEvent.click(within(summary()).getByRole('button', { name: 'Definir metas' }))
     expect(onNavigate).toHaveBeenCalledWith('budgets', { competence: '2026-11', budgetGroup: undefined })
   })
 
-  it('conta isolada: a meta global não é apresentada como da conta', () => {
+  it('conta isolada: a meta global não é atribuída a ela e não é dada como "não configurada"', () => {
     const base = budgetControl()
-    draw({ ...base, scopeKind: 'account', targetsAttributable: false, notes: ['TargetsGlobalOnly'], total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, status: 'NoTarget' },
+    draw({ ...base, scopeKind: 'account', targetsAttributable: false, notes: ['TargetsGlobalOnly'], totalTargetOrigin: 'Inherited', total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, status: 'NoTarget' },
       cards: group('Cards', { state: 'TargetNotAttributable', target: null, margin: null, excess: null, status: 'NoTarget' }), outsideCards: group('OutsideCards', { state: 'TargetNotAttributable', target: null, margin: null, excess: null, status: 'NoTarget' }) })
-    expect(text(card('Cartões de crédito'))).toContain('A meta é global e não se aplica a uma conta isolada')
+    expect(text(summary())).toContain('Meta global'); expect(text(summary())).toContain('Esta conta isolada não recebe a meta global'); expect(text(summary())).not.toContain('herdada')
     expect(screen.getByText(/Selecione "Todas as contas"/)).not.toBeNull()
+    expect(text(bars())).toContain('A meta é global e não se aplica a uma conta isolada'); expect(text(bars())).not.toContain('Meta não configurada')
     expect(screen.queryByText('O orçamento total não foi definido.')).toBeNull()
+    expect(within(summary()).getByRole('button', { name: 'Abrir orçamento completo' })).not.toBeNull()
   })
 
   it('estados incompletos: lista as lacunas dos dados', () => {
     draw({ ...budgetControl(), cards: group('Cards', { state: 'Partial', reasons: ['CardCoverageIncomplete', 'MissingPayerAccount'] }) })
-    expect(text(card('Cartões de crédito'))).toContain('Dados incompletos: cobertura de cartões incompleta; cartão sem conta pagadora.')
+    expect(text(bars())).toContain('Dados incompletos: cobertura de cartões incompleta; cartão sem conta pagadora.')
   })
 
-  it('pressões: ordem do servidor, valor, referência, impacto, qualidade e ação; o não estimável não vira valor', () => {
+  it('as pressões ficam recolhidas; abertas, mantêm a ordem do servidor, e o não estimável não vira valor', () => {
     draw(budgetControl())
-    const section = screen.getByRole('region', { name: 'O que está pressionando meu orçamento?' })
-    const items = within(section).getAllByRole('listitem')
+    expect(screen.queryByRole('list', { name: '' })).toBeNull(); expect(text(document.body)).not.toContain('Despesas vencidas ainda não liquidadas')
+    fireEvent.click(screen.getByText('O que está pressionando meu orçamento?'))
+    const items = screen.getAllByRole('listitem').filter(item => /^\d\./.test(text(item)))
     expect(items).toHaveLength(4)
     expect(text(items[0])).toContain('1. Despesas vencidas ainda não liquidadas'); expect(text(items[0])).toContain('R$ 900,00'); expect(text(items[0])).toContain('Impacto no caixa · Confirmado')
-    expect(text(items[1])).toContain('Referência: meta dos cartões de R$ 5.000,00'); expect(text(items[1])).toContain('Projetado')
-    expect(text(items[2])).toContain('Categoria Lazer acima do orçamento')
-    expect(text(items[3])).toContain('Valor não estimável'); expect(text(items[3])).toContain('Impacto não estimável')
+    expect(text(items[1])).toContain('Referência: meta dos cartões de R$ 5.000,00')
+    expect(text(items[3])).toContain('Ainda não é possível calcular'); expect(text(items[3])).toContain('Impacto não estimável'); expect(text(items[3])).not.toContain('Valor não estimável')
   })
 
   it('sem pressões: diz que nenhum fator foi identificado', () => {
     draw({ ...budgetControl(), pressures: [], recommendations: [] })
+    fireEvent.click(screen.getByText('O que está pressionando meu orçamento?'))
     expect(screen.getByText('Nenhum fator de pressão identificado com os dados disponíveis.')).not.toBeNull()
-    expect(screen.getByText('Nenhuma ação necessária com os dados disponíveis.')).not.toBeNull()
   })
 
-  it('cada pressão e recomendação leva à tela correta: faturas, categorias, Agenda, Projeção, revisão de lançamentos e contas', () => {
+  it('cada pressão leva à tela correta: faturas, categorias, Agenda e contas; o orçamento completo abre na competência', () => {
     const onNavigate = draw(budgetControl())
-    const pressures = screen.getByRole('region', { name: 'O que está pressionando meu orçamento?' })
-    fireEvent.click(within(pressures).getByRole('button', { name: 'Abrir Agenda' }))
-    fireEvent.click(within(pressures).getByRole('button', { name: 'Consultar faturas' }))
-    fireEvent.click(within(pressures).getByRole('button', { name: 'Abrir orçamento' }))
-    fireEvent.click(within(pressures).getByRole('button', { name: 'Ver contas' }))
-    const actions = screen.getByRole('region', { name: 'Ações recomendadas' })
-    fireEvent.click(within(actions).getByRole('button', { name: 'Classificar lançamentos' }))
-    fireEvent.click(within(actions).getByRole('button', { name: 'Abrir Projeção financeira' }))
+    fireEvent.click(within(summary()).getByRole('button', { name: 'Abrir orçamento completo' }))
+    fireEvent.click(screen.getByText('O que está pressionando meu orçamento?'))
+    for (const name of ['Abrir Agenda', 'Consultar faturas', 'Abrir orçamento', 'Ver contas']) fireEvent.click(screen.getByRole('button', { name }))
     expect(onNavigate.mock.calls).toEqual([
-      ['calendar', { month: '2026-11' }], ['cards'], ['budgets', { competence: '2026-11', budgetGroup: 'categories' }], ['accounts'],
-      ['transactions', { review: { kind: 'category' } }], ['planning', { planningTab: 'projection' }],
+      ['budgets', { competence: '2026-11', budgetGroup: undefined }], ['calendar', { month: '2026-11' }], ['cards', undefined],
+      ['budgets', { competence: '2026-11', budgetGroup: 'categories' }], ['accounts', undefined],
     ])
-  })
-
-  it('recomendações usam o texto objetivo da especificação', () => {
-    draw(budgetControl())
-    const actions = screen.getByRole('region', { name: 'Ações recomendadas' })
-    expect(text(actions)).toContain('Os cartões ultrapassaram a meta mensal. Consulte as faturas.')
-    expect(text(actions)).toContain('Há despesas sem categoria que dificultam a análise do orçamento.')
-    expect(text(actions)).toContain('A receita PJ depende de uma estimativa ainda não confirmada.')
   })
 })

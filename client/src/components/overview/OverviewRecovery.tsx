@@ -50,7 +50,7 @@ function RecoveryAccount({ workspaceId, data, account, onAccounts }: { workspace
     <p><strong>{account.name}</strong>{noLimit ? ' · Sem limite informado' : ` · Limite contratado ${money(account.contractedLimit)}`}</p>
     {load.kind === 'loading' && <p className="status status--pending" role="status">Carregando recuperação…</p>}
     {load.kind === 'error' && <p className="field-error" role="alert">{load.message}</p>}
-    {load.kind === 'unregistered' && <p className="meta">Sem meta registrada para esta competência. O histórico não é inventado nem congelado automaticamente.</p>}
+    {load.kind === 'unregistered' && <p className="meta">Meta ainda não fixada e registrada para esta competência: a meta provisória, quando calculada, aparece no resumo da recuperação. O histórico não é inventado nem congelado automaticamente.</p>}
     {load.kind === 'ok' && <RecoveryDetails recovery={load.recovery} />}
     {error && <p className="field-error" role="alert">{error}</p>}
     <div className="form__actions">

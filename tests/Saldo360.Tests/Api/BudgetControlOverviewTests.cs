@@ -88,6 +88,7 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
         var control = await ControlAsync("all");
 
         Assert.True(control.GetProperty("targetsAttributable").GetBoolean());
+        Assert.Equal("Historical", Text(control, "totalTargetOrigin")); // T12.2: meta do registro mensal anterior à recorrência
         Assert.Equal("12500.00", Text(control, "total", "target")); Assert.Equal("5000.00", Text(control, "cards", "target")); Assert.Equal("7500.00", Text(control, "outsideCards", "target"));
         Assert.Equal("5200.00", Text(control, "cards", "projected")); Assert.Equal("200.00", Text(control, "cards", "excess")); Assert.Equal("Exceeded", Text(control, "cards", "status"));
         Assert.Equal("1000.00", Text(control, "outsideCards", "projected")); // o pagamento da fatura não existe aqui; a compra entra uma só vez, pela fatura, no grupo dos cartões
@@ -107,6 +108,7 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
 
         Assert.Equal("TargetNotDefined", Text(control, "state")); Assert.False(control.GetProperty("total").GetProperty("targetDefined").GetBoolean());
         Assert.Equal(JsonValueKind.Null, control.GetProperty("total").GetProperty("target").ValueKind);
+        Assert.Equal("Undefined", Text(control, "totalTargetOrigin")); // T12.2: sem configuração a origem é "não configurada", nunca uma meta zero
         Assert.Equal(JsonValueKind.Null, control.GetProperty("cards").GetProperty("target").ValueKind); Assert.Equal(JsonValueKind.Null, control.GetProperty("total").GetProperty("margin").ValueKind);
         Assert.Equal("300.00", Text(control, "outsideCards", "realized"));
         Assert.Contains("BudgetTotalNotDefined", control.GetProperty("recommendations").EnumerateArray().Select(r => r.GetProperty("code").GetString()));
@@ -125,6 +127,8 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
         Assert.False(control.GetProperty("targetsAttributable").GetBoolean());
         Assert.Equal("TargetNotAttributable", Text(control, "cards", "state")); Assert.Equal("TargetNotAttributable", Text(control, "outsideCards", "state"));
         Assert.Equal(JsonValueKind.Null, control.GetProperty("total").GetProperty("target").ValueKind);
+        // T12.2: a origem da meta global também não é atribuída à conta isolada.
+        Assert.True(!control.TryGetProperty("totalTargetOrigin", out var origin) || origin.ValueKind == JsonValueKind.Null);
         Assert.Equal("300.00", Text(control, "outsideCards", "realized"));
         Assert.Contains("TargetsGlobalOnly", control.GetProperty("notes").EnumerateArray().Select(n => n.GetString()));
     }

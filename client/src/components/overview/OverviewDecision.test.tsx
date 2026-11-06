@@ -1,64 +1,102 @@
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FinancialDecision } from '../../api/overview'
+import type { PlanActualDashboard } from '../../api/planActual'
+import { planActual } from '../planActualFixtures'
 import { accountCoverage, decision } from './decisionFixtures'
-import { OverviewDecisionSection } from './OverviewDecision'
+import { OverviewSituationSection, type DecisionStatus } from './OverviewDecision'
 
 afterEach(cleanup)
 
 const text = (element: Element | null) => (element?.textContent ?? '').replace(/[  ]/g, ' ')
-const draw = (value: FinancialDecision, onNavigate = vi.fn()) => { render(<OverviewDecisionSection decision={value} onNavigate={onNavigate} />); return onNavigate }
+type Plan = { data: PlanActualDashboard | null; loading: boolean; failed: boolean }
+const loadedPlan: Plan = { data: { ...planActual, periodKind: 'Current' }, loading: false, failed: false }
+
+function Harness({ value, plan, status, onNavigate, competence }: { value: FinancialDecision | null; plan: Plan; status: DecisionStatus; onNavigate: () => void; competence: string }) {
+  const [open, setOpen] = useState(false)
+  return <OverviewSituationSection competence={competence} decision={value} decisionStatus={status} plan={plan} scopeText="Itaú PF" coverageOpen={open} onCoverageOpenChange={setOpen} onNavigate={onNavigate} />
+}
+const draw = (value: FinancialDecision | null, { plan = loadedPlan, status = value ? 'ready' : 'unavailable', competence = '2026-11' }: { plan?: Plan; status?: DecisionStatus; competence?: string } = {}) => {
+  const onNavigate = vi.fn()
+  render(<Harness value={value} plan={plan} status={status} onNavigate={onNavigate} competence={competence} />)
+  return onNavigate
+}
 const card = (name: string) => screen.getByRole('article', { name })
+const openDetails = () => fireEvent.click(screen.getByText('Detalhes de cobertura, compromissos e margem segura'))
 
-describe('Visão Geral — segurança financeira (T11.1)', () => {
-  it('mostra o contexto da análise: competência, conta e tipo, data da posição bancária e última sincronização', () => {
+describe('Minha situação financeira (T12.2)', () => {
+  it('mostra o contexto: competência, tipo do período, conta e data da posição bancária', () => {
     draw(decision())
     const context = screen.getByLabelText('Contexto da análise')
-    expect(text(context)).toMatch(/Competência\s*Novembro de 2026\s*Mês corrente/)
-    expect(text(context)).toContain('Itaú PF · PF')
-    expect(text(context)).toContain('em 04/11/2026')
-    expect(text(context)).toMatch(/Última sincronização\s*04\/11\/2026 às/)
-  })
-
-  it('indica a competência vigente quando a selecionada é outra e o consolidado em vez de uma conta', () => {
-    const base = decision()
-    draw({ ...base, context: { ...base.context, competence: '2026-12', period: 'Future', scopeKind: 'all', accountId: null, accountName: null, accountScope: null, bankPositionDate: null, lastSyncedAt: null } })
-    const context = screen.getByLabelText('Contexto da análise')
-    expect(text(context)).toContain('Mês futuro'); expect(text(context)).toContain('Vigente: Novembro de 2026')
-    expect(text(context)).toContain('Todas as contas (consolidado)'); expect(text(context)).toContain('sem posição informada pelo banco'); expect(text(context)).toContain('sem sincronização')
-  })
-
-  it('mostra o saldo bancário observado e o cheque especial utilizado, ou diz que não há posição', () => {
-    draw(decision())
-    expect(text(card('Posição bancária observada'))).toMatch(/-R\$ 1\.000,00/)
-    expect(text(card('Posição bancária observada'))).toMatch(/Cheque especial utilizado\s*R\$ 1\.000,00/)
+    expect(text(context)).toContain('Novembro de 2026'); expect(text(context)).toContain('Mês corrente')
+    expect(text(context)).toContain('Itaú PF'); expect(text(context)).toContain('Posição do banco em 04/11/2026')
     cleanup()
     const base = decision()
-    draw({ ...base, context: { ...base.context, bankBalance: null, overdraftUsed: null } })
-    expect(text(card('Posição bancária observada'))).toContain('Sem posição do banco')
+    draw({ ...base, context: { ...base.context, period: 'Future', bankPositionDate: null } }, { competence: '2026-12' })
+    expect(text(screen.getByLabelText('Contexto da análise'))).toContain('Mês futuro'); expect(text(screen.getByLabelText('Contexto da análise'))).toContain('Sem posição informada pelo banco')
   })
 
-  it('compromissos: total do servidor, vencidos separados, natureza e vencimento, e atalho para a Agenda no mês analisado', () => {
+  it('tem exatamente quatro indicadores principais, cada valor uma vez', () => {
+    draw(decision())
+    const names = screen.getAllByRole('article').map(article => article.getAttribute('aria-label'))
+    expect(names).toEqual(['Saldo bancário observado', 'Compromissos restantes', 'Fechamento projetado', 'Vou conseguir pagar minhas contas?'])
+    expect(screen.getAllByText('Saldo bancário observado')).toHaveLength(1)
+    expect(screen.getAllByText('Compromissos restantes')).toHaveLength(1)
+  })
+
+  it('saldo negativo é dito em texto e nunca ocultado; saldo positivo e indisponível também', () => {
+    draw(decision())
+    expect(text(card('Saldo bancário observado'))).toMatch(/-R\$ 1\.000,00/); expect(text(card('Saldo bancário observado'))).toContain('Saldo negativo')
+    expect(text(card('Saldo bancário observado'))).toContain('Informado pelo banco em 04/11/2026')
+    cleanup()
+    const base = decision()
+    draw({ ...base, context: { ...base.context, bankBalance: '2500.00' } })
+    expect(text(card('Saldo bancário observado'))).toContain('R$ 2.500,00'); expect(text(card('Saldo bancário observado'))).not.toContain('Saldo negativo')
+    cleanup()
+    draw({ ...base, context: { ...base.context, bankBalance: null, bankPositionDate: null } })
+    expect(text(card('Saldo bancário observado'))).toContain('Sem posição do banco'); expect(text(card('Saldo bancário observado'))).not.toMatch(/R\$ 0,00/)
+  })
+
+  it('compromissos restantes: total do servidor e atalho para a Agenda na competência analisada', () => {
     const onNavigate = draw(decision())
-    const commitments = card('Compromissos restantes')
-    expect(text(commitments)).toMatch(/R\$ 600,00/)
-    expect(text(commitments)).toMatch(/Vencidos e não liquidados\s*R\$ 100,00/)
-    expect(text(commitments)).toMatch(/A vencer até o fim da competência\s*R\$ 500,00/)
-    expect(text(commitments)).toMatch(/Faturas de cartão a pagar\s*R\$ 300,00/)
-    fireEvent.click(within(commitments).getByRole('button', { name: 'Ver na Agenda' }))
+    expect(text(card('Compromissos restantes'))).toContain('R$ 600,00'); expect(text(card('Compromissos restantes'))).toContain('Ainda falta pagar')
+    fireEvent.click(within(card('Compromissos restantes')).getByRole('button', { name: 'Ver na Agenda' }))
     expect(onNavigate).toHaveBeenCalledWith('calendar', { month: '2026-11' })
   })
 
-  it('competência encerrada: não afirma que algo estava pendente na época e mostra o pago no mês', () => {
+  it('competência encerrada não afirma que algo estava pendente na época', () => {
     const base = decision()
-    draw({ ...base, context: { ...base.context, competence: '2026-10', period: 'Closed' }, commitments: { ...base.commitments, period: 'Closed', paidInMonth: '1234.50', overdue: '0.00' } })
-    const commitments = card('Compromissos restantes')
-    expect(text(commitments)).toContain('Ainda em aberto hoje, com vencimento no mês')
-    expect(text(commitments)).not.toContain('Vencidos e não liquidados')
-    expect(text(commitments)).toMatch(/Débitos efetivos no mês\s*R\$ 1\.234,50/)
+    draw({ ...base, context: { ...base.context, competence: '2026-10', period: 'Closed' }, commitments: { ...base.commitments, period: 'Closed', paidInMonth: '1234.50', overdue: '0.00' } },
+      { plan: { ...loadedPlan, data: { ...planActual, periodKind: 'Past' } } })
+    expect(text(card('Compromissos restantes'))).toContain('Ainda em aberto hoje, com vencimento no mês')
+    expect(screen.getByRole('article', { name: 'Saldo no fechamento' })).toBeTruthy(); expect(screen.queryByRole('article', { name: 'Fechamento projetado' })).toBeNull()
+    openDetails()
+    expect(text(document.body)).toMatch(/Débitos efetivos no mês\s*R\$ 1\.234,50/); expect(text(document.body)).not.toContain('Vencidos e não liquidados')
   })
 
-  it('cobertura: cada estado tem mensagem objetiva e etiqueta em texto (não depende só de cor)', () => {
+  it('fechamento projetado vem do plan-actual e é dito como projeção, não como saldo do banco', () => {
+    draw(decision())
+    expect(text(card('Fechamento projetado'))).toContain('R$ 1.200,00'); expect(text(card('Fechamento projetado'))).toContain('Projetado: não é o saldo do banco')
+  })
+
+  it('fechamento negativo é identificado em texto; indisponível explica o motivo e não vira zero', () => {
+    draw(decision(), { plan: { ...loadedPlan, data: { ...planActual, situation: { ...planActual.situation, projectedClosing: '-300.00' } } } })
+    expect(text(card('Fechamento projetado'))).toMatch(/-R\$ 300,00/); expect(text(card('Fechamento projetado'))).toContain('Saldo negativo')
+    cleanup()
+    draw(decision(), { plan: { ...loadedPlan, data: { ...planActual, situation: { ...planActual.situation, projectedClosing: null, reasons: ['InsufficientHistory'] } } } })
+    expect(text(card('Fechamento projetado'))).toContain('Indisponível'); expect(text(card('Fechamento projetado'))).toContain('Histórico insuficiente')
+  })
+
+  it('o fechamento carrega e falha sem derrubar os demais indicadores', () => {
+    draw(decision(), { plan: { data: null, loading: true, failed: false } })
+    expect(text(card('Fechamento projetado'))).toContain('Carregando…'); expect(text(card('Compromissos restantes'))).toContain('R$ 600,00')
+    cleanup()
+    draw(decision(), { plan: { data: null, loading: false, failed: true } })
+    expect(text(card('Fechamento projetado'))).toContain('Ainda não é possível calcular'); expect(text(card('Saldo bancário observado'))).toContain('-R$ 1.000,00')
+  })
+
+  it('cobertura: pergunta direta, mensagem objetiva e etiqueta em texto para cada estado', () => {
     const cases: [FinancialDecision['coverage']['state'], string, string][] = [
       ['Covered', 'Seus compromissos estão cobertos.', 'Coberto'],
       ['CoveredWithCredit', 'Os pagamentos dependem de utilização do cheque especial.', 'Só com cheque especial'],
@@ -68,84 +106,81 @@ describe('Visão Geral — segurança financeira (T11.1)', () => {
     for (const [state, message, tag] of cases) {
       const base = decision()
       draw({ ...base, coverage: { ...base.coverage, state, firstBeyondLimitDate: state === 'Insufficient' ? '2026-11-22' : null, deficit: state === 'Insufficient' ? '500.00' : null, unavailableReason: state === 'Unavailable' ? 'OpeningBalanceNotConfigured' : null } })
-      const coverage = card('Cobertura dos compromissos')
+      const coverage = card('Vou conseguir pagar minhas contas?')
       expect(text(coverage)).toContain(message); expect(text(coverage)).toContain(tag)
       cleanup()
     }
   })
 
-  it('cobertura: saldo mínimo, déficit, fechamento projetado e recebimentos, com o estimado marcado como não garantido', () => {
+  it('cobertura mostra só a conclusão e o primeiro risco; saldos mínimos, recebimentos e ressalvas ficam na expansão', () => {
     const base = decision()
     draw({ ...base, coverage: { ...base.coverage, state: 'Insufficient', minimumBalance: '-500.00', firstNegativeDate: '2026-11-22', firstBeyondLimitDate: '2026-11-22', deficit: '500.00', caveats: ['DependsOnInferredIncome'] } })
-    const coverage = card('Cobertura dos compromissos')
-    expect(text(coverage)).toMatch(/Saldo mínimo projetado\s*-R\$ 500,00/)
-    expect(text(coverage)).toMatch(/Déficit\s*R\$ 500,00/)
-    expect(text(coverage)).toMatch(/Fechamento projetado\s*R\$ 900,00/)
-    expect(text(coverage)).toContain('O resultado depende de receitas estimadas')
-    expect(text(coverage)).toContain('(estimada, não garantida)')
+    const coverage = card('Vou conseguir pagar minhas contas?')
+    expect(text(coverage)).toContain('Primeiro risco: Saldo negativo a partir de 22/11/2026.')
+    for (const detail of ['Saldo mínimo projetado', 'Déficit', 'Obrigações consideradas', 'Recebimentos esperados', 'depende de receitas estimadas']) expect(text(coverage)).not.toContain(detail)
+    expect(text(screen.getByLabelText('Margem segura para gastar à vista'))).toContain('R$ 400,00')
+    expect(document.body.textContent).not.toContain('Recebimentos esperados')
+    openDetails()
+    const details = text(document.body)
+    expect(details).toMatch(/Saldo mínimo projetado\s*-R\$ 500,00/); expect(details).toMatch(/Déficit\s*R\$ 500,00/); expect(details).toContain('Recebimentos esperados')
+    expect(details).toContain('O resultado depende de receitas estimadas')
+    expect(text(document.body)).toContain('(estimada, não garantida)')
   })
 
-  it('consolidado: mostra o risco de cada conta e diz que os saldos não se compensam', () => {
+  it('consolidado: o risco de cada conta fica na expansão e os saldos não se compensam', () => {
     const base = decision()
     draw({ ...base, context: { ...base.context, scopeKind: 'all', accountId: null }, coverage: { ...base.coverage, state: 'Insufficient', projectedClosing: null, firstBeyondLimitDate: '2026-11-22',
       accounts: [accountCoverage({ accountId: 'pj', name: 'Inter PJ', scope: 'PJ' }), accountCoverage({ state: 'Insufficient', firstBeyondLimitDate: '2026-11-22' })] } })
-    const coverage = card('Cobertura dos compromissos')
-    expect(text(coverage)).toMatch(/Inter PJ · PJ\s*Coberto/); expect(text(coverage)).toMatch(/Itaú PF · PF\s*Insuficiente 22\/11/)
-    expect(text(coverage)).toContain('Os saldos de contas diferentes não se compensam.')
-    expect(text(coverage)).not.toContain('Fechamento projetado')
+    openDetails()
+    expect(text(document.body)).toMatch(/Inter PJ · PJ\s*Coberto/); expect(text(document.body)).toMatch(/Itaú PF · PF\s*Insuficiente 22\/11/)
+    expect(text(document.body)).toContain('Os saldos de contas diferentes não se compensam.')
   })
 
-  it('margem segura calculada: valor do servidor, a restrição mais restritiva e a ressalva de que é gasto à vista', () => {
+  it('margem segura calculada aparece em uma linha e não é chamada de saldo disponível; restrições ficam na expansão', () => {
     draw(decision())
-    const margin = card('Margem segura para gastar')
-    expect(text(margin)).toMatch(/R\$ 400,00/); expect(text(margin)).toContain('Calculada')
-    expect(text(margin)).toContain('Limitada por: Menor saldo diário até o fim da competência.')
-    expect(text(margin)).toContain('Compras no cartão afetam o banco só no vencimento da fatura')
-    expect(text(margin)).toContain('Receitas estimadas não entram no cálculo.')
-    expect(text(margin)).toMatch(/Reserva mínima\s*não configurada/)
+    const margin = text(screen.getByLabelText('Margem segura para gastar à vista'))
+    expect(margin).toContain('R$ 400,00'); expect(margin).toContain('Não é saldo disponível nem crédito do banco.')
+    expect(document.body.textContent).not.toContain('Limitada por')
+    openDetails()
+    expect(text(document.body)).toContain('Limitada por: Menor saldo diário até o fim da competência.')
+    expect(text(document.body)).toMatch(/Reserva mínima\s*não configurada/); expect(text(document.body)).toContain('Compras no cartão afetam o banco só no vencimento da fatura')
   })
 
-  it('margem indisponível: mensagem objetiva e o motivo, nunca zero', () => {
+  it('margem segura indisponível: mensagem objetiva com o motivo, nunca zero', () => {
     const base = decision()
     draw({ ...base, safeMargin: { ...base.safeMargin, state: 'Unavailable', amount: null, bindingConstraint: null, constraints: [], reasons: ['RecoveryTargetUnavailable'] } })
-    const margin = card('Margem segura para gastar')
-    expect(text(margin)).toContain('Não é possível calcular uma margem segura com os dados disponíveis.')
-    expect(text(margin)).toContain('nenhuma meta é inventada'); expect(text(margin)).not.toMatch(/R\$ 0,00/)
+    const margin = text(screen.getByLabelText('Margem segura para gastar à vista'))
+    expect(margin).toContain('ainda não é possível calcular'); expect(margin).toContain('nenhuma meta é inventada'); expect(margin).not.toMatch(/R\$ 0,00/)
   })
 
-  it('margem preliminar: marcada como preliminar com as ressalvas', () => {
+  it('margem preliminar é marcada como preliminar e a ressalva fica na expansão', () => {
     const base = decision()
-    draw({ ...base, safeMargin: { ...base.safeMargin, state: 'Preliminary', reasons: ['ProvisionalRecoveryTarget', 'CardCoverageIncomplete'] } })
-    const margin = card('Margem segura para gastar')
-    expect(text(margin)).toContain('Preliminar'); expect(text(margin)).toContain('ainda é provisória'); expect(text(margin)).toContain('sem conta pagadora')
+    draw({ ...base, safeMargin: { ...base.safeMargin, state: 'Preliminary', reasons: ['ProvisionalRecoveryTarget'] } })
+    expect(text(screen.getByLabelText('Margem segura para gastar à vista'))).toContain('Preliminar')
+    openDetails(); expect(text(document.body)).toContain('ainda é provisória')
   })
 
-  it('meta de recuperação: meta original, efetiva, projetada, diferença e utilização esperada; fixada e nunca recalculada', () => {
+  it('a expansão começa fechada e reúne compromissos por natureza e vencimento, com os atalhos', () => {
     const onNavigate = draw(decision())
-    const recovery = card('Meta de recuperação')
-    expect(text(recovery)).toContain('Fixada')
-    expect(text(recovery)).toMatch(/Meta original\s*R\$ 2\.500,00/); expect(text(recovery)).toMatch(/Cheque especial na abertura\s*R\$ 15\.000,00/)
-    expect(text(recovery)).toMatch(/Recuperação projetada\s*R\$ 1\.000,00/); expect(text(recovery)).toMatch(/Diferença para a meta\s*-R\$ 1\.500,00 · abaixo da meta/)
-    expect(text(recovery)).toMatch(/Utilização esperada no fechamento\s*R\$ 14\.000,00/); expect(text(recovery)).toContain('Não é recalculada.')
-    fireEvent.click(within(recovery).getByRole('button', { name: 'Abrir a Projeção financeira' }))
-    expect(onNavigate).toHaveBeenCalledWith('planning', { planningTab: 'projection' })
+    expect(document.body.textContent).not.toContain('Por natureza')
+    openDetails()
+    expect(text(document.body)).toMatch(/Vencidos e não liquidados\s*R\$ 100,00/); expect(text(document.body)).toMatch(/A vencer até o fim da competência\s*R\$ 500,00/)
+    expect(text(document.body)).toMatch(/Faturas de cartão a pagar\s*R\$ 300,00/)
+    fireEvent.click(screen.getByRole('button', { name: 'Ver evolução na Agenda' })); fireEvent.click(screen.getAllByRole('button', { name: 'Ver contas' }).at(-1) as HTMLElement)
+    expect(onNavigate.mock.calls.map(call => call[0])).toEqual(['calendar', 'accounts'])
   })
 
-  it('meta: explica quando não se aplica (conta não abriu negativa, consolidado)', () => {
-    const base = decision()
-    draw({ ...base, recovery: { ...base.recovery, state: 'NotApplicable', reason: 'AccountDidNotOpenNegative', openingUsed: null, target: null, gapToTarget: null } })
-    expect(text(card('Meta de recuperação'))).toContain('A conta não abriu a competência usando o cheque especial')
-    cleanup()
-    draw({ ...base, recovery: { ...base.recovery, state: 'NotApplicable', reason: 'ConsolidatedScope', openingUsed: null, target: null, gapToTarget: null } })
-    expect(text(card('Meta de recuperação'))).toContain('Selecione uma conta')
-  })
-
-  it('cada indicador tem caminho para o detalhe (Agenda, Contas, Planejamento) e avisa quando os dados mudaram durante a leitura', () => {
-    const onNavigate = draw({ ...decision(), snapshotConsistent: false })
+  it('o aviso de dados alterados durante a leitura fica sempre visível', () => {
+    draw({ ...decision(), snapshotConsistent: false })
     expect(screen.getAllByRole('status').some(node => (node.textContent ?? '').includes('Os dados mudaram durante a leitura'))).toBe(true)
-    fireEvent.click(within(card('Posição bancária observada')).getByRole('button', { name: 'Ver contas' }))
-    fireEvent.click(within(card('Margem segura para gastar')).getByRole('button', { name: 'Ver contas' }))
-    fireEvent.click(within(card('Cobertura dos compromissos')).getByRole('button', { name: 'Ver evolução na Agenda' }))
-    expect(onNavigate.mock.calls.map(call => call[0])).toEqual(['accounts', 'accounts', 'calendar'])
+  })
+
+  it('sem a análise do servidor: saldo calculado com o nome certo, sem inventar cobertura, e carregamento distinto de indisponível', () => {
+    draw(null, { status: 'unavailable' })
+    expect(text(card('Saldo calculado'))).toContain('não é o saldo informado pelo banco'); expect(text(card('Análise de cobertura indisponível'))).toContain('Ainda não é possível calcular')
+    expect(screen.queryByRole('article', { name: 'Saldo bancário observado' })).toBeNull()
+    cleanup()
+    draw(null, { status: 'loading' })
+    expect(text(card('Análise de cobertura indisponível'))).toContain('Carregando…'); expect(text(card('Análise de cobertura indisponível'))).not.toContain('não está disponível')
   })
 })

@@ -127,6 +127,7 @@ export interface BudgetControlTotal {
   targetDefined: boolean; target: string | null; realized: string; committed: string; estimated: string; projected: string; margin: string | null; excess: string | null
   realizedPercent: string | null; projectedPercent: string | null; status: BudgetGroupStatus
 }
+export type TargetOrigin = 'Inherited' | 'Customized' | 'Historical' | 'Undefined'
 export type BudgetAction = 'OpenCards' | 'OpenBudget' | 'OpenAgenda' | 'OpenPlanning' | 'OpenReview' | 'OpenAccounts'
 export interface BudgetPressure {
   rank: number; kind: string; subject: string | null; amount: string | null; amountKind: 'OverTarget' | 'Overdue' | 'Charged' | 'NotEstimable'; referenceAmount: string | null; referenceKind: string
@@ -136,6 +137,8 @@ export interface BudgetRecommendation { code: string; action: BudgetAction; acti
 export interface BudgetControl {
   state: 'Complete' | 'Partial' | 'TargetNotDefined'; competence: string; period: DecisionPeriod; scopeKind: 'primary' | 'all' | 'account'; targetsAttributable: boolean
   total: BudgetControlTotal; cards: BudgetControlGroup; outsideCards: BudgetControlGroup; pressures: BudgetPressure[]; recommendations: BudgetRecommendation[]; notes: string[]
+  /** T12.2: de onde vem a meta total (resolvedor único da T12.1); `totalTargetFrom` = início da vigência do padrão (AAAA-MM). Ausente em servidores antigos e quando a meta não se aplica a uma conta isolada. */
+  totalTargetOrigin?: TargetOrigin | null; totalTargetFrom?: string | null
 }
 
 export interface DashboardOverview {

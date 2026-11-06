@@ -74,7 +74,7 @@ describe('Recuperação do cheque especial nos cards de abertura e fechamento', 
     expect(within(card).getAllByText(/10\.000,00/).length).toBeGreaterThan(0)
     expect(within(card).getByText('Meta de recuperação do mês')).toBeTruthy()
     expect(within(card).getByText(/4\.800,00/)).toBeTruthy()
-    expect(within(card).getByText('Fixada')).toBeTruthy()
+    expect(within(card).getByText('Meta fixada e registrada')).toBeTruthy()
     expect(within(card).getByText(/Fixada em/)).toBeTruthy()
     cleanup()
     renderFlow(flow())
@@ -84,7 +84,7 @@ describe('Recuperação do cheque especial nos cards de abertura e fechamento', 
 
   it('meta provisória diz quando será fixada e meta pendente não mostra valor inventado', () => {
     renderFlow(inProgress(recovery({ targetState: 'Provisional', targetFixedAt: null })))
-    expect(screen.getByText('Provisória')).toBeTruthy()
+    expect(screen.getByText('Meta provisória calculada')).toBeTruthy()
     expect(screen.getByText('Será fixada em')).toBeTruthy()
     cleanup()
     renderFlow(inProgress(recovery({ targetState: 'Pending', target: null, targetFixedAt: null, pendingReason: 'CardCoverageIncomplete', projectedAchievementPercent: null, band: 'NoTarget' })))

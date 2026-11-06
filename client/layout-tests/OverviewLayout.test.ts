@@ -19,32 +19,42 @@ describe('Responsividade da Visão Geral', () => {
     expect(css).toMatch(/\.ov-table-wrap\s*\{[^}]*overflow-x:\s*auto/)
   })
 
-  it('reorganiza em degraus (4 indicadores em linha → 2 por linha) e em uma coluna de blocos e prioriza compromissos no celular', () => {
-    expect(css).toMatch(/@media \(max-width: 75rem\)[^}]*grid-template-columns: repeat\(2/)
-    expect(css).toMatch(/@media \(max-width: 64rem\)/)
-    expect(css).toMatch(/@media \(max-width: 40rem\)[\s\S]*\.ov-indicators\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/)
-    expect(css).toMatch(/\.ov-slot--commitments\s*\{\s*order:\s*1/)
+  it('T12.2: quatro indicadores em linha no desktop, dois em 768, dois compactos com a cobertura em largura total em 390/360', () => {
+    expect(css).toMatch(/\.ov-situation__cards\s*\{[^}]*repeat\(4, minmax\(0, 1fr\)\)/)
+    expect(css).toMatch(/@media \(max-width: 75rem\)\s*\{[^}]*\.ov-situation__cards[^}]*repeat\(2, minmax\(0, 1fr\)\)/) // 1200px: 768px cai aqui
+    expect(css).toMatch(/@media \(max-width: 42rem\)[\s\S]*\.ov-situation__cards \.ov-decision__coverage\s*\{\s*grid-column:\s*1 \/ -1/) // 672px: 390 e 360
+    expect(css).toMatch(/@media \(max-width: 64rem\)\s*\{\s*\.ov-situation__details\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
+    expect(css).toMatch(/@media \(max-width: 42rem\)[\s\S]*\.ov-budget-groups\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
+    expect(css).not.toMatch(/position:\s*sticky/) // sem faixas fixas ocupando a tela
+    expect(css).toMatch(/\.ov-situation__context\s*\{[^}]*overflow-wrap:\s*anywhere/)
+    expect(css).toMatch(/\.ov-action__causes li\s*\{[^}]*overflow-wrap:\s*anywhere/)
   })
 
-  it('segurança financeira (T11.1): 3 colunas em 1920/1440, 2 em 768 e 1 em 390/360, contexto fixo só a partir do tablet e sem larguras fixas', () => {
-    expect(css).toMatch(/\.ov-decision__cards\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/)
-    expect(css).toMatch(/@media \(max-width: 75rem\)\s*\{\s*\.ov-decision__cards\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/) // 1200px: 768px cai aqui
-    expect(css).toMatch(/@media \(max-width: 42rem\)\s*\{\s*\.ov-decision__cards\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/) // 672px: 390 e 360
-    expect(css).toMatch(/@media \(min-width: 48rem\)\s*\{\s*\.ov-decision__context\s*\{[^}]*position:\s*sticky/)
-    expect(css.match(/position:\s*sticky/g)?.length ?? 0).toBeLessThanOrEqual(1) // o único sticky é o do contexto, dentro do @media
-    expect(css).toMatch(/\.ov-decision__context\s*\{[^}]*overflow-wrap:\s*anywhere/)
+  it('T12.2: tipografia e espaçamento da especificação (título 24px, seção 1.2rem, indicador 26–32px, auxiliar 13px, cards 16px, seções 32px, padding 20px)', () => {
+    expect(css).toMatch(/\.ov-eyebrow\s*\{[^}]*font-size:\s*1\.5rem/)
+    expect(css).toMatch(/\.ov-area__head h2[^{]*\{[^}]*font-size:\s*1\.2rem/)
+    expect(css).toMatch(/\.ov-indicator__value\s*\{[^}]*clamp\(1\.65rem, 2\.4vw, 2rem\)/)
+    expect(css).toMatch(/\.ov-meta\s*\{[^}]*font-size:\s*\.8125rem/)
+    expect(css).toMatch(/\.ov\s*\{[^}]*gap:\s*2rem/)
+    expect(css).toMatch(/\.ov-situation__cards\s*\{[^}]*gap:\s*1rem/)
+    expect(css).toMatch(/\.ov-card\s*\{[^}]*padding:\s*1\.25rem/)
+    expect(css).not.toMatch(/font-size:\s*0?\.[0-6]\d*rem/) // nenhum texto abaixo de 12px (0,75rem); o auxiliar fica em 13px
   })
 
-  it('consumo do orçamento (T11.2): 3 colunas em 1920/1440, 2 em 768, 1 em 390/360, pressões empilhadas no tablet, e vem logo após a segurança financeira', () => {
-    expect(css).toMatch(/\.ov-budgetctl__cards\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/)
-    expect(css).toMatch(/@media \(max-width: 75rem\)\s*\{\s*\.ov-budgetctl__cards\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/)
-    expect(css).toMatch(/@media \(max-width: 64rem\)\s*\{\s*\.ov-budgetctl__pressures\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
-    expect(css).toMatch(/@media \(max-width: 42rem\)\s*\{\s*\.ov-budgetctl__cards\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
-    expect(css).toMatch(/\.ov-pressure\s*\{[^}]*overflow-wrap:\s*anywhere/)
+  it('T12.2: botões e títulos expansíveis são alvos de toque (44px) no celular', () => {
+    expect(css).toMatch(/@media \(max-width: 42rem\)[\s\S]*\.ov button\s*\{[^}]*min-height:\s*2\.75rem/)
+    expect(css).toMatch(/\.ov-disclosure > summary\s*\{[^}]*min-height:\s*2\.75rem/)
+  })
+
+  it('T12.2: as áreas vêm na ordem situação, orçamento, recuperação, onde agir e análises detalhadas, e as análises só montam aberto', () => {
     const page = src('components/overview/Overview.tsx')
-    const order = ['<OverviewDecisionSection', '<OverviewBudgetControlSection', '<OverviewCashFlowSection'].map(tag => page.indexOf(tag))
+    const order = ['<OverviewSituationSection', '<OverviewBudgetSummarySection', '<OverviewRecoverySummary', '<OverviewActionsSection', 'id="ov-details-title"'].map(tag => page.indexOf(tag))
     expect(order.every(index => index > 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
+    const disclosure = src('components/overview/Disclosure.tsx')
+    expect(disclosure).toContain('{open && <div')
+    // O resumo não faz as consultas de evolução e de projeção: elas ficam dentro das seções expansíveis.
+    expect(page).not.toMatch(/getSixMonthPlan|getFinancialProjection/)
   })
 
   it('as barras da evolução financeira não são sobrescritas por outra regra .ov-bar (altura total, coluna flex)', () => {

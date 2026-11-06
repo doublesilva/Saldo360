@@ -2,16 +2,20 @@ import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Overview, type OverviewNavigation, type OverviewSection, type OverviewSelection } from './Overview'
-import type { DashboardOverview } from '../../api/overview'
+import type { BudgetControl, DashboardOverview, FinancialDecision } from '../../api/overview'
 import type { PlanActualDashboard } from '../../api/planActual'
 import type { SixMonthPlan } from '../../api/monthlyPlan'
 import { planActual } from '../planActualFixtures'
 import { sixMonths } from '../monthlyPlanFixtures'
-import { overview } from './overviewFixtures'
+import { overview as baseOverview } from './overviewFixtures'
+import { decision } from './decisionFixtures'
+import { budgetControl, group } from './budgetControlFixtures'
 
 type Overrides = { plan?: PlanActualDashboard | Response; overview?: DashboardOverview | Response; evolution?: SixMonthPlan | Response }
 let calls: string[] = []
 
+const withSummary = (over: Partial<DashboardOverview> = {}): DashboardOverview => ({ ...baseOverview, decision: decision(), budgetControl: budgetControl(), ...over })
+const overview = withSummary()
 const answer = (value: unknown) => value instanceof Response ? value.clone() : new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
 function mockApi(overrides: Overrides = {}) {
   calls = []
@@ -31,118 +35,311 @@ function Harness({ initial = '2026-10' }: { initial?: string }) {
   return <Overview workspaceId="w" selection={selection} onSelectionChange={setSelection} onNavigate={(section, context) => { navigations.push({ section, context }) }} />
 }
 const renderPage = (initial?: string) => render(<Harness initial={initial} />)
-const indicators = () => within(screen.getByRole('region', { name: 'Indicadores do mês' }))
+const text = (element: Element | null) => (element?.textContent ?? '').replace(/[  ]/g, ' ')
+const area = (name: string) => screen.getByRole('region', { name })
+const openSection = (title: string) => fireEvent.click(screen.getByText(title, { selector: '.ov-disclosure__title' }))
+const plan = (changes: Partial<PlanActualDashboard>): PlanActualDashboard => ({ ...planActual, ...changes })
+const control = (changes: Partial<BudgetControl>) => withSummary({ budgetControl: budgetControl(changes) })
+const withDecision = (changes: Partial<FinancialDecision>) => withSummary({ decision: decision(changes) })
 
 beforeEach(() => { navigations.length = 0 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-const plan = (changes: Partial<PlanActualDashboard>): PlanActualDashboard => ({ ...planActual, ...changes })
-
-describe('Visão Geral — blocos removidos', () => {
-  it('não mostra os cards de Contas e de Entradas e saídas do mês, nem posição bancária, ponte de saldo ou transferência identificada', async () => {
+describe('Visão Geral — arquitetura de informação (T12.2)', () => {
+  it('apresenta as quatro áreas na ordem situação, orçamento, recuperação e ação, antes das análises detalhadas', async () => {
     mockApi(); renderPage()
-    await screen.findByRole('region', { name: 'Próximos compromissos' })
-    for (const name of ['Contas', 'Entradas e saídas do mês', 'Posição bancária mais recente']) expect(screen.queryByRole('region', { name })).toBeNull()
-    expect(screen.queryByText(/De onde veio o saldo/)).toBeNull()
-    expect(screen.queryByText('Ponte de saldo')).toBeNull()
-    expect(screen.queryByText('Transferência identificada')).toBeNull()
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    const headings = screen.getAllByRole('heading', { level: 2 }).map(heading => heading.textContent)
+    expect(headings).toEqual(['Minha situação financeira', 'Meu orçamento', 'Minha recuperação financeira', 'Onde preciso agir', 'Análises detalhadas'])
+  })
+
+  it('mostra a competência e a conta analisadas no cabeçalho e no contexto da situação', async () => {
+    mockApi(); renderPage()
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    expect(screen.getAllByText(/Outubro de 2026/).length).toBeGreaterThanOrEqual(2)
+    expect(text(area('Minha situação financeira'))).toContain('Conta principal · Conta A')
+    expect((screen.getByLabelText('Competência') as HTMLInputElement).value).toBe('2026-10')
+  })
+
+  it('não repete indicadores no resumo: receitas, despesas e o saldo calculado só existem nas análises detalhadas', async () => {
+    mockApi(); renderPage()
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    for (const repeated of ['Saldo atual', 'Receitas do mês', 'Despesas do mês', 'Evolução financeira', 'Próximos compromissos', 'Últimos lançamentos']) expect(screen.queryByText(repeated, { selector: 'h3, h4, [aria-label]' })).toBeNull()
+    expect(screen.getAllByText('Compromissos restantes')).toHaveLength(1)
+    expect(screen.getAllByText('Fechamento projetado')).toHaveLength(1)
+    expect(screen.getAllByRole('article').map(article => article.getAttribute('aria-label'))).toEqual([
+      'Saldo bancário observado', 'Compromissos restantes', 'Fechamento projetado', 'Vou conseguir pagar minhas contas?', 'Orçamento mensal', 'Meta de recuperação',
+    ])
+  })
+
+  it('as análises detalhadas começam fechadas, sem conteúdo montado nem consultas de gráficos e horizontes longos', async () => {
+    mockApi(); renderPage()
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    const titles = ['Fluxo de caixa completo', 'Receitas e despesas por competência', 'Evolução financeira', 'Recuperação detalhada', 'Metas por categoria e despesas fixas', 'Próximos compromissos por vencimento', 'Últimos lançamentos', 'Metas e objetivos']
+    expect(screen.getAllByText(/./, { selector: '.ov-disclosure__title' }).map(title => title.textContent).slice(-8)).toEqual(titles)
+    for (const detail of document.querySelectorAll('#ov-details-title ~ details, .ov-details-area details')) expect((detail as HTMLDetailsElement).open).toBe(false)
+    expect(screen.queryByRole('region', { name: 'Próximos compromissos' })).toBeNull()
+    expect(screen.queryByRole('img', { name: /Receitas e despesas/ })).toBeNull()
+    expect(calls.filter(url => url.includes('/financial-dashboard/'))).toHaveLength(2)
+    expect(calls.some(url => url.includes('six-months') || url.includes('/projection'))).toBe(false)
+  })
+
+  it('abrir a evolução faz a consulta só então; trocar a competência não leva dados antigos', async () => {
+    mockApi(); renderPage()
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    openSection('Evolução financeira')
+    expect(await screen.findByRole('img', { name: /Receitas e despesas de out\/26 a mar\/27/ })).toBeTruthy()
+    expect(calls.filter(url => url.includes('/monthly-plan/six-months') && url.includes('from=2026-07'))).toHaveLength(1)
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-09' } })
+    await waitFor(() => expect(calls.some(url => url.includes('/monthly-plan/six-months') && url.includes('from=2026-06'))).toBe(true))
+  })
+
+  it('cada seção das análises detalhadas abre com o seu conteúdo e leva ao módulo correspondente', async () => {
+    mockApi(); renderPage()
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
+
+    openSection('Próximos compromissos por vencimento')
+    const commitments = within(area('Próximos compromissos'))
+    expect(commitments.getByText('Internet')).toBeTruthy()
+    fireEvent.click(commitments.getByRole('button', { name: /Financiamento - parcela 4/ }))
+    expect(navigations.at(-1)).toEqual({ section: 'calendar', context: { month: '2026-11' } })
+
+    openSection('Últimos lançamentos')
+    const recent = within(area('Últimos lançamentos'))
+    expect(recent.getByText(/Mostrando 2 de 9 lançamentos do período/)).toBeTruthy()
+    fireEvent.click(recent.getByRole('button', { name: 'Ver todos' }))
+    expect(navigations.at(-1)).toMatchObject({ section: 'transactions', context: { transactions: { from: '2026-10-01', to: '2026-10-16', accountId: 'pf' } } })
+
+    openSection('Metas e objetivos')
+    fireEvent.click(within(area('Metas')).getByRole('button', { name: 'Ver metas' }))
+    expect(navigations.at(-1)?.section).toBe('goals')
+
+    openSection('Metas por categoria e despesas fixas')
+    const budget = within(area('Orçamento de Outubro de 2026'))
+    expect(budget.getByText('Excedido em R$ 200,00')).toBeTruthy()
+    fireEvent.click(budget.getAllByRole('button', { name: 'Abrir composição' })[2])
+    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10', budgetGroup: 'categories' } })
+
+    openSection('Receitas e despesas por competência')
+    expect(screen.getByRole('article', { name: 'Receitas do mês' })).toBeTruthy(); expect(screen.getByRole('article', { name: 'Despesas do mês' })).toBeTruthy()
+  })
+
+  it('o resumo leva a Agenda, Contas, Cartões, Orçamento e Planejamento', async () => {
+    mockApi(); renderPage()
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    fireEvent.click(within(screen.getByRole('article', { name: 'Compromissos restantes' })).getByRole('button', { name: 'Ver na Agenda' }))
+    fireEvent.click(within(screen.getByRole('article', { name: 'Saldo bancário observado' })).getByRole('button', { name: 'Ver contas' }))
+    fireEvent.click(within(area('Meu orçamento')).getByRole('button', { name: 'Abrir orçamento completo' }))
+    fireEvent.click(within(area('Minha recuperação financeira')).getByRole('button', { name: /Ver projeção de 6, 13, 24 ou 36 meses/ }))
+    const actions = within(area('Onde preciso agir'))
+    fireEvent.click(actions.getByRole('button', { name: 'Consultar faturas' }))
+    expect(navigations.map(item => item.section)).toEqual(['calendar', 'accounts', 'budgets', 'planning', 'cards'])
+    expect(navigations[0].context).toEqual({ month: '2026-10' })
+    expect(navigations[2].context).toEqual({ competence: '2026-10', budgetGroup: undefined })
+    expect(navigations[3].context).toEqual({ planningTab: 'projection' })
   })
 })
 
-describe('Visão Geral — indicadores', () => {
-  it('mostra um único conjunto de quatro indicadores, cada um com o seu significado e a sua referência de tempo', async () => {
+describe('Visão Geral — situação, cobertura e saldos', () => {
+  it('saldo negativo é dito em texto; o fechamento projetado vem de plan-actual', async () => {
     mockApi(); renderPage()
-    await screen.findByRole('article', { name: 'Saldo atual' })
-    const articles = indicators().getAllByRole('article').map(article => article.getAttribute('aria-label'))
-    expect(articles).toEqual(['Saldo atual', 'Receitas do mês', 'Despesas do mês', 'Fechamento projetado'])
-    const balance = indicators().getByRole('article', { name: 'Saldo atual' })
-    expect(within(balance).getByText('R$ 3.000,00')).toBeTruthy()
-    expect(within(balance).getByText(/Posição em 16\/10\/2026/)).toBeTruthy()
-    expect(within(indicators().getByRole('article', { name: 'Receitas do mês' })).getByText('R$ 450,00')).toBeTruthy()
-    expect(within(indicators().getByRole('article', { name: 'Despesas do mês' })).getByText('R$ 1.200,00')).toBeTruthy()
-    expect(within(indicators().getByRole('article', { name: 'Fechamento projetado' })).getByText('R$ 1.200,00')).toBeTruthy()
-    // Cada valor aparece uma vez no resumo principal: nenhum indicador repetido em outro painel de totais.
-    expect(screen.getAllByText('Saldo atual')).toHaveLength(1)
+    const balance = await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    expect(text(balance)).toContain('-R$ 1.000,00'); expect(text(balance)).toContain('Saldo negativo')
+    expect(text(screen.getByRole('article', { name: 'Fechamento projetado' }))).toContain('R$ 1.200,00')
   })
 
-  it('mês encerrado não fala em projeção; mês futuro avisa que só há compromissos conhecidos', async () => {
+  it('saldo positivo e saldo bancário indisponível', async () => {
+    const base = decision()
+    mockApi({ overview: withSummary({ decision: { ...base, context: { ...base.context, bankBalance: '800.00', overdraftUsed: null } } }) }); renderPage()
+    expect(text(await screen.findByRole('article', { name: 'Saldo bancário observado' }))).toContain('R$ 800,00')
+    cleanup()
+    mockApi({ overview: withSummary({ decision: { ...base, context: { ...base.context, bankBalance: null, bankPositionDate: null } } }) }); renderPage()
+    const balance = await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    expect(text(balance)).toContain('Sem posição do banco'); expect(text(balance)).not.toMatch(/R\$ 0,00/)
+  })
+
+  it('mês encerrado não fala em projeção; mês futuro avisa que não é saldo do banco', async () => {
     mockApi({ plan: plan({ periodKind: 'Past' }) }); renderPage('2026-08')
     expect(await screen.findByRole('article', { name: 'Saldo no fechamento' })).toBeTruthy()
     expect(screen.queryByRole('article', { name: 'Fechamento projetado' })).toBeNull()
-    expect(screen.getByText(/Mês encerrado · valor realizado no último dia/)).toBeTruthy()
     cleanup()
     mockApi({ plan: plan({ periodKind: 'Future' }) }); renderPage('2026-12')
-    expect(await screen.findByRole('article', { name: 'Fechamento projetado' })).toBeTruthy()
-    expect(screen.getByText(/Mês futuro · considera só compromissos conhecidos/)).toBeTruthy()
+    expect(text(await screen.findByRole('article', { name: 'Fechamento projetado' }))).toContain('Projetado: não é o saldo do banco')
   })
 
-  it('saldo indisponível não vira zero e o fechamento explica por que não foi calculado', async () => {
-    mockApi({ plan: plan({ situation: { ...planActual.situation, state: 'Unavailable', realizedBalance: null, partialRealizedBalance: null, consideredAccounts: 0, projectedClosing: null, reasons: ['InsufficientHistory'] } }) })
-    renderPage()
-    const balance = await screen.findByRole('article', { name: 'Saldo atual' })
-    expect(within(balance).getByText('Indisponível')).toBeTruthy()
-    expect(within(balance).queryByText('R$ 0,00')).toBeNull()
-    const closing = indicators().getByRole('article', { name: 'Fechamento projetado' })
-    expect(within(closing).getByText('Indisponível')).toBeTruthy()
-    expect(within(closing).getByText(/Histórico insuficiente/)).toBeTruthy()
+  it('cobertura insuficiente e margem segura indisponível: a conclusão e o alerta ficam visíveis, e a margem nunca vira zero', async () => {
+    const base = decision()
+    mockApi({ overview: withDecision({
+      coverage: { ...base.coverage, state: 'Insufficient', firstBeyondLimitDate: '2026-10-22', firstNegativeDate: '2026-10-20', deficit: '500.00' },
+      safeMargin: { ...base.safeMargin, state: 'Unavailable', amount: null, bindingConstraint: null, constraints: [], reasons: ['ConsolidatedScope'] },
+    }) }); renderPage()
+    const coverage = await screen.findByRole('article', { name: 'Vou conseguir pagar minhas contas?' })
+    expect(text(coverage)).toContain('Há risco de insuficiência em 22/10/2026.'); expect(text(coverage)).toContain('Insuficiente')
+    expect(text(screen.getByLabelText('Margem segura para gastar à vista'))).toContain('ainda não é possível calcular')
+    const alert = within(area('Onde preciso agir')).getByRole('listitem', { name: 'Há risco de insuficiência em 22/10/2026.' })
+    expect(text(alert)).toContain('Déficit estimado de R$ 500,00.'); expect(text(alert)).toContain('Risco de caixa ou da meta')
+    expect(screen.queryByText(/Detalhes de cobertura/)?.closest('details')?.open).toBe(false)
   })
 
-  it('saldo parcial é identificado como parcial e saldo negativo é dito em texto, não só pela cor', async () => {
-    mockApi({ plan: plan({ situation: { ...planActual.situation, realizedBalance: null, partialRealizedBalance: '-80.00', consideredAccounts: 1, unavailableAccounts: 1, projectedClosing: '-500.00' } }) })
-    renderPage()
-    const balance = await screen.findByRole('article', { name: 'Saldo atual' })
-    expect(within(balance).getByText('-R$ 80,00')).toBeTruthy()
-    expect(within(balance).getByText('Parcial')).toBeTruthy()
-    expect(within(balance).getByText('Saldo negativo')).toBeTruthy()
-    expect(within(balance).getByText(/1 sem saldo calculável/)).toBeTruthy()
-    expect(within(indicators().getByRole('article', { name: 'Fechamento projetado' })).getByText('Saldo negativo')).toBeTruthy()
+  it('um alerta de risco abre o detalhe correspondente (cobertura)', async () => {
+    const base = decision()
+    mockApi({ overview: withDecision({ coverage: { ...base.coverage, state: 'CoveredWithCredit' } }) }); renderPage()
+    const alert = await screen.findByRole('listitem', { name: 'Os pagamentos dependem de utilização do cheque especial.' })
+    fireEvent.click(within(alert).getByRole('button', { name: 'Ver detalhe' }))
+    expect(await screen.findByText('Obrigações consideradas')).toBeTruthy()
   })
 })
 
-describe('Visão Geral — avisos', () => {
-  it('a fila de classificação é um aviso próprio e não vira falha de sincronização', async () => {
-    mockApi(); renderPage()
-    const notice = await screen.findByText(/3 lançamento\(s\) pendentes de classificação/)
-    expect(notice.closest('p')?.className).toContain('ov-notice--info')
-    expect(screen.queryByText(/sincroniza/i)).toBeNull()
-    fireEvent.click(within(notice.closest('p')!).getByRole('button', { name: 'Revisar classificação' }))
-    expect(navigations.at(-1)).toMatchObject({ section: 'automation', context: { review: { kind: 'category' } } })
+describe('Visão Geral — orçamento', () => {
+  it('meta herdada do padrão, personalizada ou não configurada, vinda do resolvedor único', async () => {
+    mockApi({ overview: control({ totalTargetOrigin: 'Inherited', totalTargetFrom: '2026-09' }) }); renderPage()
+    expect(text(await screen.findByRole('article', { name: 'Orçamento mensal' }))).toContain('Meta herdada do padrão, em vigor desde Setembro de 2026')
+    cleanup()
+    mockApi({ overview: control({ totalTargetOrigin: 'Customized' }) }); renderPage()
+    expect(text(await screen.findByRole('article', { name: 'Orçamento mensal' }))).toContain('Meta personalizada neste mês')
   })
 
-  it('problemas de sincronização e de revisão aparecem em linguagem direta, com a explicação em detalhe expansível', async () => {
+  it('competência sem meta configurada diz isso e leva a definir as metas', async () => {
+    const base = budgetControl()
+    mockApi({ overview: control({ state: 'TargetNotDefined', totalTargetOrigin: 'Undefined', total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, projectedPercent: null, status: 'NoTarget' },
+      cards: group('Cards', { state: 'TargetNotDefined', target: null, margin: null, excess: null, projectedPercent: null, status: 'NoTarget' }) }) }); renderPage()
+    const summary = await screen.findByRole('article', { name: 'Orçamento mensal' })
+    expect(text(summary)).toContain('Meta não configurada'); expect(text(summary)).not.toContain('Sem meta')
+    fireEvent.click(within(summary).getByRole('button', { name: 'Definir metas' }))
+    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10', budgetGroup: undefined } })
+  })
+
+  it('conta individual não recebe a meta global; o consolidado a mostra', async () => {
+    const base = budgetControl()
+    mockApi({ overview: control({ scopeKind: 'account', targetsAttributable: false, notes: ['TargetsGlobalOnly'], totalTargetOrigin: 'Inherited', total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, status: 'NoTarget' },
+      cards: group('Cards', { state: 'TargetNotAttributable', target: null, margin: null, excess: null, status: 'NoTarget' }), outsideCards: group('OutsideCards', { state: 'TargetNotAttributable', target: null, margin: null, excess: null, status: 'NoTarget' }) }) }); renderPage()
+    const single = await screen.findByRole('article', { name: 'Orçamento mensal' })
+    expect(text(single)).toContain('Meta global'); expect(text(single)).not.toContain('R$ 12.500,00'); expect(text(single)).not.toContain('herdada')
+    cleanup()
+    mockApi(); renderPage()
+    expect(text(await screen.findByRole('article', { name: 'Orçamento mensal' }))).toContain('R$ 12.500,00')
+  })
+})
+
+describe('Visão Geral — recuperação', () => {
+  it('meta fixada e registrada, com a data e o aviso de que não é recalculada', async () => {
+    mockApi(); renderPage()
+    const recovery = await screen.findByRole('article', { name: 'Meta de recuperação' })
+    expect(text(recovery)).toContain('Meta fixada e registrada'); expect(text(recovery)).toContain('Não é recalculada.')
+    expect(text(recovery)).toMatch(/Meta de recuperação\s*R\$ 2\.500,00/); expect(text(recovery)).toMatch(/Cheque especial utilizado\s*R\$ 15\.000,00/)
+    expect(text(recovery)).toMatch(/Recuperação realizada\s*R\$ 500,00/); expect(text(recovery)).toMatch(/Recuperação projetada\s*R\$ 1\.000,00/)
+    expect(text(recovery)).toMatch(/Desvio em relação à meta\s*-R\$ 1\.500,00abaixo da meta/)
+  })
+
+  it('meta provisória nunca é apresentada como fixada, e a ausência de meta não inventa valor', async () => {
+    const base = decision()
+    mockApi({ overview: withDecision({ recovery: { ...base.recovery, state: 'Provisional', targetFixedAt: null } }) }); renderPage()
+    const provisional = await screen.findByRole('article', { name: 'Meta de recuperação' })
+    expect(text(provisional)).toContain('Meta provisória calculada'); expect(text(provisional)).not.toContain('Meta fixada'); expect(text(provisional)).not.toContain('Não é recalculada')
+    cleanup()
+    mockApi({ overview: withDecision({ recovery: { ...base.recovery, state: 'NotRegistered', target: null, targetFixedAt: null, gapToTarget: null, projectedRecovery: null } }) }); renderPage()
+    const none = await screen.findByRole('article', { name: 'Meta de recuperação' })
+    expect(text(none)).toContain('Ausência de meta'); expect(text(none)).toContain('Meta não configurada'); expect(text(none)).not.toMatch(/R\$ 0,00/)
+    expect(text(none)).toContain('Ainda não é possível calcular')
+  })
+
+  it('o resumo não contradiz o detalhe: a recuperação detalhada só carrega ao abrir e fala de meta "não fixada"', async () => {
+    mockApi(); renderPage()
+    const summary = await screen.findByRole('article', { name: 'Meta de recuperação' })
+    expect(calls.some(url => url.includes('overdraft-recovery') || url.includes('/projection'))).toBe(false)
+    fireEvent.click(within(summary).getByRole('button', { name: 'Registrar meta e ver histórico' }))
+    expect(await screen.findByRole('region', { name: 'Recuperação do limite projetada' })).toBeTruthy()
+    await waitFor(() => expect(calls.some(url => url.includes('/monthly-plan/projection'))).toBe(true))
+  })
+
+  it('conta que não abriu negativa: explica por que não há meta, sem valores', async () => {
+    const base = decision()
+    mockApi({ overview: withDecision({ recovery: { ...base.recovery, state: 'NotApplicable', reason: 'AccountDidNotOpenNegative', openingUsed: null, target: null, gapToTarget: null } }) }); renderPage()
+    const recovery = await screen.findByRole('article', { name: 'Meta de recuperação' })
+    expect(text(recovery)).toContain('A conta não abriu a competência usando o cheque especial')
+    expect(within(recovery).queryByText('Registrar meta e ver histórico')).toBeNull()
+  })
+})
+
+describe('Visão Geral — onde agir', () => {
+  it('mostra até três itens por prioridade e "Ver todas as recomendações" revela os demais', async () => {
+    mockApi(); renderPage()
+    const actions = await screen.findByRole('region', { name: 'Onde preciso agir' })
+    const items = () => within(actions).getAllByRole('listitem').filter(item => item.classList.contains('ov-action'))
+    expect(items()).toHaveLength(3)
+    expect(text(items()[0])).toContain('Risco de caixa ou da meta'); expect(text(items()[0])).toContain('Há compromissos vencidos e não pagos.'); expect(text(items()[0])).toContain('R$ 100,00 em aberto.')
+    expect(text(items()[1])).toContain('A recuperação projetada está abaixo da meta.')
+    fireEvent.click(within(actions).getByRole('button', { name: 'Ver todas as recomendações (6)' }))
+    expect(items()).toHaveLength(6)
+    fireEvent.click(within(actions).getByRole('button', { name: 'Mostrar menos' }))
+    expect(items()).toHaveLength(3)
+  })
+
+  it('alertas críticos (risco de caixa ou da meta) ficam sempre visíveis, mesmo acima de três', async () => {
+    const base = decision()
+    mockApi({ overview: withDecision({
+      coverage: { ...base.coverage, state: 'Insufficient', firstBeyondLimitDate: '2026-10-22', deficit: '500.00' },
+      recovery: { ...base.recovery, state: 'Provisional', gapToTarget: '-200.00' },
+    }) }); renderPage()
+    const actions = await screen.findByRole('region', { name: 'Onde preciso agir' })
+    const critical = within(actions).getAllByRole('listitem').filter(item => item.classList.contains('ov-action--1'))
+    expect(critical).toHaveLength(3)
+    expect(within(actions).getByText('Faltam R$ 200,00 para a meta provisória.')).toBeTruthy()
+  })
+
+  it('agrupa avisos técnicos por consequência, com as causas em expansão e a ação de cada uma', async () => {
     mockApi({ plan: plan({
       sync: { autoEnabled: false, autoIntervalHours: 24, oldestSuccessAt: '2026-10-10T12:00:00Z', latestSuccessAt: '2026-10-10T12:00:00Z', sameMoment: true, stale: true, state: 'Failed', nextAttemptAt: null, connections: [{ connectionId: 'c1', label: 'Banco', status: 'Failed', lastSuccessAt: '2026-10-10T12:00:00Z', lastAttemptAt: null, nextAttemptAt: null, consentExpiringSoon: false }] },
       coverage: { ...planActual.coverage, complete: false, reviewCount: 2, reviewAffectsConfidence: true, reasons: ['MovementsInReview'] },
-    }) })
-    renderPage()
-    expect(await screen.findByText(/A última sincronização com o banco falhou/)).toBeTruthy()
-    expect(screen.getByText(/2 movimentação\(ões\) do banco aguardam sua decisão/)).toBeTruthy()
-    expect(screen.getByText(/Projeção incompleta/)).toBeTruthy()
-    const details = screen.getByText('Por que alguns valores são parciais').closest('details')!
-    expect(details.open).toBe(false)
-    expect(within(details).getByText(/movimentações do banco em revisão/)).toBeTruthy()
+    }) }); renderPage()
+    const actions = await screen.findByRole('region', { name: 'Onde preciso agir' })
+    fireEvent.click(await within(actions).findByRole('button', { name: /Ver todas as recomendações/ }))
+    const group = within(actions).getByRole('listitem', { name: 'Alguns valores podem estar desatualizados ou incompletos.' })
+    expect(text(group)).toContain('Confiabilidade dos dados')
+    for (const cause of [/A última sincronização com o banco falhou/, /2 movimentação\(ões\) do banco aguardam sua decisão/, /Projeção incompleta/, /movimentações do banco em revisão/]) expect(within(group).getByText(cause)).toBeTruthy()
+    fireEvent.click(within(group.querySelector('.ov-action__causes') as HTMLElement).getByRole('button', { name: 'Ver conexões' }))
+    expect(navigations.at(-1)).toMatchObject({ section: 'automation', context: { automationTab: 'connections' } })
     expect(screen.getByRole('button', { name: 'Sincronizar agora' })).toBeTruthy()
   })
 
-  it('sem conta principal avisa e leva para Contas', async () => {
-    mockApi({ plan: plan({ scope: { ...planActual.scope, kind: 'all', primaryAccountId: null, primaryAccountName: null, primaryMissing: true } }) })
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Definir em Contas' }))
+  it('a fila de classificação é uma pendência de orçamento e nunca falha de sincronização', async () => {
+    mockApi(); renderPage()
+    const actions = await screen.findByRole('region', { name: 'Onde preciso agir' })
+    fireEvent.click(await within(actions).findByRole('button', { name: /Ver todas as recomendações/ }))
+    const group = within(actions).getByRole('listitem', { name: 'O orçamento tem pendências de classificação ou de metas.' })
+    expect(within(group).getByText(/3 lançamento\(s\) pendentes de classificação/)).toBeTruthy()
+    expect(within(actions).queryByText(/sincroniza/i)).toBeNull()
+    fireEvent.click(within(group.querySelector('.ov-action__causes') as HTMLElement).getByRole('button', { name: 'Revisar classificação' }))
+    expect(navigations.at(-1)).toMatchObject({ section: 'automation', context: { review: { kind: 'category' } } })
+  })
+
+  it('sem conta principal avisa em Onde preciso agir e leva para Contas', async () => {
+    mockApi({ plan: plan({ scope: { ...planActual.scope, kind: 'all', primaryAccountId: null, primaryAccountName: null, primaryMissing: true } }) }); renderPage()
+    const actions = await screen.findByRole('region', { name: 'Onde preciso agir' })
+    fireEvent.click(await within(actions).findByRole('button', { name: /Ver todas as recomendações/ }))
+    fireEvent.click(await within(actions).findByRole('button', { name: 'Definir em Contas' }))
     expect(navigations.at(-1)?.section).toBe('accounts')
+  })
+
+  it('sem nada a fazer diz isso, e enquanto carrega diz que está verificando', async () => {
+    const base = decision()
+    mockApi({ overview: withSummary({ classification: { state: 'Complete', needsReview: 0, notEvaluated: 0 }, decision: { ...base, commitments: { ...base.commitments, overdue: '0.00' }, recovery: { ...base.recovery, gapToTarget: '100.00' } }, budgetControl: budgetControl({ pressures: [], recommendations: [] }) }) }); renderPage()
+    expect(screen.getByText('Verificando alertas e recomendações…')).toBeTruthy()
+    expect(await screen.findByText('Nenhuma ação necessária com os dados disponíveis.')).toBeTruthy()
   })
 })
 
 describe('Visão Geral — filtros', () => {
-  it('trocar a competência e a conta recarrega todos os blocos com o mesmo recorte', async () => {
+  it('trocar a competência e a conta recarrega o resumo com o mesmo recorte, sem tocar nos detalhes fechados', async () => {
     mockApi(); renderPage()
-    await screen.findByRole('article', { name: 'Saldo atual' })
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
     fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-09' } })
     await waitFor(() => expect(calls.filter(url => url.includes('competence=2026-09'))).toHaveLength(2)) // plan-actual e overview
-    expect(calls.some(url => url.includes('/monthly-plan/six-months') && url.includes('from=2026-06'))).toBe(true) // evolução: 3 meses antes + mês + 2
     fireEvent.change(screen.getByLabelText('Conta ou consolidado'), { target: { value: 'all' } })
-    await waitFor(() => expect(calls.filter(url => url.includes('scope=all')).length).toBeGreaterThanOrEqual(3))
+    await waitFor(() => expect(calls.filter(url => url.includes('scope=all')).length).toBe(2))
     fireEvent.change(screen.getByLabelText('Conta ou consolidado'), { target: { value: 'account:pj' } })
-    await waitFor(() => expect(calls.filter(url => url.includes('scope=account') && url.includes('accountId=pj')).length).toBeGreaterThanOrEqual(3))
+    await waitFor(() => expect(calls.filter(url => url.includes('scope=account') && url.includes('accountId=pj')).length).toBe(2))
+    expect(calls.some(url => url.includes('six-months'))).toBe(false)
   })
 
   it('lista a conta principal, o consolidado e cada conta no seletor', async () => {
@@ -150,130 +347,7 @@ describe('Visão Geral — filtros', () => {
     const select = await screen.findByLabelText('Conta ou consolidado')
     await waitFor(() => expect(within(select).getAllByRole('option').length).toBeGreaterThanOrEqual(4))
     const options = within(select).getAllByRole('option').map(option => option.textContent)
-    expect(options[0]).toBe('Conta principal · Conta A')
-    expect(options[1]).toBe('Todas as contas (consolidado)')
-    expect(options).toContain('Conta B · PJ')
-  })
-})
-
-describe('Visão Geral — blocos', () => {
-  it('compromissos: vencidos separados dos próximos, com o horizonte e a abertura da Agenda no mês do item', async () => {
-    mockApi(); renderPage()
-    const block = await screen.findByRole('region', { name: 'Próximos compromissos' })
-    expect(within(block).getByText(/próximos 30 dias \(até 15\/11\/2026\)/)).toBeTruthy()
-    const overdue = within(block).getByRole('heading', { name: /Vencidos/ }).closest('.ov-group') as HTMLElement
-    expect(within(overdue).getByText('Internet')).toBeTruthy()
-    expect(within(overdue).getByText(/venceu há 6 dias/)).toBeTruthy()
-    const upcoming = within(block).getByRole('heading', { name: /Próximos 30 dias/ }).closest('.ov-group') as HTMLElement
-    expect(within(upcoming).getByText(/vence hoje/)).toBeTruthy()
-    expect(within(upcoming).getByText(/vence em 20 dias/)).toBeTruthy()
-    expect(within(block).getByText(/\+ 5 na Agenda/)).toBeTruthy() // 7 no total, 2 exibidos
-    fireEvent.click(within(upcoming).getByRole('button', { name: /Financiamento - parcela 4/ }))
-    expect(navigations.at(-1)).toEqual({ section: 'calendar', context: { month: '2026-11' } })
-    fireEvent.click(within(block).getByRole('button', { name: 'Abrir Agenda' }))
-    expect(navigations.at(-1)).toEqual({ section: 'calendar', context: { month: '2026-10' } })
-  })
-
-  it('compromissos vazios dizem que não há nada pendente', async () => {
-    const empty = { count: 0, total: '0.00', items: [] }
-    mockApi({ overview: { ...overview, commitments: { ...overview.commitments, overdue: empty, upcoming: empty } } }); renderPage()
-    expect(await screen.findByText(/Nenhuma despesa pendente na Agenda neste horizonte/)).toBeTruthy()
-  })
-
-  it('orçamento: fixas, todos os cartões e categorias aparecem à parte, cada meta com limite, consumido e disponível', async () => {
-    mockApi(); renderPage()
-    const budget = await screen.findByRole('region', { name: /Orçamento de/ })
-    expect(within(budget).getByText(/1 meta\(s\) de categoria excedida\(s\)/)).toBeTruthy()
-    const fixed = within(budget).getByRole('progressbar', { name: 'Consumo de Despesas fixas' })
-    expect(fixed.getAttribute('aria-valuetext')).toBe('90,0%')
-    expect(within(budget).getByText(/R\$ 540,00 de R\$ 600,00 · 90,0%/)).toBeTruthy()
-    expect(within(budget).getByText('Disponível R$ 60,00')).toBeTruthy()
-    expect(within(budget).getByText(/R\$ 4\.200,00 de R\$ 5\.000,00 · 84,0%/)).toBeTruthy() // todos os cartões somados, um limite só
-    expect(within(budget).getByText(/Faturas com vencimento em/)).toBeTruthy()
-    expect(within(budget).getByText(/R\$ 1\.200,00 de R\$ 1\.000,00 · 120,0%/)).toBeTruthy()
-    expect(within(budget).getByText('Excedido em R$ 200,00')).toBeTruthy()
-    expect(within(budget).getByText('Excedido')).toBeTruthy() // o estado vem em texto
-    expect(within(budget).getByText(/Dados incompletos: competência de cartão estimada/)).toBeTruthy()
-    expect(within(budget).getByText(/seus valores não são somados/)).toBeTruthy()
-    expect(within(budget).queryByText(/Total do orçamento/i)).toBeNull() // nenhuma soma entre perspectivas
-  })
-
-  it('orçamento: cada grupo abre o orçamento da competência já nele', async () => {
-    mockApi(); renderPage()
-    const budget = await screen.findByRole('region', { name: /Orçamento de/ })
-    const open = within(budget).getAllByRole('button', { name: 'Abrir composição' })
-
-    fireEvent.click(open[0])
-    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10', budgetGroup: 'fixed' } })
-    fireEvent.click(open[1])
-    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10', budgetGroup: 'cards' } })
-    fireEvent.click(open[2])
-    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10', budgetGroup: 'categories' } })
-    fireEvent.click(within(budget).getByRole('button', { name: 'Abrir orçamento' }))
-    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10' } })
-  })
-
-  it('orçamento: sem metas no mês mostra o estado vazio com a ação correspondente', async () => {
-    mockApi({ overview: { ...overview, budget: { state: 'Complete', hasBudget: false, budgetId: null, competence: '2026-10', fixed: null, cards: null, categories: { count: 0, planned: null, consumed: null, exceededCount: 0, approachingCount: 0, targets: [] } } } })
-    renderPage()
-    const budget = await screen.findByRole('region', { name: /Orçamento de/ })
-    expect(await within(budget).findByText(/Nenhuma meta definida para/)).toBeTruthy()
-    fireEvent.click(within(budget).getByRole('button', { name: 'Definir metas' }))
-    expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10' } })
-  })
-
-  it('metas: nome, acumulado, alvo e progresso, com acesso à página de metas', async () => {
-    mockApi(); renderPage()
-    const goals = await screen.findByRole('region', { name: 'Metas' })
-    expect(within(goals).getByText('Reserva de emergência')).toBeTruthy()
-    expect(within(goals).getByText(/R\$ 2\.500,00 de R\$ 10\.000,00/)).toBeTruthy()
-    expect(within(goals).getByRole('progressbar', { name: 'Progresso de Reserva de emergência' }).getAttribute('aria-valuenow')).toBe('25')
-    fireEvent.click(within(goals).getByRole('button', { name: 'Ver metas' }))
-    expect(navigations.at(-1)?.section).toBe('goals')
-  })
-
-  it('compromissos: a fatura do cartão aparece como obrigação de caixa pelo vencimento, com o restante e se é confirmada ou estimada', async () => {
-    mockApi({ overview: { ...overview, commitments: { ...overview.commitments, cardPayments: { state: 'Complete', total: '1500.00', overdueRemaining: '200.00', overdueCards: 1, items: [
-      { cardId: 'c1', cardName: 'Itaú Visa', cardScope: 'PF', competence: '2026-11', due: '2026-11-15', daysFromToday: 5, obligation: '1000.00', paid: '400.00', remaining: '600.00', status: 'Confirmed', paymentState: 'Partial' },
-      { cardId: 'c2', cardName: 'Nubank', cardScope: 'PF', competence: '2026-11', due: '2026-11-20', daysFromToday: 10, obligation: '900.00', paid: '0.00', remaining: '900.00', status: 'Provisional', paymentState: 'Unpaid' },
-    ] } } } }); renderPage()
-    const group = await screen.findByLabelText('Faturas de cartão')
-    expect(group.textContent).toMatch(/2 · falta pagar R\$\s1\.500,00/)
-    expect(group.textContent).toContain('Confirmada pelo banco')
-    expect(group.textContent).toMatch(/paga em parte: já pago R\$\s400,00 de R\$\s1\.000,00/)
-    expect(group.textContent).toContain('Estimada (provisória)')
-    expect(group.textContent).toMatch(/R\$\s200,00 a pagar em fatura\(s\) já vencida\(s\) de 1 cartão/)
-    expect(screen.getByText(/As compras do cartão não aparecem aqui como saídas/)).toBeTruthy()
-    fireEvent.click(within(group).getByRole('button', { name: /Fatura Nubank/ }))
-    expect(navigations.at(-1)?.section).toBe('cards')
-  })
-
-  it('metas: mostra o que falta, prazo vencido e alvo superado em texto, e abre o objetivo escolhido', async () => {
-    const base = overview.goals.items[0]
-    mockApi({ overview: { ...overview, goals: { ...overview.goals, activeCount: 3, items: [
-      { ...base, goalId: 'g1', targetDate: '2020-01-10' },
-      { ...base, goalId: 'g2', name: 'Viagem', allocated: '1200.00', remaining: '0.00', progressPercent: '120.0', funded: true, targetDate: null },
-    ] } } }); renderPage()
-    const goals = await screen.findByRole('region', { name: 'Metas' })
-    expect(within(goals).getByText(/faltam R\$\s7\.500,00/)).toBeTruthy()
-    expect(within(goals).getByText('Prazo vencido em 10/01/2020')).toBeTruthy()
-    expect(within(goals).getByText(/Alocado acima do alvo \(120,0%\)/)).toBeTruthy()
-    expect(within(goals).getByText('Sem prazo definido')).toBeTruthy()
-    expect(within(goals).getByText(/não aumentam o saldo nem são um limite de orçamento/)).toBeTruthy()
-    fireEvent.click(within(goals).getByRole('button', { name: 'Abrir o objetivo Viagem' }))
-    expect(navigations.at(-1)).toMatchObject({ section: 'goals', context: { goalId: 'g2' } })
-  })
-
-  it('últimos lançamentos: período, escopo e exclusão de pagamento de fatura ficam explícitos; classificação pendente é marcada', async () => {
-    mockApi(); renderPage()
-    const recent = await screen.findByRole('region', { name: 'Últimos lançamentos' })
-    expect(within(recent).getByText(/Outubro de 2026 \(até 16\/10\/2026\) · Conta principal · Conta A · sem pagamentos de fatura/)).toBeTruthy()
-    expect(within(recent).getByText('− R$ 45,90')).toBeTruthy()
-    expect(within(recent).getByText('+ R$ 2.000,00')).toBeTruthy()
-    expect(within(recent).getByText('Aguardando classificação')).toBeTruthy()
-    expect(within(recent).getByText(/Mostrando 2 de 9 lançamentos do período/)).toBeTruthy()
-    fireEvent.click(within(recent).getByRole('button', { name: 'Ver todos' }))
-    expect(navigations.at(-1)).toEqual({ section: 'transactions', context: { transactions: { from: '2026-10-01', to: '2026-10-16', accountId: 'pf' }, newTransaction: false } })
+    expect(options[0]).toBe('Conta principal · Conta A'); expect(options[1]).toBe('Todas as contas (consolidado)'); expect(options).toContain('Conta B · PJ')
   })
 
   it('ação principal: novo lançamento reutiliza o fluxo de Lançamentos', async () => {
@@ -281,46 +355,33 @@ describe('Visão Geral — blocos', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Novo lançamento' }))
     expect(navigations.at(-1)).toEqual({ section: 'transactions', context: { newTransaction: true } })
   })
-
-  it('evolução: separa realizado de projetado e oferece a alternativa em tabela', async () => {
-    mockApi(); renderPage()
-    const chart = await screen.findByRole('img', { name: /Receitas e despesas de out\/26 a mar\/27/ })
-    expect(chart.getAttribute('aria-label')).toMatch(/dez\/26: receitas R\$\s0,00, despesas R\$\s5\.000,00 \(projeção\)/)
-    const section = chart.closest('section')!
-    expect(within(section).getByText('Projetado')).toBeTruthy()
-    const table = within(section).getByRole('table', { hidden: true })
-    expect(within(table).getAllByRole('row', { hidden: true })).toHaveLength(7) // cabeçalho + 6 meses
-    expect(within(table).getByText('Mês corrente')).toBeTruthy()
-    expect(within(table).getAllByText('Mês futuro').length).toBe(5)
-  })
-
-  it('evolução com período desconhecido ou "Historical" não derruba o painel (regressão da publicação)', async () => {
-    const odd = { ...sixMonths, months: sixMonths.months.map((month, index) => ({ ...month, periodKind: (index === 0 ? 'Historical' : index === 1 ? 'Inesperado' : month.periodKind) as typeof month.periodKind })) }
-    mockApi({ evolution: odd }); renderPage()
-    expect(await screen.findByRole('heading', { name: 'Evolução financeira' })).toBeTruthy()
-    expect(screen.getByRole('article', { name: 'Saldo atual' })).toBeTruthy()
-  })
-
-  it('evolução sem movimento diz isso em vez de desenhar barras vazias', async () => {
-    const zero = { ...sixMonths, months: sixMonths.months.map(month => ({ ...month, projectedIncome: '0.00', realizedIncome: '0.00', projectedExpense: '0.00', realizedExpense: '0.00' })) }
-    mockApi({ evolution: zero }); renderPage()
-    expect(await screen.findByText('Sem receitas nem despesas neste período.')).toBeTruthy()
-  })
 })
 
 describe('Visão Geral — estados e falhas', () => {
   it('mostra carregamento por bloco e preenche cada um quando chega', async () => {
     mockApi(); renderPage()
-    expect(screen.getByText('Carregando indicadores…')).toBeTruthy()
-    expect(await screen.findByRole('article', { name: 'Saldo atual' })).toBeTruthy()
-    expect(await screen.findByRole('region', { name: 'Próximos compromissos' })).toBeTruthy()
+    expect(screen.getByText('Carregando a situação financeira…')).toBeTruthy()
+    expect(await screen.findByRole('article', { name: 'Saldo bancário observado' })).toBeTruthy()
+    expect(await screen.findByRole('article', { name: 'Orçamento mensal' })).toBeTruthy()
   })
 
-  it('a falha de um bloco não derruba os outros e a recarga é só dele', async () => {
+  it('falha de plan-actual: só o fechamento fica indisponível, o resto segue válido e a recarga é só dela', async () => {
+    mockApi({ plan: new Response('{}', { status: 500 }) }); renderPage()
+    const closing = await screen.findByRole('article', { name: 'Fechamento projetado' })
+    expect(text(closing)).toContain('Ainda não é possível calcular')
+    expect(text(screen.getByRole('article', { name: 'Saldo bancário observado' }))).toContain('-R$ 1.000,00')
+    const before = calls.length
+    fireEvent.click(await screen.findByRole('button', { name: 'Recarregar indicadores' }))
+    await waitFor(() => expect(calls.length).toBe(before + 1))
+    expect(calls.at(-1)).toContain('/financial-dashboard/plan-actual')
+  })
+
+  it('falha do overview: a situação cai para o saldo calculado, diz que a análise não está disponível e a recarga é só dela', async () => {
     mockApi({ overview: new Response('{}', { status: 500 }) }); renderPage()
-    expect(await screen.findByRole('article', { name: 'Saldo atual' })).toBeTruthy() // indicadores seguem válidos
-    expect(await screen.findByRole('img', { name: /Receitas e despesas/ })).toBeTruthy() // evolução também
-    const alert = await screen.findByRole('button', { name: 'Recarregar' })
+    const alert = await screen.findByRole('button', { name: 'Recarregar a Visão Geral' })
+    expect(text(await screen.findByRole('article', { name: 'Saldo calculado' }))).toContain('não é o saldo informado pelo banco')
+    expect(text(screen.getByRole('article', { name: 'Análise de cobertura indisponível' }))).toContain('Ainda não é possível calcular')
+    expect(screen.queryByRole('region', { name: 'Meu orçamento' })).toBeNull()
     const before = calls.length
     fireEvent.click(alert)
     await waitFor(() => expect(calls.length).toBe(before + 1))
@@ -328,27 +389,29 @@ describe('Visão Geral — estados e falhas', () => {
   })
 
   it('um bloco indisponível dentro da resposta é dito como indisponível, nunca como vazio ou zero', async () => {
-    mockApi({ overview: { ...overview, goals: { ...overview.goals, state: 'Unavailable', items: [], activeCount: 0 },
-      commitments: { ...overview.commitments, state: 'Unavailable' }, recent: { ...overview.recent, state: 'Unavailable', items: [], totalCount: 0 }, budget: { ...overview.budget, state: 'Unavailable', hasBudget: false, fixed: null, cards: null, categories: { count: 0, planned: null, consumed: null, exceededCount: 0, approachingCount: 0, targets: [] } } } })
+    mockApi({ overview: withSummary({ goals: { ...overview.goals, state: 'Unavailable', items: [], activeCount: 0 },
+      commitments: { ...overview.commitments, state: 'Unavailable' }, recent: { ...overview.recent, state: 'Unavailable', items: [], totalCount: 0 }, budget: { ...overview.budget, state: 'Unavailable', hasBudget: false, fixed: null, cards: null, categories: { count: 0, planned: null, consumed: null, exceededCount: 0, approachingCount: 0, targets: [] } } }) })
     renderPage()
-    expect(await screen.findByText('Não foi possível carregar as metas.')).toBeTruthy()
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    for (const title of ['Metas e objetivos', 'Próximos compromissos por vencimento', 'Últimos lançamentos', 'Metas por categoria e despesas fixas']) openSection(title)
+    expect(screen.getByText('Não foi possível carregar as metas.')).toBeTruthy()
     expect(screen.getByText('Não foi possível carregar os compromissos da Agenda.')).toBeTruthy()
     expect(screen.getByText('Não foi possível carregar os lançamentos.')).toBeTruthy()
     expect(screen.getByText(/Não foi possível carregar o orçamento deste mês/)).toBeTruthy()
-    expect(screen.queryByText(/Nenhum orçamento definido/)).toBeNull()
   })
 
   it('estados vazios orientam: metas e lançamentos', async () => {
-    mockApi({ overview: { ...overview, goals: { ...overview.goals, items: [], activeCount: 0 }, recent: { ...overview.recent, items: [], totalCount: 0 } } })
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Criar meta' }))
+    mockApi({ overview: withSummary({ goals: { ...overview.goals, items: [], activeCount: 0 }, recent: { ...overview.recent, items: [], totalCount: 0 } }) }); renderPage()
+    await screen.findByRole('article', { name: 'Saldo bancário observado' })
+    openSection('Metas e objetivos')
+    fireEvent.click(screen.getByRole('button', { name: 'Criar meta' }))
     expect(navigations.at(-1)?.section).toBe('goals')
   })
 
   it('não apresenta dados fictícios: sem resposta da API, nenhum valor financeiro aparece', async () => {
-    mockApi({ plan: new Response('{}', { status: 500 }), overview: new Response('{}', { status: 500 }), evolution: new Response('{}', { status: 500 }) })
+    mockApi({ plan: new Response('{}', { status: 500 }), overview: new Response('{}', { status: 500 }) })
     renderPage()
-    await waitFor(() => expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(3))
+    await waitFor(() => expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(2))
     expect(screen.queryByText(/R\$/)).toBeNull()
   })
 })

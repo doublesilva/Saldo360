@@ -35,10 +35,14 @@ public sealed partial class DashboardOverviewService
             var outsideReasons = consumption.Reasons.Where(r => !TargetReasons.Contains(r) && r != PlanActualCalculator.Reasons.CardCoverageIncomplete).Distinct().ToList();
 
             decimal? totalTarget = null, cardTarget = null;
+            string? totalOrigin = null, totalFrom = null;
             if (attributable)
             {
                 var basis = await planBasis.LoadBasisAsync(workspaceId, first, null, ct);
                 totalTarget = basis.AggregateTotalExpenses; cardTarget = basis.CardBudgetTarget;
+                // T12.2: de onde vem a meta total (herdada do padrão, personalizada no mês, registro mensal anterior ou não definida). Só informação: o valor continua vindo do resolvedor único.
+                var total = (await effectiveBudgets.BuildAsync(workspaceId, first, ct)).Targets.FirstOrDefault(t => t.Target == nameof(Saldo360.Domain.Budgets.BudgetRuleTarget.TotalExpenses));
+                totalOrigin = total?.Origin ?? Saldo360.Application.Budgets.TargetOrigin.Undefined; totalFrom = total?.StandardFrom;
             }
 
             // Provisão alimentar: valor estimado complementar dos cartões (o que falta para a provisão além das compras já categorizadas). Só do mês corrente em diante.
@@ -67,7 +71,7 @@ public sealed partial class DashboardOverviewService
             var input = new BudgetControlInput(month, period, kind, attributable, totalTarget, cardTarget, cards.Applicable, cardsConfirmed, cardsPending, cardsEstimated, foodComplement, cardReasons,
                 outsideRealized, outsideCommitted, outsideReasons, Dec(cards.FinanceCharges), overTargets, Dec(decision?.Commitments.Overdue), overdueIncome,
                 classification.State == "Complete" ? classification.NeedsReview + classification.NotEvaluated : 0, unconfirmed, decision?.Context.OverdraftUsed is { } used ? Dec(used) : null);
-            return BudgetControlCalculator.Build(input);
+            return BudgetControlCalculator.Build(input) with { TotalTargetOrigin = totalOrigin, TotalTargetFrom = totalFrom };
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {

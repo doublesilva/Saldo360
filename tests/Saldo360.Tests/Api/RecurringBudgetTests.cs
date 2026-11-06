@@ -294,6 +294,9 @@ public sealed class RecurringBudgetTests(PostgresFixture postgres) : PostgresApi
         Assert.Equal("3000.00", overview.GetProperty("budget").GetProperty("fixed").GetProperty("planned").GetString());
         Assert.Equal("12500.00", overview.GetProperty("budgetControl").GetProperty("total").GetProperty("target").GetString());
         Assert.Equal("7100.00", overview.GetProperty("budgetControl").GetProperty("outsideCards").GetProperty("target").GetString());
+        // T12.2: a Visão Geral diz de onde vem a meta total (herdada do padrão que começou no mês 1), pelo mesmo resolvedor.
+        Assert.Equal("Inherited", overview.GetProperty("budgetControl").GetProperty("totalTargetOrigin").GetString());
+        Assert.Equal(Key(1), overview.GetProperty("budgetControl").GetProperty("totalTargetFrom").GetString());
 
         var execution = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, $"{Root}/budgets/effective/execution?competence={Key(3)}", _session)).Content.ReadAsStringAsync()).RootElement;
         var planned = execution.GetProperty("targets").EnumerateArray().ToDictionary(t => t.GetProperty("groupingType").GetString()!, t => t.GetProperty("planned").GetString());

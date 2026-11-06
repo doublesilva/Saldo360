@@ -5,10 +5,10 @@ import type { BudgetAction, BudgetGroupState, BudgetPressure } from '../../api/o
 export const groupTitle = { Cards: 'Cartões de crédito', OutsideCards: 'Fora dos cartões' } as const
 
 export const groupStateText: Partial<Record<BudgetGroupState, string>> = {
-  TargetNotDefined: 'Meta não definida', TargetNotAttributable: 'A meta é global e não se aplica a uma conta isolada', NoCards: 'Nenhum cartão cadastrado', Partial: 'Dados incompletos',
+  TargetNotDefined: 'Meta não configurada', TargetNotAttributable: 'A meta é global e não se aplica a uma conta isolada', NoCards: 'Nenhum cartão cadastrado', Partial: 'Dados incompletos',
 }
 
-export const statusText = { WithinBudget: 'Dentro da meta', Exceeded: 'Acima da meta', NoTarget: 'Sem meta' } as const
+export const statusText = { WithinBudget: 'Dentro da meta', Exceeded: 'Acima da meta', NoTarget: 'Meta não configurada' } as const
 
 export function pressureText(pressure: BudgetPressure): string {
   switch (pressure.kind) {
@@ -54,4 +54,15 @@ export const noteText: Record<string, string> = {
 export const reasonText: Record<string, string> = {
   CardCoverageIncomplete: 'cobertura de cartões incompleta', MissingPayerAccount: 'cartão sem conta pagadora', DebtCoverageIncomplete: 'dívidas sem conta responsável',
   PendingBankAmbiguous: 'débito do banco sem vínculo seguro', MovementsInReview: 'movimentos em revisão', PartialPeriod: 'período parcial',
+}
+
+/** T12.2: origem da meta total vinda do resolvedor único da T12.1. `from` é a competência (AAAA-MM) em que o padrão começou a valer. */
+export function originText(origin: string | null | undefined, from: string | null | undefined, monthName: (competence: string) => string): string | null {
+  switch (origin) {
+    case 'Inherited': return from ? `Meta herdada do padrão, em vigor desde ${monthName(from)}` : 'Meta herdada do padrão'
+    case 'Customized': return 'Meta personalizada neste mês'
+    case 'Historical': return 'Meta do registro mensal anterior'
+    case 'Undefined': return 'Meta não configurada'
+    default: return null
+  }
 }

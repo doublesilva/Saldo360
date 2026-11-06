@@ -4,6 +4,8 @@ import { unavailableBalanceReasons } from './overviewText'
 
 // T11.1: textos da decisão financeira. Nenhum valor é calculado aqui: o servidor entrega estados, datas e valores; este módulo só os descreve de forma objetiva.
 
+export const coverageQuestion = 'Vou conseguir pagar minhas contas?'
+
 export const periodText: Record<DecisionPeriod, string> = { Current: 'Mês corrente', Future: 'Mês futuro', Closed: 'Mês encerrado' }
 
 export const coverageTag: Record<CoverageState, { label: string; tone: 'ok' | 'warning' | 'danger' | 'neutral' }> = {
@@ -63,7 +65,7 @@ export const notApplied = (reason: string | null) => reason ? notAppliedText[rea
 export const marginMessage = (m: DecisionSafeMargin) => m.state === 'Unavailable' ? 'Não é possível calcular uma margem segura com os dados disponíveis.' : null
 
 export const recoveryStateText: Record<DecisionRecovery['state'], string> = {
-  Provisional: 'Provisória', Fixed: 'Fixada', Pending: 'Pendente', NotRegistered: 'Não registrada', NotApplicable: 'Não se aplica', Unavailable: 'Indisponível',
+  Provisional: 'Meta provisória calculada', Fixed: 'Meta fixada e registrada', Pending: 'Ausência de meta', NotRegistered: 'Ausência de meta', NotApplicable: 'Não se aplica', Unavailable: 'Ausência de meta',
 }
 export const recoveryNotApplicable: Record<string, string> = {
   AccountDidNotOpenNegative: 'A conta não abriu a competência usando o cheque especial: não há meta de recuperação.',

@@ -21,7 +21,7 @@ export function OverviewCashFlowSection({ flow, scopeAccountId, onNavigate }: { 
   const open = () => onNavigate('transactions', { transactions: { from: flow.from, to: flow.through, accountId: scopeAccountId } })
   const noOpening = flow.opening === null
   return <section className="ov-cash" aria-labelledby="ov-cash-title">
-    <header className="ov-cash__head"><div><h2 id="ov-cash-title">Fluxo de caixa · movimentações efetivas</h2>
+    <header className="ov-cash__head"><div><h3 id="ov-cash-title">Fluxo de caixa · movimentações efetivas</h3>
       <p className="ov-meta">Inclui transferências recebidas e enviadas na perspectiva selecionada. Lançamentos ainda sem categoria também entram.</p></div></header>
     {!flow.snapshotConsistent && <p className="ov-notice ov-notice--warning" role="status">Os dados mudaram durante a leitura. Atualize para ver um retrato consistente.</p>}
     <div className="ov-cash__cards" role="group" aria-label="Fluxo de caixa do período">
@@ -72,7 +72,7 @@ function RecoveryTarget({ recovery: r }: { recovery: OverviewRecovery }) {
     <div><dt>Cheque especial usado na abertura</dt><dd>{money(r.openingUsed)}</dd></div>
     <div><dt>Meta de recuperação do mês</dt><dd data-unavailable={r.target === null || undefined}>{r.target === null ? 'Pendente' : money(r.target)}</dd></div>
     <div><dt>Estado da meta</dt><dd><span className={`ov-tag${r.targetState === 'Fixed' ? ' ov-tag--ok' : ' ov-tag--warning'}`}>
-      {r.targetState === 'Fixed' ? 'Fixada' : r.targetState === 'Provisional' ? 'Provisória' : r.targetState === 'Pending' ? 'Pendente' : 'Não registrada'}</span></dd></div>
+      {r.targetState === 'Fixed' ? 'Meta fixada e registrada' : r.targetState === 'Provisional' ? 'Meta provisória calculada' : 'Ausência de meta'}</span></dd></div>
     {r.targetState === 'Fixed' && fixedAt && <div><dt>{r.legacyTarget ? 'Registrada anteriormente em' : 'Fixada em'}</dt><dd>{fixedAt}{r.legacyTarget ? ' (meta histórica)' : ''}</dd></div>}
     {r.targetState === 'Provisional' && <div><dt>Será fixada em</dt><dd>{formatDate(r.fixDate)}</dd></div>}
     {r.targetState === 'Pending' && <div><dt>Pendência</dt><dd>{r.pendingReason ? pendingText[r.pendingReason] ?? r.pendingReason : 'dados insuficientes'}</dd></div>}
@@ -106,7 +106,7 @@ function RecoveryProgress({ recovery: r, inProgress }: { recovery: OverviewRecov
 export function OverviewCompetenceSection({ flow }: { flow: OverviewCashFlow }) {
   const c = flow.byCompetence
   return <section className="ov-card ov-cash__competence" aria-labelledby="ov-competence-title">
-    <h2 id="ov-competence-title">Orçamento · receitas e despesas por competência <span className="ov-tag">Não explica, sozinho, o saldo bancário</span></h2>
+    <h3 id="ov-competence-title">Orçamento · receitas e despesas por competência <span className="ov-tag">Não explica, sozinho, o saldo bancário</span></h3>
     <dl className="ov-cash__parts"><div><dt>Receitas classificadas</dt><dd>{money(c.classifiedIncome)}</dd></div><div><dt>Despesas por competência</dt><dd>{money(c.expenses)}</dd></div><div><dt>Diferença</dt><dd>{money(c.difference)}</dd></div></dl>
     <p className="ov-meta">Cartão entra no mês da fatura. Pagamento de fatura, transferências e movimentos ainda sem classificação seguem as regras do caixa acima.</p>
   </section>

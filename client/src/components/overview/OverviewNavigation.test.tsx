@@ -8,6 +8,9 @@ import { projection } from '../projectionFixtures'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+/** Abre uma seção das análises detalhadas pelo título (só ela é montada, e só então faz as suas consultas). */
+const openSection = async (title: string) => fireEvent.click(await screen.findByText(title, { selector: '.ov-disclosure__title' }))
+
 let calls: string[] = []
 function mockApp() {
   calls = []
@@ -41,6 +44,7 @@ describe('Visão Geral → detalhe (R01)', () => {
 
   it('o card de recuperação do limite abre o Planejamento na Projeção financeira', async () => {
     mockApp(); render(<PersonalFinance />)
+    await openSection('Recuperação detalhada')
     const card = await screen.findByRole('region', { name: 'Recuperação do limite projetada' })
     fireEvent.click(within(card).getByRole('button', { name: 'Abrir a Projeção financeira' }))
     expect(await screen.findByRole('heading', { level: 1, name: 'Planejamento' })).toBeTruthy()
@@ -51,6 +55,7 @@ describe('Visão Geral → detalhe (R01)', () => {
 
   it('o compromisso abre a Agenda no mês do vencimento', async () => {
     mockApp(); render(<PersonalFinance />)
+    await openSection('Próximos compromissos por vencimento')
     const block = await screen.findByRole('region', { name: 'Próximos compromissos' })
     fireEvent.click(within(block).getByRole('button', { name: /Financiamento - parcela 4/ }))
     expect(await screen.findByRole('heading', { level: 1, name: 'Agenda' })).toBeTruthy()
@@ -59,6 +64,7 @@ describe('Visão Geral → detalhe (R01)', () => {
 
   it('Ver todos leva os lançamentos do período e da conta da Visão Geral', async () => {
     mockApp(); render(<PersonalFinance />)
+    await openSection('Últimos lançamentos')
     const recent = await screen.findByRole('region', { name: 'Últimos lançamentos' })
     fireEvent.click(within(recent).getByRole('button', { name: 'Ver todos' }))
     await screen.findByRole('heading', { level: 1, name: 'Lançamentos' })
@@ -69,6 +75,7 @@ describe('Visão Geral → detalhe (R01)', () => {
     mockApp(); render(<PersonalFinance />)
     await screen.findByRole('heading', { level: 1, name: 'Visão Geral' })
     fireEvent.change(await screen.findByLabelText('Competência'), { target: { value: '2026-09' } })
+    await openSection('Metas por categoria e despesas fixas')
     const budget = await screen.findByRole('region', { name: /Orçamento de setembro/i })
     fireEvent.click(within(budget).getByRole('button', { name: 'Abrir orçamento' }))
     expect(await screen.findByRole('heading', { level: 1, name: 'Orçamento' })).toBeTruthy()
