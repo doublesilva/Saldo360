@@ -111,33 +111,47 @@ public sealed partial class DashboardOverviewService(
     public const int MaxRecent = 6;
     private const int OverdueLookbackDays = 366;
 
-    public async Task<PlanActualResult<DashboardOverviewDto>> GetAsync(Guid workspaceId, Guid userId, string? competence, string? scope, Guid? accountId, CancellationToken ct)
+    /// <summary>Competência, escopo e conta validados (ou o erro a devolver). Mesma regra para o <c>overview</c> e para a distribuição completa das despesas.</summary>
+    private sealed record Resolution(string? Month, string? Requested, FinancialAccountDto? Selected, string? Kind, IReadOnlyList<FinancialAccountDto> All, DateOnly Today,
+        (PlanActualAccess Access, IDictionary<string, string[]>? Errors)? Error = null);
+
+    private async Task<Resolution> ResolveAsync(Guid workspaceId, Guid userId, string? competence, string? scope, Guid? accountId, CancellationToken ct)
     {
-        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, ct) is null) return PlanActualResult<DashboardOverviewDto>.NotFound;
         var today = BusinessCalendar.Today(time.GetUtcNow());
+        Resolution Fail(PlanActualAccess access, IDictionary<string, string[]>? errors = null) => new(null, null, null, null, [], today, (access, errors));
+        Resolution Bad(string field, string message) => Fail(PlanActualAccess.Invalid, new Dictionary<string, string[]> { [field] = [message] });
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, ct) is null) return Fail(PlanActualAccess.NotFound);
         var month = $"{today.Year:0000}-{today.Month:00}";
         if (!string.IsNullOrWhiteSpace(competence))
         {
             if (competence.Length != 7 || competence[4] != '-' || !int.TryParse(competence[..4], out var y) || !int.TryParse(competence[5..], out var m) || y is < 2000 or > 2100 || m is < 1 or > 12)
-                return Invalid("competence", "Use uma competência válida no formato yyyy-MM.");
+                return Bad("competence", "Use uma competência válida no formato yyyy-MM.");
             month = competence;
         }
 
         var requested = string.IsNullOrWhiteSpace(scope) ? PlanActualScopes.Primary : scope.Trim().ToLowerInvariant();
-        if (requested is not (PlanActualScopes.Primary or PlanActualScopes.All or PlanActualScopes.Account)) return Invalid("scope", "Use primary, all ou account.");
+        if (requested is not (PlanActualScopes.Primary or PlanActualScopes.All or PlanActualScopes.Account)) return Bad("scope", "Use primary, all ou account.");
 
         var all = await accountService.ListAsync(workspaceId, userId, includeInactive: false, ct);
-        if (all is null) return PlanActualResult<DashboardOverviewDto>.NotFound;
+        if (all is null) return Fail(PlanActualAccess.NotFound);
         FinancialAccountDto? selected = null;
         if (requested == PlanActualScopes.Account)
         {
-            if (accountId is null) return Invalid("accountId", "Informe a conta.");
+            if (accountId is null) return Bad("accountId", "Informe a conta.");
             // A conta pode estar inativa: ainda é uma escolha válida de escopo (o plano e o realizado dela continuam consultáveis).
             selected = all.FirstOrDefault(a => a.Id == accountId) ?? (await accountService.ListAsync(workspaceId, userId, includeInactive: true, ct))?.FirstOrDefault(a => a.Id == accountId);
-            if (selected is null) return PlanActualResult<DashboardOverviewDto>.NotFound;
+            if (selected is null) return Fail(PlanActualAccess.NotFound);
         }
         else if (requested == PlanActualScopes.Primary) selected = all.FirstOrDefault(a => a.IsPrimary);
         var kind = selected is null ? PlanActualScopes.All : requested == PlanActualScopes.Primary ? PlanActualScopes.Primary : PlanActualScopes.Account;
+        return new(month, requested, selected, kind, all, today);
+    }
+
+    public async Task<PlanActualResult<DashboardOverviewDto>> GetAsync(Guid workspaceId, Guid userId, string? competence, string? scope, Guid? accountId, CancellationToken ct)
+    {
+        var resolved = await ResolveAsync(workspaceId, userId, competence, scope, accountId, ct);
+        if (resolved.Error is { } error) return new(error.Access, null, error.Errors);
+        var (month, requested, selected, kind, all, today) = (resolved.Month!, resolved.Requested!, resolved.Selected, resolved.Kind!, resolved.All, resolved.Today);
 
         var accounts = await BuildAccountsAsync(workspaceId, userId, all, selected, today, ct);
         var commitments = await BuildCommitmentsAsync(workspaceId, userId, selected?.Id, today, ct);
@@ -151,7 +165,7 @@ public sealed partial class DashboardOverviewService(
         var cashFlow = await BuildCashFlowAsync(workspaceId, userId, month, selected?.Id, today, byCompetence, ct);
         var decision = await BuildDecisionAsync(workspaceId, month, selected, all, kind, today, cashFlow, ct);
         var budgetControl = await BuildBudgetControlAsync(workspaceId, userId, month, requested, selected, kind, today, budget, classification, decision, ct);
-        var distribution = await BuildExpenseDistributionAsync(workspaceId, month, selected?.Id, byCompetence, ct);
+        var distribution = await BuildExpenseDistributionAsync(workspaceId, month, selected?.Id, byCompetence, ExpenseDistributionCalculator.OverviewTop, ct);
         return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow, decision, budgetControl, distribution));
     }
 
@@ -251,9 +265,6 @@ public sealed partial class DashboardOverviewService(
             return new(null, null, null);
         }
     }
-
-    private static PlanActualResult<DashboardOverviewDto> Invalid(string field, string message) =>
-        new(PlanActualAccess.Invalid, null, new Dictionary<string, string[]> { [field] = [message] });
 
     private async Task<OverviewAccountsDto> BuildAccountsAsync(Guid workspaceId, Guid userId, IReadOnlyList<FinancialAccountDto> all, FinancialAccountDto? selected, DateOnly today, CancellationToken ct)
     {

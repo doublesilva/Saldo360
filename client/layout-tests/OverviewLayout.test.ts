@@ -24,7 +24,11 @@ describe('Responsividade da Visão Geral', () => {
     expect(css).toMatch(/@container ov \(min-width: 62rem\)\s*\{[^@]*\.ov-hero\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1\.75fr\)/)
     expect(css).toMatch(/@container ov \(min-width: 62rem\)\s*\{[^@]*\.ov-grid\s*\{\s*grid-template-columns:\s*minmax\(0, 2\.6fr\) minmax\(0, 1fr\)/)
     expect(css).toMatch(/@container ov \(min-width: 40rem\)\s*\{[^@]*\.ov-hero__kpis\s*\{\s*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/)
-    expect(css).toMatch(/@container ovmain \(min-width: 40rem\)\s*\{\s*\.ov-pair\s*\{\s*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/)
+    // Orçamento mensal e despesas por categoria: um abaixo do outro em qualquer largura, mesma largura, altura natural (sem altura fixa nem esticar).
+    expect(css).toMatch(/\.ov-budget-area\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[^}]*gap:\s*1\.5rem;[^}]*align-items:\s*start/)
+    expect(css).toMatch(/\.ov-budget-area > \.ov-card\s*\{[^}]*width:\s*100%;[^}]*height:\s*auto;[^}]*align-self:\s*start/)
+    expect(css).not.toMatch(/\.ov-budget-area[^{]*\{[^}]*(?:stretch|[^-]height:\s*\d)/)
+    expect(css).not.toMatch(/@container[^{]*\{[^@]*\.ov-budget-area/)
     // Em larguras estreitas a tabela de lançamentos esconde Categoria e Conta e as mostra sob a descrição.
     expect(css).toMatch(/@container ovmain \(max-width: 34rem\)\s*\{\s*\.ov-recent__table \.ov-wide\s*\{\s*display:\s*none/)
     expect(css).not.toMatch(/position:\s*sticky/)
@@ -52,7 +56,7 @@ describe('Responsividade da Visão Geral', () => {
 describe('Composição Folio', () => {
   it('a página segue a ordem do Folio e não monta os painéis antigos', () => {
     const page = src('components/overview/Overview.tsx')
-    const order = ['<OverviewHero', '<OverviewAlerts', '<OverviewEvolutionSection', '<OverviewExpenseDistribution', '<OverviewBudgetProgress', '<OverviewRecent', '<OverviewAccounts', '<OverviewUpcoming', '<OverviewGoals'].map(tag => page.indexOf(tag))
+    const order = ['<OverviewHero', '<OverviewAlerts', '<OverviewEvolutionSection', '<OverviewBudgetProgress', '<OverviewExpenseDistribution', '<OverviewRecent', '<OverviewAccounts', '<OverviewUpcoming', '<OverviewGoals'].map(tag => page.indexOf(tag))
     expect(order.every(index => index > 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
     for (const legacy of ['Disclosure', 'OverviewDecision', 'OverviewBudgetControl', 'OverviewCashFlow', 'OverviewRecovery', 'OverviewProjectedRecovery', 'OverviewActions', 'OverviewIndicators', 'OverviewAside']) {

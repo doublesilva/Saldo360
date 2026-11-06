@@ -14,11 +14,11 @@
   --ov-primary: #82c8ad; --ov-primary-fg: #14241d; --ov-secondary: #273c33; --ov-positive: #82c8ad; --ov-warning: #d0a563; --ov-danger: #e28d88;
   --ov-radius: 6px; --ov-sans: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --ov-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --ov-cat-1: #82c8ad; --ov-cat-2: #8fa2f0; --ov-cat-3: #d0a563; --ov-cat-4: #d891c1; --ov-cat-5: #7cc0e0; --ov-cat-6: #b4c46e; --ov-cat-7: #b9a0e8; --ov-cat-none: #6f7a74;
+  --ov-cat-1: #26a69a; --ov-cat-2: #7d8ff0; --ov-cat-3: #d0a563; --ov-cat-4: #d891c1; --ov-cat-5: #7cc0e0; --ov-cat-6: #b4c46e; --ov-cat-7: #b9a0e8; --ov-cat-other: #9aa5ae; --ov-cat-none: #5f6a65;
   container: ov / inline-size;
   display: grid; gap: 1rem; min-width: 0; font-family: var(--ov-sans); color: var(--ov-fg);
 }
-.ov > *, .ov-grid > *, .ov-grid__main > *, .ov-grid__side > *, .ov-pair > * { min-width: 0; }
+.ov > *, .ov-grid > *, .ov-grid__main > *, .ov-grid__side > *, .ov-budget-area > * { min-width: 0; }
 .ov h2, .ov h3, .ov p, .ov dl, .ov dd, .ov ul { margin: 0; }
 .ov ul { padding: 0; list-style: none; }
 .ov button { min-height: 2.25rem; border-radius: var(--ov-radius); border-color: var(--ov-border); background: var(--ov-card); color: var(--ov-fg); font-size: .875rem; }
@@ -93,10 +93,8 @@
 .ov-meter > span { position: absolute; inset: 0 auto 0 0; width: min(100%, calc(100% * var(--ov-part) / var(--ov-whole))); background: var(--ov-primary); border-radius: inherit; }
 .ov-meter--danger > span { background: var(--ov-danger); }
 .ov-track > span { position: absolute; inset: 0 auto 0 0; border-radius: inherit; }
-.ov-track__projected { background: var(--ov-secondary); }
 .ov-track__done { background: var(--ov-primary); }
-.is-over .ov-track__done, .is-over .ov-track__projected { background: var(--ov-danger); }
-.is-over .ov-track__projected { opacity: .45; }
+.ov-track--thick { height: .5rem; }
 
 /* Pontos de atenção: uma linha por item */
 .ov-alerts { display: grid; gap: .35rem; }
@@ -113,7 +111,12 @@
 /* Grade principal: corpo e coluna de apoio */
 .ov-grid, .ov-grid__main, .ov-grid__side { display: grid; gap: 1rem; align-content: start; }
 .ov-grid__main { container: ovmain / inline-size; }
-.ov-pair { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+/* Orçamento mensal e despesas por categoria: um abaixo do outro em todas as larguras, mesma largura, cada um com a sua altura. */
+.ov-budget-area { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.ov-budget-area > .ov-card { width: 100%; height: auto; align-self: start; gap: 1.1rem; }
+.ov-budget-area .ov-card__head h3 { font-size: 1.0625rem; }
+/* Nestes dois cards os números seguem o mockup aprovado: fonte do texto com algarismos tabulares. */
+.ov-budget-area .ov-mono, .ov-budget-area .ov-goal-row__pct, .ov-budget-area .ov-distribution__pct { font-family: var(--ov-sans); font-variant-numeric: tabular-nums; }
 
 /* Evolução financeira */
 .ov-legend { display: flex; flex-wrap: wrap; gap: .3rem .9rem; color: var(--ov-muted); font-size: .75rem; }
@@ -145,29 +148,44 @@
 .ov-table th:first-child, .ov-table td:nth-child(2) { text-align: left; }
 
 /* Distribuição das despesas */
-.ov-distribution__total { display: grid; justify-items: end; gap: .1rem; text-align: right; }
-.ov-distribution__total strong { font-size: 1.25rem; font-weight: 600; }
-.ov-stack { display: flex; gap: 2px; height: .625rem; border-radius: 999px; overflow: hidden; background: var(--ov-muted-bg); }
-.ov-stack span { min-width: .125rem; }
-.ov-distribution__list { display: grid; gap: .55rem; }
-.ov-distribution__list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 3.25rem; align-items: center; gap: .6rem; font-size: .875rem; }
+.ov-distribution__total { display: grid; gap: .2rem; }
+.ov-distribution__total strong { font-size: clamp(1.35rem, 2.4vw, 1.6rem); font-weight: 600; }
+.ov-stack { display: flex; gap: .1875rem; height: .5rem; border-radius: 999px; overflow: hidden; background: var(--ov-muted-bg); }
+.ov-stack span { min-width: .125rem; border-radius: 999px; }
+.ov-distribution__list { display: grid; gap: .75rem; }
+.ov-distribution__list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 3.25rem; align-items: center; gap: .65rem; font-size: .9375rem; }
 .ov-distribution__name { overflow-wrap: anywhere; }
+.ov-distribution__amount { font-weight: 600; text-align: right; }
 .ov-distribution__pct { color: var(--ov-muted); font-size: .8125rem; text-align: right; font-family: var(--ov-mono); }
 .ov-swatch { width: .55rem; height: .55rem; border-radius: 50%; }
 .ov-cat-1 { background: var(--ov-cat-1); } .ov-cat-2 { background: var(--ov-cat-2); } .ov-cat-3 { background: var(--ov-cat-3); } .ov-cat-4 { background: var(--ov-cat-4); }
-.ov-cat-5 { background: var(--ov-cat-5); } .ov-cat-6 { background: var(--ov-cat-6); } .ov-cat-7 { background: var(--ov-cat-7); } .ov-cat-none { background: var(--ov-cat-none); }
+.ov-cat-5 { background: var(--ov-cat-5); } .ov-cat-6 { background: var(--ov-cat-6); } .ov-cat-7 { background: var(--ov-cat-7); }
+.ov-cat-other { background: var(--ov-cat-other); } .ov-cat-none { background: var(--ov-cat-none); }
+
+/* Diálogo "Ver todas" */
+.ov-dialog { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / .6); }
+.ov-dialog__panel { display: grid; gap: 1rem; align-content: start; width: min(100%, 32rem); max-height: calc(100vh - 2rem); overflow-y: auto; padding: 1.25rem;
+  background: var(--ov-card); border: 1px solid var(--ov-border); border-radius: var(--ov-radius); }
 
 /* Orçamento do mês */
-.ov-budget__headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem; }
-.ov-budget__headline strong { font-family: var(--ov-mono); font-size: 1.25rem; font-weight: 600; }
-.ov-budget__headline[data-unavailable] strong { font-family: var(--ov-sans); font-size: 1rem; color: var(--ov-muted); }
-.ov-budget__origin { margin-top: -.5rem; }
-.ov-budget__rows, .ov-goals__list { display: grid; gap: .8rem; }
-.ov-budget__rows li, .ov-goals__list li { display: grid; gap: .35rem; }
+.ov-goal-rows { display: grid; gap: 1.25rem; }
+.ov-goal-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .5rem 1rem; align-items: start; }
+.ov-goal-row__icon { display: grid; place-items: center; padding-top: .1rem; color: var(--ov-fg); }
+.ov-goal-row__icon .ov-icon { width: 1.25rem; height: 1.25rem; }
+.ov-goal-row__body { display: grid; gap: .55rem; min-width: 0; }
+.ov-goal-row__head, .ov-goal-row__foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .2rem .75rem; }
+.ov-goal-row__head strong { font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; }
+.ov-goal-row__pct { font-family: var(--ov-mono); font-size: 1rem; font-weight: 600; }
+.ov-goal-row__foot { font-size: .875rem; }
+.ov-goal-row__diff { font-size: .8125rem; font-weight: 600; text-align: right; }
+.ov-goal-row--within .ov-goal-row__pct, .ov-goal-row--within .ov-goal-row__diff { color: var(--ov-positive); }
+.ov-goal-row--over .ov-goal-row__pct, .ov-goal-row--over .ov-goal-row__diff { color: var(--ov-danger); }
+.ov-goal-row--over .ov-track__done { background: var(--ov-danger); }
+.ov-goal-row--none .ov-goal-row__diff { color: var(--ov-muted); font-weight: 500; }
+.ov-budget__fixed { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding-top: 1rem; border-top: 1px solid var(--ov-border); font-weight: 600; font-size: .9375rem; }
+.ov-goals__list { display: grid; gap: .8rem; }
+.ov-goals__list li { display: grid; gap: .35rem; }
 .ov-budget__row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .2rem .75rem; font-size: .875rem; }
-.ov-budget__row small { color: var(--ov-muted); }
-.ov-budget__foot { display: flex; flex-wrap: wrap; gap: .25rem; color: var(--ov-positive); font-size: .8125rem; }
-.ov-budget__foot.ov-negative { color: var(--ov-danger); }
 
 /* Listas compactas (contas e compromissos) */
 .ov-rows { display: grid; }
@@ -213,9 +231,6 @@
   .ov-hero__kpis { border-top: 0; border-left: 1px solid var(--ov-border); }
   .ov-kpi { padding: 1.5rem; }
   .ov-grid { grid-template-columns: minmax(0, 2.6fr) minmax(0, 1fr); }
-}
-@container ovmain (min-width: 40rem) {
-  .ov-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @container ovmain (max-width: 34rem) {
   .ov-recent__table .ov-wide { display: none; }

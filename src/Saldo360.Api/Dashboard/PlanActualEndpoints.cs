@@ -11,6 +11,7 @@ namespace Saldo360.Api.Dashboard;
 /// <list type="bullet">
 /// <item><c>financial-dashboard/plan-actual?competence=yyyy-MM&amp;scope=primary|all|account&amp;accountId=</c></item>
 /// <item><c>financial-dashboard/overview?competence=yyyy-MM&amp;scope=primary|all|account&amp;accountId=</c> (R01): contas com saldo, compromissos da Agenda e metas.</item>
+/// <item><c>financial-dashboard/expense-distribution?competence=yyyy-MM&amp;scope=primary|all|account&amp;accountId=</c>: todas as categorias com gasto ("Ver todas" do dashboard).</item>
 /// <item><c>financial-dashboard/card-target</c> (PUT): meta mensal de cartões da conta pagadora, a partir de uma competência.</item>
 /// </list>
 /// </summary>
@@ -26,6 +27,7 @@ public static class PlanActualEndpoints
         });
         group.MapGet("/plan-actual", Get);
         group.MapGet("/overview", Overview);
+        group.MapGet("/expense-distribution", ExpenseDistribution);
         group.MapGet("/overdraft-recovery/{accountId:guid}", Recovery);
         group.MapPost("/overdraft-recovery/{accountId:guid}", CaptureRecovery).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
@@ -36,6 +38,9 @@ public static class PlanActualEndpoints
 
     private static async Task<IResult> Overview(Guid workspaceId, string? competence, string? scope, Guid? accountId, CurrentUser user, DashboardOverviewService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.GetAsync(workspaceId, userId, competence, scope, accountId, ct));
+
+    private static async Task<IResult> ExpenseDistribution(Guid workspaceId, string? competence, string? scope, Guid? accountId, CurrentUser user, DashboardOverviewService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.GetExpenseDistributionAsync(workspaceId, userId, competence, scope, accountId, ct));
 
     private static async Task<IResult> Recovery(Guid workspaceId, Guid accountId, string? competence, CurrentUser user, OverdraftRecoveryService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.GetAsync(workspaceId, userId, accountId, competence ?? string.Empty, ct));

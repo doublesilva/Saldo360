@@ -124,6 +124,25 @@ public sealed class ExpenseDistributionOverviewTests(PostgresFixture postgres) :
     }
 
     [Fact]
+    public async Task SeeAllReturnsTheCompleteDistributionForTheSameCompetenceAndScopeAndValidatesLikeTheOverview()
+    {
+        await ArrangeAsync("dist-ver-todas");
+        var url = $"{Root}/financial-dashboard/expense-distribution?competence={Month}";
+        var response = await SendAsync(HttpMethod.Get, $"{url}&scope=account&accountId={_pf}", _session);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        var full = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal("Complete", full.GetProperty("state").GetString());
+        Assert.Equal(["Moradia", "Alimentação", "Sem categoria"], Column(full, "name")); Assert.Equal(["Category", "Category", "Uncategorized"], Column(full, "kind"));
+        Assert.Equal("1900.00", full.GetProperty("total").GetString()); Assert.Equal("1900.00", full.GetProperty("reference").GetString()); Assert.Equal(2, full.GetProperty("categoryCount").GetInt32());
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, $"{Root}/financial-dashboard/expense-distribution?competence=2026-13", _session)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, $"{url}&scope=account&accountId={Guid.NewGuid()}", _session)).StatusCode);
+        var stranger = await SignInAsync("dist-ver-todas-outro");
+        Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, $"{url}&scope=all", stranger)).StatusCode);
+    }
+
+    [Fact]
     public async Task ReadingTheDistributionWritesNothing()
     {
         await ArrangeAsync("dist-leitura");

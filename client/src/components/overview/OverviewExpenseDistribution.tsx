@@ -1,52 +1,89 @@
-import { useState } from 'react'
-import type { ExpenseDistribution } from '../../api/overview'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { getExpenseDistribution, type ExpenseCategoryShare, type ExpenseDistribution } from '../../api/overview'
+import type { PlanActualScopeChoice } from '../../api/planActual'
 import { OperationalError, OperationalLoading } from '../OperationalFeedback'
-import { isNegative, money, monthTitle, percentText } from './overviewText'
+import { isNegative, money, percentText } from './overviewText'
+import { useLoad } from './useLoad'
 
-// Dashboard Folio: para onde foi o dinheiro do mês. O servidor agrupa as despesas realizadas por categoria principal, calcula total e percentuais e confere o total com
-// "Despesas do mês"; aqui só se desenha a barra empilhada (larguras = percentuais do servidor) e a lista.
+// Dashboard Folio — Despesas por categoria. O servidor agrupa os gastos efetivados por categoria principal, ordena, separa as cinco maiores, "Outras categorias" e "Sem categoria", e calcula
+// total e percentuais (que somam 100,0); aqui só se desenha a barra empilhada (larguras = percentuais do servidor) e a lista. "Ver todas" busca a distribuição completa sob demanda.
 
-const VISIBLE = 5
-const PALETTE_SIZE = 7
+const PALETTE = 7
 
-export function OverviewExpenseDistribution({ competence, distribution, loading, error, retry, onOpen }: {
-  competence: string; distribution: ExpenseDistribution | null; loading: boolean; error: unknown; retry: () => void; onOpen?: () => void
-}) {
-  const [all, setAll] = useState(false)
-  const categories = distribution?.categories ?? []
-  const shown = all ? categories : categories.slice(0, VISIBLE)
-  const color = (index: number, uncategorized: boolean) => uncategorized ? 'none' : String(index % PALETTE_SIZE + 1)
-  const withPercent = categories.length > 0 && categories.every(category => category.percentage !== null)
-  return <section className="ov-card ov-distribution" aria-labelledby="ov-distribution-title">
-    <header className="ov-card__head">
-      <div><h3 id="ov-distribution-title">Distribuição das despesas</h3><p className="ov-meta">{monthTitle(competence)}</p></div>
-      {distribution && distribution.total !== null && <p className="ov-distribution__total"><span className="ov-meta">Total gasto</span>
-        <strong className={`ov-mono${isNegative(distribution.total) ? ' ov-negative' : ''}`}>{money(distribution.total)}</strong></p>}
-    </header>
-    {error ? <OperationalError error={error} onRetry={retry} retryLabel="Recarregar" />
-      : !distribution ? loading ? <OperationalLoading>Carregando as despesas…</OperationalLoading> : <p className="ov-empty">A distribuição das despesas não está disponível.</p>
-        : distribution.state === 'Unavailable' ? <p className="ov-empty" role="alert">Não foi possível agrupar as despesas deste mês.</p>
-          : categories.length === 0 ? <p className="ov-empty">Nenhuma despesa realizada em {monthTitle(competence)}.</p>
-            : <>
-              {withPercent && <div className="ov-stack" aria-hidden="true">{categories.map((category, index) =>
-                <span key={category.categoryId ?? 'none'} className={`ov-cat-${color(index, category.categoryId === null)}`} style={{ width: `${category.percentage}%` }} />)}</div>}
-              <ul className="ov-distribution__list">{shown.map((category, index) => <li key={category.categoryId ?? 'none'}>
-                <span className={`ov-swatch ov-cat-${color(index, category.categoryId === null)}`} aria-hidden="true" />
-                <span className="ov-distribution__name">{category.name}</span>
-                <span className={`ov-mono${isNegative(category.amount) ? ' ov-negative' : ''}`}>{money(category.amount)}</span>
-                {category.percentage !== null && <span className="ov-distribution__pct">{percentText(category.percentage)}</span>}
-              </li>)}</ul>
-              {categories.length > VISIBLE && <button type="button" className="ov-link" aria-expanded={all} onClick={() => setAll(value => !value)}>{all ? 'Mostrar menos' : `Ver todas as ${categories.length} categorias`}</button>}
-              <Notes distribution={distribution} />
-            </>}
-    {onOpen && <footer className="ov-card__foot"><span /><button type="button" className="ov-link" onClick={onOpen}>Ver lançamentos ›</button></footer>}
-  </section>
+/** Cor pela posição (como no mockup: a maior categoria em verde-azulado, a segunda em índigo…), a mesma na barra e na lista. "Outras" e "Sem categoria" são neutras. */
+function colorsOf(rows: ExpenseCategoryShare[]): string[] {
+  let next = 0
+  return rows.map(row => row.kind === 'Others' ? 'other' : row.kind === 'Uncategorized' ? 'none' : String(next++ % PALETTE + 1))
+}
+
+function Rows({ rows }: { rows: ExpenseCategoryShare[] }) {
+  const colors = colorsOf(rows)
+  return <ul className="ov-distribution__list">{rows.map((row, index) => <li key={row.categoryId ?? row.kind}>
+    <span className={`ov-swatch ov-cat-${colors[index]}`} aria-hidden="true" />
+    <span className="ov-distribution__name">{row.name}{row.kind === 'Others' && <span className="visually-hidden"> ({row.categoryCount} categorias)</span>}</span>
+    <span className={`ov-mono ov-distribution__amount${isNegative(row.amount) ? ' ov-negative' : ''}`}>{money(row.amount)}</span>
+    {row.percentage !== null && <span className="ov-distribution__pct">{percentText(row.percentage)}</span>}
+  </li>)}</ul>
+}
+
+function Stack({ rows }: { rows: ExpenseCategoryShare[] }) {
+  if (rows.length === 0 || rows.some(row => row.percentage === null)) return null
+  const colors = colorsOf(rows)
+  return <div className="ov-stack" aria-hidden="true">{rows.map((row, index) => <span key={row.categoryId ?? row.kind} className={`ov-cat-${colors[index]}`} style={{ flexGrow: 0, flexBasis: `${row.percentage}%` }} />)}</div>
 }
 
 function Notes({ distribution }: { distribution: ExpenseDistribution }) {
   const notes: string[] = []
-  if (distribution.reasons.includes('TotalDiffersFromExpenses')) notes.push(`O total difere de Despesas do mês (${money(distribution.reference)}): parte dos gastos ainda não pôde ser distribuída.`)
-  if (distribution.reasons.includes('ReferenceUnavailable')) notes.push('Não foi possível conferir o total com Despesas do mês.')
+  if (distribution.reasons.includes('TotalDiffersFromExpenses')) notes.push(`Resultado parcial: o total difere das despesas do mês (${money(distribution.reference)}).`)
+  if (distribution.reasons.includes('ReferenceUnavailable')) notes.push('Resultado parcial: não foi possível conferir o total com as despesas do mês.')
   if (distribution.reasons.includes('PercentagesNotRepresentative')) notes.push('Devoluções superam as compras de alguma categoria: os percentuais não são exibidos.')
   return notes.length === 0 ? null : <>{notes.map(note => <p key={note} className="ov-note" role="status">{note}</p>)}</>
+}
+
+function Body({ distribution, monthLabel }: { distribution: ExpenseDistribution; monthLabel: string }) {
+  if (distribution.state === 'Unavailable') return <p className="ov-empty" role="alert">Não foi possível agrupar as despesas deste mês.</p>
+  return <>
+    <div className="ov-distribution__total"><span className="ov-meta">Total gasto</span>
+      <strong className={`ov-mono${isNegative(distribution.total) ? ' ov-negative' : ''}`}>{money(distribution.total)}</strong></div>
+    {distribution.categories.length === 0 ? <p className="ov-empty">Nenhuma despesa efetivada em {monthLabel}.</p> : <><Stack rows={distribution.categories} /><Rows rows={distribution.categories} /></>}
+    <Notes distribution={distribution} />
+  </>
+}
+
+export function OverviewExpenseDistribution({ workspaceId, competence, scope, monthLabel, distribution, loading, error, retry }: {
+  workspaceId: string; competence: string; scope: PlanActualScopeChoice; monthLabel: string; distribution: ExpenseDistribution | null; loading: boolean; error: unknown; retry: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const close = useCallback(() => { setOpen(false); trigger.current?.focus() }, [])
+  return <section className="ov-card ov-distribution" aria-labelledby="ov-distribution-title">
+    <header className="ov-card__head"><div><h3 id="ov-distribution-title">Despesas por categoria</h3><p className="ov-meta">Somente gastos já efetivados</p></div>
+      {distribution && distribution.state !== 'Unavailable' && distribution.categories.length > 0
+        && <button ref={trigger} type="button" className="ov-link" aria-haspopup="dialog" onClick={() => setOpen(true)}>Ver todas ›</button>}</header>
+    {error ? <OperationalError error={error} onRetry={retry} retryLabel="Recarregar" />
+      : !distribution ? loading ? <OperationalLoading>Carregando as despesas…</OperationalLoading> : <p className="ov-empty">As despesas por categoria não estão disponíveis.</p>
+        : <Body distribution={distribution} monthLabel={monthLabel} />}
+    {open && <AllCategories workspaceId={workspaceId} competence={competence} scope={scope} monthLabel={monthLabel} onClose={close} />}
+  </section>
+}
+
+/** Distribuição completa da mesma competência e escopo, só quando pedida. Diálogo modal: foco no fechar, Esc fecha e o foco volta ao "Ver todas". */
+function AllCategories({ workspaceId, competence, scope, monthLabel, onClose }: { workspaceId: string; competence: string; scope: PlanActualScopeChoice; monthLabel: string; onClose: () => void }) {
+  const { load, retry } = useLoad(`${workspaceId}|${competence}|${scope.kind}:${scope.accountId ?? ''}`,
+    useCallback((signal: AbortSignal) => getExpenseDistribution(workspaceId, competence, scope, signal), [workspaceId, competence, scope]))
+  const closeButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    closeButton.current?.focus()
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return <div className="ov-dialog" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="ov-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="ov-all-categories-title">
+      <header className="ov-card__head"><div><h3 id="ov-all-categories-title">Todas as categorias</h3><p className="ov-meta">{monthLabel} · somente gastos já efetivados</p></div>
+        <button ref={closeButton} type="button" className="ov-link" onClick={onClose}>Fechar</button></header>
+      {load.state === 'loaded' ? <Body distribution={load.data} monthLabel={monthLabel} />
+        : load.state === 'error' ? <OperationalError error={load.error} onRetry={retry} retryLabel="Recarregar" /> : <OperationalLoading>Carregando todas as categorias…</OperationalLoading>}
+    </div>
+  </div>
 }

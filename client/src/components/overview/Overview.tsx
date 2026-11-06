@@ -28,8 +28,9 @@ export interface BlockLoad<T> { data: T | null; loading: boolean; error: unknown
 
 /**
  * Visão Geral no padrão do dashboard Folio: cabeçalho com competência e conta; o saldo bancário como informação principal, com o cheque especial e a recuperação do mês
- * compactos e o resumo de receitas, despesas e fechamento; a evolução financeira; distribuição das despesas e orçamento lado a lado; últimos lançamentos; e, na coluna de
- * apoio, contas, próximos compromissos e metas. Consultas: `plan-actual`, `financial-dashboard/overview` e `monthly-plan/six-months`. Todo valor vem do servidor.
+ * compactos e o resumo de receitas, despesas e fechamento; a evolução financeira; orçamento mensal e despesas por categoria, um abaixo do outro; últimos lançamentos; e, na
+ * coluna de apoio, contas, próximos compromissos e metas. Consultas: `plan-actual`, `financial-dashboard/overview` e `monthly-plan/six-months` (e, ao pedir "Ver todas", a distribuição
+ * completa das despesas). Todo valor vem do servidor.
  */
 export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionChange, onNavigate }: {
   workspaceId: string; refreshKey?: number; selection: OverviewSelection; onSelectionChange: (selection: OverviewSelection) => void; onNavigate: Go
@@ -56,6 +57,8 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
     [competence, data, planData])
   const setCompetence = (value: string) => { if (/^\d{4}-\d{2}$/.test(value)) onSelectionChange({ competence: value, scope }) }
   const step = (months: number) => setCompetence(addCalendarMonths(`${competence}-01`, months).slice(0, 7))
+  // Subtítulo do orçamento: o tipo da conta analisada (PF/PJ) ou o consolidado de contas.
+  const budgetScope = data ? data.scopeAccountId ? data.accounts.items.find(a => a.accountId === data.scopeAccountId)?.scope ?? '' : 'Todas as contas' : ''
   const recentRange = data ? { from: data.recent.from, to: data.recent.through, accountId: data.scopeAccountId } : null
 
   return <div className="ov" aria-live="polite">
@@ -91,11 +94,11 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
     <div className="ov-grid">
       <div className="ov-grid__main">
         <OverviewEvolutionSection workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} />
-        <div className="ov-pair">
-          <OverviewExpenseDistribution competence={competence} distribution={data?.expenseDistribution ?? null} {...overviewBlock}
-            onOpen={recentRange ? () => onNavigate('transactions', { transactions: recentRange }) : undefined} />
-          <OverviewBudgetProgress control={data?.budgetControl ?? null} {...overviewBlock}
-            onOpenBudget={() => onNavigate('budgets', { competence })} onShowAll={() => onSelectionChange({ competence, scope: { kind: 'all' } })} />
+        <div className="ov-budget-area">
+          <OverviewBudgetProgress control={data?.budgetControl ?? null} fixedTarget={data?.budget.state === 'Complete' ? data.budget.fixed?.planned ?? null : null}
+            scopeLabel={budgetScope} monthLabel={monthTitle(competence)} {...overviewBlock} onOpenBudget={() => onNavigate('budgets', { competence })} />
+          <OverviewExpenseDistribution workspaceId={workspaceId} competence={competence} scope={scope} monthLabel={monthTitle(competence)}
+            distribution={data?.expenseDistribution ?? null} {...overviewBlock} />
         </div>
         <OverviewRecent recent={data?.recent ?? null} {...overviewBlock}
           onOpenAll={() => recentRange && onNavigate('transactions', { transactions: recentRange, newTransaction: data?.recent.items.length === 0 })} />

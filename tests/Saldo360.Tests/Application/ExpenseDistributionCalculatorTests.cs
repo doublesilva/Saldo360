@@ -99,6 +99,43 @@ public sealed class ExpenseDistributionCalculatorTests
     }
 
     [Fact]
+    public void TheOverviewShowsTheFiveLargestGroupsTheRestAsOtherCategoriesAndUncategorizedSeparatelyAndLast()
+    {
+        var extra = Enumerable.Range(1, 7).Select(i => new FinancialCategoryDto(Guid.NewGuid(), $"Cat {i}", CategoryType.Expense, true, DateTimeOffset.UnixEpoch)).ToList();
+        var categories = new Dictionary<Guid, FinancialCategoryDto>(Categories); foreach (var c in extra) categories[c.Id] = c;
+        // Cat 1..7 = 700, 600, ..., 100; "Sem categoria" = 650 (maior que várias, mas fica separada e por último).
+        IReadOnlyList<BudgetFact> facts = [.. extra.Select((c, i) => Bank(700m - i * 100m, c.Id)), Bank(650m, null)];
+
+        var result = ExpenseDistributionCalculator.Build("2026-11", facts, categories, Payers, null, "3450.00", ExpenseDistributionCalculator.OverviewTop);
+
+        Assert.Equal(["Cat 1", "Cat 2", "Cat 3", "Cat 4", "Cat 5", ExpenseDistributionCalculator.OtherCategories, ExpenseDistributionCalculator.Uncategorized], result.Categories.Select(c => c.Name));
+        Assert.Equal(["Category", "Category", "Category", "Category", "Category", "Others", "Uncategorized"], result.Categories.Select(c => c.Kind));
+        var others = result.Categories[5];
+        Assert.Equal("300.00", others.Amount); Assert.Equal(2, others.CategoryCount); Assert.Null(others.CategoryId); // agrupamento só de apresentação
+        Assert.Equal(7, result.CategoryCount); Assert.Equal("3450.00", result.Total);
+        Assert.Equal(1000, result.Categories.Sum(c => (int)(decimal.Parse(c.Percentage!, System.Globalization.CultureInfo.InvariantCulture) * 10))); // soma exata de 100,0
+
+        var full = ExpenseDistributionCalculator.Build("2026-11", facts, categories, Payers, null, "3450.00");
+        Assert.Equal(8, full.Categories.Count); Assert.DoesNotContain(full.Categories, c => c.Kind == "Others"); Assert.Equal("Uncategorized", full.Categories[^1].Kind);
+    }
+
+    [Fact]
+    public void PercentagesUseTheLargestRemainderSoTheRowsAddUpToExactlyOneHundred()
+    {
+        Assert.Equal(["33.4", "33.3", "33.3"], ExpenseDistributionCalculator.Shares([100m, 100m, 100m], 300m));
+        Assert.Equal(["66.7", "33.3"], ExpenseDistributionCalculator.Shares([200m, 100m], 300m));
+        Assert.Equal(["14.3", "14.3", "14.3", "14.3", "14.3", "14.3", "14.2"], ExpenseDistributionCalculator.Shares([.. Enumerable.Repeat(10m, 7)], 70m));
+    }
+
+    [Fact]
+    public void TiesAreOrderedDeterministicallyByNameAndThenByIdentifier()
+    {
+        var result = Build([Bank(300m, Food), Bank(300m, Housing)], "600.00");
+        Assert.Equal(["Alimentação", "Moradia"], result.Categories.Select(c => c.Name));
+        Assert.Equal(["Alimentação", "Moradia"], Build([Bank(300m, Housing), Bank(300m, Food)], "600.00").Categories.Select(c => c.Name));
+    }
+
+    [Fact]
     public void ARemovedCategoryIsNamedAsSuchInsteadOfDisappearing()
     {
         var result = Build([Bank(50m, Guid.NewGuid())], "50.00");

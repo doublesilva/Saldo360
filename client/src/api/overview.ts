@@ -142,13 +142,23 @@ export interface BudgetControl {
 }
 
 /**
- * Distribuição das despesas realizadas do mês por categoria principal (dashboard Folio). Mesmos fatos do orçamento, agrupados no servidor; `categoryId` nulo = "Sem categoria".
- * `percentage` nulo quando o total líquido não permite percentuais. `reference` = "Despesas do mês" do mesmo escopo; divergência vira `Partial` com o motivo.
+ * Distribuição das despesas realizadas do mês por categoria principal (dashboard Folio). Mesmos fatos do orçamento, agrupados e ordenados no servidor. `kind`: Category, Others ("Outras
+ * categorias", só apresentação; `categoryCount` diz quantas agrupa) ou Uncategorized ("Sem categoria", sempre por último). `percentage` nulo quando o total líquido não permite percentuais;
+ * quando existem, as linhas somam 100,0. `reference` = "Despesas do mês" do mesmo escopo; divergência vira `Partial` com o motivo. No `overview` vêm as cinco maiores categorias;
+ * `getExpenseDistribution` traz todas.
  */
-export interface ExpenseCategoryShare { categoryId: string | null; name: string; amount: string; percentage: string | null }
+export interface ExpenseCategoryShare { categoryId: string | null; name: string; amount: string; percentage: string | null; kind: 'Category' | 'Others' | 'Uncategorized'; categoryCount: number }
 export interface ExpenseDistribution {
   state: 'Complete' | 'Partial' | 'Unavailable'; competence: string; total: string | null; reference: string | null; categories: ExpenseCategoryShare[]
-  reasons: ('TotalDiffersFromExpenses' | 'ReferenceUnavailable' | 'PercentagesNotRepresentative' | string)[]
+  reasons: ('TotalDiffersFromExpenses' | 'ReferenceUnavailable' | 'PercentagesNotRepresentative' | string)[]; categoryCount: number
+}
+
+/** "Ver todas": a distribuição completa da mesma competência e escopo, sob demanda. */
+export function getExpenseDistribution(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<ExpenseDistribution> {
+  const query = new URLSearchParams({ competence, scope: scope.kind })
+  if (scope.kind === 'account' && scope.accountId) query.set('accountId', scope.accountId)
+  return requestJson<ExpenseDistribution>(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-dashboard/expense-distribution?${query}`,
+    { signal, headers: { Accept: 'application/json' } }, { fallback: 'Falha ao carregar as despesas por categoria.' })
 }
 
 export interface DashboardOverview {
