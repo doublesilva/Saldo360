@@ -354,9 +354,26 @@ describe('Visão Geral — pontos de atenção', () => {
 
   it('sem pontos de atenção, o bloco não ocupa espaço', async () => {
     const base = decision()
-    mockApi({ overview: withSummary({ classification: { state: 'Complete', needsReview: 0, notEvaluated: 0 }, decision: { ...base, commitments: { ...base.commitments, overdue: '0.00' }, recovery: { ...base.recovery, gapToTarget: '100.00' } }, budgetControl: budgetControl({ pressures: [], recommendations: [] }) }) }); renderPage()
+    mockApi({ overview: withSummary({ classification: { state: 'Complete', needsReview: 0, notEvaluated: 0 }, decision: { ...base, commitments: { ...base.commitments, overdue: '0.00' }, recovery: { ...base.recovery, gapToTarget: '100.00' } }, budgetControl: budgetControl({ pressures: [], recommendations: [] }), pfBudgetControl: budgetControl({ scopeKind: 'pf', pressures: [], recommendations: [] }) }) }); renderPage()
     await loaded()
     expect(screen.queryByRole('region', { name: 'Pontos de atenção' })).toBeNull()
+  })
+})
+
+describe('Visão Geral — alertas do orçamento PF', () => {
+  it('o alerta de cartões acima da meta é o do orçamento PF e não muda ao trocar a conta (PF, PJ ou consolidado)', async () => {
+    const pf = budgetControl({ scopeKind: 'pf' }); const bank = budgetControl({ scopeKind: 'account', pressures: [], recommendations: [] })
+    mockApi({ overview: withSummary({ budgetControl: bank, pfBudgetControl: pf }) }); renderPage()
+    const alerts = await screen.findByRole('region', { name: 'Pontos de atenção' })
+    fireEvent.click(within(alerts).getByRole('button', { name: /Ver todos os \d+ pontos de atenção/ }))
+    const cards = () => within(screen.getByRole('region', { name: 'Pontos de atenção' })).getAllByText(/Cartões acima da meta mensal/)
+    expect(cards()).toHaveLength(1)
+    expect(text(cards()[0].closest('li'))).toContain('Excesso de R$ 400,00 sobre a meta.')
+    for (const choice of ['account:pj', 'all']) {
+      fireEvent.change(screen.getByLabelText('Conta ou consolidado'), { target: { value: choice } })
+      await waitFor(() => expect(calls.some(url => url.includes(choice === 'all' ? 'scope=all' : 'accountId=pj'))).toBe(true))
+      expect(text(within(screen.getByRole('region', { name: 'Pontos de atenção' })).getByText(/Cartões acima da meta mensal/).closest('li'))).toContain('Excesso de R$ 400,00')
+    }
   })
 })
 

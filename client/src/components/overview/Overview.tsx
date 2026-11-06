@@ -53,7 +53,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
     ? data.scopeKind === 'all' || !data.scopeAccountId ? 'Todas as contas'
       : `${data.scopeKind === 'primary' ? 'Conta principal · ' : ''}${data.accounts.items.find(a => a.accountId === data.scopeAccountId)?.name ?? 'Conta'}`
     : planData ? scopeLabel(planData.scope) : ''
-  const items = useMemo(() => buildPriorityItems({ competence, decision: data?.decision ?? null, control: data?.budgetControl ?? null, plan: planData, classification: data?.classification ?? null }),
+  const items = useMemo(() => buildPriorityItems({ competence, decision: data?.decision ?? null, control: data?.budgetControl ?? null, pfControl: data?.pfBudgetControl ?? null, plan: planData, classification: data?.classification ?? null }),
     [competence, data, planData])
   const setCompetence = (value: string) => { if (/^\d{4}-\d{2}$/.test(value)) onSelectionChange({ competence: value, scope }) }
   const step = (months: number) => setCompetence(addCalendarMonths(`${competence}-01`, months).slice(0, 7))

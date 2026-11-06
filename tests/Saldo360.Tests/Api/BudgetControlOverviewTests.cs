@@ -203,4 +203,31 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
         Assert.Contains("MissingPayerAccount", control.GetProperty("cards").GetProperty("reasons").EnumerateArray().Select(r => r.GetString()));
         Assert.Equal("TargetNotDefined", Text(control, "state")); // meta total ausente prevalece no estado; a cobertura parcial está nos motivos do grupo
     }
+
+    private async Task<Guid> NewAccountAsync(string name, string scope) => (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/accounts", _session,
+        new { name, type = "Checking", financialScope = scope, openingBalance = "9000.00", openingBalanceDate = ThisMonth.AddMonths(-1) }))).Id;
+
+    private async Task SpendAsync(Guid account, string amount) => Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/transactions", _session,
+        new { accountId = account, categoryId = _expense, type = "Expense", description = "Histórico", amount, transactionDate = Today })).StatusCode);
+
+    [Fact]
+    public async Task PfBudgetKeepsTheHistoryOfInactivePfAccountsAndTheirCardsWithoutPjOrDoubleCounting()
+    {
+        await ArrangeAsync("bc-pf-inativas");
+        var pfOld = await NewAccountAsync("PF antiga", "PF"); var pjOld = await NewAccountAsync("PJ antiga", "PJ");
+        await SpendAsync(pfOld, "300.00"); await SpendAsync(pjOld, "200.00"); await ExpenseAsync("100.00");
+        var card = (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/credit-cards", _session,
+            new { name = "Cartão da PF antiga", issuer = "Banco", creditLimit = "10000.00", closingDay = 5, dueDay = 10, defaultPaymentAccountId = pfOld }))).Id;
+        await PurchaseAsync(card, "700.00");
+        await using (var db = Db()) await db.FinancialAccounts.Where(a => a.Id == pfOld || a.Id == pjOld).ExecuteUpdateAsync(set => set.SetProperty(a => a.IsActive, false));
+
+        var control = await PfControlAsync("account", _account);
+
+        // PF: 300 (PF inativa) + 100 (PF ativa) fora dos cartões e 700 no cartão da PF inativa; os 200 da PJ inativa não entram e nada é contado duas vezes.
+        Assert.Equal("400.00", Text(control, "outsideCards", "realized")); Assert.Equal("700.00", Text(control, "cards", "realized")); Assert.Equal("1100.00", Text(control, "total", "projected"));
+        Assert.Equal(Text(control, "total", "projected"), Text(await PfControlAsync("all"), "total", "projected"));
+        // O seletor da Visão Geral não ganhou as contas inativas.
+        var overview = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, $"{Root}/financial-dashboard/overview?competence={Month}&scope=all", _session)).Content.ReadAsStringAsync()).RootElement;
+        Assert.DoesNotContain(overview.GetProperty("accounts").GetProperty("items").EnumerateArray(), a => a.GetProperty("name").GetString() is "PF antiga" or "PJ antiga");
+    }
 }

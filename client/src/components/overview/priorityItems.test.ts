@@ -62,7 +62,7 @@ describe('Onde preciso agir — escolha e ordem dos itens', () => {
 
   it('excesso do orçamento vem das pressões e do total, sem repetir a recomendação equivalente', () => {
     const input = calm(); const full = budgetControl()
-    const items = buildPriorityItems({ ...input, control: { ...full, total: { ...full.total, excess: '250.00', status: 'Exceeded' } } })
+    const items = buildPriorityItems({ ...input, pfControl: { ...full, total: { ...full.total, excess: '250.00', status: 'Exceeded' } } })
     expect(items.map(item => item.key)).toEqual(expect.arrayContaining(['total-over', 'pressure-CardsOverTarget-', 'pressure-CategoryOverTarget-Lazer']))
     expect(items.filter(item => item.key === 'recommendation-CardsOverTarget')).toHaveLength(0)
     expect(plain(items.find(item => item.key === 'total-over')?.impact)).toBe('Excesso de R$ 250,00 sobre a meta.')
@@ -88,6 +88,26 @@ describe('Onde preciso agir — escolha e ordem dos itens', () => {
   it('as explicações das ressalvas sozinhas não são um alerta', () => {
     const input = calm()
     expect(keys({ ...input, plan: { ...planActual, situation: { ...planActual.situation, reasons: ['InsufficientHistory'] } } })).toEqual([])
+  })
+})
+
+describe('Pontos de atenção — orçamento PF × contexto bancário', () => {
+  it('o excesso dos cartões vem do orçamento PF, uma só vez, mesmo sem meta total, e não depende do controle bancário', () => {
+    const input = calm(); const full = budgetControl()
+    const noTotal = { ...full, total: { ...full.total, targetDefined: false, target: null, excess: null, status: 'NoTarget' as const } }
+    const fromPf = buildPriorityItems({ ...input, control: budgetControl({ pressures: [], recommendations: [] }), pfControl: noTotal })
+    expect(fromPf.filter(item => item.key === 'pressure-CardsOverTarget-')).toHaveLength(1)
+    expect(plain(fromPf.find(item => item.key === 'pressure-CardsOverTarget-')?.impact)).toBe('Excesso de R$ 400,00 sobre a meta.')
+    expect(fromPf.some(item => item.key === 'recommendation-CardsOverTarget')).toBe(false)
+    // O controle bancário sozinho (conta escolhida) não gera alerta de orçamento.
+    expect(keys({ ...input, control: full, pfControl: null }).filter(key => key.startsWith('pressure-Cards') || key === 'total-over')).toEqual([])
+  })
+
+  it('encargos e receitas não recebidas continuam vindo do contexto bancário', () => {
+    const input = calm(); const base = budgetControl({ recommendations: [] })
+    const bank = { ...base.pressures[0], kind: 'CardFinanceCharges', amount: '90.00', amountKind: 'Charged' as const, action: 'OpenCards' as const }
+    const items = buildPriorityItems({ ...input, control: { ...base, pressures: [bank] }, pfControl: budgetControl({ pressures: [], recommendations: [] }) })
+    expect(items.map(item => item.key)).toEqual(['pressure-CardFinanceCharges-'])
   })
 })
 

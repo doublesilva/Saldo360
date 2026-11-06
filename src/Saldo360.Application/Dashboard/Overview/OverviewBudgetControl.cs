@@ -45,18 +45,20 @@ public sealed partial class DashboardOverviewService
             else
             {
                 if (pfAccounts.Count == 0) return null;
-                var parts = new List<BudgetTotals>();
+                var parts = new List<BudgetTotals>(); var incompleteInactive = false;
                 foreach (var account in pfAccounts)
                 {
                     var plan = await planActual.GetAsync(workspaceId, userId, month, PlanActualScopes.Account, account.Id, ct);
-                    if (plan.Value is not { } dashboard) return null; // sem uma das contas o total PF seria parcial sem aviso: indisponível
-                    parts.Add(TotalsOf(dashboard));
+                    if (plan.Value is { } dashboard) parts.Add(TotalsOf(dashboard));
+                    else if (account.IsActive) return null; // sem uma conta ativa o total PF seria parcial sem aviso: indisponível
+                    else incompleteInactive = true; // conta inativa sem dados consolidáveis: o total sai marcado como parcial
                 }
+                if (parts.Count == 0) return null;
                 var unpaid = (await cardRepository.ListAsync(workspaceId, includeArchived: false, ct)).Any(c => c.DefaultPaymentAccountId is null);
                 var cardReasons = parts.SelectMany(p => p.CardReasons).Distinct().ToList();
                 if (unpaid) cardReasons.Add(PlanActualCalculator.Reasons.MissingPayerAccount);
                 totals = new(parts.Sum(p => p.CardsConfirmed), parts.Sum(p => p.CardsPending), parts.Sum(p => p.CardsEstimated), parts.Sum(p => p.Realized), parts.Sum(p => p.Pending), parts.Sum(p => p.FinanceCharges),
-                    parts.Any(p => p.CardsApplicable), cardReasons.Distinct().ToList(), parts.SelectMany(p => p.ConsumptionReasons).Distinct().ToList());
+                    parts.Any(p => p.CardsApplicable), cardReasons.Distinct().ToList(), parts.SelectMany(p => p.ConsumptionReasons).Concat(incompleteInactive ? [PlanActualCalculator.Reasons.PartialPeriod] : []).Distinct().ToList());
             }
 
             var cardsConfirmed = totals.CardsConfirmed; var cardsPending = totals.CardsPending; var cardsEstimated = totals.CardsEstimated;

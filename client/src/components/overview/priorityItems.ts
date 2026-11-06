@@ -36,10 +36,11 @@ const handledElsewhere = new Set(['OverdueExpenses', 'ProjectedOverTotal', 'Unca
 const budgetSetup = new Set(['BudgetTotalNotDefined', 'CardTargetNotDefined'])
 
 export interface PriorityInput {
-  competence: string; decision: FinancialDecision | null; control: BudgetControl | null; plan: PlanActualDashboard | null; classification: OverviewClassification | null
+  /** `control` = contexto bancário da conta escolhida (encargos, receitas, cheque especial); `pfControl` = orçamento PF (metas, excessos, pendências do orçamento), igual em qualquer conta. */
+  competence: string; decision: FinancialDecision | null; control: BudgetControl | null; pfControl?: BudgetControl | null; plan: PlanActualDashboard | null; classification: OverviewClassification | null
 }
 
-export function buildPriorityItems({ competence, decision, control, plan, classification }: PriorityInput): PriorityItem[] {
+export function buildPriorityItems({ competence, decision, control, pfControl = null, plan, classification }: PriorityInput): PriorityItem[] {
   const items: PriorityItem[] = []
   const agenda: Destination = { section: 'calendar', context: { month: competence } }
   const projection: Destination = { section: 'planning', context: { planningTab: 'projection' } }
@@ -62,34 +63,43 @@ export function buildPriorityItems({ competence, decision, control, plan, classi
     })
   }
 
-  if (control) {
-    const total = control.total
+  // Orçamento PF: meta total, cartões e fora dos cartões acima da meta, metas e recomendações. Não muda com a conta bancária escolhida.
+  if (pfControl) {
+    const total = pfControl.total
     if (total.excess !== null && isPositiveAmount(total.excess)) items.push({
       key: 'total-over', rank: 2, title: 'O total previsto de gastos passou da meta mensal.', impact: `Excesso de ${money(total.excess)} sobre a meta.`,
       action: { label: actionText.OpenBudget, to: budgetDestination('OpenBudget', null, competence) },
     })
-    for (const pressure of control.pressures) {
-      if (!overTargetKinds.has(pressure.kind) && pressure.kind !== 'CardFinanceCharges' && pressure.kind !== 'IncomeNotReceived') continue
+    for (const pressure of pfControl.pressures) {
+      if (!overTargetKinds.has(pressure.kind)) continue
       items.push({
         key: `pressure-${pressure.kind}-${pressure.subject ?? ''}`, rank: 2, title: pressureText(pressure), impact: pressureImpact(pressure),
         action: { label: actionText[pressure.action], to: budgetDestination(pressure.action, pressure.actionContext, competence) },
       })
     }
-    for (const recommendation of control.recommendations) {
-      if (handledElsewhere.has(recommendation.code) || overTargetKinds.has(recommendation.code) && control.pressures.some(p => p.kind === recommendation.code)) continue
+    for (const recommendation of pfControl.recommendations) {
+      if (handledElsewhere.has(recommendation.code) || overTargetKinds.has(recommendation.code) && pfControl.pressures.some(p => p.kind === recommendation.code)) continue
       items.push({
         key: `recommendation-${recommendation.code}`, rank: 2, title: recommendationText[recommendation.code] ?? recommendation.code, impact: 'Recomendação do orçamento.',
         action: { label: actionText[recommendation.action], to: budgetDestination(recommendation.action, recommendation.actionContext, competence) },
       })
     }
   }
+  // Contexto bancário da conta escolhida: encargos do cartão e receitas previstas que não entraram.
+  if (control) for (const pressure of control.pressures) {
+    if (pressure.kind !== 'CardFinanceCharges' && pressure.kind !== 'IncomeNotReceived') continue
+    items.push({
+      key: `pressure-${pressure.kind}-${pressure.subject ?? ''}`, rank: 2, title: pressureText(pressure), impact: pressureImpact(pressure),
+      action: { label: actionText[pressure.action], to: budgetDestination(pressure.action, pressure.actionContext, competence) },
+    })
+  }
 
-  const dataCauses = dataReliabilityCauses({ competence, decision, control, plan })
+  const dataCauses = dataReliabilityCauses({ competence, decision, control, pfControl, plan })
   if (dataCauses.length > 0) items.push({
     key: 'reliability-data', rank: 3, title: 'Alguns valores podem estar desatualizados ou incompletos.', impact: 'Saldos, cobertura e totais podem mudar quando estes pontos forem resolvidos.',
     action: dataCauses[0].action ?? null, causes: dataCauses,
   })
-  const setupCauses = budgetPendingCauses({ competence, control, plan, classification })
+  const setupCauses = budgetPendingCauses({ competence, control: pfControl, plan, classification })
   if (setupCauses.length > 0) items.push({
     key: 'reliability-budget', rank: 3, title: 'O orçamento tem pendências de classificação ou de metas.', impact: 'A comparação com a meta pode estar incompleta.',
     action: setupCauses[0].action ?? null, causes: setupCauses,
@@ -103,7 +113,7 @@ function pressureImpact(pressure: BudgetPressure): string {
   return pressure.amountKind === 'OverTarget' ? `Excesso de ${money(pressure.amount)} sobre a meta.` : `${money(pressure.amount)}.`
 }
 
-function dataReliabilityCauses({ competence, decision, control, plan }: Pick<PriorityInput, 'competence' | 'decision' | 'control' | 'plan'>): PriorityCause[] {
+function dataReliabilityCauses({ competence, decision, control, pfControl, plan }: Pick<PriorityInput, 'competence' | 'decision' | 'control' | 'pfControl' | 'plan'>): PriorityCause[] {
   const causes: PriorityCause[] = []
   const add = (cause: PriorityCause) => { if (!causes.some(c => c.key === cause.key || c.text === cause.text)) causes.push(cause) }
   const sync = plan?.sync
@@ -125,7 +135,7 @@ function dataReliabilityCauses({ competence, decision, control, plan }: Pick<Pri
   if (control?.recommendations.some(r => r.code === 'IncomeEstimateUnconfirmed')) add({
     key: 'income-estimate', text: recommendationText.IncomeEstimateUnconfirmed, action: { label: actionText.OpenPlanning, to: budgetDestination('OpenPlanning', null, competence) },
   })
-  if (control?.recommendations.some(r => r.code === 'CardCoverageIncomplete')) add({ key: 'card-coverage', text: recommendationText.CardCoverageIncomplete, action: { label: actionText.OpenCards, to: { section: 'cards' } } })
+  if (pfControl?.recommendations.some(r => r.code === 'CardCoverageIncomplete')) add({ key: 'card-coverage', text: recommendationText.CardCoverageIncomplete, action: { label: actionText.OpenCards, to: { section: 'cards' } } })
   const overdraft = control?.pressures.find(p => p.kind === 'OverdraftChargesNotEstimable')
   if (overdraft) add({ key: 'overdraft-charges', text: pressureText(overdraft) })
   // As explicações das ressalvas só complementam um aviso que já existe: sozinhas não são um alerta.
@@ -133,7 +143,7 @@ function dataReliabilityCauses({ competence, decision, control, plan }: Pick<Pri
   return causes
 }
 
-function budgetPendingCauses({ competence, control, plan, classification }: Pick<PriorityInput, 'competence' | 'control' | 'plan' | 'classification'>): PriorityCause[] {
+function budgetPendingCauses({ competence, control, plan, classification }: { competence: string; control: BudgetControl | null | undefined; plan: PriorityInput['plan']; classification: PriorityInput['classification'] }): PriorityCause[] {
   const causes: PriorityCause[] = []
   const pending = classification && classification.state === 'Complete' ? classification.needsReview + classification.notEvaluated : 0
   if (pending > 0) causes.push({
