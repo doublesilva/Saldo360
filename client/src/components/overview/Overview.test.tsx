@@ -21,7 +21,7 @@ const distribution = (over: Partial<ExpenseDistribution> = {}): ExpenseDistribut
   categories: [share('h', 'Moradia', '700.00', '58.3'), share('f', 'Alimentação', '300.00', '25.0'), share(null, 'Sem categoria', '200.00', '16.7', 'Uncategorized', 0)], categoryCount: 2, gross: '1200.00', adjustments: '0.00', reconciliation: null,
   ...over,
 })
-const withSummary = (over: Partial<DashboardOverview> = {}): DashboardOverview => ({ ...baseOverview, decision: decision(), budgetControl: budgetControl(), expenseDistribution: distribution(), ...over })
+const withSummary = (over: Partial<DashboardOverview> = {}): DashboardOverview => ({ ...baseOverview, decision: decision(), budgetControl: budgetControl(), pfBudgetControl: budgetControl({ scopeKind: 'pf' }), expenseDistribution: distribution(), ...over })
 const overview = withSummary()
 const answer = (value: unknown) => value instanceof Response ? value.clone() : new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
 function mockApi(overrides: Overrides = {}) {
@@ -49,7 +49,7 @@ const title = (heading: Element) => [...heading.childNodes].filter(node => node.
 const card = (name: string) => screen.getByRole('region', { name })
 const findCard = (name: string) => screen.findByRole('region', { name })
 const plan = (changes: Partial<PlanActualDashboard>): PlanActualDashboard => ({ ...planActual, ...changes })
-const control = (changes: Partial<BudgetControl>) => withSummary({ budgetControl: budgetControl(changes) })
+const control = (changes: Partial<BudgetControl>) => withSummary({ pfBudgetControl: budgetControl({ scopeKind: 'pf', ...changes }) })
 const withDecision = (changes: Partial<FinancialDecision>) => withSummary({ decision: decision(changes) })
 const loaded = () => screen.findByText('-R$ 1.000,00')
 const overdraftPlan = (changes: Partial<PlanActualDashboard['overdraft']> = {}) => plan({ overdraft: {
@@ -194,7 +194,7 @@ describe('Visão Geral — orçamento mensal', () => {
     mockApi(); renderPage()
     const budget = await findCard('Orçamento mensal')
     await waitFor(() => expect(text(budget)).toContain('Meta total'))
-    expect(text(budget)).toContain('PF · Outubro de 2026')
+    expect(text(budget)).toContain('Orçamento PF · Todas as contas PF · Outubro de 2026')
     expect(text(row('Meta total'))).toBe('Meta total60,0%R$ 7.500,00 / R$ 12.500,00R$ 5.000,00 abaixo da meta')
     expect(text(row('Cartões de crédito'))).toBe('Cartões de crédito70,0%R$ 3.500,00 / R$ 5.000,00R$ 1.500,00 abaixo da meta')
     expect(text(row('Fora dos cartões'))).toBe('Fora dos cartões53,3%R$ 4.000,00 / R$ 7.500,00R$ 3.500,00 abaixo da meta')
@@ -251,13 +251,23 @@ describe('Visão Geral — orçamento mensal', () => {
     expect(text(card('Orçamento mensal'))).not.toContain('Meta complementar')
   })
 
-  it('conta isolada: só o consumo da conta, sem percentual de atingimento da meta global nem meta complementar', async () => {
+  it('o orçamento PF não depende da conta escolhida: mesma meta e mesmos valores com a conta PJ ou o consolidado, enquanto as categorias acompanham a conta', async () => {
+    mockApi(); renderPage()
+    await waitFor(() => expect(text(row('Meta total'))).toContain('R$ 12.500,00'))
+    fireEvent.change(screen.getByLabelText('Conta ou consolidado'), { target: { value: 'account:pj' } })
+    await waitFor(() => expect(calls.some(url => url.includes('accountId=pj'))).toBe(true))
+    expect(text(card('Orçamento mensal'))).toContain('Orçamento PF · Todas as contas PF'); expect(text(row('Meta total'))).toContain('R$ 12.500,00')
+    expect(text(card('Despesas por categoria'))).toContain('Conta A · Somente gastos já efetivados')
+  })
+
+  it('meta total ausente: a meta de cartões continua comparável e nada é inventado para o resto', async () => {
     const base = budgetControl()
-    mockApi({ overview: control({ scopeKind: 'account', targetsAttributable: false, total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, projectedPercent: null, status: 'NoTarget' },
-      cards: group('Cards', { state: 'TargetNotAttributable', target: null, projectedPercent: null, status: 'NoTarget' }), outsideCards: group('OutsideCards', { state: 'TargetNotAttributable', target: null, projectedPercent: null, status: 'NoTarget' }) }) }); renderPage()
-    const budget = await findCard('Orçamento mensal')
-    await waitFor(() => expect(text(row('Cartões de crédito'))).toBe('Cartões de créditoR$ 3.500,00Meta global'))
-    expect(text(budget)).not.toMatch(/%/); expect(text(budget)).not.toContain('R$ 12.500,00'); expect(text(budget)).not.toContain('Meta complementar')
+    mockApi({ overview: control({ state: 'TargetNotDefined', total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, projectedPercent: null, realizedPercent: null, status: 'NoTarget' },
+      outsideCards: group('OutsideCards', { state: 'TargetNotDefined', target: null, margin: null, excess: null, projectedPercent: null, status: 'NoTarget' }) }) }); renderPage()
+    await findCard('Orçamento mensal')
+    await waitFor(() => expect(text(row('Meta total'))).toBe('Meta totalR$ 7.500,00Meta não configurada'))
+    expect(text(row('Cartões de crédito'))).toContain('70,0%'); expect(text(row('Fora dos cartões'))).toBe('Fora dos cartõesR$ 4.000,00Meta não configurada')
+    expect(text(card('Orçamento mensal'))).not.toContain('R$ 12.500,00')
   })
 })
 

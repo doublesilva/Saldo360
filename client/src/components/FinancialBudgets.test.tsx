@@ -58,7 +58,7 @@ const composition = (page: number, totalCount = 12): BudgetComposition => ({
 
 type Call = { url: string; init?: RequestInit }
 
-function mockApi(options: { budgets?: FinancialBudget[]; runs?: FinancialBudgetTargetExecution[]; saveStatus?: number; failList?: boolean } = {}) {
+function mockApi(options: { budgets?: FinancialBudget[]; runs?: FinancialBudgetTargetExecution[]; saveStatus?: number; failList?: boolean; effective?: unknown } = {}) {
   const calls: Call[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input); calls.push({ url, init })
@@ -69,6 +69,7 @@ function mockApi(options: { budgets?: FinancialBudget[]; runs?: FinancialBudgetT
       return Response.json(budget, { status: init.method === 'POST' ? 201 : 200 })
     }
     if (init?.method === 'DELETE') return new Response(null, { status: 204 })
+    if (options.effective && url.includes('/budgets/effective') && !url.includes('/execution')) return Response.json(options.effective)
     if (url.includes('/composition')) return Response.json(composition(Number(new URL(url, 'http://x').searchParams.get('page'))))
     if (url.includes('/execution')) return Response.json(execution(options.runs ?? baseRuns))
     if (options.failList) return new Response('x', { status: 500 })
@@ -151,6 +152,16 @@ describe('FinancialBudgetsPage — metas fixas, todos os cartões e categorias',
     expect(body(writes(calls)[0])).toEqual({ competence: '2026-10', description: null })
     expect(writes(calls)[1].url).toBe('/api/financial-workspaces/f1/budgets/budget-1/targets')
     expect(body(writes(calls)[1])).toEqual({ groupingType: 'AllCards', plannedAmount: '5000.00' })
+  })
+
+  it('metas herdadas do orçamento padrão, sem orçamento mensal: não diz que não há metas e não materializa nada', async () => {
+    const inherited = { competence: '2026-11', budgetId: null, standardConfigured: true, outsideCardsTarget: null, warnings: [],
+      targets: [{ id: 't1', target: 'AllCards', categoryId: null, name: 'Todos os cartões', amount: '5000.00', origin: 'Inherited', removed: false, standardFrom: '2026-09' }] }
+    const calls = mockApi({ budgets: [], effective: inherited })
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-11" />)
+    expect(await screen.findByText(/As metas deste mês vêm do orçamento padrão/)).toBeTruthy()
+    expect(screen.queryByText(/Nenhuma meta definida para/)).toBeNull()
+    expect(writes(calls)).toHaveLength(0)
   })
 
   it('meta por categoria: oferece só categorias de despesa disponíveis sem meta, com "Categoria / Subcategoria", e envia centavos exatos', async () => {

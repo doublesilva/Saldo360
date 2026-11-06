@@ -135,7 +135,7 @@ export interface BudgetPressure {
 }
 export interface BudgetRecommendation { code: string; action: BudgetAction; actionContext: string | null }
 export interface BudgetControl {
-  state: 'Complete' | 'Partial' | 'TargetNotDefined'; competence: string; period: DecisionPeriod; scopeKind: 'primary' | 'all' | 'account'; targetsAttributable: boolean
+  state: 'Complete' | 'Partial' | 'TargetNotDefined'; competence: string; period: DecisionPeriod; scopeKind: 'primary' | 'all' | 'account' | 'pf'; targetsAttributable: boolean
   total: BudgetControlTotal; cards: BudgetControlGroup; outsideCards: BudgetControlGroup; pressures: BudgetPressure[]; recommendations: BudgetRecommendation[]; notes: string[]
   /** T12.2: de onde vem a meta total (resolvedor único da T12.1); `totalTargetFrom` = início da vigência do padrão (AAAA-MM). Ausente em servidores antigos e quando a meta não se aplica a uma conta isolada. */
   totalTargetOrigin?: TargetOrigin | null; totalTargetFrom?: string | null
@@ -177,6 +177,8 @@ export interface DashboardOverview {
   budgetControl?: BudgetControl | null
   /** Aditivo (dashboard Folio): para onde foram as despesas realizadas do mês. */
   expenseDistribution?: ExpenseDistribution | null
+  /** Aditivo: orçamento PF (todas as contas PF pelo `FinancialScope`), independente da conta bancária escolhida; metas sempre atribuíveis. `budgetControl` segue o escopo bancário. */
+  pfBudgetControl?: BudgetControl | null
 }
 
 export function getDashboardOverview(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<DashboardOverview> {

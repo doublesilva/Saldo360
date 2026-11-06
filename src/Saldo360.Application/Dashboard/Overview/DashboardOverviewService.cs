@@ -80,7 +80,7 @@ public sealed record OverviewTransfersDto(string State, string Received, string 
 
 public sealed record DashboardOverviewDto(string Competence, DateOnly AsOf, string ScopeKind, Guid? ScopeAccountId, OverviewAccountsDto Accounts, OverviewCommitmentsDto Commitments, OverviewGoalsDto Goals,
     OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null, OverviewCashFlowDto? CashFlow = null,
-    FinancialDecisionDto? Decision = null, BudgetControlDto? BudgetControl = null, ExpenseDistributionDto? ExpenseDistribution = null);
+    FinancialDecisionDto? Decision = null, BudgetControlDto? BudgetControl = null, ExpenseDistributionDto? ExpenseDistribution = null, BudgetControlDto? PfBudgetControl = null);
 
 public sealed partial class DashboardOverviewService(
     IFinancialWorkspaceRepository workspaces,
@@ -165,8 +165,10 @@ public sealed partial class DashboardOverviewService(
         var cashFlow = await BuildCashFlowAsync(workspaceId, userId, month, selected?.Id, today, byCompetence, ct);
         var decision = await BuildDecisionAsync(workspaceId, month, selected, all, kind, today, cashFlow, ct);
         var budgetControl = await BuildBudgetControlAsync(workspaceId, userId, month, requested, selected, kind, today, budget, classification, decision, ct);
+        // Orçamento PF: independe da conta bancária escolhida (todas as contas PF pelo FinancialScope), nunca o consolidado, que também tem PJ.
+        var pfBudgetControl = await BuildBudgetControlAsync(workspaceId, userId, month, PlanActualScopes.All, null, "pf", today, budget, classification, null, ct, all.Where(a => a.FinancialScope == Saldo360.Domain.Accounts.FinancialScope.PF).ToList());
         var distribution = await BuildExpenseDistributionAsync(workspaceId, userId, month, requested, selected?.Id, ExpenseDistributionCalculator.OverviewTop, ct);
-        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow, decision, budgetControl, distribution));
+        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow, decision, budgetControl, distribution, pfBudgetControl));
     }
 
     private async Task<OverviewTransfersDto> BuildTransfersAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, OverviewAccountsDto accounts, CancellationToken ct)

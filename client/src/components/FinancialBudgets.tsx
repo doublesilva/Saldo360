@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listCategories, type FinancialCategory } from '../api/categories'
+import { getEffectiveBudget } from '../api/effectiveBudget'
 import {
   archiveBudget,
   getBudgetExecution,
@@ -60,6 +61,15 @@ export function FinancialBudgetsPage({ workspaceId, initialCompetence, initialGr
     listCategories(workspaceId, true, controller.signal).then(setCategories).catch(() => undefined)
     return () => controller.abort()
   }, [workspaceId])
+
+  // Metas efetivas da T12.1 (herdadas, personalizadas ou históricas): é delas que se sabe se há orçamento configurado, não só do orçamento mensal materializado.
+  const [effectiveDefined, setEffectiveDefined] = useState<boolean | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    setEffectiveDefined(null)
+    getEffectiveBudget(workspaceId, competence, controller.signal).then(effective => setEffectiveDefined(effective.targets.some(target => target.amount !== null && !target.removed))).catch(() => { if (!controller.signal.aborted) setEffectiveDefined(false) })
+    return () => controller.abort()
+  }, [workspaceId, competence, reloadKey, externalRefreshKey])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -139,7 +149,10 @@ export function FinancialBudgetsPage({ workspaceId, initialCompetence, initialGr
       {state.kind === 'loaded' && form && (
         <BudgetTargetForm workspaceId={workspaceId} competence={competence} budget={budget} categories={categories} preset={form.preset} onDone={refresh} onCancel={() => setForm(null)} />
       )}
-      {state.kind === 'loaded' && active.length === 0 && !form && (
+      {state.kind === 'loaded' && active.length === 0 && !form && effectiveDefined === true && (
+        <p className="meta" role="status">As metas deste mês vêm do orçamento padrão, acima. Não há metas mensais registradas à parte para {formatMonthYear(`${competence}-01`)}.</p>
+      )}
+      {state.kind === 'loaded' && active.length === 0 && !form && effectiveDefined === false && (
         <section className="budget-empty" aria-label="Sem metas">
           <p>Nenhuma meta definida para {formatMonthYear(`${competence}-01`)}.</p>
           <p className="meta">Defina um limite para as despesas fixas, para todos os cartões somados ou para uma categoria. As metas do orçamento padrão (herdadas ou personalizadas) aparecem acima.</p>

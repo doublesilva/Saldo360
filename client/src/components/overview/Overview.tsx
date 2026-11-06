@@ -57,8 +57,6 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
     [competence, data, planData])
   const setCompetence = (value: string) => { if (/^\d{4}-\d{2}$/.test(value)) onSelectionChange({ competence: value, scope }) }
   const step = (months: number) => setCompetence(addCalendarMonths(`${competence}-01`, months).slice(0, 7))
-  // Subtítulo do orçamento: o tipo da conta analisada (PF/PJ) ou o consolidado de contas.
-  const budgetScope = data ? data.scopeAccountId ? data.accounts.items.find(a => a.accountId === data.scopeAccountId)?.scope ?? '' : 'Todas as contas' : ''
   const recentRange = data ? { from: data.recent.from, to: data.recent.through, accountId: data.scopeAccountId } : null
 
   return <div className="ov" aria-live="polite">
@@ -95,9 +93,9 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
       <div className="ov-grid__main">
         <OverviewEvolutionSection workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} />
         <div className="ov-budget-area">
-          <OverviewBudgetProgress control={data?.budgetControl ?? null} fixedTarget={data?.budget.state === 'Complete' ? data.budget.fixed?.planned ?? null : null}
-            scopeLabel={budgetScope} monthLabel={monthTitle(competence)} {...overviewBlock} onOpenBudget={() => onNavigate('budgets', { competence })} />
-          <OverviewExpenseDistribution workspaceId={workspaceId} competence={competence} scope={scope} monthLabel={monthTitle(competence)}
+          <OverviewBudgetProgress control={data?.pfBudgetControl ?? null} fixedTarget={data?.budget.state === 'Complete' ? data.budget.fixed?.planned ?? null : null}
+            scopeLabel="Orçamento PF · Todas as contas PF" monthLabel={monthTitle(competence)} {...overviewBlock} onOpenBudget={() => onNavigate('budgets', { competence })} />
+          <OverviewExpenseDistribution workspaceId={workspaceId} competence={competence} scope={scope} monthLabel={monthTitle(competence)} scopeText={scopeText}
             distribution={data?.expenseDistribution ?? null} {...overviewBlock} />
         </div>
         <OverviewRecent recent={data?.recent ?? null} {...overviewBlock}

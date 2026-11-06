@@ -59,14 +59,14 @@ function Body({ distribution, monthLabel }: { distribution: ExpenseDistribution;
   </>
 }
 
-export function OverviewExpenseDistribution({ workspaceId, competence, scope, monthLabel, distribution, loading, error, retry }: {
-  workspaceId: string; competence: string; scope: PlanActualScopeChoice; monthLabel: string; distribution: ExpenseDistribution | null; loading: boolean; error: unknown; retry: () => void
+export function OverviewExpenseDistribution({ workspaceId, competence, scope, monthLabel, scopeText, distribution, loading, error, retry }: {
+  workspaceId: string; competence: string; scope: PlanActualScopeChoice; monthLabel: string; scopeText: string; distribution: ExpenseDistribution | null; loading: boolean; error: unknown; retry: () => void
 }) {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const close = useCallback(() => { setOpen(false); trigger.current?.focus() }, [])
   return <section className="ov-card ov-distribution" aria-labelledby="ov-distribution-title">
-    <header className="ov-card__head"><div><h3 id="ov-distribution-title">Despesas por categoria</h3><p className="ov-meta">Somente gastos já efetivados</p></div>
+    <header className="ov-card__head"><div><h3 id="ov-distribution-title">Despesas por categoria</h3><p className="ov-meta">{scopeText ? `${scopeText} · ` : ''}Somente gastos já efetivados</p></div>
       {distribution && distribution.state !== 'Unavailable' && distribution.categories.length > 0
         && <button ref={trigger} type="button" className="ov-link" aria-haspopup="dialog" onClick={() => setOpen(true)}>Ver todas ›</button>}</header>
     {error ? <OperationalError error={error} onRetry={retry} retryLabel="Recarregar" />

@@ -151,4 +151,56 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
         await ControlAsync("all"); await ControlAsync("account", _account); await ControlAsync("primary");
         Assert.Equal(before, await CountAsync());
     }
+
+    private async Task<JsonElement> PfControlAsync(string scope, Guid? account = null)
+    {
+        var url = $"{Root}/financial-dashboard/overview?competence={Month}&scope={scope}" + (account is null ? "" : $"&accountId={account}");
+        var response = await SendAsync(HttpMethod.Get, url, _session);
+        Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("pfBudgetControl").Clone();
+    }
+
+    [Fact]
+    public async Task PfBudgetIsTheSameForEveryBankScopeAndNeverIncludesPjSpending()
+    {
+        await ArrangeAsync("bc-pf");
+        var pj = (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/accounts", _session,
+            new { name = "Itaú PJ", type = "Checking", financialScope = "PJ", openingBalance = "9000.00", openingBalanceDate = ThisMonth.AddMonths(-1) }))).Id;
+        await PurchaseAsync(await CardAsync("Nubank"), "5200.00");
+        await ExpenseAsync("1000.00");
+        Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/transactions", _session,
+            new { accountId = pj, categoryId = _expense, type = "Expense", description = "Despesa PJ", amount = "400.00", transactionDate = Today })).StatusCode);
+        await ConfigureBudgetAsync("5000.00", 12500m);
+
+        var viaPf = await PfControlAsync("account", _account);
+        var viaPj = await PfControlAsync("account", pj);
+        var viaAll = await PfControlAsync("all");
+
+        Assert.True(viaPf.GetProperty("targetsAttributable").GetBoolean()); Assert.Equal("pf", Text(viaPf, "scopeKind"));
+        // PF: 1000 fora dos cartões + 5200 no cartão (pago pela conta PF). Os 400 da PJ não entram, qualquer que seja a conta escolhida.
+        Assert.Equal("6200.00", Text(viaPf, "total", "projected")); Assert.Equal("1000.00", Text(viaPf, "outsideCards", "realized")); Assert.Equal("5200.00", Text(viaPf, "cards", "realized"));
+        Assert.Equal("12500.00", Text(viaPf, "total", "target")); Assert.Equal("49.6", Text(viaPf, "total", "projectedPercent"));
+        Assert.Equal(viaPf.ToString(), viaPj.ToString()); Assert.Equal(viaPf.ToString(), viaAll.ToString());
+        // O orçamento bancário (budgetControl) continua como era: a conta PJ isolada não recebe a meta global.
+        Assert.False((await ControlAsync("account", pj)).GetProperty("targetsAttributable").GetBoolean());
+    }
+
+    [Fact]
+    public async Task PfBudgetWithoutTotalTargetKeepsTheCardTargetAndInventsNothingAndAnUnassignedCardMakesItPartial()
+    {
+        await ArrangeAsync("bc-pf-sem-total");
+        var unpaid = (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/credit-cards", _session, new { name = "Sem pagador", issuer = "Banco", creditLimit = "1000.00", closingDay = 5, dueDay = 10 }))).Id;
+        Assert.NotEqual(Guid.Empty, unpaid);
+        await PurchaseAsync(await CardAsync("Nubank"), "800.00");
+        var budget = (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/budgets", _session, new { competence = Month }))).Id;
+        Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/budgets/{budget}/targets", _session, new { groupingType = "AllCards", plannedAmount = "1000.00" })).StatusCode);
+
+        var control = await PfControlAsync("account", _account);
+
+        Assert.False(control.GetProperty("total").GetProperty("targetDefined").GetBoolean()); Assert.Equal(JsonValueKind.Null, control.GetProperty("total").GetProperty("target").ValueKind);
+        Assert.Equal("1000.00", Text(control, "cards", "target")); Assert.Equal("80.0", Text(control, "cards", "projectedPercent"));
+        Assert.Equal(JsonValueKind.Null, control.GetProperty("outsideCards").GetProperty("target").ValueKind); // sem a meta total não há meta fora dos cartões
+        Assert.Contains("MissingPayerAccount", control.GetProperty("cards").GetProperty("reasons").EnumerateArray().Select(r => r.GetString()));
+        Assert.Equal("TargetNotDefined", Text(control, "state")); // meta total ausente prevalece no estado; a cobertura parcial está nos motivos do grupo
+    }
 }
