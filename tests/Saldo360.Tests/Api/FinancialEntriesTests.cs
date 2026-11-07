@@ -8,7 +8,7 @@ namespace Saldo360.Tests.Api;
 /// <summary>T13.1: leitura unificada dos lançamentos (financial-entries) pela API real (Postgres): uma linha por movimento lógico, filtros e paginação no servidor.</summary>
 [Collection(PostgresSecondaryCollection.Name)]
 [Trait("Category", "CORE")]
-[Trait("Area", "Entries")]
+[Trait("Area", "Transactions")]
 [Trait("Dependency", "PostgreSQL")]
 public sealed class FinancialEntriesTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
