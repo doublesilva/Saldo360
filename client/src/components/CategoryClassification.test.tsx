@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FinancialAccount } from '../api/accounts'
 import type { FinancialCategory } from '../api/categories'
 import type { FinancialTransaction } from '../api/transactions'
+import type { FinancialEntry } from '../api/financialEntries'
 import { Categories } from './Categories'
 import { Transactions } from './Transactions'
 
@@ -47,6 +48,15 @@ const renda: FinancialTransaction = {
 
 type Call = { url: string; init?: RequestInit }
 
+/** Linha da tabela unificada (financial-entries) equivalente a uma transação efetiva. */
+const entryOf = (t: FinancialTransaction): FinancialEntry => ({
+  id: `Transaction:${t.id}`, source: 'Transaction', competence: t.transactionDate.slice(0, 7), date: t.transactionDate, dateKind: 'Effective', description: t.description, type: t.type, direction: t.type === 'Income' ? 'In' : 'Out',
+  status: 'Realized', amount: t.amount, account: { id: t.account.id, name: t.account.name, scope: 'PF' }, counterpart: null, card: null,
+  category: t.category ? { id: t.category.id, name: t.category.name, path: t.category.path ?? t.category.name } : null, nature: t.type === 'Expense' ? t.expenseNature ?? 'Undefined' : null,
+  origin: t.origin ?? 'Manual', budgetImpact: 'Consumes', cashImpact: 'Immediate', transactionId: t.id, plannedTransactionId: null, transferId: null, plannedTransferId: null, recurrenceId: null, invoiceCompetence: null,
+  actions: t.origin === 'PluggyImport' ? ['ViewDetails', 'Recategorize', 'ChangeNature', 'Cancel'] : ['ViewDetails', 'Edit', 'Cancel'], flags: [],
+})
+
 function mockApi(options: { categories?: FinancialCategory[]; items?: FinancialTransaction[]; saveStatus?: number; saveBody?: unknown } = {}) {
   const calls: Call[] = []
   vi.stubGlobal(
@@ -62,8 +72,8 @@ function mockApi(options: { categories?: FinancialCategory[]; items?: FinancialT
         if (url.includes('/categories')) return Response.json({ ...energia, ...JSON.parse(String(init.body)) }, { status: init.method === 'POST' ? 201 : 200 })
         return Response.json(conta, { status: init.method === 'POST' ? 201 : 200 })
       }
-      const items = options.items ?? [conta, mercado, importado, renda]
-      return Response.json({ items, page: 1, pageSize: 20, totalCount: items.length })
+      const items = (options.items ?? [conta, mercado, importado, renda]).map(entryOf)
+      return Response.json({ items, page: 1, pageSize: 25, totalCount: items.length, competence: '2026-10' })
     }),
   )
   return calls
@@ -145,50 +155,58 @@ describe('Categorias — hierarquia', () => {
   })
 })
 
-describe('Lançamentos — categoria/subcategoria e tipo de despesa', () => {
-  it('lista "Categoria / Subcategoria" e o tipo da despesa em texto, e nada para receita', async () => {
-    mockApi()
-    render(<Transactions workspaceId="f1" />)
+let seq = 0
+const page = () => render(<Transactions workspaceId={`c${++seq}`} />)
+const lastQuery = (calls: Call[]) => new URL(calls.filter((c) => c.url.includes('/financial-entries?')).at(-1)!.url, 'http://x').searchParams
+const rowOf = (description: string) => screen.getByText(description, { selector: 'strong' }).closest('tr') as HTMLElement
+const openMenu = (description: string) => fireEvent.click(within(rowOf(description)).getByRole('button', { name: `Ações de ${description}` }))
 
-    const luz = (await screen.findByText('Conta de luz')).closest('li')!
-    expect(within(luz).getByText('Moradia / Energia')).toBeTruthy()
-    expect(within(luz).getByText('Tipo de despesa: Fixa')).toBeTruthy()
-    expect(within(screen.getByText('Mercado').closest('li')!).getByText('Tipo de despesa: Não definida')).toBeTruthy()
-    expect(within(screen.getByText('Salário setembro').closest('li')!).queryByText(/Tipo de despesa/)).toBeNull()
+describe('Lançamentos — categoria/subcategoria e tipo de despesa', () => {
+  it('lista "Categoria / Subcategoria" na tabela e o tipo da despesa em texto nos detalhes, e nada para receita', async () => {
+    mockApi()
+    page()
+
+    await screen.findByText('Conta de luz')
+    expect(within(rowOf('Conta de luz')).getAllByText('Moradia / Energia').length).toBeGreaterThan(0)
+    openMenu('Conta de luz'); fireEvent.click(screen.getByRole('menuitem', { name: 'Ver detalhes' }))
+    expect(document.querySelector('.entries__detail')!.textContent).toContain('Tipo de despesaFixa')
+    openMenu('Salário setembro'); fireEvent.click(screen.getByRole('menuitem', { name: 'Ver detalhes' }))
+    expect(document.querySelector('.entries__detail')!.textContent).not.toContain('Tipo de despesa')
   })
 
   it('filtra por tipo de despesa e preserva os demais filtros', async () => {
     const calls = mockApi()
-    render(<Transactions workspaceId="f1" />)
+    page()
     await screen.findByText('Conta de luz')
 
-    const filters = within(screen.getByRole('group', { name: 'Filtros' }))
-    fireEvent.change(filters.getByLabelText('Conta'), { target: { value: 'acc' } })
-    fireEvent.change(filters.getByLabelText('Tipo de despesa'), { target: { value: 'Fixed' } })
+    fireEvent.change(await screen.findByLabelText('Conta ou cartão'), { target: { value: 'acc' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Filtros avançados' }))
+    fireEvent.change(screen.getByLabelText('Natureza'), { target: { value: 'Fixed' } })
 
-    await waitFor(() => expect(calls.at(-1)!.url).toContain('expenseNature=Fixed'))
-    expect(calls.at(-1)!.url).toContain('accountId=acc')
+    await waitFor(() => expect(lastQuery(calls).get('nature')).toBe('Fixed'))
+    expect(lastQuery(calls).get('accountId')).toBe('acc')
   })
 
   it('o filtro de categoria diz que a principal inclui as subcategorias e lista cada subcategoria separada', async () => {
     const calls = mockApi()
-    render(<Transactions workspaceId="f1" />)
+    page()
     await screen.findByText('Conta de luz')
+    fireEvent.click(screen.getByRole('button', { name: 'Filtros avançados' }))
 
-    const filter = within(screen.getByRole('group', { name: 'Filtros' })).getByLabelText('Categoria') as HTMLSelectElement
+    const filter = (await screen.findByLabelText('Categoria')) as HTMLSelectElement
     const labels = [...filter.options].map((option) => option.textContent)
     expect(labels).toContain('Moradia (com subcategorias)')
     expect(labels).toContain('Moradia / Energia')
 
     fireEvent.change(filter, { target: { value: 'energia' } })
-    await waitFor(() => expect(calls.at(-1)!.url).toContain('categoryId=energia'))
+    await waitFor(() => expect(lastQuery(calls).get('categoryId')).toBe('energia'))
   })
 
   it('o formulário de despesa traz o campo com a dica e envia o tipo escolhido; receita não tem o campo', async () => {
     const calls = mockApi()
-    render(<Transactions workspaceId="f1" />)
+    page()
     await screen.findByText('Conta de luz')
-    fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Novo lançamento' }))
     await screen.findByLabelText('Conta')
 
     fireEvent.click(screen.getByLabelText('Receita (entrada)'))
@@ -213,12 +231,12 @@ describe('Lançamentos — categoria/subcategoria e tipo de despesa', () => {
     expect(bodyOf(writes(calls)[0])).toMatchObject({ categoryId: 'energia', type: 'Expense', expenseNature: 'Fixed' })
   })
 
-  it('não oferece subcategoria indisponível numa nova despesa, mas mantém a que o registro já usa', async () => {
+  it('não oferece subcategoria indisponível numa nova despesa', async () => {
     const indisponivel = sub('velha-filha', 'Velha filha', category('p', 'P', { isActive: false }))
     mockApi({ categories: [moradia, energia, lazer, indisponivel] })
-    render(<Transactions workspaceId="f1" />)
+    page()
     await screen.findByText('Conta de luz')
-    fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Novo lançamento' }))
     await screen.findByLabelText('Conta')
 
     const labels = [...(screen.getByLabelText('Categoria') as HTMLSelectElement).options].map((o) => o.textContent)
@@ -228,13 +246,14 @@ describe('Lançamentos — categoria/subcategoria e tipo de despesa', () => {
 
   it('corrige o tipo de um lançamento importado sem mexer na categoria', async () => {
     const calls = mockApi()
-    render(<Transactions workspaceId="f1" />)
+    page()
     await screen.findByText('LOJA IMPORTADA')
 
+    openMenu('LOJA IMPORTADA'); fireEvent.click(screen.getByRole('menuitem', { name: 'Corrigir tipo de despesa' }))
     fireEvent.change(screen.getByLabelText('Tipo de despesa de LOJA IMPORTADA'), { target: { value: 'Fixed' } })
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1))
-    expect(writes(calls)[0].url).toBe('/api/financial-workspaces/f1/transactions/t3/expense-nature')
+    expect(writes(calls)[0].url).toMatch(/\/transactions\/t3\/expense-nature$/)
     expect(writes(calls)[0].init!.method).toBe('PUT')
     expect(bodyOf(writes(calls)[0])).toEqual({ expenseNature: 'Fixed' })
   })

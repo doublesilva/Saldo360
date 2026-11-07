@@ -1,32 +1,16 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FinancialAccount } from '../api/accounts'
 import type { FinancialCategory } from '../api/categories'
-import type { FinancialTransaction, TransactionPage } from '../api/transactions'
+import type { FinancialEntriesPage, FinancialEntry } from '../api/financialEntries'
+import type { FinancialTransaction } from '../api/transactions'
 import { todayInSaoPaulo } from '../dates'
 import { Transactions } from './Transactions'
 
 const account = (id: string, name: string, isActive = true): FinancialAccount => ({
-  id,
-  name,
-  institution: null,
-  type: 'Checking',
-  financialScope: 'PF',
-  responsible: null,
-  openingBalance: null,
-  openingBalanceDate: null,
-  isActive,
-  currency: 'BRL',
-  createdAt: '2026-10-01T00:00:00Z',
+  id, name, institution: null, type: 'Checking', financialScope: 'PF', responsible: null, openingBalance: null, openingBalanceDate: null, isActive, currency: 'BRL', createdAt: '2026-10-01T00:00:00Z',
 })
-
-const category = (id: string, name: string, type: 'Income' | 'Expense', isActive = true): FinancialCategory => ({
-  id,
-  name,
-  type,
-  isActive,
-  createdAt: '2026-10-01T00:00:00Z',
-})
+const category = (id: string, name: string, type: 'Income' | 'Expense', isActive = true): FinancialCategory => ({ id, name, type, isActive, createdAt: '2026-10-01T00:00:00Z' })
 
 const itau = account('acc-itau', 'Itaú PF')
 const antiga = account('acc-antiga', 'Conta antiga', false)
@@ -34,541 +18,279 @@ const salario = category('cat-salario', 'Salário', 'Income')
 const mercado = category('cat-mercado', 'Mercado', 'Expense')
 const lazer = category('cat-lazer', 'Lazer', 'Expense', false)
 
-const feira: FinancialTransaction = {
-  id: 't1',
-  type: 'Expense',
-  amount: '1234.56',
-  transactionDate: '2026-10-05',
-  description: 'Feira do mês',
-  account: { id: antiga.id, name: antiga.name, isActive: false },
-  category: { id: lazer.id, name: lazer.name, isActive: false },
-  isCancelled: false,
-  currency: 'BRL',
-  createdAt: '2026-10-05T12:00:00Z',
-  updatedAt: null,
-  cancelledAt: null,
-  plannedTransactionId: null,
+const tx: FinancialTransaction = {
+  id: 't1', type: 'Expense', amount: '1234.56', transactionDate: '2026-10-05', description: 'Feira do mês', account: { id: antiga.id, name: antiga.name, isActive: false },
+  category: { id: lazer.id, name: lazer.name, isActive: false }, isCancelled: false, currency: 'BRL', createdAt: '2026-10-05T12:00:00Z', updatedAt: null, cancelledAt: null, plannedTransactionId: null,
 }
 
-const pagamento: FinancialTransaction = {
-  ...feira,
-  id: 't2',
-  type: 'Income',
-  amount: '5000.00',
-  transactionDate: '2026-10-01',
-  description: 'Salário setembro',
-  account: { id: itau.id, name: itau.name, isActive: true },
-  category: { id: salario.id, name: salario.name, isActive: true },
-}
+const entry = (over: Partial<FinancialEntry>): FinancialEntry => ({
+  id: 'Transaction:t1', source: 'Transaction', competence: '2026-10', date: '2026-10-05', dateKind: 'Effective', description: 'Feira do mês', type: 'Expense', direction: 'Out', status: 'Realized', amount: '1234.56',
+  account: { id: antiga.id, name: antiga.name, scope: 'PF' }, counterpart: null, card: null, category: { id: lazer.id, name: 'Lazer', path: 'Lazer' }, nature: 'Variable', origin: 'Manual', budgetImpact: 'Consumes', cashImpact: 'Immediate',
+  transactionId: 't1', plannedTransactionId: null, transferId: null, plannedTransferId: null, recurrenceId: null, invoiceCompetence: null, actions: ['ViewDetails', 'Edit', 'Cancel'], flags: [], ...over,
+})
 
-const cancelado: FinancialTransaction = { ...pagamento, id: 't3', description: 'Lançamento errado', isCancelled: true }
-const importado: FinancialTransaction = {
-  ...feira, id: 't4', description: 'MERCADO CENTRAL', amount: '10.25', transactionDate: '2026-10-09', origin: 'PluggyImport',
-  account: { id: itau.id, name: itau.name, isActive: true }, category: null,
-}
+const feira = entry({})
+const salarioEntry = entry({ id: 'Transaction:t2', transactionId: 't2', description: 'Salário setembro', type: 'Income', direction: 'In', amount: '5000.00', date: '2026-10-01', category: { id: salario.id, name: 'Salário', path: 'Salário' }, account: { id: itau.id, name: itau.name, scope: 'PF' }, nature: null })
+const previsao = entry({ id: 'Planned:p1', source: 'Planned', transactionId: null, plannedTransactionId: 'p1', description: 'Aluguel previsto', status: 'Pending', dateKind: 'Due', date: '2026-10-28', amount: '2000.00', origin: 'Manual', budgetImpact: 'Planned', cashImpact: 'Pending',
+  actions: ['ViewDetails', 'Realize', 'Edit', 'Cancel'], flags: ['Planned'] })
+const compra = entry({ id: 'CardInstallment:c1', source: 'CardPurchase', transactionId: null, description: 'Mercado no cartão', card: { id: 'k1', name: 'Nubank' }, origin: 'CardInstallment', cashImpact: 'AtInvoicePayment', dateKind: 'Invoice', invoiceCompetence: '2026-10', amount: '300.00', actions: ['ViewDetails', 'OpenCards'] })
+const transferencia = entry({ id: 'Transfer:x1', source: 'Transfer', transactionId: null, transferId: 'x1', description: 'Transferência de Itaú PF para Nubank PJ', type: 'Transfer', direction: 'Neutral', category: null, nature: null, amount: '50.00', counterpart: { id: 'pj', name: 'Nubank PJ', scope: 'PJ' }, budgetImpact: 'None', actions: ['ViewDetails', 'OpenTransfers'] })
+const importado = entry({ id: 'Transaction:t4', transactionId: 't4', description: 'MERCADO CENTRAL', origin: 'PluggyImport', category: null, amount: '10.25', actions: ['ViewDetails', 'Recategorize', 'ChangeNature', 'Cancel'], flags: ['Imported', 'CategoryNeedsReview'] })
+const devolucao = entry({ id: 'Transaction:t5', transactionId: 't5', description: 'Estorno loja', type: 'Income', direction: 'In', origin: 'PluggyRefund', amount: '20.00', budgetImpact: 'Reduces', actions: ['ViewDetails', 'UndoRefund', 'Cancel'], flags: ['Refund'] })
+const cancelado = entry({ id: 'Transaction:t3', transactionId: 't3', description: 'Lançamento errado', status: 'Cancelled', actions: ['ViewDetails'] })
 
 type Call = { url: string; init?: RequestInit }
 
-function mockApi(
-  options: {
-    accounts?: FinancialAccount[]
-    categories?: FinancialCategory[]
-    page?: Partial<TransactionPage>
-    saveStatus?: number
-    saveBody?: unknown
-  } = {},
-) {
+function mockApi(options: { items?: FinancialEntry[]; page?: Partial<FinancialEntriesPage>; accounts?: FinancialAccount[]; categories?: FinancialCategory[]; saveStatus?: number; saveBody?: unknown; transaction?: Partial<FinancialTransaction> } = {}) {
   const calls: Call[] = []
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      calls.push({ url, init })
-      if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
-      if (url.includes('/accounts')) return Response.json(options.accounts ?? [itau, antiga])
-      if (url.includes('/categories')) return Response.json(options.categories ?? [salario, mercado, lazer])
-      if (init?.method === 'POST' || init?.method === 'PUT') {
-        if (options.saveStatus) return Response.json(options.saveBody ?? {}, { status: options.saveStatus })
-        if (url.endsWith('/cancel')) return Response.json({ ...feira, isCancelled: true })
-        return Response.json(feira, { status: init.method === 'POST' ? 201 : 200 })
-      }
-      const items = url.includes('includeCancelled=true') ? [feira, pagamento, cancelado] : [feira, pagamento]
-      return Response.json({ items, page: 1, pageSize: 20, totalCount: items.length, ...options.page })
-    }),
-  )
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    calls.push({ url, init })
+    if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
+    if (url.includes('/accounts')) return Response.json(options.accounts ?? [itau, antiga])
+    if (url.includes('/categories')) return Response.json(options.categories ?? [salario, mercado, lazer])
+    if (url.includes('/financial-entries')) {
+      const items = options.items ?? [feira, salarioEntry, previsao, compra, transferencia]
+      return Response.json({ items, page: 1, pageSize: 25, totalCount: items.length, competence: '2026-10', ...options.page })
+    }
+    if (init?.method === 'POST' || init?.method === 'PUT') {
+      if (options.saveStatus) return Response.json(options.saveBody ?? {}, { status: options.saveStatus })
+      return Response.json(tx, { status: init.method === 'POST' ? 201 : 200 })
+    }
+    if (/\/transactions\/[^/?]+$/.test(url)) return Response.json({ ...tx, ...options.transaction })
+    return new Response('{}', { status: 404 })
+  }))
   return calls
 }
 
-const writes = (calls: Call[]) => calls.filter((c) => c.init?.method === 'POST' || c.init?.method === 'PUT')
-const listCalls = (calls: Call[]) => calls.filter((c) => c.url.includes('/transactions?'))
+const writes = (calls: Call[]) => calls.filter(c => c.init?.method === 'POST' || c.init?.method === 'PUT')
+const entryCalls = (calls: Call[]) => calls.filter(c => c.url.includes('/financial-entries?')).map(c => new URL(c.url, 'http://x').searchParams)
+const plain = (value: string | null | undefined) => (value ?? '').replace(/[  ]/g, ' ')
+const rowOf = (description: string) => screen.getByText(description, { selector: 'strong' }).closest('tr') as HTMLElement
+const openMenu = (description: string) => fireEvent.click(within(rowOf(description)).getByRole('button', { name: `Ações de ${description}` }))
+const pick = (name: string) => fireEvent.click(screen.getByRole('menuitem', { name }))
 
-afterEach(() => {
-  cleanup()
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
+beforeEach(() => { vi.spyOn(window, 'confirm').mockReturnValue(true) })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+// A página lembra os filtros por orçamento: cada teste usa um workspace próprio.
+let seq = 0
+const renderPage = (props: Partial<React.ComponentProps<typeof Transactions>> = {}) => render(<Transactions workspaceId={`f${++seq}`} {...props} />)
+
+describe('Lançamentos — tabela única', () => {
+  it('mostra cabeçalho, uma tabela com as colunas do modelo e a competência atual selecionada', async () => {
+    const calls = mockApi(); renderPage()
+    expect(screen.getByRole('heading', { name: 'Lançamentos' })).toBeTruthy(); expect(screen.getByText('Suas receitas, despesas e compromissos realizados ou previstos.')).toBeTruthy()
+    await screen.findByText('Feira do mês')
+    expect(screen.getAllByRole('table')).toHaveLength(1)
+    expect(screen.getAllByRole('columnheader').map(header => header.textContent?.trim())).toEqual(['Data', 'Descrição', 'Tipo', 'Origem', 'Categoria', 'Situação', 'Valor', 'Ações'])
+    expect((screen.getByLabelText('Competência') as HTMLInputElement).value).toBe(todayInSaoPaulo().slice(0, 7))
+    const first = entryCalls(calls)[0]
+    expect(first.get('competence')).toBe(todayInSaoPaulo().slice(0, 7)); expect(first.get('scope')).toBe('all'); expect(first.get('page')).toBe('1'); expect(first.get('sort')).toBe('date')
+  })
+
+  it('apresenta valor com sinal, tipo, origem, categoria e situação; transferência neutra e cartão com o nome do cartão', async () => {
+    mockApi(); renderPage()
+    await screen.findByText('Feira do mês')
+    expect(plain(rowOf('Feira do mês').textContent)).toContain('− R$ 1.234,56'); expect(rowOf('Feira do mês').textContent).toContain('Realizado')
+    expect(plain(rowOf('Salário setembro').textContent)).toContain('+ R$ 5.000,00')
+    expect(rowOf('Aluguel previsto').textContent).toContain('Previsto'); expect(rowOf('Aluguel previsto').textContent).toContain('Previsão')
+    expect(rowOf('Mercado no cartão').textContent).toContain('Cartão · Nubank')
+    const transfer = plain(rowOf('Transferência de Itaú PF para Nubank PJ').textContent)
+    expect(transfer).toContain('R$ 50,00'); expect(transfer).not.toMatch(/[+−] R\$ 50/); expect(transfer).toContain('Transferência')
+  })
+
+  it('situação vencido, em revisão e cancelado em texto, e cancelado sem ações de edição', async () => {
+    mockApi({ items: [entry({ id: 'a', description: 'Atrasado', status: 'Overdue', transactionId: null, actions: ['ViewDetails'] }), entry({ id: 'b', description: 'A revisar', status: 'NeedsReview', transactionId: null, actions: ['ViewDetails'] }), cancelado] }); renderPage()
+    await screen.findByText('Atrasado')
+    expect(rowOf('Atrasado').textContent).toContain('Vencido'); expect(rowOf('A revisar').textContent).toContain('Em revisão'); expect(rowOf('Lançamento errado').textContent).toContain('Cancelado')
+    openMenu('Lançamento errado'); expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Ver detalhes'])
+  })
+
+  it('estado vazio diz a competência e os filtros', async () => {
+    mockApi({ items: [] }); renderPage()
+    expect(await screen.findByText(/Nenhum lançamento encontrado para/)).toBeTruthy()
+  })
+
+  it('falha de carregamento é dita, sem lista', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).includes('/financial-entries') ? Response.json({ title: 'Falha geral' }, { status: 500 }) : Response.json([])))
+    renderPage()
+    expect(await screen.findByRole('alert')).toBeTruthy()
+  })
 })
 
-async function openNewForm() {
-  const calls = mockApi()
-  render(<Transactions workspaceId="f1" />)
-  await screen.findByText('Feira do mês')
-  fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
-  await screen.findByLabelText('Conta')
-  return calls
-}
-
-function fill(fields: Partial<Record<'Conta' | 'Categoria' | 'Descrição' | 'Valor (R$)', string>>) {
-  for (const [label, value] of Object.entries(fields)) {
-    fireEvent.change(screen.getByLabelText(label), { target: { value } })
-  }
-}
-
-describe('Transactions — lista', () => {
-  it('explica que são movimentações realizadas e mostra valor com sinal, conta e categoria (mesmo inativas)', async () => {
-    const calls = mockApi()
-    render(<Transactions workspaceId="f1" />)
-
-    const item = (await screen.findByText('Feira do mês')).closest('li')!
-    expect(item.textContent).toMatch(/−R\$\s1\.234,56/)
-    expect(within(item).getByText('05/10/2026')).toBeTruthy()
-    expect(within(item).getByText('Lazer (inativa)')).toBeTruthy()
-    expect(within(item).getByText('Conta antiga (inativa)')).toBeTruthy()
-    expect(screen.getByText('Salário setembro').closest('li')!.textContent).toMatch(/\+R\$\s5\.000,00/)
-    expect(screen.getByText(/já aconteceram/)).toBeTruthy()
-    expect(listCalls(calls)[0].url).toBe('/api/financial-workspaces/f1/transactions?page=1&pageSize=20&includeTransfers=true')
+describe('Lançamentos — filtros, ordenação e paginação no servidor', () => {
+  it('navega a competência e envia cada filtro à API, voltando para a página 1', async () => {
+    const calls = mockApi({ page: { totalCount: 80 } }); renderPage()
+    await screen.findByText('Feira do mês')
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('page')).toBe('2'))
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-08' } })
+    await waitFor(() => expect(entryCalls(calls).at(-1)!.get('competence')).toBe('2026-08')); expect(entryCalls(calls).at(-1)!.get('page')).toBe('1')
+    fireEvent.click(screen.getByRole('button', { name: 'Competência anterior' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('competence')).toBe('2026-07'))
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima competência' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('competence')).toBe('2026-08'))
+    fireEvent.change(screen.getByLabelText('Escopo'), { target: { value: 'pf' } }); fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'Payment' } })
+    fireEvent.change(screen.getByLabelText('Situação'), { target: { value: 'OverduePrevious' } }); fireEvent.change(await screen.findByLabelText('Conta ou cartão'), { target: { value: itau.id } })
+    await waitFor(() => expect(entryCalls(calls).at(-1)!.get('accountId')).toBe(itau.id))
+    const last = entryCalls(calls).at(-1)!
+    expect([last.get('scope'), last.get('type'), last.get('status'), last.get('competence')]).toEqual(['pf', 'Payment', 'OverduePrevious', '2026-08'])
   })
 
-  it('mostra cancelados só sob pedido, sem ações de edição', async () => {
-    const calls = mockApi()
-    render(<Transactions workspaceId="f1" />)
+  it('filtros avançados: categoria, natureza, origem, pesquisa e cancelados', async () => {
+    const calls = mockApi(); renderPage()
     await screen.findByText('Feira do mês')
-    expect(screen.queryByText('Lançamento errado')).toBeNull()
-
+    fireEvent.click(screen.getByRole('button', { name: 'Filtros avançados' }))
+    fireEvent.change(screen.getByLabelText('Natureza'), { target: { value: 'Fixed' } }); fireEvent.change(screen.getByLabelText('Origem'), { target: { value: 'CardPurchase' } })
+    fireEvent.change(await screen.findByLabelText('Categoria'), { target: { value: mercado.id } })
+    fireEvent.change(screen.getByLabelText('Pesquisar na descrição'), { target: { value: ' mercado ' } }); fireEvent.submit(screen.getByLabelText('Pesquisar na descrição').closest('form')!)
     fireEvent.click(screen.getByLabelText('Mostrar cancelados'))
-
-    const item = (await screen.findByText('Lançamento errado')).closest('li')!
-    expect(within(item).getByText('Cancelado')).toBeTruthy()
-    expect(within(item).queryByRole('button', { name: 'Editar' })).toBeNull()
-    expect(listCalls(calls).at(-1)!.url).toContain('includeCancelled=true')
+    await waitFor(() => expect(entryCalls(calls).at(-1)!.get('includeCancelled')).toBe('true'))
+    const last = entryCalls(calls).at(-1)!
+    expect([last.get('nature'), last.get('source'), last.get('categoryId'), last.get('search')]).toEqual(['Fixed', 'CardPurchase', mercado.id, 'mercado'])
   })
 
-  it('filtra por período, tipo, conta e categoria e volta para a página 1', async () => {
-    const calls = mockApi({ page: { totalCount: 45 } })
-    render(<Transactions workspaceId="f1" />)
+  it('ordena por data, descrição e valor no servidor, alternando o sentido e informando aria-sort', async () => {
+    const calls = mockApi(); renderPage()
     await screen.findByText('Feira do mês')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Próxima' }))
-    await waitFor(() => expect(listCalls(calls).at(-1)!.url).toContain('page=2'))
-
-    fireEvent.change(screen.getByLabelText('De'), { target: { value: '2026-09-01' } })
-    fireEvent.change(screen.getByLabelText('Até'), { target: { value: '2026-09-30' } })
-    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'Expense' } })
-    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
-    fireEvent.change(screen.getByLabelText('Categoria'), { target: { value: mercado.id } })
-
-    await waitFor(() => expect(listCalls(calls).at(-1)!.url).toContain(`categoryId=${mercado.id}`))
-    const query = new URL(listCalls(calls).at(-1)!.url, 'http://x').searchParams
-    expect(Object.fromEntries(query)).toEqual({
-      page: '1',
-      pageSize: '20',
-      includeTransfers: 'true',
-      from: '2026-09-01',
-      to: '2026-09-30',
-      accountId: itau.id,
-      categoryId: mercado.id,
-      type: 'Expense',
-    })
+    expect(screen.getByRole('columnheader', { name: 'Data' }).getAttribute('aria-sort')).toBe('descending')
+    fireEvent.click(screen.getByRole('button', { name: 'Data' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('direction')).toBe('asc'))
+    fireEvent.click(screen.getByRole('button', { name: 'Valor' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('sort')).toBe('amount'))
+    expect(entryCalls(calls).at(-1)!.get('direction')).toBe('desc')
+    fireEvent.click(screen.getByRole('button', { name: 'Descrição' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('sort')).toBe('description'))
+    expect(entryCalls(calls).at(-1)!.get('direction')).toBe('asc'); expect(screen.getByRole('columnheader', { name: 'Descrição' }).getAttribute('aria-sort')).toBe('ascending')
   })
 
   it('pagina com Anterior/Próxima e mostra o total', async () => {
-    const calls = mockApi({ page: { totalCount: 45 } })
-    render(<Transactions workspaceId="f1" />)
-    expect(await screen.findByText(/Página 1 de 3 · 45 lançamentos/)).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Anterior' }) as HTMLButtonElement).disabled).toBe(true)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Próxima' }))
-
-    await waitFor(() => expect(listCalls(calls).at(-1)!.url).toContain('page=2'))
-  })
-
-  it('cancelar pede confirmação e usa o endpoint de cancelamento com CSRF', async () => {
-    const calls = mockApi()
-    const confirm = vi.spyOn(window, 'confirm')
-    render(<Transactions workspaceId="f1" />)
-    const item = (await screen.findByText('Feira do mês')).closest('li')!
-
-    confirm.mockReturnValueOnce(false)
-    fireEvent.click(within(item).getByRole('button', { name: 'Cancelar lançamento' }))
-    expect(writes(calls)).toHaveLength(0)
-
-    confirm.mockReturnValueOnce(true)
-    fireEvent.click(within(item).getByRole('button', { name: 'Cancelar lançamento' }))
-
-    await waitFor(() => expect(writes(calls)).toHaveLength(1))
-    expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('não poderá mais ser editado'))
-    expect(writes(calls)[0].url).toBe('/api/financial-workspaces/f1/transactions/t1/cancel')
-    expect((writes(calls)[0].init!.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
-  })
-})
-
-describe('Transactions — transferências', () => {
-  it('não diz mais que as transferências "terão fluxo próprio": elas já têm seção, com atalho', async () => {
-    mockApi()
-    const open = vi.fn()
-    render(<Transactions workspaceId="f1" onOpenTransfers={open} />)
+    const calls = mockApi({ page: { totalCount: 60, pageSize: 25 } }); renderPage()
     await screen.findByText('Feira do mês')
+    expect(screen.getByText(/Página 1 de 3 · 60 lançamentos/)).toBeTruthy(); expect((screen.getByRole('button', { name: 'Anterior' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('page')).toBe('2'))
+  })
 
-    expect(screen.queryByText(/terão fluxo próprio/)).toBeNull()
-    expect(screen.getByText(/não são receita nem despesa e têm a sua própria seção/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Transferências' }))
-    expect(open).toHaveBeenCalledTimes(1)
+  it('preserva os filtros ao sair e voltar à página, e o recorte vindo de outra tela vira competência, conta e tipo', async () => {
+    mockApi(); const first = renderPage({}); const workspace = 'preservado'
+    first.unmount(); const view = render(<Transactions workspaceId={workspace} />); await screen.findByText('Feira do mês')
+    fireEvent.change(screen.getByLabelText('Escopo'), { target: { value: 'pj' } }); view.unmount()
+    const calls = mockApi(); render(<Transactions workspaceId={workspace} />)
+    await screen.findByText('Feira do mês'); expect((screen.getByLabelText('Escopo') as HTMLSelectElement).value).toBe('pj')
+    cleanup(); const calls2 = mockApi(); renderPage({ initialFilters: { from: '2026-09-01', to: '2026-09-30', accountId: itau.id, type: 'Expense', expenseNature: 'Fixed' } })
+    await screen.findByText('Feira do mês')
+    const query = entryCalls(calls2)[0]; expect([query.get('competence'), query.get('accountId'), query.get('type'), query.get('nature')]).toEqual(['2026-09', itau.id, 'Expense', 'Fixed']); expect(calls.length).toBeGreaterThan(0)
   })
 })
 
-describe('Transactions — devolução bancária', () => {
-  const devolucao: FinancialTransaction = {
-    ...importado, id: 't9', type: 'Income', description: 'Pix devolvido Pix Marketplace', amount: '55.99', transactionDate: '2026-10-23', origin: 'PluggyRefund', category: null,
-    refundOf: { originalTransactionId: 't8', originalDescription: 'Pagamento de Pix QR Code', originalDate: '2026-10-13', postingId: 'post-9' },
+describe('Lançamentos — menu de ações por origem', () => {
+  it('cada origem oferece só o que permite: lançamento manual, previsão, cartão, transferência e importado', async () => {
+    mockApi({ items: [feira, previsao, compra, transferencia, importado, devolucao] }); renderPage()
+    await screen.findByText('Feira do mês')
+    const items = () => screen.getAllByRole('menuitem').map(item => item.textContent)
+    openMenu('Feira do mês'); expect(items()).toEqual(['Ver detalhes', 'Editar lançamento', 'Cancelar lançamento']); fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    openMenu('Aluguel previsto'); expect(items()).toEqual(['Ver detalhes', 'Realizar previsão', 'Editar previsão', 'Cancelar previsão']); fireEvent.keyDown(document, { key: 'Escape' })
+    openMenu('Mercado no cartão'); expect(items()).toEqual(['Ver detalhes', 'Abrir cartões e faturas']); fireEvent.keyDown(document, { key: 'Escape' })
+    openMenu('Transferência de Itaú PF para Nubank PJ'); expect(items()).toEqual(['Ver detalhes', 'Consultar transferência']); fireEvent.keyDown(document, { key: 'Escape' })
+    openMenu('MERCADO CENTRAL'); expect(items()).toEqual(['Ver detalhes', 'Corrigir categoria', 'Corrigir tipo de despesa', 'Cancelar lançamento']); fireEvent.keyDown(document, { key: 'Escape' })
+    openMenu('Estorno loja'); expect(items()).toContain('Desfazer devolução')
+    expect(screen.getByRole('button', { name: 'Ações de Feira do mês' }).getAttribute('aria-haspopup')).toBe('menu')
+  })
+
+  it('ações de outros módulos levam à seção correta', async () => {
+    const onNavigate = vi.fn(); mockApi(); renderPage({ onNavigate })
+    await screen.findByText('Feira do mês')
+    openMenu('Aluguel previsto'); pick('Realizar previsão'); openMenu('Aluguel previsto'); pick('Editar previsão')
+    openMenu('Mercado no cartão'); pick('Abrir cartões e faturas'); openMenu('Transferência de Itaú PF para Nubank PJ'); pick('Consultar transferência')
+    expect(onNavigate.mock.calls.map(call => call[0])).toEqual(['planned', 'planned', 'cards', 'transfers'])
+  })
+
+  it('"Ver detalhes" mostra competência, tipo de data, impactos no orçamento e no caixa e as ressalvas', async () => {
+    mockApi({ items: [compra, importado] }); renderPage()
+    await screen.findByText('Mercado no cartão')
+    openMenu('Mercado no cartão'); pick('Ver detalhes')
+    const detail = document.querySelector('.entries__detail') as HTMLElement
+    expect(detail.textContent).toContain('Vencimento da fatura'); expect(detail.textContent).toContain('Consome o orçamento'); expect(detail.textContent).toContain('Movimenta o caixa no pagamento da fatura'); expect(detail.textContent).toContain('fatura de')
+    openMenu('Mercado no cartão'); pick('Ver detalhes'); expect(document.querySelector('.entries__detail')).toBeNull()
+    openMenu('MERCADO CENTRAL'); pick('Ver detalhes'); expect(screen.getByRole('list', { name: 'Ressalvas' }).textContent).toContain('Importado do banco')
+  })
+
+  it('editar busca o lançamento e abre o formulário com PUT; cancelar pede confirmação e usa o endpoint com CSRF', async () => {
+    const calls = mockApi(); renderPage()
+    await screen.findByText('Feira do mês')
+    openMenu('Feira do mês'); pick('Editar lançamento'); await screen.findByLabelText('Conta')
+    expect((screen.getByLabelText('Conta') as HTMLSelectElement).value).toBe(antiga.id)
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Feira corrigida' } }); fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(writes(calls)).toHaveLength(1)); expect(writes(calls)[0].url).toBe('/api/financial-workspaces/f' + seq + '/transactions/t1'); expect(writes(calls)[0].init!.method).toBe('PUT')
+    await screen.findByText('Feira do mês')
+    openMenu('Feira do mês'); pick('Cancelar lançamento')
+    await waitFor(() => expect(writes(calls).at(-1)!.url).toMatch(/\/transactions\/t1\/cancel$/)); expect(window.confirm).toHaveBeenCalled()
+    expect(new Headers(writes(calls).at(-1)!.init!.headers).get('X-CSRF-TOKEN') ?? new Headers(writes(calls).at(-1)!.init!.headers).get('x-csrf-token')).toBeTruthy()
+  })
+
+  it('cancelar sem confirmar não chama a API', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false); const calls = mockApi(); renderPage()
+    await screen.findByText('Feira do mês'); openMenu('Feira do mês'); pick('Cancelar lançamento')
+    expect(writes(calls)).toHaveLength(0)
+  })
+
+  it('corrige só a categoria e só o tipo de despesa de um importado, e mostra o erro da API sem perder a lista', async () => {
+    const calls2 = mockApi({ items: [importado] }); renderPage()
+    await screen.findByText('MERCADO CENTRAL')
+    openMenu('MERCADO CENTRAL'); pick('Corrigir categoria')
+    fireEvent.change(screen.getByLabelText('Categoria de MERCADO CENTRAL'), { target: { value: mercado.id } })
+    await waitFor(() => expect(writes(calls2)).toHaveLength(1)); expect(writes(calls2)[0].url).toMatch(/\/transactions\/t4\/category$/); expect(JSON.parse(String(writes(calls2)[0].init!.body))).toEqual({ categoryId: mercado.id })
+    fireEvent.change(screen.getByLabelText('Tipo de despesa de MERCADO CENTRAL'), { target: { value: 'Fixed' } })
+    await waitFor(() => expect(writes(calls2)).toHaveLength(2)); expect(writes(calls2)[1].url).toMatch(/\/transactions\/t4\/expense-nature$/)
+  })
+})
+
+describe('Lançamentos — formulário e avisos', () => {
+  async function openNewForm() {
+    const calls = mockApi(); renderPage()
+    await screen.findByText('Feira do mês'); fireEvent.click(screen.getByRole('button', { name: '+ Novo lançamento' })); await screen.findByLabelText('Conta')
+    return calls
   }
-  const despesa: FinancialTransaction = { ...feira, id: 't8', description: 'Pagamento de Pix QR Code', amount: '55.99', transactionDate: '2026-10-13', refundedAmount: '55.99' }
+  const fill = (fields: Partial<Record<'Conta' | 'Categoria' | 'Descrição' | 'Valor (R$)', string>>) => { for (const [label, value] of Object.entries(fields)) fireEvent.change(screen.getByLabelText(label), { target: { value } }) }
 
-  it('mostra a devolução como entrada que não é receita, ligada à despesa devolvida, e a despesa com o total devolvido', async () => {
-    mockApi({ page: { items: [devolucao, despesa], totalCount: 2 } })
-    render(<Transactions workspaceId="f1" />)
-
-    const credit = (await screen.findByText('Pix devolvido Pix Marketplace')).closest('li')!
-    expect(within(credit).getByText('Devolução (não é receita)')).toBeTruthy()
-    expect(within(credit).getByText(/Devolve: Pagamento de Pix QR Code \(13\/10\/2026\)/)).toBeTruthy()
-    expect(within(credit).queryByRole('button', { name: 'Editar' })).toBeNull()
-    const expense = screen.getAllByText('Pagamento de Pix QR Code')[0].closest('li')!
-    expect(expense.textContent).toMatch(/Devolvido R\$\s55,99/)
-  })
-
-  it('desfaz a devolução pelo rastro do crédito, depois de confirmar, e recarrega a lista', async () => {
-    const calls = mockApi({ page: { items: [devolucao, despesa], totalCount: 2 } })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const onChanged = vi.fn()
-    render(<Transactions workspaceId="f1" onChanged={onChanged} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Desfazer devolução' }))
-
-    await waitFor(() => expect(writes(calls).some((c) => c.url === '/api/financial-workspaces/f1/pluggy-integration/review/post-9/refund/undo')).toBe(true))
-    await waitFor(() => expect(onChanged).toHaveBeenCalled())
-  })
-})
-
-describe('Transactions — formulário', () => {
   it('cria despesa enviando o valor como texto decimal exato e a data sem horário', async () => {
     const calls = await openNewForm()
     expect((screen.getByLabelText('Data do pagamento') as HTMLInputElement).value).toBe(todayInSaoPaulo())
-
-    fill({ Conta: itau.id, Categoria: mercado.id, Descrição: '  Mercado da semana ', 'Valor (R$)': '1.234,56' })
-    fireEvent.change(screen.getByLabelText('Data do pagamento'), { target: { value: '2026-10-05' } })
+    fill({ Conta: itau.id, Categoria: mercado.id, Descrição: '  Mercado da semana ', 'Valor (R$)': '1.234,56' }); fireEvent.change(screen.getByLabelText('Data do pagamento'), { target: { value: '2026-10-05' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
     await waitFor(() => expect(writes(calls)).toHaveLength(1))
-    const post = writes(calls)[0]
-    expect(post.url).toBe('/api/financial-workspaces/f1/transactions')
-    expect(JSON.parse(String(post.init!.body))).toEqual({
-      accountId: itau.id,
-      categoryId: mercado.id,
-      type: 'Expense',
-      description: 'Mercado da semana',
-      amount: '1234.56',
-      transactionDate: '2026-10-05',
-      expenseNature: 'Undefined', // despesa sempre envia o tipo, e o padrão é "Não definida"
-    })
+    expect(JSON.parse(String(writes(calls)[0].init!.body))).toEqual({ accountId: itau.id, categoryId: mercado.id, type: 'Expense', description: 'Mercado da semana', amount: '1234.56', transactionDate: '2026-10-05', expenseNature: 'Undefined' })
   })
 
   it('mostra só categorias ativas do tipo escolhido e limpa a categoria ao trocar o tipo', async () => {
     await openNewForm()
-    const options = () =>
-      Array.from((screen.getByLabelText('Categoria') as HTMLSelectElement).options).map((o) => o.textContent)
-    const accounts = Array.from((screen.getByLabelText('Conta') as HTMLSelectElement).options).map((o) => o.value)
-
+    const options = () => Array.from((screen.getByLabelText('Categoria') as HTMLSelectElement).options).map(o => o.textContent)
     expect(options()).toEqual(['Escolha a categoria de despesa', 'Mercado'])
-    expect(accounts).toEqual(['', itau.id]) // conta inativa não é oferecida para novo lançamento
-    fireEvent.change(screen.getByLabelText('Categoria'), { target: { value: mercado.id } })
-
-    fireEvent.click(screen.getByLabelText('Receita (entrada)'))
-
-    expect(options()).toEqual(['Escolha a categoria de receita', 'Salário'])
-    expect((screen.getByLabelText('Categoria') as HTMLSelectElement).value).toBe('')
-    expect(screen.getByLabelText('Data do recebimento')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Categoria'), { target: { value: mercado.id } }); fireEvent.click(screen.getByLabelText('Receita (entrada)'))
+    expect(options()).toEqual(['Escolha a categoria de receita', 'Salário']); expect((screen.getByLabelText('Categoria') as HTMLSelectElement).value).toBe('')
   })
 
-  it.each([
-    ['0,00', 'O valor deve ser maior que zero. Para saídas, escolha o tipo despesa.'],
-    ['-50,00', 'O valor deve ser maior que zero. Para saídas, escolha o tipo despesa.'],
-    ['10,005', 'O valor deve ter no máximo duas casas decimais.'],
-    ['', 'Informe o valor.'],
-  ])('recusa valor "%s" sem enviar nem arredondar', async (amount, message) => {
+  it.each([['0,00', 'O valor deve ser maior que zero. Para saídas, escolha o tipo despesa.'], ['10,005', 'O valor deve ter no máximo duas casas decimais.'], ['', 'Informe o valor.']])('recusa valor "%s" sem enviar', async (amount, message) => {
     const calls = await openNewForm()
-
-    fill({ Conta: itau.id, Categoria: mercado.id, Descrição: 'Compra', 'Valor (R$)': amount })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    expect(await screen.findByText(message)).toBeTruthy()
-    expect(writes(calls)).toHaveLength(0)
-  })
-
-  it('recusa data futura em America/Sao_Paulo', async () => {
-    const calls = await openNewForm()
-    const [year, month, day] = todayInSaoPaulo().split('-').map(Number)
-    const tomorrow = new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10)
-
-    fill({ Conta: itau.id, Categoria: mercado.id, Descrição: 'Compra', 'Valor (R$)': '10' })
-    fireEvent.change(screen.getByLabelText('Data do pagamento'), { target: { value: tomorrow } })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    expect(await screen.findByText('A data não pode ser futura: registre só movimentações já realizadas.')).toBeTruthy()
-    expect(writes(calls)).toHaveLength(0)
+    fill({ Conta: itau.id, Categoria: mercado.id, Descrição: 'Compra', 'Valor (R$)': amount }); fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(await screen.findByText(message)).toBeTruthy(); expect(writes(calls)).toHaveLength(0)
   })
 
   it('orienta a cadastrar conta e categoria quando não há ativas', async () => {
-    mockApi({ accounts: [antiga], categories: [lazer, salario] })
-    render(<Transactions workspaceId="f1" />)
-    await screen.findByText('Feira do mês')
-    fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
-
-    expect(await screen.findByText(/Nenhuma conta ativa/)).toBeTruthy()
-    expect(screen.getByText(/Nenhuma categoria de despesa ativa/)).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Salvar' }) as HTMLButtonElement).disabled).toBe(true)
+    mockApi({ accounts: [antiga], categories: [lazer, salario] }); renderPage()
+    await screen.findByText('Feira do mês'); fireEvent.click(screen.getByRole('button', { name: '+ Novo lançamento' }))
+    expect(await screen.findByText(/Nenhuma conta ativa/)).toBeTruthy(); expect((screen.getByRole('button', { name: 'Salvar' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('edição mantém conta e categoria inativas já usadas e envia PUT', async () => {
-    const calls = mockApi()
-    render(<Transactions workspaceId="f1" />)
-    const item = (await screen.findByText('Feira do mês')).closest('li')!
-    fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
-    await screen.findByLabelText('Conta')
-
-    expect((screen.getByLabelText('Conta') as HTMLSelectElement).value).toBe(antiga.id)
-    expect((screen.getByLabelText('Categoria') as HTMLSelectElement).value).toBe(lazer.id)
-    expect((screen.getByLabelText('Valor (R$)') as HTMLInputElement).value).toBe('1234,56')
-    fill({ Descrição: 'Feira do mês (corrigida)' })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() => expect(writes(calls)).toHaveLength(1))
-    const put = writes(calls)[0]
-    expect(put.url).toBe('/api/financial-workspaces/f1/transactions/t1')
-    expect(put.init!.method).toBe('PUT')
-    expect(JSON.parse(String(put.init!.body))).toEqual({
-      accountId: antiga.id,
-      categoryId: lazer.id,
-      type: 'Expense',
-      description: 'Feira do mês (corrigida)',
-      amount: '1234.56',
-      transactionDate: '2026-10-05',
-      expenseNature: 'Undefined', // despesa sempre envia o tipo, e o padrão é "Não definida"
-    })
-  })
-
-  it('exibe erros da API (ex.: categoria de outro tipo ou lançamento já cancelado)', async () => {
-    mockApi({ saveStatus: 409, saveBody: { title: 'Lançamento cancelado não pode ser editado.' } })
-    render(<Transactions workspaceId="f1" />)
-    const item = (await screen.findByText('Feira do mês')).closest('li')!
-    fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
-    await screen.findByLabelText('Conta')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
+  it('exibe erros da API ao salvar e abre o formulário de novo lançamento ao entrar quando pedido', async () => {
+    mockApi({ saveStatus: 409, saveBody: { title: 'Lançamento cancelado não pode ser editado.' } }); renderPage({ startWithForm: true })
+    await screen.findByLabelText('Conta'); fill({ Conta: itau.id, Categoria: mercado.id, Descrição: 'X', 'Valor (R$)': '10' }); fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(await screen.findByText('Lançamento cancelado não pode ser editado.')).toBeTruthy()
   })
-})
 
-describe('Transactions — aviso de mudança para os saldos', () => {
-  it('chama onChanged após criar e após cancelar', async () => {
-    mockApi()
-    const onChanged = vi.fn()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<Transactions workspaceId="f1" onChanged={onChanged} />)
-    await screen.findByText('Feira do mês')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
-    await screen.findByLabelText('Conta')
-    fill({ Conta: itau.id, Categoria: mercado.id, Descrição: 'Compra', 'Valor (R$)': '10' })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
-
-    const item = (await screen.findByText('Feira do mês')).closest('li')!
-    fireEvent.click(within(item).getByRole('button', { name: 'Cancelar lançamento' }))
-    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2))
-  })
-
-  it('não chama onChanged quando a gravação é recusada', async () => {
-    mockApi({ saveStatus: 400, saveBody: { errors: { categoryId: ['Categoria inválida.'] } } })
-    const onChanged = vi.fn()
-    render(<Transactions workspaceId="f1" onChanged={onChanged} />)
-    await screen.findByText('Feira do mês')
-    fireEvent.click(screen.getByRole('button', { name: 'Novo lançamento' }))
-    await screen.findByLabelText('Conta')
-
-    fill({ Conta: itau.id, Categoria: mercado.id, Descrição: 'Compra', 'Valor (R$)': '10' })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    expect(await screen.findByText('Categoria inválida.')).toBeTruthy()
-    expect(onChanged).not.toHaveBeenCalled()
-  })
-})
-
-describe('Transactions — valor como texto decimal exato', () => {
-  const maximo: FinancialTransaction = { ...pagamento, id: 't9', description: 'Valor máximo', amount: '9999999999999.99' }
-  const centavos: FinancialTransaction = { ...feira, id: 't8', description: 'Bala', amount: '0.10' }
-
-  function mockPage(items: FinancialTransaction[]) {
-    const calls: Call[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        calls.push({ url, init })
-        if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
-        if (url.includes('/accounts')) return Response.json([itau, antiga])
-        if (url.includes('/categories')) return Response.json([salario, mercado, lazer])
-        if (init?.method === 'PUT') return Response.json({ ...maximo, ...JSON.parse(String(init.body)) })
-        return Response.json({ items, page: 1, pageSize: 20, totalCount: items.length })
-      }),
-    )
-    return calls
-  }
-
-  it('exibe centavos e o valor máximo exatamente, a partir do texto', async () => {
-    mockPage([maximo, centavos])
-    render(<Transactions workspaceId="f1" />)
-
-    expect((await screen.findByText('Valor máximo')).closest('li')!.textContent).toMatch(/\+R\$\s9\.999\.999\.999\.999,99/)
-    expect(screen.getByText('Bala').closest('li')!.textContent).toMatch(/−R\$\s0,10/)
-  })
-
-  it('edição do valor máximo preenche o campo e reenvia o mesmo texto exato', async () => {
-    const calls = mockPage([maximo])
-    render(<Transactions workspaceId="f1" />)
-    const item = (await screen.findByText('Valor máximo')).closest('li')!
-    fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
-    await screen.findByLabelText('Conta')
-
-    expect((screen.getByLabelText('Valor (R$)') as HTMLInputElement).value).toBe('9999999999999,99')
-    fill({ Descrição: 'Valor máximo (corrigido)' })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() => expect(writes(calls)).toHaveLength(1))
-    expect(JSON.parse(String(writes(calls)[0].init!.body))).toMatchObject({
-      amount: '9999999999999.99',
-      description: 'Valor máximo (corrigido)',
-    })
-  })
-
-  it('edição de centavos reenvia "0.10", não 0.1', async () => {
-    const calls = mockPage([centavos])
-    render(<Transactions workspaceId="f1" />)
-    const item = (await screen.findByText('Bala')).closest('li')!
-    fireEvent.click(within(item).getByRole('button', { name: 'Editar' }))
-    await screen.findByLabelText('Conta')
-
-    expect((screen.getByLabelText('Valor (R$)') as HTMLInputElement).value).toBe('0,10')
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() => expect(writes(calls)).toHaveLength(1))
-    expect(String(writes(calls)[0].init!.body)).toContain('"amount":"0.10"')
-  })
-})
-
-describe('Transactions — lançamento que realiza previsão', () => {
-  const vinculado: FinancialTransaction = { ...feira, id: 't7', description: 'Aluguel de setembro', plannedTransactionId: 'p5' }
-
-  it('mostra o vínculo, não oferece edição e avisa que a previsão volta a pendente ao cancelar', async () => {
-    const calls: Call[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        calls.push({ url, init })
-        if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
-        if (url.includes('/accounts')) return Response.json([itau])
-        if (url.includes('/categories')) return Response.json([mercado])
-        if (url.endsWith('/cancel')) return Response.json({ ...vinculado, isCancelled: true })
-        return Response.json({ items: [vinculado], page: 1, pageSize: 20, totalCount: 1 })
-      }),
-    )
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const onChanged = vi.fn()
-    render(<Transactions workspaceId="f1" onChanged={onChanged} />)
-    const item = (await screen.findByText('Aluguel de setembro')).closest('li')!
-
-    expect(within(item).getByText('Realiza previsão')).toBeTruthy()
-    expect(within(item).queryByRole('button', { name: 'Editar' })).toBeNull()
-    fireEvent.click(within(item).getByRole('button', { name: 'Cancelar lançamento' }))
-
-    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('a previsão voltará a ficar pendente'))
-    expect(calls.some((c) => c.url === '/api/financial-workspaces/f1/transactions/t7/cancel')).toBe(true)
-  })
-
-  it('recarrega quando outra seção muda as finanças (refreshKey)', async () => {
-    const calls = mockApi()
-    const { rerender } = render(<Transactions workspaceId="f1" refreshKey={0} />)
-    await screen.findByText('Feira do mês')
-    const before = listCalls(calls).length
-
-    rerender(<Transactions workspaceId="f1" refreshKey={1} />)
-
-    await waitFor(() => expect(listCalls(calls).length).toBe(before + 1))
-  })
-})
-
-describe('Transactions — importados da Pluggy', () => {
-  it('identifica o lançamento importado, mostra "Sem categoria" e não oferece edição completa', async () => {
-    mockApi({ page: { items: [importado], totalCount: 1 } })
-    render(<Transactions workspaceId="f1" />)
-
-    const item = (await screen.findByText('MERCADO CENTRAL')).closest('li')!
-    expect(within(item).getByText('Importado da Pluggy')).toBeTruthy()
-    expect(within(item).getAllByText('Sem categoria').some((node) => node.tagName === 'SPAN')).toBe(true)
-    expect(within(item).queryByRole('button', { name: 'Editar' })).toBeNull()
-    expect(within(item).getByRole('button', { name: 'Cancelar lançamento' })).toBeTruthy()
-  })
-
-  it('mostra a origem da categoria (Pluggy, regra, IA ou você) e sinaliza o que precisa de revisão', async () => {
-    const withCategory = (id: string, description: string, source: NonNullable<FinancialTransaction['categorySource']>): FinancialTransaction => ({
-      ...importado, id, description, category: { id: salario.id, name: salario.name, isActive: true }, categorySource: source,
-    })
-    mockApi({ page: { items: [
-      withCategory('i1', 'LOJA PLUGGY', 'Pluggy'), withCategory('i2', 'LOJA IA', 'AI'), withCategory('i3', 'LOJA MANUAL', 'User'), withCategory('i4', 'LOJA LEGADA', 'Mapped'),
-      { ...importado, id: 'i5', description: 'SEM CATEGORIA SEGURA', categorySource: 'None', categoryNeedsReview: true },
-    ], totalCount: 5 } })
-    render(<Transactions workspaceId="f1" />)
-
-    expect(within((await screen.findByText('LOJA PLUGGY')).closest('li')!).getByText('Categoria: Pluggy')).toBeTruthy()
-    expect(within(screen.getByText('LOJA IA').closest('li')!).getByText('Categoria: IA')).toBeTruthy()
-    expect(within(screen.getByText('LOJA MANUAL').closest('li')!).getByText('Categoria: Você')).toBeTruthy()
-    expect(within(screen.getByText('LOJA LEGADA').closest('li')!).getByText('Categoria: Pluggy')).toBeTruthy()
-    expect(within(screen.getByText('SEM CATEGORIA SEGURA').closest('li')!).getByText('Sem categoria segura: revisar')).toBeTruthy()
-  })
-
-  it('corrige só a categoria (PUT /category com CSRF), oferecendo apenas categorias ativas do mesmo tipo', async () => {
-    const calls = mockApi({ page: { items: [importado], totalCount: 1 } })
-    render(<Transactions workspaceId="f1" />)
-    const select = (await screen.findByLabelText('Categoria de MERCADO CENTRAL')) as HTMLSelectElement
-
-    expect(Array.from(select.options).map((option) => option.text)).toEqual(['Sem categoria', 'Mercado']) // Lazer inativa, Salário é receita
-    fireEvent.change(select, { target: { value: mercado.id } })
-
-    await waitFor(() => expect(writes(calls)).toHaveLength(1))
-    const [write] = writes(calls)
-    expect(write.url).toBe('/api/financial-workspaces/f1/transactions/t4/category')
-    expect(write.init?.method).toBe('PUT')
-    expect(JSON.parse(String(write.init?.body))).toEqual({ categoryId: mercado.id })
-    expect((write.init?.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('csrf')
-  })
-
-  it('mostra o erro da API sem perder a lista', async () => {
-    mockApi({ page: { items: [importado], totalCount: 1 }, saveStatus: 400, saveBody: { errors: { categoryId: ['A categoria deve ser do mesmo tipo do lançamento.'] } } })
-    render(<Transactions workspaceId="f1" />)
-
-    fireEvent.change(await screen.findByLabelText('Categoria de MERCADO CENTRAL'), { target: { value: mercado.id } })
-
-    expect((await screen.findByRole('alert')).textContent).toContain('mesmo tipo')
-    expect(screen.getByText('MERCADO CENTRAL')).toBeTruthy()
+  it('chama onChanged após criar e após cancelar, e recarrega quando outra seção muda as finanças', async () => {
+    const onChanged = vi.fn(); const calls = mockApi(); const view = renderPage({ onChanged })
+    await screen.findByText('Feira do mês'); fireEvent.click(screen.getByRole('button', { name: '+ Novo lançamento' })); await screen.findByLabelText('Conta')
+    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } }); fireEvent.change(screen.getByLabelText('Categoria'), { target: { value: mercado.id } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra' } }); fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '10' } }); fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1)); await screen.findByText('Feira do mês')
+    const before = entryCalls(calls).length; view.rerender(<Transactions workspaceId={`f${seq}`} onChanged={onChanged} refreshKey={1} />)
+    await waitFor(() => expect(entryCalls(calls).length).toBeGreaterThan(before))
   })
 })

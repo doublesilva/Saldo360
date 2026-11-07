@@ -1,0 +1,231 @@
+using System.Globalization;
+using Saldo360.Application.Accounts;
+using Saldo360.Application.Budgets;
+using Saldo360.Application.Calendar;
+using Saldo360.Application.Categories;
+using Saldo360.Application.CreditCards;
+using Saldo360.Application.Transactions;
+using Saldo360.Application.Workspaces;
+using Saldo360.Domain.Accounts;
+using Saldo360.Domain.Categories;
+using Saldo360.Domain.Common;
+using Saldo360.Domain.Transactions;
+
+namespace Saldo360.Application.Entries;
+
+// T13.1: leitura unificada dos lançamentos de uma competência. Nada é gravado nem duplicado: cada fonte continua sendo a dona dos seus dados e esta consulta só os reúne em UMA linha por movimento lógico.
+//   transações efetivas (inclui importações, devoluções, pagamentos de fatura e de dívida e as pontas das transferências)  → FinancialTransactionService
+//   previsões pendentes, recorrências, parcelas de dívida e transferências previstas                                  → FinancialCalendarService (que já resolve realizada × pendente)
+//   compras, parcelas e ajustes de cartão pela competência da fatura                                                  → fatos do orçamento (BudgetFactReader)
+// Estimativas agregadas sem movimento individual não viram lançamentos.
+
+public sealed record EntryReference(Guid? Id, string Name, string? Scope = null);
+
+public sealed record EntryCategory(Guid? Id, string Name, string? Path);
+
+/// <summary>
+/// Um movimento lógico. <c>Source</c>: Transaction, Planned, Recurrence, Debt, Transfer, CardPurchase ou CardAdjustment. <c>Type</c>: Income, Expense, Transfer ou Payment (fatura ou dívida).
+/// <c>Direction</c>: In, Out ou Neutral (transferência no consolidado). <c>Status</c>: Realized, Pending, Overdue, NeedsReview ou Cancelled. <c>DateKind</c>: Effective, Due, Invoice (vencimento da fatura) ou Execution.
+/// <c>BudgetImpact</c>: Consumes, Reduces, Planned ou None. <c>CashImpact</c>: Immediate, AtInvoicePayment, Pending ou None. <c>Flags</c> são ressalvas de confiabilidade e <c>Actions</c> o que o registro permite (o backend de cada ação revalida).
+/// </summary>
+public sealed record FinancialEntryDto(
+    string Id, string Source, string Competence, DateOnly Date, string DateKind, string Description, string Type, string Direction, string Status, string Amount,
+    EntryReference? Account, EntryReference? Counterpart, EntryReference? Card, EntryCategory? Category, string? Nature, string Origin, string BudgetImpact, string CashImpact,
+    Guid? TransactionId, Guid? PlannedTransactionId, Guid? TransferId, Guid? PlannedTransferId, Guid? RecurrenceId, string? InvoiceCompetence,
+    IReadOnlyList<string> Actions, IReadOnlyList<string> Flags);
+
+public sealed record FinancialEntriesPage(IReadOnlyList<FinancialEntryDto> Items, int Page, int PageSize, int TotalCount, string Competence);
+
+public sealed record FinancialEntriesQuery(
+    string? Competence, string? Scope, Guid? AccountId, Guid? CategoryId, string? Type, string? Status, string? Source, string? Nature, string? Search, bool IncludeCancelled,
+    string? Sort, string? Direction, int? Page, int? PageSize);
+
+public sealed record FinancialEntriesResult(FinancialEntriesPage? Page, IDictionary<string, string[]>? Errors, bool NotFound)
+{
+    public static FinancialEntriesResult NotFoundResult { get; } = new(null, null, true);
+}
+
+public sealed class FinancialEntriesQueryService(
+    IFinancialWorkspaceRepository workspaces,
+    FinancialTransactionService transactions,
+    FinancialCalendarService calendar,
+    FinancialAccountService accounts,
+    IFinancialBudgetExecutionRepository budgetFacts,
+    IFinancialCategoryRepository categoryRepository,
+    IFinancialCreditCardRepository cardRepository,
+    TimeProvider time)
+{
+    public const int DefaultPageSize = 25;
+    public const int MaxPageSize = 100;
+    private const int MaxTransactionPages = 30;
+    private const int OverdueLookbackMonths = 12;
+
+    private static readonly string[] Scopes = ["all", "pf", "pj"];
+    private static readonly string[] Types = ["Income", "Expense", "Transfer", "Payment"];
+    private static readonly string[] Statuses = ["Realized", "Pending", "Overdue", "NeedsReview", "Cancelled", "OverduePrevious"];
+    private static readonly string[] Sources = ["Transaction", "Planned", "Recurrence", "Debt", "Transfer", "CardPurchase", "CardAdjustment"];
+    private static readonly string[] Sorts = ["date", "amount", "description"];
+
+    public async Task<FinancialEntriesResult> ListAsync(Guid workspaceId, Guid userId, FinancialEntriesQuery query, CancellationToken ct)
+    {
+        if (await workspaces.GetOwnerRoleAsync(workspaceId, userId, ct) is null) return FinancialEntriesResult.NotFoundResult;
+        var today = BusinessCalendar.Today(time.GetUtcNow());
+        var errors = new Dictionary<string, string[]>();
+        var competence = string.IsNullOrWhiteSpace(query.Competence) ? $"{today.Year:0000}-{today.Month:00}" : query.Competence.Trim();
+        if (!DateOnly.TryParseExact(competence + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var first) || first.Year is < 2000 or > 2100) errors["competence"] = ["Use uma competência válida no formato yyyy-MM."];
+        var scope = string.IsNullOrWhiteSpace(query.Scope) ? "all" : query.Scope.Trim().ToLowerInvariant();
+        if (!Scopes.Contains(scope)) errors["scope"] = ["Use all, pf ou pj."];
+        string? Check(string field, string? value, string[] allowed) { if (string.IsNullOrWhiteSpace(value)) return null; if (!allowed.Contains(value.Trim(), StringComparer.OrdinalIgnoreCase)) { errors[field] = [$"Valor inválido: use {string.Join(", ", allowed)}."]; return null; } return allowed.First(a => a.Equals(value.Trim(), StringComparison.OrdinalIgnoreCase)); }
+        var type = Check("type", query.Type, Types); var status = Check("status", query.Status, Statuses); var source = Check("source", query.Source, Sources);
+        var nature = Check("nature", query.Nature, ["Fixed", "Variable", "Undefined"]); var sort = Check("sort", query.Sort, Sorts) ?? "date";
+        var descending = !string.Equals(query.Direction, "asc", StringComparison.OrdinalIgnoreCase);
+        var page = query.Page ?? 1; var pageSize = query.PageSize ?? DefaultPageSize;
+        if (page < 1) errors["page"] = ["A página deve ser maior que zero."];
+        if (pageSize is < 1 or > MaxPageSize) errors["pageSize"] = [$"O tamanho da página deve estar entre 1 e {MaxPageSize}."];
+        if (errors.Count > 0) return new(null, errors, false);
+
+        var last = first.AddMonths(1).AddDays(-1);
+        var accountList = (await accounts.ListAsync(workspaceId, userId, includeInactive: true, ct)) ?? [];
+        var scopeOf = accountList.ToDictionary(a => a.Id, a => a.FinancialScope.ToString());
+        var categories = (await categoryRepository.ListAsync(workspaceId, includeInactive: true, ct)).ToDictionary(c => c.Id);
+        var cards = (await cardRepository.ListAsync(workspaceId, includeArchived: true, ct)).ToDictionary(c => c.Id);
+
+        var entries = new List<FinancialEntryDto>();
+        var previous = string.Equals(status, "OverduePrevious", StringComparison.Ordinal);
+        if (!previous)
+        {
+            entries.AddRange(await TransactionEntriesAsync(workspaceId, userId, first, last, query with { IncludeCancelled = query.IncludeCancelled || status == "Cancelled" }, scopeOf, ct));
+            entries.AddRange(CardEntries(await budgetFacts.ReadFactsAsync(workspaceId, first.AddMonths(-1), first.AddMonths(2), ct), competence, categories, cards, scopeOf, accountList.ToDictionary(a => a.Id, a => a.Name)));
+        }
+        entries.AddRange(await CalendarEntriesAsync(workspaceId, userId, previous ? first.AddMonths(-OverdueLookbackMonths) : first, previous ? first.AddDays(-1) : last, query.AccountId, previous, scopeOf, ct));
+
+        bool InScope(FinancialEntryDto e) => scope == "all" || (e.Account?.Scope?.Equals(scope, StringComparison.OrdinalIgnoreCase) == true) || (e.Counterpart?.Scope?.Equals(scope, StringComparison.OrdinalIgnoreCase) == true);
+        bool CategoryMatches(FinancialEntryDto e) => query.CategoryId is not { } id || e.Category?.Id == id || (e.Category?.Id is { } c && categories.TryGetValue(c, out var cat) && cat.ParentCategoryId == id);
+        bool Search(FinancialEntryDto e) => string.IsNullOrWhiteSpace(query.Search) || new[] { e.Description, e.Account?.Name, e.Counterpart?.Name, e.Card?.Name, e.Category?.Path ?? e.Category?.Name }
+            .Any(text => text?.Contains(query.Search.Trim(), StringComparison.CurrentCultureIgnoreCase) == true);
+        var filtered = entries.Where(InScope).Where(CategoryMatches).Where(Search)
+            .Where(e => query.AccountId is not { } a || e.Account?.Id == a || e.Counterpart?.Id == a || (e.Card is not null && e.Account?.Id == a))
+            .Where(e => type is null || e.Type == type)
+            .Where(e => source is null || e.Source == source)
+            .Where(e => nature is null || e.Nature == nature)
+            .Where(e => status is null || previous || e.Status == status)
+            .Where(e => e.Status != "Cancelled" || query.IncludeCancelled || status == "Cancelled")
+            .ToList();
+
+        Func<FinancialEntryDto, object> key = sort switch
+        {
+            "amount" => e => decimal.Parse(e.Amount, CultureInfo.InvariantCulture),
+            "description" => e => e.Description.ToLowerInvariant(),
+            _ => e => e.Date,
+        };
+        var ordered = (descending ? filtered.OrderByDescending(key) : filtered.OrderBy(key)).ThenBy(e => e.Id, StringComparer.Ordinal).ToList();
+        return new(new(ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList(), page, pageSize, ordered.Count, competence), null, false);
+    }
+
+    // ---- Transações efetivas e transferências realizadas ---------------------------------------------------------------------------------------------------------------------------------------
+
+    private async Task<List<FinancialEntryDto>> TransactionEntriesAsync(Guid workspaceId, Guid userId, DateOnly first, DateOnly last, FinancialEntriesQuery query, IReadOnlyDictionary<Guid, string> scopeOf, CancellationToken ct)
+    {
+        var all = new List<FinancialTransactionDto>();
+        for (var page = 1; page <= MaxTransactionPages; page++)
+        {
+            var result = await transactions.ListAsync(workspaceId, userId, new(first, last, query.AccountId, null, null, query.IncludeCancelled, page, FinancialTransactionService.MaxPageSize, IncludeTransfers: true), ct);
+            if (result.Page is null) break;
+            all.AddRange(result.Page.Items);
+            if (all.Count >= result.Page.TotalCount || result.Page.Items.Count == 0) break;
+        }
+        EntryReference Ref(TransactionReferenceDto a) => new(a.Id, a.Name, scopeOf.GetValueOrDefault(a.Id));
+        var list = new List<FinancialEntryDto>();
+
+        // Uma linha por transferência: as duas pontas (consolidado) viram origem e destino.
+        foreach (var group in all.Where(t => t.TransferId is not null).GroupBy(t => t.TransferId!.Value))
+        {
+            var @out = group.FirstOrDefault(t => t.Kind == "TransferOut"); var @in = group.FirstOrDefault(t => t.Kind == "TransferIn"); var any = group.First();
+            var both = @out is not null && @in is not null;
+            var account = both ? Ref(@out!.Account) : Ref(any.Account);
+            var counterpart = both ? Ref(@in!.Account) : any.CounterpartAccountName is { } name ? new EntryReference(null, name) : null;
+            var direction = both ? "Neutral" : any.Kind == "TransferIn" ? "In" : "Out";
+            // Cada ponta traz o texto do seu sentido ("recebida de…" / "enviada para…") seguido da descrição do usuário: a linha lógica diz origem e destino e preserva a descrição.
+            var userText = any.Description.Contains(" · ", StringComparison.Ordinal) ? any.Description[(any.Description.IndexOf(" · ", StringComparison.Ordinal) + 3)..] : null;
+            var description = both ? $"Transferência de {@out!.Account.Name} para {@in!.Account.Name}{(userText is null ? "" : " · " + userText)}" : any.Description;
+            list.Add(new($"Transfer:{group.Key}", "Transfer", $"{any.TransactionDate.Year:0000}-{any.TransactionDate.Month:00}", any.TransactionDate, "Execution", description, "Transfer", direction, any.IsCancelled ? "Cancelled" : "Realized",
+                Money.Format(any.Amount), account, counterpart, null, null, null, "Transfer", "None", "Immediate", null, null, group.Key, null, null, null, ["ViewDetails", "OpenTransfers"], []));
+        }
+
+        foreach (var t in all.Where(t => t.TransferId is null))
+        {
+            var invoicePayment = t.Origin == FinancialTransactionOrigin.CreditCardInvoicePayment; var debtPayment = t.Origin == FinancialTransactionOrigin.DebtInstallmentPayment;
+            var refund = t.Origin == FinancialTransactionOrigin.PluggyRefund; var imported = t.Origin == FinancialTransactionOrigin.PluggyImport;
+            var entryType = invoicePayment || debtPayment ? "Payment" : t.Type == CategoryType.Income ? "Income" : "Expense";
+            var actions = new List<string> { "ViewDetails" };
+            if (invoicePayment) actions.Add("OpenCards"); else if (debtPayment) actions.Add("OpenDebts");
+            else if (!t.IsCancelled)
+            {
+                if (imported) actions.Add("Recategorize");
+                if (t.Type == CategoryType.Expense && (imported || t.PlannedTransactionId is not null)) actions.Add("ChangeNature");
+                if (refund && t.RefundPostingId is not null) actions.Add("UndoRefund");
+                if (t.PlannedTransactionId is null && !imported && !refund) actions.Add("Edit");
+                actions.Add("Cancel");
+            }
+            var flags = new List<string>();
+            if (imported) flags.Add("Imported"); if (refund) flags.Add("Refund"); if (t.PlannedTransactionId is not null) flags.Add("RealizesPlanned"); if (t.CategoryNeedsReview && t.Category is null) flags.Add("CategoryNeedsReview");
+            if (t.RefundedAmount > 0m) flags.Add("PartiallyRefunded");
+            list.Add(new($"Transaction:{t.Id}", "Transaction", $"{t.TransactionDate.Year:0000}-{t.TransactionDate.Month:00}", t.TransactionDate, "Effective", t.Description, entryType, entryType == "Income" ? "In" : "Out", t.IsCancelled ? "Cancelled" : "Realized",
+                Money.Format(t.Amount), Ref(t.Account), null, null, t.Category is { } c ? new(c.Id, c.Name, c.Path) : null, t.Type == CategoryType.Expense ? t.Nature.ToString() : null, t.Origin.ToString(),
+                invoicePayment ? "None" : refund ? "Reduces" : t.Type == CategoryType.Expense ? "Consumes" : "None", "Immediate", t.Id, t.PlannedTransactionId, null, null, null, null, actions, flags));
+        }
+        return list;
+    }
+
+    // ---- Previsões, recorrências, dívidas e transferências previstas ---------------------------------------------------------------------------------------------------------------------------------
+
+    private async Task<List<FinancialEntryDto>> CalendarEntriesAsync(Guid workspaceId, Guid userId, DateOnly from, DateOnly through, Guid? accountId, bool overdueOnly, IReadOnlyDictionary<Guid, string> scopeOf, CancellationToken ct)
+    {
+        var result = await calendar.ListAsync(workspaceId, userId, new(from, through, accountId, null, IncludeTransfers: true), ct);
+        var items = result.Calendar?.Items ?? [];
+        EntryReference? Ref(TransactionReferenceDto? a) => a is null ? null : new(a.Id, a.Name, scopeOf.GetValueOrDefault(a.Id));
+        string Status(FinancialCalendarStatus s) => s switch { FinancialCalendarStatus.Overdue => "Overdue", FinancialCalendarStatus.NeedsReview => "NeedsReview", FinancialCalendarStatus.Realized => "Realized", _ => "Pending" };
+        var list = new List<FinancialEntryDto>();
+
+        // Só o que o calendário tem além das transações efetivas: previsões pendentes, recorrências, parcelas de dívida e transferências previstas (uma linha por transferência).
+        foreach (var group in items.Where(i => i.Source == FinancialCalendarSource.Transfer && i.PlannedTransferId is not null).GroupBy(i => i.PlannedTransferId!.Value))
+        {
+            if (overdueOnly && group.First().Status != FinancialCalendarStatus.Overdue) continue;
+            var @out = group.FirstOrDefault(i => i.Type == CategoryType.Expense); var @in = group.FirstOrDefault(i => i.Type == CategoryType.Income); var any = group.First(); var both = @out is not null && @in is not null;
+            list.Add(new($"PlannedTransfer:{group.Key}", "Transfer", $"{any.Date.Year:0000}-{any.Date.Month:00}", any.Date, "Due", any.Description, "Transfer", both ? "Neutral" : any.Type == CategoryType.Income ? "In" : "Out", Status(any.Status), Money.Format(any.Amount),
+                Ref(both ? @out!.Account : any.Account), both ? Ref(@in!.Account) : null, null, null, null, "PlannedTransfer", "None", "Pending", null, null, null, group.Key, null, null,
+                [.. new[] { "ViewDetails", "OpenTransfers" }, .. any.AllowedActions.Where(a => a == "CancelPlannedTransfer")], ["Planned"]));
+        }
+        foreach (var i in items.Where(i => i.Source is FinancialCalendarSource.PlannedTransaction or FinancialCalendarSource.RecurrenceOccurrence or FinancialCalendarSource.DebtInstallment))
+        {
+            if (overdueOnly && i.Status != FinancialCalendarStatus.Overdue) continue;
+            var (source, idPrefix) = i.Source switch { FinancialCalendarSource.PlannedTransaction => ("Planned", "Planned"), FinancialCalendarSource.RecurrenceOccurrence => ("Recurrence", "Recurrence"), _ => ("Debt", "Debt") };
+            var actions = new List<string> { "ViewDetails" }; actions.AddRange(i.AllowedActions);
+            if (source == "Debt") actions.Add("OpenDebts"); if (source == "Recurrence") actions.Add("OpenRecurrences");
+            var flags = new List<string> { "Planned" }; if (i.Status == FinancialCalendarStatus.NeedsReview) flags.Add("NoPaymentEvidence"); if (i.AmountSource is { } amountSource) flags.Add("Amount:" + amountSource);
+            var stable = i.RecurrenceId is { } r && i.OccurrenceNumber is { } n ? $"{idPrefix}:{r}:{n}" : $"{idPrefix}:{i.Id}";
+            list.Add(new(stable, source, $"{i.Date.Year:0000}-{i.Date.Month:00}", i.Date, "Due", i.Description, i.Type == CategoryType.Income ? "Income" : "Expense", i.Type == CategoryType.Income ? "In" : "Out", Status(i.Status), Money.Format(i.Amount),
+                Ref(i.Account), null, null, i.Category is { } c ? new(c.Id, c.Name, c.Path) : null, null, i.Origin.ToString(), i.Type == CategoryType.Expense ? "Planned" : "None", "Pending", null, i.PlannedTransactionId ?? (source == "Planned" ? i.Id : null), null, null,
+                i.RecurrenceId, null, actions, flags));
+        }
+        return list;
+    }
+
+    // ---- Cartões ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+    private static IEnumerable<FinancialEntryDto> CardEntries((IReadOnlyList<BudgetFact> Facts, IReadOnlyDictionary<Guid, string> Paths) read, string competence, IReadOnlyDictionary<Guid, FinancialCategoryDto> categories,
+        IReadOnlyDictionary<Guid, FinancialCreditCardDto> cards, IReadOnlyDictionary<Guid, string> scopeOf, IReadOnlyDictionary<Guid, string> accountNames)
+    {
+        foreach (var f in read.Facts.Where(f => f.CardId is not null && f.Origin is BudgetFactOrigin.CardInstallment or BudgetFactOrigin.CardAdjustment && f.InvoiceCompetence == competence))
+        {
+            var card = cards.GetValueOrDefault(f.CardId!.Value);
+            var payer = card?.DefaultPaymentAccountId; var credit = f.Amount < 0m;
+            var category = f.CategoryId is { } id && categories.TryGetValue(id, out var cat) ? new EntryCategory(id, cat.Name, read.Paths.GetValueOrDefault(id) ?? cat.Name) : null;
+            var flags = new List<string>(); if (!f.CompetenceReliable) flags.Add("CompetenceEstimated"); if (payer is null) flags.Add("NoPayerAccount"); if (f.Imported) flags.Add("Imported");
+            var cardRef = new EntryReference(f.CardId, f.CardName ?? card?.Name ?? "Cartão");
+            yield return new($"{(f.Origin == BudgetFactOrigin.CardAdjustment ? "CardAdjustment" : "CardInstallment")}:{f.RecordId}", f.Origin == BudgetFactOrigin.CardAdjustment ? "CardAdjustment" : "CardPurchase", competence, f.Date, "Invoice", f.Description,
+                credit ? "Income" : "Expense", credit ? "In" : "Out", "Realized", Money.Format(Math.Abs(f.Amount)), payer is { } p ? new(p, accountNames.GetValueOrDefault(p) ?? "Conta", scopeOf.GetValueOrDefault(p)) : null, null, cardRef, category,
+                f.Nature.ToString(), f.Origin.ToString(), credit ? "Reduces" : "Consumes", "AtInvoicePayment", null, null, null, null, null, competence, ["ViewDetails", "OpenCards"], flags);
+        }
+    }
+}
