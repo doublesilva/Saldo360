@@ -7,7 +7,6 @@ import { addCalendarMonths } from '../../dates'
 import { OverviewHero } from './OverviewHero'
 import { OverviewAlerts } from './OverviewAlerts'
 import { OverviewEvolutionSection } from './OverviewEvolution'
-import { OverviewExpenseDistribution } from './OverviewExpenseDistribution'
 import { OverviewBudgetProgress } from './OverviewBudgetProgress'
 import { OverviewAccounts, OverviewGoals, OverviewRecent, OverviewUpcoming } from './OverviewLists'
 import { OverviewSyncLine } from './OverviewSync'
@@ -96,8 +95,6 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
           <OverviewBudgetProgress control={data?.pfBudgetControl ?? null} fixedTarget={data?.budget.state === 'Complete' ? data.budget.fixed?.planned ?? null : null}
             scopeLabel="Orçamento PF · Todas as contas PF" monthLabel={monthTitle(competence)} workspaceId={workspaceId} competence={competence} {...overviewBlock}
             onOpenBudget={() => onNavigate('budgets', { competence })} onOpenCards={() => onNavigate('cards')} />
-          <OverviewExpenseDistribution workspaceId={workspaceId} competence={competence} scope={scope} monthLabel={monthTitle(competence)} scopeText={scopeText}
-            distribution={data?.expenseDistribution ?? null} {...overviewBlock} />
         </div>
         <OverviewRecent recent={data?.recent ?? null} {...overviewBlock}
           onOpenAll={() => recentRange && onNavigate('transactions', { transactions: recentRange, newTransaction: data?.recent.items.length === 0 })} />

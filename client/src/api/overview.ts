@@ -145,7 +145,7 @@ export interface BudgetControl {
  * Distribuição das despesas realizadas do mês por categoria principal (dashboard Folio). Mesmos fatos do orçamento, agrupados e ordenados no servidor. `kind`: Category, Others ("Outras
  * categorias", só apresentação; `categoryCount` diz quantas agrupa) ou Uncategorized ("Sem categoria", sempre por último). `percentage` nulo quando o total líquido não permite percentuais;
  * quando existem, as linhas somam 100,0. `reference` = "Despesas do mês" do mesmo escopo; divergência vira `Partial` com o motivo. No `overview` vêm as cinco maiores categorias;
- * `getExpenseDistribution` traz todas.
+
  */
 export interface ExpenseCategoryShare { categoryId: string | null; name: string; amount: string; percentage: string | null; kind: 'Category' | 'Others' | 'Uncategorized'; categoryCount: number; gross: string }
 export interface ExpenseReconciliation { bucket: 'Bank' | 'Cards'; distributed: string; reference: string; difference: string }
@@ -154,14 +154,6 @@ export interface ExpenseDistribution {
   reasons: ('TotalDiffersFromExpenses' | 'ReferenceUnavailable' | 'BankBasisDiffers' | 'CardBasisDiffers' | string)[]; categoryCount: number
   /** Só gastos, devoluções e estornos (negativo) à parte, e a conferência por bloco com "Despesas do mês". `total` = gastos + devoluções. */
   gross: string; adjustments: string; reconciliation: ExpenseReconciliation[] | null
-}
-
-/** "Ver todas": a distribuição completa da mesma competência e escopo, sob demanda. */
-export function getExpenseDistribution(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<ExpenseDistribution> {
-  const query = new URLSearchParams({ competence, scope: scope.kind })
-  if (scope.kind === 'account' && scope.accountId) query.set('accountId', scope.accountId)
-  return requestJson<ExpenseDistribution>(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-dashboard/expense-distribution?${query}`,
-    { signal, headers: { Accept: 'application/json' } }, { fallback: 'Falha ao carregar as despesas por categoria.' })
 }
 
 export interface DashboardOverview {
@@ -208,4 +200,25 @@ export interface BudgetCards {
 export function getBudgetCards(workspaceId: string, competence: string, signal?: AbortSignal): Promise<BudgetCards> {
   return requestJson<BudgetCards>(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-dashboard/budget-cards?${new URLSearchParams({ competence })}`,
     { signal, headers: { Accept: 'application/json' } }, { fallback: 'Falha ao carregar os cartões do orçamento.' })
+}
+
+/**
+ * Previsão de despesas do orçamento PF por categoria principal (dentro da Meta total), sob demanda. `projected` = `pfBudgetControl.total.projected`: categorias + componentes não alocados fecham com ele.
+ * `categories` = cinco maiores, "Outras categorias" (`kind` Others) e "Sem categoria"; `allCategories` = todas ("Ver todas"). Estimativas não têm categoria (`unallocatedEstimated`).
+ */
+export interface BudgetCategoryChild { categoryId: string | null; name: string; projected: string }
+export interface BudgetCategorySource { group: 'Payment' | 'Nature'; key: string; amount: string }
+export interface BudgetCategoryLine {
+  categoryId: string | null; name: string; kind: 'Category' | 'Others' | 'Uncategorized'; categoryCount: number
+  realized: string; committed: string; estimated: string; projected: string; children: BudgetCategoryChild[]; sources: BudgetCategorySource[]
+}
+export interface BudgetCategories {
+  state: 'Complete' | 'Partial'; competence: string; scope: string; target: string | null; realized: string; committed: string; estimated: string; projected: string
+  categories: BudgetCategoryLine[]; allCategories: BudgetCategoryLine[]; categoryCount: number
+  unallocatedRealized: string; unallocatedCommitted: string; unallocatedEstimated: string; reasons: string[]
+}
+
+export function getBudgetCategories(workspaceId: string, competence: string, signal?: AbortSignal): Promise<BudgetCategories> {
+  return requestJson<BudgetCategories>(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-dashboard/budget-categories?${new URLSearchParams({ competence })}`,
+    { signal, headers: { Accept: 'application/json' } }, { fallback: 'Falha ao carregar as despesas por categoria.' })
 }

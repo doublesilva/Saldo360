@@ -29,6 +29,7 @@ public static class PlanActualEndpoints
         group.MapGet("/overview", Overview);
         group.MapGet("/expense-distribution", ExpenseDistribution);
         group.MapGet("/budget-cards", BudgetCards);
+        group.MapGet("/budget-categories", BudgetCategories);
         group.MapGet("/overdraft-recovery/{accountId:guid}", Recovery);
         group.MapPost("/overdraft-recovery/{accountId:guid}", CaptureRecovery).AddEndpointFilter<ValidateCsrfTokenFilter>();
         return app;
@@ -45,6 +46,9 @@ public static class PlanActualEndpoints
 
     private static async Task<IResult> BudgetCards(Guid workspaceId, string? competence, CurrentUser user, DashboardOverviewService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.GetBudgetCardsAsync(workspaceId, userId, competence, ct));
+
+    private static async Task<IResult> BudgetCategories(Guid workspaceId, string? competence, CurrentUser user, DashboardOverviewService service, CancellationToken ct) =>
+        await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.GetBudgetCategoriesAsync(workspaceId, userId, competence, ct));
 
     private static async Task<IResult> Recovery(Guid workspaceId, Guid accountId, string? competence, CurrentUser user, OverdraftRecoveryService service, CancellationToken ct) =>
         await user.GetUserIdAsync(ct) is not { } userId ? Results.Unauthorized() : Respond(await service.GetAsync(workspaceId, userId, accountId, competence ?? string.Empty, ct));

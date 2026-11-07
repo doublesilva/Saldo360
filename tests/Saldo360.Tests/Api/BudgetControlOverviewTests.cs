@@ -313,4 +313,29 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
         // Com meta, a reserva (2.000) só é abatida pelo alimento de cartões PF: os 1.500 do cartão PJ não a reduzem.
         Assert.Equal("2300.00", Text(await PfControlAsync("account", _account), "cards", "projected"));
     }
+
+    [Fact]
+    public async Task BudgetCategoriesForecastReconcilesWithThePfBudgetTotalAndLeavesPjOut()
+    {
+        await ArrangeAsync("bc-categorias");
+        var pj = await NewAccountAsync("Itaú PJ", "PJ");
+        await ExpenseAsync("1000.00"); await SpendAsync(pj, "400.00");
+        await PurchaseAsync(await CardAsync("Nubank"), "800.00");
+        Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/planned-transactions", _session,
+            new { accountId = _account, categoryId = _expense, type = "Expense", amount = "200.00", dueDate = Today.AddDays(1) > ThisMonth.AddMonths(1).AddDays(-1) ? Today : Today.AddDays(1), description = "Pendente" })).StatusCode);
+        await ConfigureBudgetAsync("5000.00", 12500m);
+
+        var response = await SendAsync(HttpMethod.Get, $"{Root}/financial-dashboard/budget-categories?competence={Month}", _session);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var forecast = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        var pf = await PfControlAsync("account", _account);
+
+        // Mesma referência do card: o total previsto PF (efetivado + comprometido + estimado), sem as despesas da conta PJ.
+        Assert.Equal(Text(pf, "total", "projected"), Text(forecast, "projected")); Assert.Equal("12500.00", Text(forecast, "target")); Assert.Equal("PF", Text(forecast, "scope"));
+        var line = forecast.GetProperty("categories")[0];
+        Assert.Equal("Despesas", line.GetProperty("name").GetString()); Assert.Equal("1800.00", line.GetProperty("realized").GetString()); Assert.Equal("200.00", line.GetProperty("committed").GetString());
+        Assert.Equal("2000.00", line.GetProperty("projected").GetString());
+        Assert.Equal("Complete", Text(forecast, "state")); Assert.Equal("0.00", Text(forecast, "unallocatedRealized")); Assert.Equal("0.00", Text(forecast, "unallocatedCommitted"));
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, $"{Root}/financial-dashboard/budget-categories?competence=2026-13", _session)).StatusCode);
+    }
 }

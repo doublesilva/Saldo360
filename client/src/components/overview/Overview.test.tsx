@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Overview, type OverviewNavigation, type OverviewSection, type OverviewSelection } from './Overview'
-import type { BudgetCardItem, BudgetCards, BudgetControl, DashboardOverview, ExpenseCategoryShare, ExpenseDistribution, FinancialDecision } from '../../api/overview'
+import type { BudgetCardItem, BudgetCards, BudgetCategories, BudgetCategoryLine, BudgetControl, DashboardOverview, ExpenseCategoryShare, ExpenseDistribution, FinancialDecision } from '../../api/overview'
 import type { PlanActualDashboard } from '../../api/planActual'
 import type { SixMonthPlan } from '../../api/monthlyPlan'
 import { planActual } from '../planActualFixtures'
@@ -11,7 +11,7 @@ import { overview as baseOverview } from './overviewFixtures'
 import { decision } from './decisionFixtures'
 import { budgetControl, group } from './budgetControlFixtures'
 
-type Overrides = { plan?: PlanActualDashboard | Response; overview?: DashboardOverview | Response; evolution?: SixMonthPlan | Response; all?: ExpenseDistribution | Response; budgetCards?: BudgetCards | Response }
+type Overrides = { plan?: PlanActualDashboard | Response; overview?: DashboardOverview | Response; evolution?: SixMonthPlan | Response; all?: ExpenseDistribution | Response; budgetCards?: BudgetCards | Response; budgetCategories?: BudgetCategories | Response }
 let calls: string[] = []
 
 const share = (categoryId: string | null, name: string, amount: string, percentage: string | null, kind: ExpenseCategoryShare['kind'] = 'Category', categoryCount = 1, gross = amount): ExpenseCategoryShare =>
@@ -25,6 +25,12 @@ const cardItem = (over: Partial<BudgetCardItem> = {}): BudgetCardItem => ({ card
   closing: '2026-10-25', due: '2026-11-02', datesEstimated: false, quality: 'Projected', paymentState: 'Unpaid', ...over })
 const budgetCards = (over: Partial<BudgetCards> = {}): BudgetCards => ({ state: 'Complete', competence: '2026-10', total: '3500.00', allocated: '3000.00', foodApplied: '500.00', foodReserve: '2000.00', official: '3500.00',
   cards: [cardItem()], reasons: [], ...over })
+const line = (name: string, projected: string, over: Partial<BudgetCategoryLine> = {}): BudgetCategoryLine => ({ categoryId: name, name, kind: 'Category', categoryCount: 1, realized: projected, committed: '0.00', estimated: '0.00', projected,
+  children: [], sources: [{ group: 'Payment', key: 'Cards', amount: '0.00' }, { group: 'Payment', key: 'Bank', amount: projected }, { group: 'Nature', key: 'Variable', amount: projected }], ...over })
+const budgetCategories = (over: Partial<BudgetCategories> = {}): BudgetCategories => ({ state: 'Complete', competence: '2026-10', scope: 'PF', target: '12500.00', realized: '5000.00', committed: '1500.00', estimated: '1000.00', projected: '7500.00',
+  categories: [line('Moradia', '3500.00', { realized: '3000.00', committed: '500.00', children: [{ categoryId: 'r', name: 'Aluguel', projected: '3000.00' }, { categoryId: 'm', name: 'Moradia', projected: '500.00' }] }), line('Alimentação', '2200.00'), line('Transporte', '800.00')],
+  allCategories: [line('Moradia', '3500.00'), line('Alimentação', '2200.00'), line('Transporte', '800.00'), line('Lazer', '100.00')], categoryCount: 4,
+  unallocatedRealized: '0.00', unallocatedCommitted: '0.00', unallocatedEstimated: '1000.00', reasons: [], ...over })
 const withSummary = (over: Partial<DashboardOverview> = {}): DashboardOverview => ({ ...baseOverview, decision: decision(), budgetControl: budgetControl(), pfBudgetControl: budgetControl({ scopeKind: 'pf' }), expenseDistribution: distribution(), ...over })
 const overview = withSummary()
 const answer = (value: unknown) => value instanceof Response ? value.clone() : new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -35,6 +41,7 @@ function mockApi(overrides: Overrides = {}) {
     calls.push(url)
     if (url.includes('/financial-dashboard/plan-actual')) return answer(overrides.plan ?? planActual)
     if (url.includes('/financial-dashboard/overview')) return answer(overrides.overview ?? overview)
+    if (url.includes('/financial-dashboard/budget-categories')) return answer(overrides.budgetCategories ?? budgetCategories())
     if (url.includes('/financial-dashboard/budget-cards')) return answer(overrides.budgetCards ?? budgetCards())
     if (url.includes('/financial-dashboard/expense-distribution')) return answer(overrides.all ?? distribution())
     if (url.includes('/monthly-plan/six-months')) return answer(overrides.evolution ?? sixMonths)
@@ -48,6 +55,7 @@ function Harness({ initial = '2026-10' }: { initial?: string }) {
   return <Overview workspaceId="w" selection={selection} onSelectionChange={setSelection} onNavigate={(section, context) => { navigations.push({ section, context }) }} />
 }
 const renderPage = (initial?: string) => render(<Harness initial={initial} />)
+const HINT = ': ver despesas por categoria▾'
 const plain = (value: string | null | undefined) => (value ?? '').replace(/[\u00a0\u202f]/g, ' ')
 const text = (element: Element | null) => plain(element?.textContent)
 const title = (heading: Element) => [...heading.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent).join('').trim()
@@ -70,7 +78,7 @@ describe('Visão Geral — composição do dashboard Folio', () => {
     await loaded()
     expect(screen.getByRole('heading', { level: 2 }).textContent).toContain('Outubro de 2026')
     expect(screen.getAllByRole('heading', { level: 3 }).map(title)).toEqual([
-      'Receitas do mês', 'Despesas do mês', 'Fechamento projetado', 'Evolução financeira', 'Orçamento mensal', 'Despesas por categoria', 'Últimos lançamentos', 'Contas', 'Próximos compromissos', 'Metas',
+      'Receitas do mês', 'Despesas do mês', 'Fechamento projetado', 'Evolução financeira', 'Orçamento mensal', 'Últimos lançamentos', 'Contas', 'Próximos compromissos', 'Metas',
     ])
     expect(within(screen.getByRole('complementary', { name: 'Contas, compromissos e metas' })).getAllByRole('heading').map(title)).toEqual(['Contas', 'Próximos compromissos', 'Metas'])
   })
@@ -182,16 +190,6 @@ describe('Visão Geral — cheque especial e recuperação no bloco do saldo', (
   })
 })
 
-describe('Visão Geral — orçamento mensal e despesas por categoria', () => {
-  it('os dois cards ficam um abaixo do outro, orçamento primeiro, na mesma área', async () => {
-    mockApi(); renderPage()
-    const budget = await findCard('Orçamento mensal')
-    const area = budget.parentElement as HTMLElement
-    expect(area.className).toBe('ov-budget-area')
-    expect([...area.children].map(child => child.getAttribute('aria-labelledby'))).toEqual(['ov-budget-title', 'ov-distribution-title'])
-  })
-})
-
 describe('Visão Geral — orçamento mensal', () => {
   const row = (name: string) => within(card('Orçamento mensal')).getByRole('listitem', { name })
 
@@ -200,7 +198,7 @@ describe('Visão Geral — orçamento mensal', () => {
     const budget = await findCard('Orçamento mensal')
     await waitFor(() => expect(text(budget)).toContain('Meta total'))
     expect(text(budget)).toContain('Orçamento PF · Todas as contas PF · Outubro de 2026')
-    expect(text(row('Meta total'))).toBe('Meta total60,0%R$ 7.500,00 / R$ 12.500,00R$ 5.000,00 abaixo da meta')
+    expect(text(row('Meta total'))).toBe('Meta total: ver despesas por categoria▾60,0%R$ 7.500,00 / R$ 12.500,00R$ 5.000,00 abaixo da meta')
     expect(text(row('Cartões de crédito'))).toBe('Cartões de crédito▾70,0%R$ 3.500,00 / R$ 5.000,00R$ 1.500,00 abaixo da meta')
     expect(text(row('Fora dos cartões'))).toBe('Fora dos cartões53,3%R$ 4.000,00 / R$ 7.500,00R$ 3.500,00 abaixo da meta')
     // Total previsto vem pronto (efetivado + comprometido + estimado): o efetivado (R$ 5.000,00) não é somado de novo nem exibido à parte.
@@ -232,7 +230,7 @@ describe('Visão Geral — orçamento mensal', () => {
     mockApi({ overview: control({ state: 'TargetNotDefined', total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, projectedPercent: null, realizedPercent: null, status: 'NoTarget' },
       cards: group('Cards', none), outsideCards: group('OutsideCards', none) }) }); renderPage()
     const budget = await findCard('Orçamento mensal')
-    await waitFor(() => expect(text(row('Meta total'))).toBe('Meta totalR$ 7.500,00Meta não configurada'))
+    await waitFor(() => expect(text(row('Meta total'))).toBe('Meta total' + HINT + 'R$ 7.500,00Meta não configurada'))
     expect(text(budget)).not.toMatch(/%/); expect(text(budget)).not.toContain('R$ 0,00')
     fireEvent.click(within(budget).getByRole('button', { name: 'Configurar orçamento' }))
     expect(navigations.at(-1)).toEqual({ section: 'budgets', context: { competence: '2026-10' } })
@@ -242,7 +240,7 @@ describe('Visão Geral — orçamento mensal', () => {
     const base = budgetControl()
     mockApi({ overview: control({ totalTargetOrigin: 'Customized', total: { ...base.total, target: '9000.00', margin: '1500.00', projectedPercent: '83.3' } }) }); renderPage()
     await findCard('Orçamento mensal')
-    await waitFor(() => expect(text(row('Meta total'))).toBe('Meta total83,3%R$ 7.500,00 / R$ 9.000,00R$ 1.500,00 abaixo da meta'))
+    await waitFor(() => expect(text(row('Meta total'))).toBe('Meta total: ver despesas por categoria▾83,3%R$ 7.500,00 / R$ 9.000,00R$ 1.500,00 abaixo da meta'))
   })
 
   it('meta complementar de despesas fixas: uma linha com o valor efetivo, sem barra nem soma', async () => {
@@ -262,7 +260,6 @@ describe('Visão Geral — orçamento mensal', () => {
     fireEvent.change(screen.getByLabelText('Conta ou consolidado'), { target: { value: 'account:pj' } })
     await waitFor(() => expect(calls.some(url => url.includes('accountId=pj'))).toBe(true))
     expect(text(card('Orçamento mensal'))).toContain('Orçamento PF · Todas as contas PF'); expect(text(row('Meta total'))).toContain('R$ 12.500,00')
-    expect(text(card('Despesas por categoria'))).toContain('Conta A · Somente gastos já efetivados')
   })
 
   it('meta total ausente: a meta de cartões continua comparável e nada é inventado para o resto', async () => {
@@ -270,76 +267,74 @@ describe('Visão Geral — orçamento mensal', () => {
     mockApi({ overview: control({ state: 'TargetNotDefined', total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, projectedPercent: null, realizedPercent: null, status: 'NoTarget' },
       outsideCards: group('OutsideCards', { state: 'TargetNotDefined', target: null, margin: null, excess: null, projectedPercent: null, status: 'NoTarget' }) }) }); renderPage()
     await findCard('Orçamento mensal')
-    await waitFor(() => expect(text(row('Meta total'))).toBe('Meta totalR$ 7.500,00Meta não configurada'))
+    await waitFor(() => expect(text(row('Meta total'))).toBe('Meta total' + HINT + 'R$ 7.500,00Meta não configurada'))
     expect(text(row('Cartões de crédito'))).toContain('70,0%'); expect(text(row('Fora dos cartões'))).toBe('Fora dos cartõesR$ 4.000,00Meta não configurada')
     expect(text(card('Orçamento mensal'))).not.toContain('R$ 12.500,00')
   })
 })
 
-describe('Visão Geral — despesas por categoria', () => {
-  it('total gasto, barra empilhada com os percentuais do servidor e as linhas, com "Sem categoria" separado', async () => {
-    mockApi(); renderPage()
-    const block = await findCard('Despesas por categoria')
-    await waitFor(() => expect(text(block)).toContain('Moradia'))
-    expect(text(block)).toContain('Somente gastos já efetivados'); expect(text(block)).toContain('Total gastoR$ 1.200,00')
-    expect(within(block).getAllByRole('listitem').map(item => text(item))).toEqual(['MoradiaR$ 700,0058,3%', 'AlimentaçãoR$ 300,0025,0%', 'Sem categoriaR$ 200,0016,7%'])
-    expect([...block.querySelectorAll<HTMLElement>('.ov-stack span')].map(segment => segment.style.flexBasis)).toEqual(['58.3%', '25%', '16.7%'])
-    expect(block.querySelector('.ov-stack span:last-child')?.className).toBe('ov-cat-none')
+describe('Visão Geral — accordion do orçamento mensal e previsão por categoria', () => {
+  const totalToggle = () => within(card('Orçamento mensal')).getByRole('button', { name: /Meta total: ver despesas por categoria/ })
+  const cardsToggle = () => within(card('Orçamento mensal')).getByRole('button', { name: /Cartões de crédito/ })
+  const ready = async () => { renderPage(); return waitFor(() => totalToggle()) }
+
+  it('os dois painéis começam recolhidos, sem consultas, e são mutuamente exclusivos; o resumo continua visível', async () => {
+    mockApi(); const total = await ready()
+    expect(total.getAttribute('aria-expanded')).toBe('false'); expect(cardsToggle().getAttribute('aria-expanded')).toBe('false')
+    expect(calls.some(url => url.includes('/budget-categories') || url.includes('/budget-cards'))).toBe(false)
+    fireEvent.click(total); expect(await screen.findByText('Previsão por categoria')).toBeTruthy()
+    expect(total.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(cardsToggle()); expect(await screen.findByText(/Faturas de outubro/)).toBeTruthy()
+    expect(total.getAttribute('aria-expanded')).toBe('false'); expect(screen.queryByText('Previsão por categoria')).toBeNull() // abrir cartões recolhe categorias
+    fireEvent.click(total); expect(await screen.findByText('Previsão por categoria')).toBeTruthy(); expect(screen.queryByText(/Faturas de outubro/)).toBeNull()
+    expect(text(card('Orçamento mensal'))).toContain('R$ 7.500,00 / R$ 12.500,00') // o resumo nunca some
   })
 
-  it('mais de cinco categorias: as cinco maiores, "Outras categorias" e "Sem categoria", na ordem do servidor e com cores distintas', async () => {
-    const rows = [...['Moradia', 'Alimentação', 'Transporte', 'Saúde', 'Educação'].map((name, i) => share(`c${i}`, name, `${900 - i * 100}.00`, `${18 - i}.0`)),
-      share(null, 'Outras categorias', '1200.00', '24.0', 'Others', 3), share(null, 'Sem categoria', '1000.00', '20.0', 'Uncategorized', 0)]
-    mockApi({ overview: withSummary({ expenseDistribution: distribution({ total: '5000.00', reference: '5000.00', categories: rows, categoryCount: 8 }) }) }); renderPage()
-    const block = await findCard('Despesas por categoria')
-    await waitFor(() => expect(within(block).getAllByRole('listitem')).toHaveLength(7))
-    expect(within(block).getAllByRole('listitem').map(item => text(item.querySelector('.ov-distribution__name')))).toEqual(['Moradia', 'Alimentação', 'Transporte', 'Saúde', 'Educação', 'Outras categorias (3 categorias)', 'Sem categoria'])
-    const colors = [...block.querySelectorAll('.ov-stack span')].map(segment => segment.className)
-    expect(new Set(colors.slice(0, 5)).size).toBe(5); expect(colors.slice(5)).toEqual(['ov-cat-other', 'ov-cat-none'])
+  it('lista as categorias com total previsto, legenda e componentes não alocados; o card independente de categorias não existe', async () => {
+    mockApi(); fireEvent.click(await ready())
+    const panel = await waitFor(() => document.getElementById('ov-card-details-total') as HTMLElement)
+    await waitFor(() => expect(text(panel)).toContain('Moradia'))
+    expect(text(panel)).toContain('Efetivado'); expect(text(panel)).toContain('Comprometido'); expect(text(panel)).toContain('Estimado')
+    expect(within(panel).getAllByRole('button', { expanded: false }).filter(button => button.classList.contains('ov-catfc__row')).map(button => text(button))).toEqual(['▾MoradiaR$ 3.500,00', '▾AlimentaçãoR$ 2.200,00', '▾TransporteR$ 800,00'])
+    expect(text(panel)).toContain('Estimativas não alocadas a categoriasR$ 1.000,00'); expect(text(panel)).toContain('Total previsto PFR$ 7.500,00')
+    expect(text(panel)).not.toContain('Conciliação parcial'); expect(screen.queryByRole('region', { name: 'Despesas por categoria' })).toBeNull()
+    expect(calls.filter(url => url.includes('/budget-categories?competence=2026-10'))).toHaveLength(1)
   })
 
-  it('"Ver todas" carrega a distribuição completa da mesma competência e conta, sob demanda, num diálogo que fecha com Esc', async () => {
-    const all = distribution({ categories: [...distribution().categories.slice(0, 2), share('x', 'Lazer', '50.00', '4.2'), distribution().categories[2]], categoryCount: 3 })
-    mockApi({ all }); renderPage()
-    const block = await findCard('Despesas por categoria')
-    expect(calls.some(url => url.includes('/expense-distribution'))).toBe(false)
-    fireEvent.click(await within(block).findByRole('button', { name: 'Ver todas ›' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Todas as categorias' })
-    await waitFor(() => expect(text(dialog)).toContain('Lazer'))
-    expect(calls.filter(url => url.includes('/expense-distribution'))).toEqual(['/api/financial-workspaces/w/financial-dashboard/expense-distribution?competence=2026-10&scope=primary'])
-    expect(document.activeElement?.textContent).toBe('Fechar')
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(document.activeElement?.textContent).toBe('Ver todas ›')
+  it('cada categoria expande a composição (efetivado, comprometido, estimado, subcategorias e perspectivas) e recolhe', async () => {
+    mockApi(); fireEvent.click(await ready())
+    const row = await screen.findByRole('button', { name: /Moradia/ })
+    fireEvent.click(row)
+    const detail = document.getElementById(row.getAttribute('aria-controls') as string) as HTMLElement
+    expect(text(detail)).toContain('EfetivadoR$ 3.000,00'); expect(text(detail)).toContain('ComprometidoR$ 500,00'); expect(text(detail)).toContain('EstimadoR$ 0,00')
+    expect(text(within(detail).getByRole('list', { name: 'Subcategorias de Moradia' }))).toBe('AluguelR$ 3.000,00MoradiaR$ 500,00')
+    expect(text(within(detail).getByRole('list', { name: 'Composição de Moradia' }))).toBe('Fora dos cartõesR$ 3.500,00Despesas variáveisR$ 3.500,00')
+    fireEvent.click(row); expect(document.getElementById(row.getAttribute('aria-controls') as string)).toBeNull()
   })
 
-  it('total que não confere é parcial, explica a diferença por bloco e não inventa categoria', async () => {
-    mockApi({ overview: withSummary({ expenseDistribution: distribution({ state: 'Partial', total: '1000.00', reference: '1200.00', reasons: ['TotalDiffersFromExpenses', 'BankBasisDiffers', 'CardBasisDiffers'],
-      reconciliation: [{ bucket: 'Bank', distributed: '700.00', reference: '600.00', difference: '100.00' }, { bucket: 'Cards', distributed: '300.00', reference: '600.00', difference: '-300.00' }] }) }) }); renderPage()
-    const partial = await findCard('Despesas por categoria')
-    await waitFor(() => expect(text(partial)).toContain('Resultado parcial: o total difere das despesas do mês (R$ 1.200,00).'))
-    expect(text(partial)).toContain('Banco: o indicador abate toda devolução recebida'); expect(text(partial)).toContain('Aqui R$ 700,00, no indicador R$ 600,00.')
-    expect(text(partial)).toContain('Cartões: o indicador usa o total do banco nas faturas fechadas'); expect(within(partial).getAllByRole('listitem').filter(item => item.closest('.ov-distribution__list'))).toHaveLength(3)
+  it('"Ver todas as categorias" expande a lista completa no próprio painel, sem modal', async () => {
+    mockApi(); fireEvent.click(await ready())
+    const all = await screen.findByRole('button', { name: 'Ver todas as categorias' })
+    expect(screen.queryByText('Lazer')).toBeNull(); fireEvent.click(all)
+    expect(await screen.findByText('Lazer')).toBeTruthy(); expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar menos' })); expect(screen.queryByText('Lazer')).toBeNull()
   })
 
-  it('devoluções e estornos aparecem à parte e a barra continua com os gastos, mesmo com líquido negativo', async () => {
-    mockApi({ overview: withSummary({ expenseDistribution: distribution({ total: '700.00', reference: '700.00', gross: '1100.00', adjustments: '-400.00',
-      categories: [share('h', 'Moradia', '900.00', '81.8', 'Category', 1, '1000.00'), share('f', 'Alimentação', '-200.00', '9.1', 'Category', 1, '100.00')] }) }) }); renderPage()
-    const block = await findCard('Despesas por categoria')
-    await waitFor(() => expect(text(block)).toContain('Devoluções e estornos-R$ 400,00'))
-    expect(block.querySelectorAll('.ov-stack span')).toHaveLength(2)
-    expect(within(block).getAllByRole('listitem').map(item => text(item))).toEqual(['MoradiaR$ 1.000,00líquido R$ 900,0081,8%', 'AlimentaçãoR$ 100,00líquido -R$ 200,009,1%'])
-    expect(text(block)).toContain('Total gastoR$ 700,00'); expect(text(block)).not.toContain('Resultado parcial')
+  it('o que as categorias não discriminam fica explícito e a conciliação é parcial; falha de carga permite nova tentativa', async () => {
+    mockApi({ budgetCategories: budgetCategories({ state: 'Partial', unallocatedRealized: '300.00', unallocatedCommitted: '-50.00', reasons: ['RealizedNotDiscriminated', 'CommittedNotDiscriminated'] }) })
+    fireEvent.click(await ready())
+    const panel = await waitFor(() => document.getElementById('ov-card-details-total') as HTMLElement)
+    await waitFor(() => expect(text(panel)).toContain('Efetivado não discriminado por categoriaR$ 300,00'))
+    expect(text(panel)).toContain('Comprometido não discriminado por categoria-R$ 50,00'); expect(text(panel)).toContain('Conciliação parcial')
+    cleanup(); mockApi({ budgetCategories: new Response('{}', { status: 500 }) })
+    fireEvent.click(await ready()); expect(await screen.findByRole('button', { name: 'Recarregar' })).toBeTruthy()
   })
 
-  it('mês sem despesas e bloco indisponível', async () => {
-    mockApi({ overview: withSummary({ expenseDistribution: distribution({ total: '0.00', reference: '0.00', categories: [], categoryCount: 0 }) }) }); renderPage()
-    const empty = await findCard('Despesas por categoria')
-    await waitFor(() => expect(text(empty)).toMatch(/Nenhuma despesa efetivada em Outubro de 2026/))
-    expect(within(empty).queryByRole('button', { name: 'Ver todas ›' })).toBeNull()
-    cleanup()
-    mockApi({ overview: withSummary({ expenseDistribution: distribution({ state: 'Unavailable', total: null, categories: [] }) }) }); renderPage()
-    expect(await screen.findByText('Não foi possível agrupar as despesas deste mês.')).toBeTruthy()
+  it('conta isolada (meta global) não oferece o detalhamento por categoria', async () => {
+    const base = budgetControl()
+    mockApi({ overview: control({ scopeKind: 'account', targetsAttributable: false, total: { ...base.total, targetDefined: false, target: null, status: 'NoTarget' as const } }) }); renderPage()
+    await waitFor(() => expect(text(card('Orçamento mensal'))).toContain('Meta total'))
+    expect(within(card('Orçamento mensal')).queryByRole('button', { name: /ver despesas por categoria/ })).toBeNull()
   })
 })
 
