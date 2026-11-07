@@ -46,11 +46,24 @@ public sealed class ProjectionScenariosTests
         Assert.Null(months[1].Closing); // desconhecido não vira zero nos meses seguintes
     }
 
-    [Fact]
-    public void FoodAlreadyRecognizedReducesTheProvision_NeverAddingTheFullAmountAgain()
+    [Theory]
+    [InlineData(2500, 500, 1500, 4000)]   // cabe: 2.000 − 500 = 1.500 de reserva ainda não coberta, e o espaço é 2.500
+    [InlineData(4500, 500, 500, 5000)]    // o espaço (500) limita a reserva
+    [InlineData(5000, 0, 0, 5000)]        // meta já consumida: a reserva não aumenta o consumo
+    [InlineData(6855.41, 0, 0, 6855.41)]  // acima da meta: o gasto real é preservado, sem reserva por cima
+    public void TheFoodReserveIsASubTargetOfTheCardTarget_NeverPushingConsumptionAboveIt(double cardBase, double knownFood, double expectedFood, double expectedTotal)
     {
-        Assert.Equal(1200m, ProjectionScenarios.FoodComplement(2000m, 800m));
-        Assert.Equal(0m, ProjectionScenarios.FoodComplement(2000m, 2300m));
+        var food = ProjectionScenarios.FoodForecastWithinCardTarget(2000m, (decimal)knownFood, (decimal)cardBase, 5000m);
+        Assert.Equal((decimal)expectedFood, food);
+        Assert.Equal((decimal)expectedTotal, (decimal)cardBase + food);
+    }
+
+    [Fact]
+    public void WithoutACardTargetOrWithAFullyConsumedReserveNothingIsApplied()
+    {
+        Assert.Equal(0m, ProjectionScenarios.FoodForecastWithinCardTarget(2000m, 100m, 1000m, null));
+        Assert.Equal(0m, ProjectionScenarios.FoodForecastWithinCardTarget(2000m, 100m, 1000m, 0m));
+        Assert.Equal(0m, ProjectionScenarios.FoodForecastWithinCardTarget(2000m, 2300m, 1000m, 5000m)); // alimentação já consumida por inteiro
     }
 
     [Theory]
@@ -82,7 +95,7 @@ public sealed class ProjectionScenariosTests
     public void TheFoodProvisionStaysInsideTheCardCeiling_NeverAddedOnTopOfIt()
     {
         // Cartões conhecidos 3.200; alimentação: provisão 2.000, reconhecido 800 → estimativa de 1.200 (já dentro do teto de 5.000).
-        var food = ProjectionScenarios.FoodComplement(2000m, 800m);
+        var food = ProjectionScenarios.FoodForecastWithinCardTarget(2000m, 800m, 3200m, 5000m);
         var months = ProjectionScenarios.Ceilings([Facts(11, 10000m, 10000m, 3200m, 7500m, payMonth: 12) with { FoodComplement = food }, Facts(12, 10000m, 10000m, 5000m, 7500m, payMonth: 1)]);
 
         Assert.Equal(600m, months[0].CardComplement);                       // 5.000 − (3.200 + 1.200): só o que falta além da alimentação
@@ -93,10 +106,23 @@ public sealed class ProjectionScenariosTests
     }
 
     [Fact]
-    public void AFoodEstimateAboveTheCeilingIsKeptAndFlagged()
+    public void KnownCardSpendingAboveTheCeilingIsKeptAndFlagged_WithoutAnyFoodOnTop()
     {
-        var months = ProjectionScenarios.Ceilings([Facts(11, 0m, 0m, 4500m, 7500m, payMonth: 12) with { FoodComplement = 1200m }]);
+        var food = ProjectionScenarios.FoodForecastWithinCardTarget(2000m, 0m, 5700m, 5000m);
+        var months = ProjectionScenarios.Ceilings([Facts(11, 0m, 0m, 5700m, 7500m, payMonth: 12) with { FoodComplement = food }]);
 
-        Assert.Equal((0m, 700m), (months[0].CardComplement, months[0].CardExcess)); // 5.700 projetados: preserva e sinaliza 700
+        Assert.Equal(0m, food);
+        Assert.Equal((0m, 700m), (months[0].CardComplement, months[0].CardExcess)); // 5.700 conhecidos: preserva e sinaliza 700, sem reserva por cima
+    }
+
+    [Fact]
+    public void TheCurrentAndCeilingScenariosCountTheFoodReserveOnlyOnce()
+    {
+        var food = ProjectionScenarios.FoodForecastWithinCardTarget(2000m, 500m, 2500m, 5000m); // 1.500, cabe
+        var months = ProjectionScenarios.Ceilings([Facts(11, 10000m, 10000m, 2500m, 7500m, payMonth: 12) with { FoodComplement = food }, Facts(12, 10000m, 10000m, 0m, 7500m, payMonth: 1)]);
+
+        Assert.Equal(1000m, months[0].CardComplement);                // 5.000 − (2.500 + 1.500)
+        Assert.Equal(10000m - 1500m, months[1].CurrentClosing);       // Atual: só a previsão alimentar adicional, no mês do pagamento da fatura
+        Assert.Equal(10000m - 1500m - 1000m, months[1].Closing);      // Tetos: soma até a meta (2.500 conhecidos + 2.500), a reserva não entra de novo
     }
 }

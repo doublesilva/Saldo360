@@ -23,7 +23,7 @@ const distribution = (over: Partial<ExpenseDistribution> = {}): ExpenseDistribut
 })
 const cardItem = (over: Partial<BudgetCardItem> = {}): BudgetCardItem => ({ cardId: 'k1', name: 'Nubank', projected: '3000.00', confirmed: '2000.00', pendingKnown: '500.00', estimated: '500.00', invoiceState: 'Open',
   closing: '2026-10-25', due: '2026-11-02', datesEstimated: false, quality: 'Projected', paymentState: 'Unpaid', ...over })
-const budgetCards = (over: Partial<BudgetCards> = {}): BudgetCards => ({ state: 'Complete', competence: '2026-10', total: '3500.00', allocated: '3000.00', unallocatedFood: '500.00', official: '3500.00',
+const budgetCards = (over: Partial<BudgetCards> = {}): BudgetCards => ({ state: 'Complete', competence: '2026-10', total: '3500.00', allocated: '3000.00', foodApplied: '500.00', foodReserve: '2000.00', official: '3500.00',
   cards: [cardItem()], reasons: [], ...over })
 const withSummary = (over: Partial<DashboardOverview> = {}): DashboardOverview => ({ ...baseOverview, decision: decision(), budgetControl: budgetControl(), pfBudgetControl: budgetControl({ scopeKind: 'pf' }), expenseDistribution: distribution(), ...over })
 const overview = withSummary()
@@ -376,16 +376,24 @@ describe('Visão Geral — detalhamento dos cartões no orçamento', () => {
     fireEvent.click(rows[0]); expect(navigations.at(-1)).toEqual({ section: 'cards', context: undefined })
   })
 
-  it('provisão alimentar não alocada em linha separada e detalhamento parcial preservando o total oficial; cartão sem pagador é dito', async () => {
+  it('previsão alimentar adicional dentro da meta em linha separada e detalhamento parcial preservando o total oficial; cartão sem pagador é dito', async () => {
     mockApi({ budgetCards: budgetCards({ state: 'Partial', official: '3600.00', reasons: ['UnexplainedDifference', 'MissingPayerAccount'] }) })
     await open()
-    expect(await screen.findByText('Provisão alimentar ainda não alocada')).toBeTruthy()
+    expect(await screen.findByText('Previsão alimentar adicional dentro da meta')).toBeTruthy()
     const panel = document.getElementById('ov-card-details-cards') as HTMLElement
     expect(text(panel)).toContain('R$ 500,00'); expect(text(panel)).toContain('o total oficial dos cartões é R$ 3.600,00'); expect(text(panel)).toContain('cartão sem conta pagadora')
   })
 
+  it('sem complemento aplicado, a reserva aparece como informação secundária e não entra na soma', async () => {
+    mockApi({ budgetCards: budgetCards({ foodApplied: '0.00', foodReserve: '2000.00', allocated: '3000.00', total: '3000.00' }) })
+    await open()
+    const panel = await waitFor(() => document.getElementById('ov-card-details-cards') as HTMLElement)
+    await waitFor(() => expect(text(panel)).toContain('Reserva alimentar: R$ 2.000,00 dentro da meta dos cartões.'))
+    expect(text(panel)).not.toContain('Previsão alimentar adicional')
+  })
+
   it('competência sem cartões e falha de carregamento com nova tentativa', async () => {
-    mockApi({ budgetCards: budgetCards({ cards: [], unallocatedFood: '0.00', allocated: '0.00', total: '0.00' }) })
+    mockApi({ budgetCards: budgetCards({ cards: [], foodApplied: '0.00', foodReserve: null, allocated: '0.00', total: '0.00' }) })
     await open(); expect(await screen.findByText('Nenhum cartão com gasto nesta competência.')).toBeTruthy()
     cleanup(); mockApi({ budgetCards: new Response('{}', { status: 500 }) })
     await open(); expect(await screen.findByRole('button', { name: 'Recarregar' })).toBeTruthy()

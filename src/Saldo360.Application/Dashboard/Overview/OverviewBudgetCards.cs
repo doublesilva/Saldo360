@@ -16,10 +16,10 @@ public sealed record BudgetCardItemDto(Guid CardId, string Name, string Projecte
     bool DatesEstimated, string Quality, string? PaymentState);
 
 /// <summary>
-/// <c>Total</c> = <c>Allocated</c> (soma dos cartões) + <c>UnallocatedFood</c> (provisão alimentar ainda não alocada); <c>Official</c> = <c>pfBudgetControl.cards.projected</c> calculado pela mesma rotina. Se
+/// <c>Total</c> = <c>Allocated</c> (soma dos cartões) + <c>FoodApplied</c> (previsão alimentar adicional que coube dentro da meta; a reserva nominal <c>FoodReserve</c> é submeta da meta e não é somada); <c>Official</c> = <c>pfBudgetControl.cards.projected</c> calculado pela mesma rotina. Se
 /// diferirem, <c>State</c> é Partial com <c>UnexplainedDifference</c>, e o total oficial é preservado. <c>MissingPayerAccount</c>: há cartão sem pagador, não atribuído a nenhum escopo.
 /// </summary>
-public sealed record BudgetCardsDto(string State, string Competence, string Total, string Allocated, string UnallocatedFood, string? Official, IReadOnlyList<BudgetCardItemDto> Cards, IReadOnlyList<string> Reasons);
+public sealed record BudgetCardsDto(string State, string Competence, string Total, string Allocated, string FoodApplied, string? FoodReserve, string? Official, IReadOnlyList<BudgetCardItemDto> Cards, IReadOnlyList<string> Reasons);
 
 public sealed partial class DashboardOverviewService
 {
@@ -51,12 +51,13 @@ public sealed partial class DashboardOverviewService
         var ordered = cards.OrderByDescending(c => c.Projected).ThenBy(c => c.Item.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(c => c.Id).Select(c => c.Item).ToList();
 
         var allocated = cards.Sum(c => c.Projected);
-        var food = await FoodComplementAsync(workspaceId, first, today, ct);
+        var cardTarget = (await planBasis.LoadBasisAsync(workspaceId, first, null, ct)).CardBudgetTarget;
+        var (food, reserve) = await FoodForecastAsync(workspaceId, first, today, allocated, cardTarget, ct);
         var official = (await BuildBudgetControlAsync(workspaceId, userId, month, PlanActualScopes.All, null, "pf", today, new("Complete", false, null, month, null, null, NoCategories()),
             new("Unavailable", 0, 0), null, ct, pfAccounts))?.Cards.Projected;
         if (official is null) reasons.Add("OfficialTotalUnavailable");
         else if (Dec(official) != allocated + food) reasons.Add("UnexplainedDifference");
         return PlanActualResult<BudgetCardsDto>.Ok(new(reasons.Any(r => r is "UnexplainedDifference" or "OfficialTotalUnavailable") ? "Partial" : "Complete", month,
-            PlanActualCalculator.Cents(allocated + food), PlanActualCalculator.Cents(allocated), PlanActualCalculator.Cents(food), official, ordered, reasons));
+            PlanActualCalculator.Cents(allocated + food), PlanActualCalculator.Cents(allocated), PlanActualCalculator.Cents(food), PlanActualCalculator.Cents(reserve), official, ordered, reasons));
     }
 }

@@ -15,12 +15,14 @@ public sealed partial class DashboardOverviewService
     // Razões que descrevem incompletude de DADOS; as de "meta não definida/atribuível" são tratadas pelo estado do grupo.
     private static readonly HashSet<string> TargetReasons = [PlanActualCalculator.Reasons.PlanNotDefined, PlanActualCalculator.Reasons.PlanNotAttributable, PlanActualCalculator.Reasons.NoCards];
 
-    /// <summary>Provisão alimentar: valor estimado complementar dos cartões (o que falta para a provisão além das compras já categorizadas). Só do mês corrente em diante.</summary>
-    private async Task<decimal> FoodComplementAsync(Guid workspaceId, DateOnly first, DateOnly today, CancellationToken ct)
+    /// <summary>Provisão alimentar aplicada: a parte da reserva (submeta dos cartões) ainda não coberta pelos gastos conhecidos e que cabe no espaço da meta dos cartões. Só do mês corrente em diante.</summary>
+    private async Task<(decimal Applied, decimal? Reserve)> FoodForecastAsync(Guid workspaceId, DateOnly first, DateOnly today, decimal cardBase, decimal? cardTarget, CancellationToken ct)
     {
         var food = await monthlyPlan.FoodProvisionAsync(workspaceId, first, first, ct);
+        if (!food.Applicable) return (0m, null);
         var currentMonth = new DateOnly(today.Year, today.Month, 1);
-        return food.Applicable && first >= currentMonth ? ProjectionScenarios.FoodComplement(food.AmountFor(first), food.Known.GetValueOrDefault(first)) : 0m;
+        var applied = first >= currentMonth ? ProjectionScenarios.FoodForecastWithinCardTarget(food.AmountFor(first), food.Known.GetValueOrDefault(first), cardBase, cardTarget) : 0m;
+        return (applied, food.AmountFor(first));
     }
 
     /// <summary>Consumo da competência que alimenta o controle: o do Plano × Realizado de uma conta ou do consolidado, ou a soma conta a conta das contas PF (orçamento PF).</summary>
@@ -87,7 +89,7 @@ public sealed partial class DashboardOverviewService
                 totalOrigin = total?.Origin ?? Saldo360.Application.Budgets.TargetOrigin.Undefined; totalFrom = total?.StandardFrom;
             }
 
-            var foodComplement = await FoodComplementAsync(workspaceId, first, today, ct);
+            var (foodComplement, _) = await FoodForecastAsync(workspaceId, first, today, cardsConfirmed + cardsPending + cardsEstimated, attributable ? cardTarget : null, ct);
 
             var overTargets = new List<BudgetOverTarget>();
             if (budget.Fixed is { } fixedTarget && Dec(fixedTarget.Exceeded) > 0m) overTargets.Add(new("Fixed", "Despesas fixas", null, Dec(fixedTarget.Exceeded), Dec(fixedTarget.Planned), fixedTarget.State != "Complete"));

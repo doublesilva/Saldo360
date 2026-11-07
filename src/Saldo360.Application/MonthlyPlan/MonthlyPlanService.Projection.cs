@@ -27,7 +27,8 @@ public sealed partial class MonthlyPlanService
         var pf = all.First(a => a.Id == pfId);
         var food = await repository.FoodProvisionAsync(workspaceId, first, first.AddMonths(count - 1), ct);
         var currentMonth = new DateOnly(today.Year, today.Month, 1);
-        var foodComplements = facts.Select(f => food.Applicable && f.Month >= currentMonth ? ProjectionScenarios.FoodComplement(food.AmountFor(f.Month), food.Known.GetValueOrDefault(f.Month)) : 0m).ToList();
+        // A reserva alimentar é submeta da meta dos cartões: só entra a parte que cabe no espaço da meta (nunca além do teto) e nunca em competência encerrada.
+        var foodComplements = facts.Select(f => food.Applicable && f.Month >= currentMonth ? ProjectionScenarios.FoodForecastWithinCardTarget(food.AmountFor(f.Month), food.Known.GetValueOrDefault(f.Month), f.CardProjected, f.CardTarget) : 0m).ToList();
         for (var i = 0; i < facts.Count; i++) facts[i] = facts[i] with { FoodComplement = foodComplements[i] };
         var ceilings = ProjectionScenarios.Ceilings(facts);
         var referenceOpening = facts.Count > 0 ? facts[0].Opening : null;
@@ -42,6 +43,7 @@ public sealed partial class MonthlyPlanService
         var notes = new List<string>();
         if (!food.Applicable) notes.Add("FoodProvisionCategoriesNotConfigured");
         else { if (food.CategoriesInferred) notes.Add("FoodCategoriesInferred"); if (!food.AmountConfigured) notes.Add("FoodProvisionDefaultAmount"); notes.Add("FoodKnownFromCategorizedPurchasesOnly"); }
+        if (food.Applicable && facts.Any(f => f.Month >= currentMonth && f.CardTarget is null)) notes.Add("FoodProvisionNeedsCardTarget");
         if (ceilings.Any(x => x.CurrentClosing is { } v && v < 0m)) notes.Add("OverdraftChargesNotEstimated");
         return MonthlyPlanResult<FinancialProjectionDto>.Ok(new(Key(first), count, today, pjId, pfId, [new("Current", current), new("Ceilings", ceiling)], notes));
     }

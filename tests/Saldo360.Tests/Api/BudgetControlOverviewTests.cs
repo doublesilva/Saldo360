@@ -261,4 +261,56 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
         Assert.Equal("1200.00", Text(detail, "allocated")); Assert.Equal("Complete", Text(detail, "state"));
         Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, $"{Root}/financial-dashboard/budget-cards?competence=2026-13", _session)).StatusCode);
     }
+
+    [Fact]
+    public async Task TheFoodReserveIsInsideTheCardTargetSoItNeverPushesCardsAboveItAndTheDetailReconciles()
+    {
+        await ArrangeAsync("bc-alimentacao");
+        await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/categories", _session, new { name = "Alimentação", type = "Expense" }); // reserva padrão de R$ 2.000 (categoria inferida)
+        var card = await CardAsync("Nubank");
+        await ConfigureBudgetAsync("5000.00", 12500m);
+        async Task<(JsonElement Pf, JsonElement Detail)> ReadAsync2()
+        {
+            var detail = JsonDocument.Parse(await (await SendAsync(HttpMethod.Get, $"{Root}/financial-dashboard/budget-cards?competence={Month}", _session)).Content.ReadAsStringAsync()).RootElement.Clone();
+            return (await PfControlAsync("account", _account), detail);
+        }
+
+        // Cartões 800 (sem alimentação): cabem os 2.000 da reserva dentro do espaço de 4.200.
+        await PurchaseAsync(card, "800.00");
+        var (low, lowDetail) = await ReadAsync2();
+        Assert.Equal("2800.00", Text(low, "cards", "projected")); Assert.Equal("2000.00", Text(low, "cards", "estimated"));
+        Assert.Equal("2000.00", Text(lowDetail, "foodApplied")); Assert.Equal("2000.00", Text(lowDetail, "foodReserve")); Assert.Equal(Text(low, "cards", "projected"), Text(lowDetail, "total"));
+
+        // Cartões 4.800: o espaço da meta (200) limita a reserva; o total chega à meta e não passa dela.
+        await PurchaseAsync(card, "4000.00");
+        var (tight, tightDetail) = await ReadAsync2();
+        Assert.Equal("5000.00", Text(tight, "cards", "projected")); Assert.Equal("200.00", Text(tight, "cards", "estimated")); Assert.Equal("0.00", Text(tight, "cards", "excess"));
+        Assert.Equal("200.00", Text(tightDetail, "foodApplied")); Assert.Equal(Text(tight, "cards", "projected"), Text(tightDetail, "total"));
+
+        // Cartões 5.200: o gasto real passa da meta, é preservado, e a reserva não soma nada por cima.
+        await PurchaseAsync(card, "400.00");
+        var (over, overDetail) = await ReadAsync2();
+        Assert.Equal("5200.00", Text(over, "cards", "projected")); Assert.Equal("200.00", Text(over, "cards", "excess")); Assert.Equal("104.0", Text(over, "cards", "projectedPercent"));
+        Assert.Equal("0.00", Text(over, "cards", "estimated")); Assert.Equal("0.00", Text(overDetail, "foodApplied")); Assert.Equal("2000.00", Text(overDetail, "foodReserve"));
+        Assert.Equal(Text(over, "cards", "projected"), Text(overDetail, "total")); Assert.DoesNotContain("UnexplainedDifference", overDetail.GetProperty("reasons").EnumerateArray().Select(r => r.GetString()));
+    }
+
+    [Fact]
+    public async Task WithoutACardTargetTheFoodReserveIsNotAppliedAsExpenseAndPjFoodDoesNotReduceThePfReserve()
+    {
+        await ArrangeAsync("bc-alimentacao-sem-meta");
+        var food = (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/categories", _session, new { name = "Alimentação", type = "Expense" }))).Id;
+        var pj = await NewAccountAsync("Itaú PJ", "PJ");
+        var pjCard = await CardPaidByAsync("Cartão PJ", pj);
+        Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/credit-cards/{pjCard}/purchases", _session, new
+        { description = "Mercado PJ", purchaseDate = ThisMonth, totalAmount = "1500.00", installmentCount = 1, categoryId = food, amountMode = "Total", previouslyPaidInstallments = 0, firstPendingCompetence = ThisMonth, expenseNature = (string?)null })).StatusCode);
+        await PurchaseAsync(await CardAsync("Nubank"), "300.00");
+
+        var pf = await PfControlAsync("account", _account);
+        Assert.Equal("300.00", Text(pf, "cards", "projected")); Assert.Equal("0.00", Text(pf, "cards", "estimated")); // sem meta de cartões: nada de reserva como despesa
+
+        await ConfigureBudgetAsync("5000.00", 12500m);
+        // Com meta, a reserva (2.000) só é abatida pelo alimento de cartões PF: os 1.500 do cartão PJ não a reduzem.
+        Assert.Equal("2300.00", Text(await PfControlAsync("account", _account), "cards", "projected"));
+    }
 }

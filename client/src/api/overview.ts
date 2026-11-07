@@ -193,7 +193,7 @@ export function getDashboardOverview(workspaceId: string, competence: string, sc
 
 /**
  * Cartões do orçamento PF na competência, sob demanda (mesma base de `pfBudgetControl.cards.projected`). `invoiceState`: Closed, Open, Future ou ClosingUnconfirmed (nunca tratado como fechada);
- * `paymentState` (Unpaid, Partial, Paid, Overpaid) é separado do estado da fatura. `total` = soma dos cartões + provisão alimentar ainda não alocada; divergência com `official` = Partial.
+ * `paymentState` (Unpaid, Partial, Paid, Overpaid) é separado do estado da fatura. `total` = soma dos cartões + `foodApplied` (previsão alimentar adicional que coube dentro da meta; `foodReserve` é a submeta nominal, não somada); divergência com `official` = Partial.
  */
 export interface BudgetCardItem {
   cardId: string; name: string; projected: string; confirmed: string; pendingKnown: string; estimated: string
@@ -201,7 +201,7 @@ export interface BudgetCardItem {
   quality: 'Confirmed' | 'Projected' | 'Incomplete'; paymentState: 'Unpaid' | 'Partial' | 'Paid' | 'Overpaid' | null
 }
 export interface BudgetCards {
-  state: 'Complete' | 'Partial'; competence: string; total: string; allocated: string; unallocatedFood: string; official: string | null
+  state: 'Complete' | 'Partial'; competence: string; total: string; allocated: string; foodApplied: string; foodReserve: string | null; official: string | null
   cards: BudgetCardItem[]; reasons: ('MissingPayerAccount' | 'UnexplainedDifference' | 'OfficialTotalUnavailable' | string)[]
 }
 

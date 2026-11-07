@@ -26,7 +26,8 @@ function Body({ data, onOpenCards }: { data: BudgetCards; onOpenCards: () => voi
           <small>{invoiceText[card.invoiceState]}{card.paymentState ? ` · ${paymentText[card.paymentState]}` : ''} · {dates(card)}</small>
           <small>{qualityText[card.quality]}</small></span>
         <span className="ov-mono">{money(card.projected)}</span></button></li>)}</ul>}
-    {data.unallocatedFood !== '0.00' && <p className="ov-cardrows__extra"><span>Provisão alimentar ainda não alocada</span><span className="ov-mono">{money(data.unallocatedFood)}</span></p>}
+    {data.foodApplied !== '0.00' && <p className="ov-cardrows__extra"><span>Previsão alimentar adicional dentro da meta</span><span className="ov-mono">{money(data.foodApplied)}</span></p>}
+    {data.foodReserve !== null && data.foodApplied === '0.00' && <p className="ov-note">Reserva alimentar: {money(data.foodReserve)} dentro da meta dos cartões.</p>}
     {data.reasons.includes('UnexplainedDifference') && <p className="ov-note" role="status">Detalhamento parcial: o total oficial dos cartões é {money(data.official)}.</p>}
     {data.reasons.filter(reason => notes[reason]).map(reason => <p key={reason} className="ov-note" role="status">{notes[reason]}</p>)}
   </>

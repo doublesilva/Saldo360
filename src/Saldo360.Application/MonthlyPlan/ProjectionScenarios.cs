@@ -23,8 +23,18 @@ public static class ProjectionScenarios
     public static (decimal Complement, decimal Excess) Complement(decimal target, decimal projected) =>
         (Math.Max(0m, target - projected), Math.Max(0m, projected - target));
 
-    /// <summary>Provisão de alimentação já dentro dos cartões: só a diferença para a provisão é estimada, nunca a provisão inteira de novo.</summary>
-    public static decimal FoodComplement(decimal provision, decimal known) => Math.Max(0m, provision - known);
+    /// <summary>
+    /// Previsão alimentar adicional que cabe DENTRO da meta dos cartões. A reserva alimentar é uma submeta da meta dos cartões, não uma despesa a mais: só a parte ainda não coberta pelos gastos
+    /// conhecidos (<c>foodTarget − knownFood</c>) e só até o espaço que resta na meta (<c>cardTarget − cardBase</c>). Gastos reais ou conhecidos acima da meta nunca são reduzidos, e a reserva
+    /// nunca os aumenta. Sem meta de cartões, a reserva não é aplicada como despesa.
+    /// </summary>
+    public static decimal FoodForecastWithinCardTarget(decimal foodTarget, decimal knownFood, decimal cardBase, decimal? cardTarget)
+    {
+        if (cardTarget is null || cardTarget <= 0m) return 0m;
+        var foodGap = Math.Max(0m, foodTarget - knownFood);
+        var availableHeadroom = Math.Max(0m, cardTarget.Value - cardBase);
+        return Math.Min(foodGap, availableHeadroom);
+    }
 
     /// <summary>
     /// Cenário Tetos. Parte do saldo do cenário Atual e subtrai, de forma acumulada, o efeito de caixa dos complementos: fora dos cartões no próprio mês; cartões na competência do

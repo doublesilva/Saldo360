@@ -442,7 +442,16 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
         var inferred = await ProjectionAsync(s, 3);
         var next = ThisMonth.AddMonths(1);
         Assert.Contains("FoodCategoriesInferred", inferred.GetProperty("notes").EnumerateArray().Select(n => n.GetString()));
-        Assert.Equal(2000m, Num(Scenario(inferred, "Current")[1], "pf", "cardConsumptionComplement")); // padrão inicial de R$ 2.000, nada reconhecido ainda
+        // Sem meta de cartões a reserva (submeta da meta) não vira despesa: nada é aplicado e o aviso explica.
+        Assert.Equal(0m, Num(Scenario(inferred, "Current")[1], "pf", "cardConsumptionComplement"));
+        Assert.Contains("FoodProvisionNeedsCardTarget", inferred.GetProperty("notes").EnumerateArray().Select(n => n.GetString()));
+        foreach (var month in new[] { ThisMonth, next })
+        {
+            var budget = (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{s.Root}/budgets", s.Session, new { competence = Month(month) }))).Id;
+            Assert.Equal(HttpStatusCode.Created, (await SendWithCsrfAsync(HttpMethod.Post, $"{s.Root}/budgets/{budget}/targets", s.Session, new { groupingType = "AllCards", plannedAmount = "5000.00" })).StatusCode);
+        }
+        var withTarget = await ProjectionAsync(s, 3);
+        Assert.Equal(2000m, Num(Scenario(withTarget, "Current")[1], "pf", "cardConsumptionComplement")); // padrão inicial de R$ 2.000, nada reconhecido e cabe na meta de R$ 5.000
 
         await JsonAsync(await SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/food-provision", s.Session, new { monthlyAmount = "2500.00", categoryIds = new[] { food } }));
         await JsonAsync(await SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/food-provision/months/{Month(next)}", s.Session, new { monthlyAmount = "1500.00" }));

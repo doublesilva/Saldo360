@@ -140,7 +140,10 @@ internal sealed class MonthlyPlanRepository(Saldo360DbContext db) : IMonthlyPlan
             var amounts = await (from i in db.FinancialCreditCardInstallments.AsNoTracking()
                                  join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id
                                  join v in db.FinancialCreditCardInvoices.AsNoTracking() on i.InvoiceId equals v.Id
-                                 where i.WorkspaceId == workspaceId && p.WorkspaceId == workspaceId && i.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
+                                 join card in db.FinancialCreditCards.AsNoTracking() on p.CreditCardId equals card.Id
+                                 join payer in db.FinancialAccounts.AsNoTracking() on card.DefaultPaymentAccountId equals (Guid?)payer.Id
+                                 // Só cartões pagos por conta PF: o alimento de cartão PJ ou sem pagador não abate a reserva do orçamento PF.
+                                 where payer.Scope == Saldo360.Domain.Accounts.FinancialScope.PF && i.WorkspaceId == workspaceId && p.WorkspaceId == workspaceId && i.Status == Saldo360.Domain.CreditCards.CreditCardInstallmentStatus.Active
                                     && p.Status == Saldo360.Domain.CreditCards.CreditCardPurchaseStatus.Active && competences.Contains(v.Competence)
                                     && categories.Contains(i.OfficialCategoryId ?? p.CategoryId)
                                  group i.Amount by v.Competence into g
