@@ -259,13 +259,23 @@
   .ov-new { flex: 1 1 100%; }
 }
 
-/* Detalhamento dos cartões (expansão inline do Orçamento mensal) */
+/* Detalhamento dos cartões (expansão inline do Orçamento mensal): sem caixa interna, com divisórias, como no modelo aprovado */
 .ov .ov-goal-row__toggle { display: inline-flex; align-items: center; gap: .4rem; min-height: auto; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
 .ov-goal-row__chevron { color: var(--ov-muted); font-size: .75rem; }
-.ov-cardrows__panel { display: grid; gap: .6rem; padding: .75rem; border: 1px solid var(--ov-border); border-radius: var(--ov-radius); background: var(--ov-muted-bg); }
-.ov-cardrows { display: grid; gap: .25rem; }
-.ov .ov-cardrows__button { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .75rem; width: 100%; padding: .4rem 0; border: 0; background: none; text-align: left; }
-.ov-cardrows__main { display: grid; gap: .15rem; min-width: 0; }
-.ov-cardrows__main strong { font-size: .875rem; font-weight: 600; overflow-wrap: anywhere; }
-.ov-cardrows__main small { color: var(--ov-muted); font-size: .75rem; overflow-wrap: anywhere; }
-.ov-cardrows__extra { display: flex; justify-content: space-between; gap: .75rem; padding-top: .5rem; border-top: 1px solid var(--ov-border); font-size: .8125rem; color: var(--ov-muted); }
+.ov-cardrows__panel { display: grid; gap: 0; margin-top: .5rem; padding-top: 1rem; border-top: 1px solid var(--ov-border); }
+.ov-cardrows__head { display: flex; justify-content: space-between; gap: .75rem; padding-bottom: .5rem; font-size: .9375rem; }
+.ov-cardrows__head span { color: var(--ov-muted); font-size: .8125rem; }
+.ov-cardrows { display: grid; }
+.ov-cardrows > li + li { border-top: 1px solid var(--ov-border); }
+.ov .ov-cardrows__button { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; align-items: start; gap: .75rem; width: 100%; padding: 1rem 0; border: 0; background: none; text-align: left; }
+.ov-cardrows__icon { display: grid; place-items: center; padding-top: .15rem; color: var(--ov-fg); }
+.ov-cardrows__main { display: grid; gap: .3rem; min-width: 0; }
+.ov-cardrows__main strong { font-size: .9375rem; font-weight: 650; overflow-wrap: anywhere; }
+.ov-cardrows__main small { color: var(--ov-muted); font-size: .8125rem; overflow-wrap: anywhere; }
+.ov-cardrows__state { color: var(--ov-fg); font-weight: 650; }
+.ov-cardrows__state--warn { color: var(--ov-warning); }
+.ov-cardrows__quality--ok { color: var(--ov-positive) !important; }
+.ov-cardrows__quality--warn { color: var(--ov-warning) !important; }
+.ov-cardrows__amount { font-weight: 650; font-size: .9375rem; text-align: right; }
+.ov-cardrows__extra { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; align-items: center; gap: .75rem; padding: 1rem 0 .25rem; border-top: 1px solid var(--ov-border); }
+.ov-cardrows__extra .ov-cardrows__main strong { font-size: .9375rem; }

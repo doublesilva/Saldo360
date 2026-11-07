@@ -368,9 +368,9 @@ describe('Visão Geral — detalhamento dos cartões no orçamento', () => {
     await open()
     const rows = await screen.findAllByRole('button', { name: /Ver em Cartões/ })
     expect(rows.map(row => text(row))).toEqual([
-      'ItaúFatura fechada · paga em parte · fecha em 25/10/2026 · vence em 02/11/2026valor confirmado pelo bancoR$ 4.000,00',
-      'NubankFechamento não confirmado · não paga · fecha em 25/10/2026 · vence em 02/11/2026 (datas estimadas)valor projetadoR$ 3.000,00',
-      'InterFatura futura · datas ainda não conhecidasvalor incompletoR$ 200,00',
+      'ItaúFechada · paga em parte · Fecha 25/10 · Vence 02/11Confirmada pelo bancoR$ 4.000,00',
+      'NubankFechamento não confirmado · não paga · Fecha 25/10 · Vence 02/11Datas estimadasR$ 3.000,00',
+      'InterFutura · Datas ainda não conhecidas⚠ Dados parciaisR$ 200,00',
     ])
     expect(within(card('Orçamento mensal')).getAllByRole('progressbar')).toHaveLength(3) // só as três barras do orçamento
     fireEvent.click(rows[0]); expect(navigations.at(-1)).toEqual({ section: 'cards', context: undefined })
@@ -388,7 +388,7 @@ describe('Visão Geral — detalhamento dos cartões no orçamento', () => {
     mockApi({ budgetCards: budgetCards({ foodApplied: '0.00', foodReserve: '2000.00', allocated: '3000.00', total: '3000.00' }) })
     await open()
     const panel = await waitFor(() => document.getElementById('ov-card-details-cards') as HTMLElement)
-    await waitFor(() => expect(text(panel)).toContain('Reserva alimentar: R$ 2.000,00 dentro da meta dos cartões.'))
+    await waitFor(() => expect(text(panel)).toContain('Reserva alimentarR$ 2.000,00 dentro da meta dos cartões.'))
     expect(text(panel)).not.toContain('Previsão alimentar adicional')
   })
 
