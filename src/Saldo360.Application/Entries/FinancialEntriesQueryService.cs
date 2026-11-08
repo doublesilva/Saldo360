@@ -3,7 +3,10 @@ using Saldo360.Application.Accounts;
 using Saldo360.Application.Budgets;
 using Saldo360.Application.Calendar;
 using Saldo360.Application.Categories;
+using Saldo360.Application.Recurrences;
+using Saldo360.Domain.Recurrences;
 using Saldo360.Application.CreditCards;
+using Saldo360.Application.CreditCards.Projection;
 using Saldo360.Application.Transactions;
 using Saldo360.Application.Workspaces;
 using Saldo360.Domain.Accounts;
@@ -32,7 +35,7 @@ public sealed record FinancialEntryDto(
     string Id, string Source, string Competence, DateOnly Date, string DateKind, string Description, string Type, string Direction, string Status, string Amount,
     EntryReference? Account, EntryReference? Counterpart, EntryReference? Card, EntryCategory? Category, string? Nature, string Origin, string BudgetImpact, string CashImpact,
     Guid? TransactionId, Guid? PlannedTransactionId, Guid? TransferId, Guid? PlannedTransferId, Guid? RecurrenceId, string? InvoiceCompetence,
-    IReadOnlyList<string> Actions, IReadOnlyList<string> Flags);
+    IReadOnlyList<string> Actions, IReadOnlyList<string> Flags, string Stage = "");
 
 public sealed record FinancialEntriesPage(IReadOnlyList<FinancialEntryDto> Items, int Page, int PageSize, int TotalCount, string Competence);
 
@@ -53,6 +56,9 @@ public sealed class FinancialEntriesQueryService(
     IFinancialBudgetExecutionRepository budgetFacts,
     IFinancialCategoryRepository categoryRepository,
     IFinancialCreditCardRepository cardRepository,
+    CardProjectionService cardProjection,
+    IFinancialRecurrenceRepository recurrenceRepository,
+    IFinancialRecurrenceMaterializationRepository materializations,
     TimeProvider time)
 {
     public const int DefaultPageSize = 25;
@@ -63,7 +69,7 @@ public sealed class FinancialEntriesQueryService(
     private static readonly string[] Scopes = ["all", "pf", "pj"];
     private static readonly string[] Types = ["Income", "Expense", "Transfer", "Payment"];
     private static readonly string[] Statuses = ["Realized", "Pending", "Overdue", "NeedsReview", "Cancelled", "OverduePrevious"];
-    private static readonly string[] Sources = ["Transaction", "Planned", "Recurrence", "Debt", "Transfer", "CardPurchase", "CardAdjustment"];
+    private static readonly string[] Sources = ["Transaction", "Planned", "Recurrence", "Debt", "Transfer", "CardPurchase", "CardAdjustment", "CardProjected"];
     private static readonly string[] Sorts = ["date", "amount", "description"];
 
     public async Task<FinancialEntriesResult> ListAsync(Guid workspaceId, Guid userId, FinancialEntriesQuery query, CancellationToken ct)
@@ -95,9 +101,15 @@ public sealed class FinancialEntriesQueryService(
         if (!previous)
         {
             entries.AddRange(await TransactionEntriesAsync(workspaceId, userId, first, last, query with { IncludeCancelled = query.IncludeCancelled || status == "Cancelled" }, scopeOf, ct));
+            var projections = await cardProjection.ComputeAsync(workspaceId, today, null, ct);
+            var accountNames = accountList.ToDictionary(a => a.Id, a => a.Name);
+            entries.AddRange(ProjectedCardEntries(projections, competence, cards, scopeOf, accountNames));
+            entries.AddRange(await ManualCardRecurrenceEntriesAsync(workspaceId, projections, competence, first, last, categories, cards, scopeOf, accountNames, ct));
             entries.AddRange(CardEntries(await budgetFacts.ReadFactsAsync(workspaceId, first.AddMonths(-1), first.AddMonths(2), ct), competence, categories, cards, scopeOf, accountList.ToDictionary(a => a.Id, a => a.Name)));
         }
         entries.AddRange(await CalendarEntriesAsync(workspaceId, userId, previous ? first.AddMonths(-OverdueLookbackMonths) : first, previous ? first.AddDays(-1) : last, query.AccountId, previous, scopeOf, ct));
+
+        entries = [.. FinancialEntryPrecedence.Resolve(entries)];
 
         bool InScope(FinancialEntryDto e) => scope == "all" || (e.Account?.Scope?.Equals(scope, StringComparison.OrdinalIgnoreCase) == true) || (e.Counterpart?.Scope?.Equals(scope, StringComparison.OrdinalIgnoreCase) == true);
         bool CategoryMatches(FinancialEntryDto e) => query.CategoryId is not { } id || e.Category?.Id == id || (e.Category?.Id is { } c && categories.TryGetValue(c, out var cat) && cat.ParentCategoryId == id);
@@ -216,16 +228,71 @@ public sealed class FinancialEntriesQueryService(
     private static IEnumerable<FinancialEntryDto> CardEntries((IReadOnlyList<BudgetFact> Facts, IReadOnlyDictionary<Guid, string> Paths) read, string competence, IReadOnlyDictionary<Guid, FinancialCategoryDto> categories,
         IReadOnlyDictionary<Guid, FinancialCreditCardDto> cards, IReadOnlyDictionary<Guid, string> scopeOf, IReadOnlyDictionary<Guid, string> accountNames)
     {
-        foreach (var f in read.Facts.Where(f => f.CardId is not null && f.Origin is BudgetFactOrigin.CardInstallment or BudgetFactOrigin.CardAdjustment && f.InvoiceCompetence == competence))
+        foreach (var f in read.Facts.Where(f => f.CardId is not null && f.Origin is BudgetFactOrigin.CardInstallment or BudgetFactOrigin.CardAdjustment or BudgetFactOrigin.CardKnownInstallment && (f.InvoiceCompetence ?? f.Date.ToString("yyyy-MM", CultureInfo.InvariantCulture)) == competence))
         {
             var card = cards.GetValueOrDefault(f.CardId!.Value);
             var payer = card?.DefaultPaymentAccountId; var credit = f.Amount < 0m;
             var category = f.CategoryId is { } id && categories.TryGetValue(id, out var cat) ? new EntryCategory(id, cat.Name, read.Paths.GetValueOrDefault(id) ?? cat.Name) : null;
-            var flags = new List<string>(); if (!f.CompetenceReliable) flags.Add("CompetenceEstimated"); if (payer is null) flags.Add("NoPayerAccount"); if (f.Imported) flags.Add("Imported");
+            var flags = new List<string>(); if (!f.CompetenceReliable) flags.Add("CompetenceEstimated"); if (payer is null) flags.Add("NoPayerAccount"); if (f.Imported) flags.Add("Imported"); if (f.Origin == BudgetFactOrigin.CardKnownInstallment) flags.Add("KnownImported");
             var cardRef = new EntryReference(f.CardId, f.CardName ?? card?.Name ?? "Cartão");
             yield return new($"{(f.Origin == BudgetFactOrigin.CardAdjustment ? "CardAdjustment" : "CardInstallment")}:{f.RecordId}", f.Origin == BudgetFactOrigin.CardAdjustment ? "CardAdjustment" : "CardPurchase", competence, f.Date, "Invoice", f.Description,
                 credit ? "Income" : "Expense", credit ? "In" : "Out", "Realized", Money.Format(Math.Abs(f.Amount)), payer is { } p ? new(p, accountNames.GetValueOrDefault(p) ?? "Conta", scopeOf.GetValueOrDefault(p)) : null, null, cardRef, category,
                 f.Nature.ToString(), f.Origin.ToString(), credit ? "Reduces" : "Consumes", "AtInvoicePayment", null, null, null, null, null, competence, ["ViewDetails", "OpenCards"], flags);
         }
+    }
+
+    /// <summary>
+    /// Ocorrências que o motor de cartões calcula para faturas ainda não fechadas pelo banco (parcelas conhecidas/estimadas, compras pendentes, cobranças recorrentes). São leitura: nunca viram registro,
+    /// nunca substituem um fato confirmado (o motor já as descarta quando a fatura fecha) e ficam sempre como Pendente, sinalizadas como estimativa quando não há confirmação.
+    /// </summary>
+    private static IEnumerable<FinancialEntryDto> ProjectedCardEntries(IReadOnlyList<CardProjection> projections, string competence, IReadOnlyDictionary<Guid, FinancialCreditCardDto> cards,
+        IReadOnlyDictionary<Guid, string> scopeOf, IReadOnlyDictionary<Guid, string> accountNames)
+    {
+        foreach (var projection in projections)
+        {
+            var card = cards.GetValueOrDefault(projection.Card.Id);
+            var payer = card?.DefaultPaymentAccountId ?? projection.Card.PayerAccountId;
+            foreach (var o in projection.Occurrences ?? [])
+            {
+                if (o.Competence != competence) continue;
+                var flags = new List<string> { o.Quality == "Known" ? "KnownImported" : "Estimated" };
+                if (!projection.Coverage.Complete) flags.Add("PartialCoverage");
+                if (payer is null) flags.Add("NoPayerAccount");
+                var description = o.Number is { } n && o.Total is { } t ? $"{o.Description} ({n}/{t})" : o.Description;
+                yield return new($"CardProjected:{o.CardId}:{o.Key}", "CardProjected", competence, o.Date, "Invoice", description, "Expense", "Out", "Pending", Money.Format(o.Amount),
+                    payer is { } p ? new(p, accountNames.GetValueOrDefault(p) ?? projection.Card.PayerName ?? "Conta", scopeOf.GetValueOrDefault(p)) : null, null, new EntryReference(o.CardId, projection.Card.Name), null,
+                    null, o.Kind, "Planned", "AtInvoicePayment", null, null, null, null, null, competence, ["ViewDetails", "OpenCards"], flags);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Assinaturas cadastradas à mão num cartão: ocorrências virtuais (calculadas no período, nunca gravadas) pela competência da FATURA. Materializada vira compra do cartão (e aparece como tal);
+    /// as detectadas pelo Pluggy já saem do motor do cartão.
+    /// </summary>
+    private async Task<List<FinancialEntryDto>> ManualCardRecurrenceEntriesAsync(Guid workspaceId, IReadOnlyList<CardProjection> projections, string competence, DateOnly first, DateOnly last,
+        IReadOnlyDictionary<Guid, FinancialCategoryDto> categories, IReadOnlyDictionary<Guid, FinancialCreditCardDto> cards, IReadOnlyDictionary<Guid, string> scopeOf, IReadOnlyDictionary<Guid, string> accountNames, CancellationToken ct)
+    {
+        var list = new List<FinancialEntryDto>();
+        var from = first.AddMonths(-2); var through = last.AddMonths(1);
+        foreach (var recurrence in (await recurrenceRepository.ListAsync(workspaceId, false, ct)).Where(r => r.CreditCardId is not null && r.Origin == RecurrenceOrigin.Manual && r.Status == RecurrenceStatus.Active))
+        {
+            var projection = projections.FirstOrDefault(p => p.Card.Id == recurrence.CreditCardId);
+            if (projection is null || await recurrenceRepository.FindEntityAsync(workspaceId, recurrence.Id, ct) is not { } entity) continue;
+            IReadOnlyList<RecurrenceOccurrenceDto> occurrences;
+            try { occurrences = FinancialRecurrenceCalendar.CalculateOccurrences(entity, from, through); } catch (ArgumentException) { continue; }
+            var materialized = (await materializations.ListAsync(workspaceId, recurrence.Id, from, through, ct)).Select(m => m.OccurrenceNumber).ToHashSet();
+            var card = cards.GetValueOrDefault(projection.Card.Id);
+            var payer = card?.DefaultPaymentAccountId ?? projection.Card.PayerAccountId;
+            foreach (var o in occurrences.Where(o => !materialized.Contains(o.Sequence) && projection.Schedule.CycleFor(o.Date).Competence == competence))
+            {
+                var flags = new List<string> { "Estimated" }; if (payer is null) flags.Add("NoPayerAccount");
+                list.Add(new($"CardProjected:{projection.Card.Id}:Recurrence:{recurrence.Id}:{o.Sequence}", "CardProjected", competence, o.Date, "Invoice", o.Description, "Expense", "Out", "Pending", Money.Format(o.Amount),
+                    payer is { } p ? new(p, accountNames.GetValueOrDefault(p) ?? projection.Card.PayerName ?? "Conta", scopeOf.GetValueOrDefault(p)) : null, null, new EntryReference(projection.Card.Id, projection.Card.Name),
+                    categories.TryGetValue(recurrence.CategoryId, out var cat) ? new EntryCategory(cat.Id, cat.Name, cat.Name) : null,
+                    recurrence.Nature.ToString(), "ManualRecurring", "Planned", "AtInvoicePayment", null, null, null, null, recurrence.Id, competence, ["ViewDetails", "OpenRecurrences"], flags));
+            }
+        }
+        return list;
     }
 }

@@ -4,7 +4,7 @@ import { requestJson } from './apiErrors'
  * T13.1: lançamentos unificados de uma competência (transações, previsões, recorrências, dívidas, transferências e cartões), uma linha por movimento lógico. Tudo vem do servidor
  * (filtros, ordem, paginação, tipo, situação e ações permitidas); valores são texto decimal exato e nada é somado no navegador.
  */
-export type EntrySource = 'Transaction' | 'Planned' | 'Recurrence' | 'Debt' | 'Transfer' | 'CardPurchase' | 'CardAdjustment'
+export type EntrySource = 'Transaction' | 'Planned' | 'Recurrence' | 'Debt' | 'Transfer' | 'CardPurchase' | 'CardAdjustment' | 'CardProjected'
 export type EntryType = 'Income' | 'Expense' | 'Transfer' | 'Payment'
 export type EntryStatus = 'Realized' | 'Pending' | 'Overdue' | 'NeedsReview' | 'Cancelled'
 export type EntryAction = 'ViewDetails' | 'Edit' | 'Cancel' | 'Recategorize' | 'ChangeNature' | 'UndoRefund' | 'Realize' | 'CancelPlannedTransfer' | 'OpenCards' | 'OpenDebts' | 'OpenTransfers' | 'OpenRecurrences' | string
@@ -19,6 +19,8 @@ export interface FinancialEntry {
   budgetImpact: 'Consumes' | 'Reduces' | 'Planned' | 'None'; cashImpact: 'Immediate' | 'AtInvoicePayment' | 'Pending' | 'None'
   transactionId: string | null; plannedTransactionId: string | null; transferId: string | null; plannedTransferId: string | null; recurrenceId: string | null; invoiceCompetence: string | null
   actions: EntryAction[]; flags: string[]
+  /** Estágio financeiro (movimento efetivo, compra lançada no cartão, parcela prevista, estimativa, pagamento realizado…): nunca indica que a fatura foi paga. */
+  stage?: string
 }
 
 export interface FinancialEntriesPage { items: FinancialEntry[]; page: number; pageSize: number; totalCount: number; competence: string }

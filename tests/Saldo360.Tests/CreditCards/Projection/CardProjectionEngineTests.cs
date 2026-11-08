@@ -152,6 +152,34 @@ public sealed class CardProjectionEngineTests
         Assert.Equal((49.90m, 49.90m), (november.Estimated, november.Obligation));
     }
 
+    // ---- T13.2: ocorrências individuais (leitura) -------------------------------------------------------------------------------
+
+    [Fact]
+    public void EachProjectedComponentIsExposedOnceAndTheOccurrencesAddUpToTheInvoiceComponents()
+    {
+        var recurrence = Guid.NewGuid();
+        var facts = Facts([Closed(new DateOnly(2026, 10, 8), 230m, 230m)], installments:
+        [
+            Obs("a", "Geladeira 05/10", 100m, 5, 10, new DateOnly(2026, 10, 5), inInvoice: true, bill: new DateOnly(2026, 10, 8)),
+            Obs("b", "Geladeira 06/10", 100m, 6, 10, new DateOnly(2026, 11, 5), inInvoice: false),
+            Obs("c", "Geladeira 07/10", 100m, 7, 10, new DateOnly(2026, 12, 5), inInvoice: false),
+        ], recurring: [new RecurringChargeFact(recurrence, "Streaming", 49.90m, new DateOnly(2026, 11, 2), false)]);
+
+        var projection = CardProjectionEngine.Compute(facts, Today);
+        var occurrences = projection.Occurrences!;
+
+        // Nada da fatura de outubro (fechada pelo banco) nem a parcela já faturada vira ocorrência; as chaves são únicas.
+        Assert.DoesNotContain(occurrences, o => o.Competence == "2026-10");
+        Assert.Equal(occurrences.Count, occurrences.Select(o => o.Key).Distinct().Count());
+        Assert.Equal(["KnownInstallment", "KnownInstallment", "Recurring"], occurrences.Where(o => o.Competence is "2026-11" or "2026-12").Select(o => o.Kind).Order(StringComparer.Ordinal));
+        // Para cada fatura, as ocorrências somam exatamente os componentes que o motor já agregava.
+        foreach (var invoice in projection.Invoices)
+            Assert.Equal(invoice.PendingKnown + invoice.KnownInstallments + invoice.Estimated, occurrences.Where(o => o.Competence == invoice.Competence).Sum(o => o.Amount));
+        var estimated = occurrences.Where(o => o.Kind == "EstimatedInstallment").ToList();
+        Assert.Equal([8, 9, 10], estimated.Select(o => o.Number!.Value).Order());
+        Assert.All(estimated, o => Assert.Equal((10, "Estimated"), (o.Total!.Value, o.Quality)));
+    }
+
     // ---- 14: idempotência e 21: precisão ------------------------------------------------------------------------------------
 
     [Fact]

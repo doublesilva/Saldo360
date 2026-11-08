@@ -36,6 +36,7 @@ public static class CardProjectionEngine
         DateOnly? latestClosed = closedByBank.Count == 0 ? null : closedByBank.Max();
 
         var cycles = new Dictionary<DateOnly, Cycle>();
+        var occurrences = new List<(Cycle Cycle, string Kind, string Key, string Description, decimal Amount, DateOnly Date, int? Number, int? Total, string Quality)>();
         Cycle Ensure(DateOnly closing, DateOnly start, DateOnly due, string competence)
         {
             if (cycles.TryGetValue(closing, out var cycle)) return cycle;
@@ -55,6 +56,7 @@ public static class CardProjectionEngine
             var cycle = EnsureFrom(calendar);
             if (cycle.Fact is { ClosedByBank: true } || latestClosed is { } closed && cycle.Closing <= closed) { cycle.Absorbed++; continue; }
             cycle.PendingKnown += pending.Amount;
+            occurrences.Add((cycle, "Pending", pending.SourceId, pending.Description, pending.Amount, pending.Date, null, null, "Known"));
         }
 
         // Compras parceladas: parcelas já devolvidas (pendentes) e as estimadas por evidência.
@@ -66,6 +68,9 @@ public static class CardProjectionEngine
                 var cycle = Ensure(installment.Closing, installment.Closing.AddMonths(-1).AddDays(1), installment.Due, installment.Due.ToString("yyyy-MM"));
                 if (installment.Absorbed || cycle.Fact is { ClosedByBank: true }) { cycle.Absorbed++; continue; }
                 if (installment.Origin == InstallmentOrigin.Known) cycle.KnownInstallments += installment.Amount; else cycle.Estimated += installment.Amount;
+                var estimated = installment.Origin != InstallmentOrigin.Known;
+                occurrences.Add((cycle, estimated ? "EstimatedInstallment" : "KnownInstallment", $"{chain.Key}:{installment.Number}", chain.Description, installment.Amount, installment.Due, installment.Number, installment.Total,
+                    estimated ? (chain.Status == ChainStatus.Estimated ? "Estimated" : "Partial") : "Known"));
             }
         }
 
@@ -75,6 +80,7 @@ public static class CardProjectionEngine
             var cycle = EnsureFrom(schedule.CycleFor(recurring.ChargeDate));
             if (cycle.Fact is { ClosedByBank: true } || latestClosed is { } closed && cycle.Closing <= closed) { cycle.Absorbed++; continue; }
             cycle.Estimated += recurring.Amount;
+            occurrences.Add((cycle, "Recurring", $"{recurring.RecurrenceId}:{recurring.ChargeDate:yyyyMMdd}", recurring.Description, recurring.Amount, recurring.ChargeDate, null, null, "Estimated"));
         }
 
         // O ciclo aberto sempre existe, mesmo vazio, para que o cartão tenha "a fatura atual".
@@ -129,6 +135,7 @@ public static class CardProjectionEngine
         if (facts.KnownImported.Any(k => k.DueDate is null)) reasons.Add(CardCoverageReasons.KnownWithoutDueDate);
         if (card.SyncStatus is "ConsentExpired" or "Attention") reasons.Add(CardCoverageReasons.SyncAttention);
         if (card.Origin == "Pluggy" && latestClosed is null) reasons.Add(CardCoverageReasons.NoBankHistory);
-        return new(card, schedule, invoices, chains, items, new(reasons.Count == 0, reasons));
+        var result = occurrences.Select(o => new CardOccurrence(card.Id, o.Kind, o.Key, o.Description, o.Amount, o.Date, o.Cycle.Closing, o.Cycle.Due, o.Cycle.Competence, o.Number, o.Total, o.Quality)).ToList();
+        return new(card, schedule, invoices, chains, items, new(reasons.Count == 0, reasons), result);
     }
 }

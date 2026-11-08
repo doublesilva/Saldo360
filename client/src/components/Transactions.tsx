@@ -32,16 +32,22 @@ export type TransactionReferences = { accounts: FinancialAccount[]; categories: 
 
 const typeLabels = { Income: 'Receita', Expense: 'Despesa', Transfer: 'Transferência', Payment: 'Pagamento' } as const
 const statusLabels = { Realized: 'Realizado', Pending: 'Previsto', Overdue: 'Vencido', NeedsReview: 'Em revisão', Cancelled: 'Cancelado' } as const
+const stageLabels: Record<string, string> = {
+  Effective: 'Movimento efetivo', InvoicePayment: 'Pagamento de fatura realizado', DebtPayment: 'Pagamento de dívida realizado', Planned: 'Previsto',
+  CardLaunched: 'Compra lançada no cartão (a fatura pode não estar paga)', CardForecast: 'Parcela prevista no cartão', CardEstimated: 'Estimativa do cartão', Cancelled: 'Cancelado',
+}
 const dateKindLabels = { Effective: 'Data efetiva', Due: 'Vencimento previsto', Invoice: 'Vencimento da fatura', Execution: 'Data da transferência' } as const
 const originLabels: Record<string, string> = {
   Manual: 'Manual', PlannedRealization: 'Previsão realizada', PluggyImport: 'Banco (Pluggy)', PluggyRefund: 'Devolução', CreditCardInvoicePayment: 'Pagamento de fatura', DebtInstallmentPayment: 'Pagamento de dívida',
-  Transfer: 'Transferência', PlannedTransfer: 'Transferência prevista', CardInstallment: 'Cartão', CardAdjustment: 'Cartão (ajuste)',
+  Transfer: 'Transferência', PlannedTransfer: 'Transferência prevista', CardInstallment: 'Cartão', CardAdjustment: 'Cartão (ajuste)', CardKnownInstallment: 'Cartão (parcela conhecida)',
+  EstimatedInstallment: 'Cartão (parcela estimada)', KnownInstallment: 'Cartão (parcela conhecida)', Pending: 'Cartão (compra pendente)', Recurring: 'Cartão (cobrança recorrente)',
 }
 const sourceOrigin = (entry: FinancialEntry) => entry.source === 'Planned' ? 'Previsão' : entry.source === 'Recurrence' ? 'Recorrência' : entry.source === 'Debt' ? 'Dívida'
   : entry.card ? `${originLabels[entry.origin] ?? 'Cartão'} · ${entry.card.name}` : originLabels[entry.origin] ?? entry.origin
 const flagLabels: Record<string, string> = {
   Imported: 'Importado do banco', Refund: 'Devolução (não é receita)', RealizesPlanned: 'Realiza uma previsão', CategoryNeedsReview: 'Categoria a revisar', PartiallyRefunded: 'Parcialmente devolvido',
   Planned: 'Previsto: ainda não aconteceu', NoPaymentEvidence: 'Sem evidência de pagamento', CompetenceEstimated: 'Competência da fatura estimada', NoPayerAccount: 'Cartão sem conta pagadora',
+  Estimated: 'Estimativa: ainda não confirmada pelo banco', KnownImported: 'Conhecida pelo banco, ainda sem fatura fechada', PartialCoverage: 'Projeção do cartão incompleta: pode haver parcelas não previstas',
 }
 const budgetText = { Consumes: 'Consome o orçamento', Reduces: 'Reduz o consumo do orçamento', Planned: 'Previsto no orçamento', None: 'Não afeta o orçamento' } as const
 const cashText = { Immediate: 'Movimenta o caixa na data', AtInvoicePayment: 'Movimenta o caixa no pagamento da fatura', Pending: 'Caixa ainda não movimentado', None: 'Não movimenta o caixa' } as const
@@ -267,7 +273,7 @@ export function Transactions({
           <label>Origem
             <select value={filters.source} onChange={event => change({ source: event.target.value as EntriesFilters['source'] })}>
               <option value="">Todas</option><option value="Transaction">Lançamentos e banco</option><option value="Planned">Previsões</option><option value="Recurrence">Recorrências</option>
-              <option value="Debt">Dívidas</option><option value="Transfer">Transferências</option><option value="CardPurchase">Compras de cartão</option><option value="CardAdjustment">Ajustes de cartão</option>
+              <option value="Debt">Dívidas</option><option value="Transfer">Transferências</option><option value="CardPurchase">Compras de cartão</option><option value="CardAdjustment">Ajustes de cartão</option><option value="CardProjected">Cartão projetado</option>
             </select></label>
           <form className="entries__search" onSubmit={(event: FormEvent) => { event.preventDefault(); change({ search: searchDraft }) }}>
             <label>Pesquisar na descrição<input type="search" value={searchDraft} onChange={event => setSearchDraft(event.target.value)} onBlur={() => { if (searchDraft !== filters.search) change({ search: searchDraft }) }} /></label>
@@ -340,6 +346,7 @@ function Row({ entry, categories, busy, detailOpen, menuOpen, menuRef, onMenu, o
         <div><dt>Competência</dt><dd>{formatMonthYear(`${entry.competence}-01`)}</dd></div>
         <div><dt>{dateKindLabels[entry.dateKind]}</dt><dd>{formatDate(entry.date)}</dd></div>
         <div><dt>Origem</dt><dd>{sourceOrigin(entry)}</dd></div>
+        {entry.stage && <div><dt>Estágio</dt><dd>{stageLabels[entry.stage] ?? entry.stage}</dd></div>}
         {entry.account && <div><dt>{entry.card ? 'Conta pagadora' : 'Conta'}</dt><dd>{entry.account.name}{entry.account.scope ? ` · ${entry.account.scope}` : ''}</dd></div>}
         {entry.counterpart && <div><dt>Destino</dt><dd>{entry.counterpart.name}</dd></div>}
         {entry.card && <div><dt>Cartão</dt><dd>{entry.card.name}{entry.invoiceCompetence ? ` · fatura de ${formatMonthYear(`${entry.invoiceCompetence}-01`)}` : ''}</dd></div>}

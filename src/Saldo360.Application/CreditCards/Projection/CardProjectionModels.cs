@@ -75,7 +75,11 @@ public sealed record CardCoverage(bool Complete, IReadOnlyList<string> Reasons);
 
 public sealed record CardProjection(
     CardInfo Card, CardCycleSchedule Schedule, IReadOnlyList<CardInvoiceProjection> Invoices, IReadOnlyList<InstallmentChain> Chains,
-    IReadOnlyList<CardObligationItem> Items, CardCoverage Coverage);
+    IReadOnlyList<CardObligationItem> Items, CardCoverage Coverage, IReadOnlyList<CardOccurrence>? Occurrences = null);
+
+/// <summary>Ocorrência individual que compõe uma fatura ainda não fechada pelo banco (leitura): parcela conhecida ou estimada, compra pendente ou cobrança recorrente. Nada é gravado.</summary>
+public sealed record CardOccurrence(
+    Guid CardId, string Kind, string Key, string Description, decimal Amount, DateOnly Date, DateOnly Closing, DateOnly Due, string Competence, int? Number, int? Total, string Quality);
 
 public static class CardCoverageReasons
 {
