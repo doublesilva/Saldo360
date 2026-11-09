@@ -79,12 +79,32 @@ public static class PluggyFinancialMapper
     };
 
     /// <summary>
-    /// Dia bancário de uma data da Pluggy. A Pluggy entrega a data do lançamento bancário como instante à meia-noite UTC ("2026-10-09T00:00:00.000Z"
-    /// nos contratos e fixtures observados): o dia civil já está na parte UTC, então converter para America/Sao_Paulo deslocaria o movimento para a
-    /// véspera (00:00Z = 21:00 do dia anterior). Por isso a data UTC é a data bancária. Datas com horário real não foram observadas; se aparecerem,
-    /// esta regra deve ser revista com evidência (dado real) antes de qualquer conversão.
+    /// Início de vigência da regra do dia bancário local: 10/11/2026 00:00 em São Paulo (03:00 UTC). A vigência é decidida pelo instante do PRÓPRIO movimento (nunca pela data da sincronização). Movimentos de instantes ANTERIORES continuam com o dia UTC que já foi registrado: a regra revisada
+    /// nunca reescreve o histórico (lançamentos, competências, vínculos, saldos). Corrigir registros antigos é uma decisão separada, com diagnóstico de impacto.
     /// </summary>
-    public static DateOnly BusinessDate(DateTimeOffset date) => DateOnly.FromDateTime(date.UtcDateTime);
+    public static readonly DateTimeOffset LocalBusinessDateEffectiveFrom = new(2026, 11, 10, 3, 0, 0, TimeSpan.Zero);
+
+    /// <summary>
+    /// Dia bancário de uma data da Pluggy, determinístico, sem depender de descrição, valor ou instituição:
+    /// <list type="bullet">
+    /// <item><b>Meia-noite UTC exata (00:00:00.000Z)</b> = convenção PRESUMIDA de "somente data" (dia UTC), mantida por compatibilidade com contratos e fixtures anteriores. Não é um comportamento
+    /// universal comprovado da Pluggy: nenhum movimento real nesse horário foi observado em produção. Se aparecer com horário real, a regra deve ser revista com evidência.</item>
+    /// <item><b>Qualquer outro instante</b> (inclusive o marcador de fim de dia 23:59:59.999 locais = 02:59:59.999Z, e instantes reais da conta ou da compra) = dia civil em America/Sao_Paulo, que é o dia que o
+    /// banco mostra ao cliente. Sem horário de verão desde 2019: o deslocamento é sempre −03:00.</item>
+    /// <item><b>Antes da vigência</b> (<see cref="LocalBusinessDateEffectiveFrom"/>) = dia UTC legado, para preservar o que já foi registrado.</item>
+    /// </list>
+    /// </summary>
+    public static DateOnly BusinessDate(DateTimeOffset date) =>
+        date < LocalBusinessDateEffectiveFrom || date.UtcDateTime.TimeOfDay == TimeSpan.Zero ? LegacyBusinessDate(date) : Saldo360.Domain.Common.BusinessCalendar.Today(date);
+
+    /// <summary>Dia UTC do instante: a regra anterior, mantida para o histórico anterior à vigência e para a chave de pareamento.</summary>
+    public static DateOnly LegacyBusinessDate(DateTimeOffset date) => DateOnly.FromDateTime(date.UtcDateTime);
+
+    /// <summary>
+    /// Chave de dia usada SÓ para parear as duas pontas de uma transferência (tolerância de 0 dias): as pontas são carimbadas por sistemas diferentes e podem atravessar a meia-noite local
+    /// (ex.: saída 22:27 locais e entrada 02:56 locais do dia seguinte, ambas no mesmo dia UTC). O dia UTC pareou 22 de 22 transferências históricas; o dia local quebraria 1. Não é data de lançamento.
+    /// </summary>
+    public static DateOnly PairingDay(DateTimeOffset date) => LegacyBusinessDate(date);
 
     /// <summary>Evidência fraca de devolução na descrição (nunca decide sozinha: só leva o crédito à revisão).</summary>
     public static bool DescribesRefund(string? description, string? raw) =>

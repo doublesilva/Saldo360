@@ -697,7 +697,8 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
 
         private Pairs Pair(Dictionary<Guid, PluggyAccountLink> linkOf)
         {
-            PairItem Item(Guid importedId, bool hint) => new(importedId, linkOf[importedId].Id, decisions[importedId].Amount, decisions[importedId].Date, hint);
+            PairItem Item(Guid importedId, bool hint) => new(importedId, linkOf[importedId].Id, decisions[importedId].Amount,
+                imported[importedId].Date is { } raw ? PluggyFinancialMapper.PairingDay(raw) : decisions[importedId].Date, hint);
             // Crédito já confirmado como devolução nunca é ponta de transferência nem de pagamento de fatura.
             bool Free(Guid importedId) => !Settled(postings[importedId]) && postings[importedId].State != PluggyPostingState.Ignored && postings[importedId].Kind != PluggyPostingKind.BankRefund;
 
