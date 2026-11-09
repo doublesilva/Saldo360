@@ -71,3 +71,25 @@
   .entries__filters label, .entries__month { flex: 1 1 100%; }
   .entries button, .entries select, .entries input { min-height: 2.75rem; }
 }
+
+/* T13.4: agrupamento por cartão/conta. Cabeçalho compacto com totais do grupo inteiro; navegação por chips; no celular o cabeçalho ocupa a largura toda. */
+.entries__summary { padding: .5rem .75rem; background: var(--en-card); border: 1px solid var(--en-border); border-radius: 6px; font-size: .8125rem; overflow-wrap: anywhere; }
+.entries__groups ul { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; padding: 0; list-style: none; }
+.entries__chip { min-height: 2rem; padding: .2rem .65rem; font-size: .8125rem; cursor: pointer; }
+.entries__chip-count { margin-left: .3rem; padding: 0 .4rem; border-radius: 999px; background: var(--en-muted-bg); color: var(--en-muted); font-variant-numeric: tabular-nums; }
+.entries__table tr.entries__group > th { padding: .7rem .75rem; background: var(--en-muted-bg); color: var(--en-fg); font-size: .875rem; white-space: normal; border-top: 1px solid var(--en-border); }
+.entries__group-head { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem; }
+.entries__group-toggle { min-height: 2rem; padding: .15rem .6rem; font: inherit; cursor: pointer; }
+.entries__scope { padding: .05rem .45rem; border: 1px solid var(--en-border); border-radius: 999px; font-size: .6875rem; color: var(--en-muted); white-space: nowrap; }
+.entries__group-count { color: var(--en-muted); font-size: .8125rem; }
+.entries__group-totals { display: flex; flex-wrap: wrap; gap: .35rem 1.5rem; margin: .5rem 0 0; }
+.entries__group-totals > div { display: grid; gap: .1rem; min-width: 0; }
+.entries__group-totals dt { color: var(--en-muted); font-size: .6875rem; font-weight: 500; }
+.entries__group-totals dd { margin: 0; font-size: .9375rem; white-space: nowrap; }
+.entries__group-financing dd { color: var(--en-warning); }
+/* Palavras curtas e datas nunca quebram no meio ("Despesa", "05/11"); o texto longo da descrição continua quebrando. */
+.entries__table td.entries__date, .entries__table td.entries__c-type, .entries__table td.entries__status, .entries__badge { white-space: nowrap; overflow-wrap: normal; word-break: keep-all; }
+@media (max-width: 48rem) {
+  .entries__table tr.entries__group, .entries__table tr.entries__group > th { display: block; }
+  .entries__group-totals { gap: .4rem 1rem; }
+}

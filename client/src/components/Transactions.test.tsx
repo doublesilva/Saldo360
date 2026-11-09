@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FinancialAccount } from '../api/accounts'
 import type { FinancialCategory } from '../api/categories'
-import type { FinancialEntriesPage, FinancialEntry } from '../api/financialEntries'
+import type { FinancialCreditCard } from '../api/creditCards'
+import type { EntryGroupSummary, FinancialEntriesPage, FinancialEntry } from '../api/financialEntries'
 import type { FinancialTransaction } from '../api/transactions'
 import { todayInSaoPaulo } from '../dates'
 import { Transactions } from './Transactions'
@@ -41,7 +42,7 @@ const cancelado = entry({ id: 'Transaction:t3', transactionId: 't3', description
 
 type Call = { url: string; init?: RequestInit }
 
-function mockApi(options: { items?: FinancialEntry[]; page?: Partial<FinancialEntriesPage>; accounts?: FinancialAccount[]; categories?: FinancialCategory[]; saveStatus?: number; saveBody?: unknown; transaction?: Partial<FinancialTransaction> } = {}) {
+function mockApi(options: { items?: FinancialEntry[]; page?: Partial<FinancialEntriesPage>; accounts?: FinancialAccount[]; categories?: FinancialCategory[]; cards?: FinancialCreditCard[]; saveStatus?: number; saveBody?: unknown; transaction?: Partial<FinancialTransaction> } = {}) {
   const calls: Call[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -49,6 +50,7 @@ function mockApi(options: { items?: FinancialEntry[]; page?: Partial<FinancialEn
     if (url === '/auth/csrf') return Response.json({ token: 'csrf' })
     if (url.includes('/accounts')) return Response.json(options.accounts ?? [itau, antiga])
     if (url.includes('/categories')) return Response.json(options.categories ?? [salario, mercado, lazer])
+    if (url.includes('/credit-cards')) return Response.json(options.cards ?? [])
     if (url.includes('/financial-entries')) {
       const items = options.items ?? [feira, salarioEntry, previsao, compra, transferencia]
       return Response.json({ items, page: 1, pageSize: 25, totalCount: items.length, competence: '2026-10', ...options.page })
@@ -129,7 +131,7 @@ describe('Lançamentos — filtros, ordenação e paginação no servidor', () =
     fireEvent.click(screen.getByRole('button', { name: 'Competência anterior' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('competence')).toBe('2026-07'))
     fireEvent.click(screen.getByRole('button', { name: 'Próxima competência' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('competence')).toBe('2026-08'))
     fireEvent.change(screen.getByLabelText('Escopo'), { target: { value: 'pf' } }); fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'Payment' } })
-    fireEvent.change(screen.getByLabelText('Situação'), { target: { value: 'OverduePrevious' } }); fireEvent.change(await screen.findByLabelText('Conta ou cartão'), { target: { value: itau.id } })
+    fireEvent.change(screen.getByLabelText('Situação'), { target: { value: 'OverduePrevious' } }); fireEvent.change(await screen.findByLabelText('Conta bancária'), { target: { value: itau.id } })
     await waitFor(() => expect(entryCalls(calls).at(-1)!.get('accountId')).toBe(itau.id))
     const last = entryCalls(calls).at(-1)!
     expect([last.get('scope'), last.get('type'), last.get('status'), last.get('competence')]).toEqual(['pf', 'Payment', 'OverduePrevious', '2026-08'])
@@ -292,5 +294,104 @@ describe('Lançamentos — formulário e avisos', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1)); await screen.findByText('Feira do mês')
     const before = entryCalls(calls).length; view.rerender(<Transactions workspaceId={`f${seq}`} onChanged={onChanged} refreshKey={1} />)
     await waitFor(() => expect(entryCalls(calls).length).toBeGreaterThan(before))
+  })
+
+  // ---- T13.4: filtros independentes e agrupamento ------------------------------------------------------------------------------
+
+  const card = (id: string, name: string, isArchived = false): FinancialCreditCard => ({
+    id, name, issuer: 'Banco', lastFourDigits: null, holderUserId: null, creditLimit: '1000.00', closingDay: 5, dueDay: 10, defaultPaymentAccountId: itau.id, isArchived, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', archivedAt: null,
+  })
+  const nubank = card('card-nubank', 'Nubank PJ'); const personnalite = card('card-pers', 'Personnalité Mult Black'); const antigo = card('card-old', 'Cartão antigo', true)
+
+  const summary = (over: Partial<EntryGroupSummary>): EntryGroupSummary => ({
+    key: 'card:card-nubank', kind: 'Card', id: 'card-nubank', name: 'Nubank PJ', scope: 'PF', count: 40, activeCount: 40, cancelledCount: 0, transferCount: 0, outflow: '4000.00', inflow: '0.00', paymentsOut: '0.00',
+    budgetConsumed: '3500.00', budgetReduced: '0.00', budgetNet: '3500.00', budgetPlanned: '0.00', invoiceFinancing: '0.00', startsOnPage: 1, ...over,
+  })
+
+  it('carrega os cartões do cadastro, filtra pelo ID real e mantém conta e cartão como filtros independentes; "Sem cartão" pede withoutCard', async () => {
+    const calls = mockApi({ cards: [nubank, personnalite, antigo] }); renderPage()
+    const cardSelect = await screen.findByLabelText('Cartão') as HTMLSelectElement
+    await waitFor(() => expect(Array.from(cardSelect.options).map(o => o.textContent)).toEqual(['Todos os cartões', 'Sem cartão', 'Nubank PJ', 'Personnalité Mult Black', 'Cartão antigo (arquivado)']))
+    expect(Array.from((screen.getByLabelText('Conta bancária') as HTMLSelectElement).options).map(o => o.textContent)).toEqual(['Todas as contas', 'Itaú PF', 'Conta antiga (inativa)'])
+
+    fireEvent.change(cardSelect, { target: { value: nubank.id } })
+    await waitFor(() => expect(entryCalls(calls).at(-1)!.get('cardId')).toBe(nubank.id))
+    fireEvent.change(screen.getByLabelText('Conta bancária'), { target: { value: itau.id } })
+    await waitFor(() => expect(entryCalls(calls).at(-1)!.get('accountId')).toBe(itau.id))
+    const both = entryCalls(calls).at(-1)!
+    expect([both.get('cardId'), both.get('accountId'), both.has('withoutCard')]).toEqual([nubank.id, itau.id, false])
+
+    fireEvent.change(cardSelect, { target: { value: 'none' } })
+    await waitFor(() => expect(entryCalls(calls).at(-1)!.get('withoutCard')).toBe('true'))
+    expect(entryCalls(calls).at(-1)!.has('cardId')).toBe(false)
+  })
+
+  it('agrupa por cartão por padrão, permite trocar o agrupamento e volta à página 1 a cada mudança de filtro', async () => {
+    const calls = mockApi({ cards: [nubank], page: { totalCount: 60, pageSize: 25 } }); renderPage()
+    await screen.findByText('Feira do mês')
+    expect(entryCalls(calls)[0].get('groupBy')).toBe('card')
+    expect((screen.getByLabelText('Agrupar por') as HTMLSelectElement).value).toBe('card')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('page')).toBe('2'))
+    fireEvent.change(screen.getByLabelText('Agrupar por'), { target: { value: 'account' } })
+    await waitFor(() => expect(entryCalls(calls).at(-1)!.get('groupBy')).toBe('account')); expect(entryCalls(calls).at(-1)!.get('page')).toBe('1')
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima' })); await waitFor(() => expect(entryCalls(calls).at(-1)!.get('page')).toBe('2'))
+    fireEvent.change(screen.getByLabelText('Cartão'), { target: { value: nubank.id } })
+    await waitFor(() => expect(entryCalls(calls).at(-1)!.get('cardId')).toBe(nubank.id)); expect(entryCalls(calls).at(-1)!.get('page')).toBe('1')
+    fireEvent.change(screen.getByLabelText('Agrupar por'), { target: { value: 'none' } })
+    await waitFor(() => expect(entryCalls(calls).at(-1)!.get('groupBy')).toBe('none'))
+  })
+
+  describe('grupos', () => {
+    const inNubank = (over: Partial<FinancialEntry>) => entry({ source: 'CardPurchase', transactionId: null, card: { id: 'card-nubank', name: 'Nubank PJ' }, groupKey: 'card:card-nubank', ...over })
+    const items = [
+      inNubank({ id: 'CardInstallment:a', description: 'Mercado' }), inNubank({ id: 'CardInstallment:b', description: 'Mercado', amount: '99.00' }),
+      entry({ id: 'Transaction:z', description: 'Salário setembro', groupKey: 'account:acc-itau', type: 'Income', direction: 'In' }),
+    ]
+    const groups = [
+      summary({ count: 40, outflow: '4000.00', budgetNet: '3500.00', invoiceFinancing: '1814.73', startsOnPage: 1 }),
+      summary({ key: 'account:acc-itau', kind: 'Account', id: 'acc-itau', name: 'Itaú PF', count: 3, activeCount: 2, cancelledCount: 1, transferCount: 1, outflow: '10.00', inflow: '5000.00', paymentsOut: '300.00', budgetNet: '10.00', startsOnPage: 2 }),
+    ]
+
+    it('mostra o cabeçalho de cada grupo com o total do grupo INTEIRO, distinguindo o que aparece nesta página, e destaca o financiamento de fatura', async () => {
+      mockApi({ items, page: { groups, totals: summary({ key: 'all', kind: 'All', id: null, name: 'Todos os lançamentos filtrados', count: 43, outflow: '4010.00', inflow: '5000.00', budgetNet: '3510.00' }), totalCount: 43, pageSize: 25 } }); renderPage()
+      await screen.findAllByText('Mercado')
+      const nubankHeader = document.getElementById('entries-group-card:card-nubank') as HTMLElement
+      const text = plain(nubankHeader.textContent)
+      expect(text).toContain('Nubank PJ'); expect(text).toContain('40 lançamentos no total · 2 nesta página'); expect(text).toContain('R$ 4.000,00'); expect(text).toContain('R$ 3.500,00')
+      expect(text).toContain('Financiamento de fatura (obrigação, sem novo consumo)'); expect(text).toContain('R$ 1.814,73')
+      const itauText = plain((document.getElementById('entries-group-account:acc-itau') as HTMLElement).textContent)
+      expect(itauText).toContain('3 lançamentos no total · 1 nesta página'); expect(itauText).toContain('1 cancelado fora dos totais'); expect(itauText).toContain('1 transferência não somada')
+      expect(itauText).toContain('Pagamentos de fatura/dívida (caixa)'); expect(itauText).not.toContain('Financiamento de fatura')
+      expect(plain(screen.getByText('Soma das linhas filtradas').closest('p')!.textContent)).toContain('43 lançamentos')
+    })
+
+    it('recolhe e expande um grupo sem alterar seus totais, e os chips levam à página inicial de cada grupo', async () => {
+      const calls = mockApi({ items, page: { groups, totalCount: 43, pageSize: 25 } }); renderPage()
+      await screen.findAllByText('Mercado')
+      fireEvent.click(screen.getByRole('button', { name: 'Recolher Nubank PJ' }))
+      expect(screen.queryAllByText('Mercado')).toHaveLength(0); expect(screen.getByText('Salário setembro')).toBeTruthy()
+      expect(plain(document.getElementById('entries-group-card:card-nubank')!.textContent)).toContain('40 lançamentos no total')
+      fireEvent.click(screen.getByRole('button', { name: 'Expandir Nubank PJ' })); expect(screen.getAllByText('Mercado')).toHaveLength(2)
+
+      const nav = screen.getByRole('navigation', { name: 'Grupos de lançamentos' })
+      fireEvent.click(within(nav).getByRole('button', { name: /Itaú PF/ }))
+      await waitFor(() => expect(entryCalls(calls).at(-1)!.get('page')).toBe('2'))
+    })
+
+    it('sem agrupamento ou sem grupos na resposta a tabela é a lista simples de sempre', async () => {
+      mockApi({ items: [feira, salarioEntry] }); renderPage()
+      await screen.findByText('Feira do mês')
+      expect(document.querySelector('.entries__group')).toBeNull(); expect(screen.queryByRole('navigation', { name: 'Grupos de lançamentos' })).toBeNull()
+      expect(screen.getAllByRole('row')).toHaveLength(3)
+    })
+
+    it('mantém no HTML as classes que impedem a quebra de datas e palavras curtas e o cabeçalho responsivo (o CSS é do arquivo de estilos)', async () => {
+      mockApi({ items, page: { groups, totalCount: 43, pageSize: 25 } }); renderPage()
+      await screen.findAllByText('Mercado')
+      const row = rowOf('Salário setembro')
+      expect(row.querySelector('td.entries__date')).not.toBeNull(); expect(row.querySelector('td.entries__c-type')).not.toBeNull(); expect(row.querySelector('.entries__badge')).not.toBeNull()
+      expect(document.querySelector('tr.entries__group > th[colspan="8"]')).not.toBeNull()
+    })
   })
 })

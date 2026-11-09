@@ -179,7 +179,7 @@ describe('Lançamentos — categoria/subcategoria e tipo de despesa', () => {
     page()
     await screen.findByText('Conta de luz')
 
-    fireEvent.change(await screen.findByLabelText('Conta ou cartão'), { target: { value: 'acc' } })
+    fireEvent.change(await screen.findByLabelText('Conta bancária'), { target: { value: 'acc' } })
     fireEvent.click(screen.getByRole('button', { name: 'Filtros avançados' }))
     fireEvent.change(screen.getByLabelText('Natureza'), { target: { value: 'Fixed' } })
 

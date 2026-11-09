@@ -35,16 +35,23 @@ public sealed record FinancialEntryDto(
     string Id, string Source, string Competence, DateOnly Date, string DateKind, string Description, string Type, string Direction, string Status, string Amount,
     EntryReference? Account, EntryReference? Counterpart, EntryReference? Card, EntryCategory? Category, string? Nature, string Origin, string BudgetImpact, string CashImpact,
     Guid? TransactionId, Guid? PlannedTransactionId, Guid? TransferId, Guid? PlannedTransferId, Guid? RecurrenceId, string? InvoiceCompetence,
-    IReadOnlyList<string> Actions, IReadOnlyList<string> Flags, string Stage = "", InstallmentInfo? Installment = null);
+    IReadOnlyList<string> Actions, IReadOnlyList<string> Flags, string Stage = "", InstallmentInfo? Installment = null,
+    /// <summary>Grupo ao qual a linha pertence quando a consulta pede agrupamento (T13.4); nulo sem agrupamento.</summary>
+    string? GroupKey = null);
 
 /// <summary>Rastreabilidade da parcela: a descrição original do banco, a numeração que ele escreveu e a usada pelo motor. <c>Inconsistent</c> = divergem (nada é renumerado).</summary>
 public sealed record InstallmentInfo(string OriginalDescription, int? Number, int? Total, int? OriginalNumber, int? OriginalTotal, bool Inconsistent);
 
-public sealed record FinancialEntriesPage(IReadOnlyList<FinancialEntryDto> Items, int Page, int PageSize, int TotalCount, string Competence);
+/// <summary>
+/// Página de lançamentos. <c>Groups</c> (só com agrupamento) traz o resumo de CADA grupo sobre todos os lançamentos filtrados, na ordem em que os grupos aparecem, com a página inicial de cada um;
+/// <c>Totals</c> resume o conjunto filtrado inteiro. Ambos independem da página pedida.
+/// </summary>
+public sealed record FinancialEntriesPage(IReadOnlyList<FinancialEntryDto> Items, int Page, int PageSize, int TotalCount, string Competence,
+    IReadOnlyList<EntryGroupSummary>? Groups = null, EntryGroupSummary? Totals = null, string GroupBy = "none");
 
 public sealed record FinancialEntriesQuery(
     string? Competence, string? Scope, Guid? AccountId, Guid? CategoryId, string? Type, string? Status, string? Source, string? Nature, string? Search, bool IncludeCancelled,
-    string? Sort, string? Direction, int? Page, int? PageSize);
+    string? Sort, string? Direction, int? Page, int? PageSize, Guid? CardId = null, bool WithoutCard = false, string? GroupBy = null);
 
 public sealed record FinancialEntriesResult(FinancialEntriesPage? Page, IDictionary<string, string[]>? Errors, bool NotFound)
 {
@@ -86,6 +93,9 @@ public sealed class FinancialEntriesQueryService(
         var type = Check("type", query.Type, Types); var status = Check("status", query.Status, Statuses); var source = Check("source", query.Source, Sources);
         var nature = Check("nature", query.Nature, ["Fixed", "Variable", "Undefined"]); var sort = Check("sort", query.Sort, Sorts) ?? "date";
         var descending = !string.Equals(query.Direction, "asc", StringComparison.OrdinalIgnoreCase);
+        var groupBy = string.IsNullOrWhiteSpace(query.GroupBy) ? FinancialEntryGrouping.ByNone : query.GroupBy.Trim().ToLowerInvariant();
+        if (!FinancialEntryGrouping.Modes.Contains(groupBy)) errors["groupBy"] = ["Use card, account ou none."];
+        if (query.CardId is not null && query.WithoutCard) errors["cardId"] = ["Escolha um cartão ou \"sem cartão\", não os dois."];
         var page = query.Page ?? 1; var pageSize = query.PageSize ?? DefaultPageSize;
         if (page < 1) errors["page"] = ["A página deve ser maior que zero."];
         if (pageSize is < 1 or > MaxPageSize) errors["pageSize"] = [$"O tamanho da página deve estar entre 1 e {MaxPageSize}."];
@@ -96,6 +106,7 @@ public sealed class FinancialEntriesQueryService(
         var scopeOf = accountList.ToDictionary(a => a.Id, a => a.FinancialScope.ToString());
         var categories = (await categoryRepository.ListAsync(workspaceId, includeInactive: true, ct)).ToDictionary(c => c.Id);
         var cards = (await cardRepository.ListAsync(workspaceId, includeArchived: true, ct)).ToDictionary(c => c.Id);
+        if (query.CardId is { } requestedCard && !cards.ContainsKey(requestedCard)) return new(null, new Dictionary<string, string[]> { ["cardId"] = ["Cartão não encontrado."] }, false);
 
         var entries = new List<FinancialEntryDto>();
         var previous = string.Equals(status, "OverduePrevious", StringComparison.Ordinal);
@@ -118,6 +129,8 @@ public sealed class FinancialEntriesQueryService(
             .Any(text => text?.Contains(query.Search.Trim(), StringComparison.CurrentCultureIgnoreCase) == true);
         var filtered = entries.Where(InScope).Where(CategoryMatches).Where(Search)
             .Where(e => query.AccountId is not { } a || e.Account?.Id == a || e.Counterpart?.Id == a || (e.Card is not null && e.Account?.Id == a))
+            .Where(e => query.CardId is not { } c || e.Card?.Id == c)
+            .Where(e => !query.WithoutCard || e.Card?.Id is null)
             .Where(e => type is null || e.Type == type)
             .Where(e => source is null || e.Source == source)
             .Where(e => nature is null || e.Nature == nature)
@@ -131,8 +144,19 @@ public sealed class FinancialEntriesQueryService(
             "description" => e => e.Description.ToLowerInvariant(),
             _ => e => e.Date,
         };
-        var ordered = (descending ? filtered.OrderByDescending(key) : filtered.OrderBy(key)).ThenBy(e => e.Id, StringComparer.Ordinal).ToList();
-        return new(new(ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList(), page, pageSize, ordered.Count, competence), null, false);
+        // Agrupa de forma determinística ANTES de paginar: grupos em ordem estável, e dentro de cada um a ordenação pedida. Sem agrupamento a ordem é a de sempre.
+        var keyed = filtered.Select(e => (Entry: e, Group: FinancialEntryGrouping.KeyOf(e, groupBy))).ToList();
+        var groupOrder = FinancialEntryGrouping.GroupOrder(keyed.Where(k => k.Group is not null).Select(k => k.Group!));
+        int GroupIndex((FinancialEntryDto Entry, EntryGroupKey? Group) k) => k.Group is null ? 0 : groupOrder[k.Group.Key];
+        var sorted = (descending ? keyed.OrderBy(GroupIndex).ThenByDescending(k => key(k.Entry)) : keyed.OrderBy(GroupIndex).ThenBy(k => key(k.Entry)))
+            .ThenBy(k => k.Entry.Id, StringComparer.Ordinal).ToList();
+
+        // Resumos sobre TODOS os lançamentos filtrados (nunca só a página), depois da precedência e dos filtros.
+        IReadOnlyList<EntryGroupSummary> groups = groupBy == FinancialEntryGrouping.ByNone ? [] : sorted.Select((k, index) => (k, index)).GroupBy(x => x.k.Group!.Key, StringComparer.Ordinal)
+            .Select(g => FinancialEntryGrouping.Summarize(g.First().k.Group!, g.Select(x => x.k.Entry).ToList(), g.First().index, pageSize)).ToList();
+        var totals = FinancialEntryGrouping.Summarize(new("all", "All", null, "Todos os lançamentos filtrados", null, 0), filtered, 0, pageSize);
+        var pageItems = sorted.Skip((page - 1) * pageSize).Take(pageSize).Select(k => k.Group is null ? k.Entry : k.Entry with { GroupKey = k.Group.Key }).ToList();
+        return new(new(pageItems, page, pageSize, sorted.Count, competence, groups, totals, groupBy), null, false);
     }
 
     // ---- Transações efetivas e transferências realizadas ---------------------------------------------------------------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { listAccounts, type FinancialAccount } from '../api/accounts'
 import { listCategories, type CategoryType, type FinancialCategory } from '../api/categories'
+import { listCreditCards, type FinancialCreditCard } from '../api/creditCards'
 import {
   TRANSACTION_DESCRIPTION_MAX_LENGTH,
   cancelTransaction,
@@ -12,7 +13,7 @@ import {
   type FinancialTransaction,
   type TransactionFilters,
 } from '../api/transactions'
-import { ENTRIES_PAGE_SIZE, listFinancialEntries, type EntriesFilters, type EntryAction, type FinancialEntriesPage, type FinancialEntry } from '../api/financialEntries'
+import { ENTRIES_PAGE_SIZE, listFinancialEntries, NO_CARD, type EntriesFilters, type EntryAction, type EntryGroupSummary, type FinancialEntriesPage, type FinancialEntry } from '../api/financialEntries'
 import { addCalendarMonths, formatMonthYear, todayInSaoPaulo } from '../dates'
 import { decimalToInput, formatBrlDecimal, formatDate, isZeroDecimal, parseAmount } from '../money'
 import { undoRefund } from '../api/pluggyIntegration'
@@ -73,7 +74,7 @@ const actionLabel = (entry: FinancialEntry, action: EntryAction) => {
 const actionSection: Record<string, string> = { Realize: 'planned', OpenCards: 'cards', OpenDebts: 'debts', OpenTransfers: 'transfers', CancelPlannedTransfer: 'transfers', OpenRecurrences: 'recurrences' }
 
 const defaultFilters = (): EntriesFilters => ({
-  competence: todayInSaoPaulo().slice(0, 7), scope: 'all', accountId: '', categoryId: '', type: '', status: '', source: '', nature: '', search: '', includeCancelled: false, sort: 'date', direction: 'desc',
+  competence: todayInSaoPaulo().slice(0, 7), scope: 'all', accountId: '', cardId: '', groupBy: 'card', categoryId: '', type: '', status: '', source: '', nature: '', search: '', includeCancelled: false, sort: 'date', direction: 'desc',
 })
 
 /** Os filtros e a página sobrevivem à ida a um detalhe e à volta (a página é desmontada ao trocar de seção). */
@@ -120,6 +121,9 @@ export function Transactions({
   const [pageNumber, setPageNumber] = useState(saved?.page ?? 1)
   const [data, setData] = useState<Load<FinancialEntriesPage>>({ kind: 'loading' })
   const [refs, setRefs] = useState<Load<TransactionReferences>>({ kind: 'loading' })
+  const [cards, setCards] = useState<FinancialCreditCard[]>([])
+  /** Grupos recolhidos (só apresentação): os totais do cabeçalho continuam os do grupo inteiro. */
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
   const [reloadKey, setReloadKey] = useState(0)
   const [editing, setEditing] = useState<FinancialTransaction | 'new' | null>(startWithForm ? 'new' : null)
   const [advanced, setAdvanced] = useState(() => Boolean(filters.categoryId || filters.nature || filters.source || filters.search || filters.includeCancelled))
@@ -135,8 +139,9 @@ export function Transactions({
   // Contas e categorias mudam em outras seções: recarrega ao abrir o formulário e após salvar.
   useEffect(() => {
     const controller = new AbortController()
-    Promise.all([listAccounts(workspaceId, true, controller.signal), listCategories(workspaceId, true, controller.signal)])
-      .then(([accounts, categories]) => setRefs({ kind: 'loaded', data: { accounts, categories } }))
+    // Os cartões vêm do cadastro real; se a lista falhar, o filtro de cartão fica só com "Todos" e "Sem cartão" sem derrubar a página.
+    Promise.all([listAccounts(workspaceId, true, controller.signal), listCategories(workspaceId, true, controller.signal), listCreditCards(workspaceId, true, controller.signal).catch(() => [] as FinancialCreditCard[])])
+      .then(([accounts, categories, creditCards]) => { setRefs({ kind: 'loaded', data: { accounts, categories } }); setCards(Array.isArray(creditCards) ? creditCards : []) })
       .catch((error: unknown) => { if (!controller.signal.aborted) setRefs({ kind: 'error', message: errorMessage(error) }) })
     return () => controller.abort()
   }, [workspaceId, reloadKey, editing])
@@ -227,6 +232,33 @@ export function Transactions({
   const totalPages = data.kind === 'loaded' ? Math.max(1, Math.ceil(data.data.totalCount / (data.data.pageSize || ENTRIES_PAGE_SIZE))) : 1
   const ariaSort = (sort: EntriesFilters['sort']) => filters.sort === sort ? (filters.direction === 'asc' ? 'ascending' : 'descending') : 'none'
 
+  // Agrupamento (T13.4): o servidor ordena por grupo antes de paginar e devolve o resumo de cada grupo inteiro; aqui só se apresenta. Sem `groups` na resposta, a tabela é a lista simples de sempre.
+  const groups = data.kind === 'loaded' ? data.data.groups ?? [] : []
+  const groupsActive = filters.groupBy !== 'none' && groups.length > 0
+  const groupByKey = new Map(groups.map(group => [group.key, group]))
+  const shownByGroup = new Map<string, number>()
+  if (data.kind === 'loaded') for (const entry of data.data.items) if (entry.groupKey) shownByGroup.set(entry.groupKey, (shownByGroup.get(entry.groupKey) ?? 0) + 1)
+  const toggleGroup = (key: string) => setCollapsed(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next })
+  const goToGroup = (group: EntryGroupSummary) => {
+    setCollapsed(current => { const next = new Set(current); next.delete(group.key); return next })
+    if (group.startsOnPage !== pageNumber) setPageNumber(group.startsOnPage)
+    else document.getElementById(`entries-group-${group.key}`)?.scrollIntoView?.({ block: 'start' })
+  }
+  const bodyRows: React.ReactNode[] = []
+  if (data.kind === 'loaded') {
+    let lastKey: string | null = null
+    for (const entry of data.data.items) {
+      const key = groupsActive ? entry.groupKey ?? null : null
+      const group = key ? groupByKey.get(key) : undefined
+      if (key && group && key !== lastKey) bodyRows.push(<GroupHeader key={`group-${key}`} group={group} shown={shownByGroup.get(key) ?? 0} expanded={!collapsed.has(key)} onToggle={() => toggleGroup(key)} />)
+      lastKey = key
+      if (key && collapsed.has(key)) continue
+      bodyRows.push(<Row key={entry.id} entry={entry} categories={categories} busy={busyId === entry.id} detailOpen={detailId === entry.id} menuOpen={menuId === entry.id} menuRef={menuRef}
+        onMenu={() => setMenuId(current => current === entry.id ? null : entry.id)} onAction={action => void run(entry, action)}
+        onRecategorize={id => void recategorize(entry, id)} onNature={nature => void changeNature(entry, nature)} />)
+    }
+  }
+
   return (
     <div className="entries">
       <header className="entries__header">
@@ -244,10 +276,20 @@ export function Transactions({
           <select value={filters.scope} onChange={event => change({ scope: event.target.value as EntriesFilters['scope'] })}>
             <option value="all">Todas</option><option value="pf">PF</option><option value="pj">PJ</option>
           </select></label>
-        <label>Conta ou cartão
+        <label>Conta bancária
           <select value={filters.accountId} onChange={event => change({ accountId: event.target.value })}>
-            <option value="">Todas</option>
+            <option value="">Todas as contas</option>
             {accounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? '' : ' (inativa)'}</option>)}
+          </select></label>
+        <label>Cartão
+          <select value={filters.cardId} onChange={event => change({ cardId: event.target.value })}>
+            <option value="">Todos os cartões</option>
+            <option value={NO_CARD}>Sem cartão</option>
+            {cards.map(card => <option key={card.id} value={card.id}>{card.name}{card.isArchived ? ' (arquivado)' : ''}</option>)}
+          </select></label>
+        <label>Agrupar por
+          <select value={filters.groupBy} onChange={event => change({ groupBy: event.target.value as EntriesFilters['groupBy'] })}>
+            <option value="card">Cartão</option><option value="account">Conta</option><option value="none">Sem agrupamento</option>
           </select></label>
         <label>Tipo
           <select value={filters.type} onChange={event => change({ type: event.target.value as EntriesFilters['type'] })}>
@@ -288,6 +330,13 @@ export function Transactions({
       {data.kind === 'loaded' && data.data.items.length === 0 && <p className="meta">Nenhum lançamento encontrado para {formatMonthYear(`${filters.competence}-01`)} com estes filtros.</p>}
 
       {data.kind === 'loaded' && data.data.items.length > 0 && <>
+        {data.data.totals && <p className="entries__summary meta">
+          <strong>Soma das linhas filtradas</strong> · {data.data.totals.count} {data.data.totals.count === 1 ? 'lançamento' : 'lançamentos'} · Saídas {formatBrlDecimal(data.data.totals.outflow)} · Entradas {formatBrlDecimal(data.data.totals.inflow)}
+          {' '}· Impacto líquido no orçamento {formatBrlDecimal(data.data.totals.budgetNet)}</p>}
+        {groupsActive && groups.length > 1 && <nav className="entries__groups" aria-label="Grupos de lançamentos">
+          <ul>{groups.map(group => <li key={group.key}><button type="button" className="entries__chip" onClick={() => goToGroup(group)} title={`Ir para ${group.name}${group.startsOnPage !== pageNumber ? ` (página ${group.startsOnPage})` : ''}`}>
+            {group.name} <span className="entries__chip-count">{group.count}</span></button></li>)}</ul>
+        </nav>}
         <div className="entries__table-wrap">
           <table className="entries__table">
             <caption className="visually-hidden">Lançamentos de {formatMonthYear(`${filters.competence}-01`)}</caption>
@@ -299,9 +348,7 @@ export function Transactions({
               <th scope="col" className="entries__num" aria-sort={ariaSort('amount')}><button type="button" className="entries__sort" onClick={() => sortBy('amount')}>Valor</button></th>
               <th scope="col" className="entries__c-actions"><span className="visually-hidden">Ações</span></th>
             </tr></thead>
-            <tbody>{data.data.items.map(entry => <Row key={entry.id} entry={entry} categories={categories} busy={busyId === entry.id} detailOpen={detailId === entry.id} menuOpen={menuId === entry.id} menuRef={menuRef}
-              onMenu={() => setMenuId(current => current === entry.id ? null : entry.id)} onAction={action => void run(entry, action)}
-              onRecategorize={id => void recategorize(entry, id)} onNature={nature => void changeNature(entry, nature)} />)}</tbody>
+            <tbody>{bodyRows}</tbody>
           </table>
         </div>
         <nav className="pagination" aria-label="Paginação dos lançamentos">
@@ -314,6 +361,36 @@ export function Transactions({
   )
 }
 
+/**
+ * Cabeçalho de grupo (cartão ou conta). Os totais são do grupo INTEIRO (servidor, decimal), mesmo que só parte dos itens esteja na página; "nesta página" mostra quantos aparecem aqui.
+ * Financiamento de fatura é destacado: obrigação de pagamento, não novo consumo. Transferências e cancelados são contados, mas não somados.
+ */
+function GroupHeader({ group, shown, expanded, onToggle }: { group: EntryGroupSummary; shown: number; expanded: boolean; onToggle: () => void }) {
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+  const financing = !isZeroDecimal(group.invoiceFinancing)
+  const payments = !isZeroDecimal(group.paymentsOut)
+  return <tr className="entries__group">
+    <th colSpan={8} scope="rowgroup" id={`entries-group-${group.key}`}>
+      <div className="entries__group-head">
+        <button type="button" className="entries__group-toggle" aria-expanded={expanded} aria-label={`${expanded ? 'Recolher' : 'Expandir'} ${group.name}`} onClick={onToggle}>
+          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span> <strong>{group.name}</strong>
+        </button>
+        {group.scope && <span className="entries__scope">{group.scope}</span>}
+        <span className="entries__group-count">{plural(group.count, 'lançamento', 'lançamentos')} no total{shown !== group.count ? ` · ${shown} nesta página` : ''}</span>
+        {group.cancelledCount > 0 && <span className="meta">{plural(group.cancelledCount, 'cancelado fora', 'cancelados fora')} dos totais</span>}
+        {group.transferCount > 0 && <span className="meta">{plural(group.transferCount, 'transferência não somada', 'transferências não somadas')}</span>}
+      </div>
+      <dl className="entries__group-totals">
+        <div><dt>Saídas</dt><dd className="ov-mono">{formatBrlDecimal(group.outflow)}</dd></div>
+        <div><dt>Entradas</dt><dd className="ov-mono">{formatBrlDecimal(group.inflow)}</dd></div>
+        <div><dt>Impacto líquido no orçamento</dt><dd className="ov-mono">{formatBrlDecimal(group.budgetNet)}</dd></div>
+        {financing && <div className="entries__group-financing"><dt>Financiamento de fatura (obrigação, sem novo consumo)</dt><dd className="ov-mono">{formatBrlDecimal(group.invoiceFinancing)}</dd></div>}
+        {payments && <div><dt>Pagamentos de fatura/dívida (caixa)</dt><dd className="ov-mono">{formatBrlDecimal(group.paymentsOut)}</dd></div>}
+      </dl>
+    </th>
+  </tr>
+}
+
 function Row({ entry, categories, busy, detailOpen, menuOpen, menuRef, onMenu, onAction, onRecategorize, onNature }: {
   entry: FinancialEntry; categories: FinancialCategory[]; busy: boolean; detailOpen: boolean; menuOpen: boolean; menuRef: React.RefObject<HTMLDivElement | null>
   onMenu: () => void; onAction: (action: EntryAction) => void; onRecategorize: (categoryId: string) => void; onNature: (nature: ExpenseNature) => void
@@ -321,7 +398,8 @@ function Row({ entry, categories, busy, detailOpen, menuOpen, menuRef, onMenu, o
   const cancelled = entry.status === 'Cancelled'
   const sign = entry.direction === 'In' ? '+ ' : entry.direction === 'Out' ? '− ' : ''
   const counterpart = entry.counterpart ? ` → ${entry.counterpart.name}` : ''
-  const where = entry.card ? entry.card.name : entry.account?.name
+  // Cartão: a conta do lançamento é a PAGADORA do cartão, dita explicitamente para não confundir com um movimento bancário.
+  const where = entry.card ? `${entry.card.name}${entry.account ? ` · paga por ${entry.account.name}` : ''}` : entry.account?.name
   const categoryText = entry.category ? entry.category.path ?? entry.category.name : entry.type === 'Transfer' || entry.type === 'Payment' ? '—' : 'Sem categoria'
   const menuId = `entries-menu-${entry.id}`
   return <>
