@@ -68,7 +68,7 @@ public sealed record CardInvoiceProjection(
     decimal ProjectedTotal, decimal Obligation, decimal Paid, decimal Remaining, InvoicePaymentState PaymentState,
     string Reconciliation, string? ReconciliationReason, decimal? BankReportedPaid, decimal? Difference,
     int AbsorbedItems, int UnprojectedInstallments, int AmbiguousChains, IReadOnlyList<string> Flags,
-    /// <summary>Financiamento de saldo de fatura: obrigação de pagamento (está em <c>ProjectedTotal</c>/<c>Obligation</c>), mas NÃO é consumo — fica fora de <c>Composition</c>, <c>KnownInstallments</c> e <c>Estimated</c>.</summary>
+    /// <summary>Quanto do total é prestação de financiamento de saldo de fatura. Informativo: o valor JÁ está em <c>Composition</c>/<c>KnownInstallments</c>/<c>Estimated</c> (é consumo da competência, como uma compra parcelada) e nunca é somado de novo.</summary>
     decimal Financed = 0m);
 
 /// <summary>Obrigação consumida por Agenda, saldo projetado e Dashboard. Uma por fatura, mais uma por obrigação conhecida sem fatura.</summary>
@@ -96,6 +96,4 @@ public static class CardCoverageReasons
     public const string KnownWithoutDueDate = "KnownWithoutDueDate";
     public const string SyncAttention = "SyncAttention";
     public const string NoBankHistory = "NoBankHistory";
-    /// <summary>Há financiamento de fatura: o banco não discriminou principal e encargos, então a cobertura é parcial (encargos desconhecidos, nunca zero).</summary>
-    public const string InvoiceFinancingComposition = "InvoiceFinancingComposition";
 }

@@ -34,8 +34,8 @@ export type TransactionReferences = { accounts: FinancialAccount[]; categories: 
 const typeLabels = { Income: 'Receita', Expense: 'Despesa', Transfer: 'Transferência', Payment: 'Pagamento' } as const
 const statusLabels = { Realized: 'Realizado', Pending: 'Previsto', Overdue: 'Vencido', NeedsReview: 'Em revisão', Cancelled: 'Cancelado' } as const
 const stageLabels: Record<string, string> = {
-  Effective: 'Movimento efetivo', InvoicePayment: 'Pagamento de fatura realizado', DebtPayment: 'Pagamento de dívida realizado', Planned: 'Previsto',
-  CardLaunched: 'Compra lançada no cartão (a fatura pode não estar paga)', CardForecast: 'Parcela prevista no cartão', CardEstimated: 'Estimativa do cartão', InvoiceFinancing: 'Financiamento de fatura: obrigação de pagamento, sem novo consumo no orçamento', Cancelled: 'Cancelado',
+  Effective: 'Movimento efetivo', InvoicePayment: 'Pagamento de fatura realizado (caixa; não é uma nova despesa)', DebtPayment: 'Pagamento de dívida realizado', Planned: 'Previsto',
+  CardLaunched: 'Compra lançada no cartão (a fatura pode não estar paga)', CardForecast: 'Parcela prevista no cartão', CardEstimated: 'Estimativa do cartão', InvoiceFinancing: 'Financiamento da fatura: prestação com principal e juros informados pelo banco, que consome a competência da sua fatura', Cancelled: 'Cancelado',
 }
 const dateKindLabels = { Effective: 'Data efetiva', Due: 'Vencimento previsto', Invoice: 'Vencimento da fatura', Execution: 'Data da transferência' } as const
 const originLabels: Record<string, string> = {
@@ -384,7 +384,7 @@ function GroupHeader({ group, shown, expanded, onToggle }: { group: EntryGroupSu
         <div><dt>Saídas</dt><dd className="ov-mono">{formatBrlDecimal(group.outflow)}</dd></div>
         <div><dt>Entradas</dt><dd className="ov-mono">{formatBrlDecimal(group.inflow)}</dd></div>
         <div><dt>Impacto líquido no orçamento</dt><dd className="ov-mono">{formatBrlDecimal(group.budgetNet)}</dd></div>
-        {financing && <div className="entries__group-financing"><dt>Financiamento de fatura (obrigação, sem novo consumo)</dt><dd className="ov-mono">{formatBrlDecimal(group.invoiceFinancing)}</dd></div>}
+        {financing && <div className="entries__group-financing"><dt>Financiamento de fatura (já incluído em saídas e consumo)</dt><dd className="ov-mono">{formatBrlDecimal(group.invoiceFinancing)}</dd></div>}
         {payments && <div><dt>Pagamentos de fatura/dívida (caixa)</dt><dd className="ov-mono">{formatBrlDecimal(group.paymentsOut)}</dd></div>}
       </dl>
     </th>

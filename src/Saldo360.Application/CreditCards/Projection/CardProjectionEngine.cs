@@ -69,17 +69,15 @@ public static class CardProjectionEngine
                 var cycle = Ensure(installment.Closing, installment.Closing.AddMonths(-1).AddDays(1), installment.Due, installment.Due.ToString("yyyy-MM"));
                 if (installment.Absorbed || cycle.Fact is { ClosedByBank: true }) { cycle.Absorbed++; continue; }
                 var estimated = installment.Origin != InstallmentOrigin.Known;
-                if (chain.IsFinancing)
-                {
-                    // Parcela de financiamento de saldo de fatura já contabilizada: obrigação integral, nunca novo consumo.
-                    cycle.Financed += installment.Amount;
-                    occurrences.Add((cycle, "InvoiceFinancing", $"{chain.Key}:{installment.Number}:{installment.SourceId ?? installment.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}", chain.Description, installment.Amount, installment.Due,
-                        installment.Number, installment.Total, estimated ? "Estimated" : "Known", null));
-                    continue;
-                }
+                // Cada prestação (inclusive a de financiamento de saldo de fatura) é consumo da competência da sua fatura, como numa compra parcelada: o valor já traz principal e juros embutidos informados pelo banco.
                 if (installment.Origin == InstallmentOrigin.Known) cycle.KnownInstallments += installment.Amount; else cycle.Estimated += installment.Amount;
-                occurrences.Add((cycle, estimated ? "EstimatedInstallment" : "KnownInstallment", $"{chain.Key}:{installment.Number}:{installment.SourceId ?? installment.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}", chain.Description, installment.Amount, installment.Due, installment.Number, installment.Total,
-                    estimated ? (chain.Status == ChainStatus.Estimated ? "Estimated" : "Partial") : "Known", facts.SeriesCategories is { } series && series.TryGetValue($"{CardInstallmentProjector.BaseKey(chain.Description)}|{chain.Total}", out var seriesCategory) ? seriesCategory : null));
+                // Financiamento é só um rótulo/destaque: o valor segue dentro de KnownInstallments/Estimated e do total da fatura (nunca somado duas vezes).
+                if (chain.IsFinancing) cycle.Financed += installment.Amount;
+                var kind = chain.IsFinancing ? "InvoiceFinancing" : estimated ? "EstimatedInstallment" : "KnownInstallment";
+                var occurrenceKey = $"{chain.Key}:{installment.Number}:{installment.SourceId ?? installment.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}";
+                occurrences.Add((cycle, kind, occurrenceKey, chain.Description, installment.Amount, installment.Due, installment.Number, installment.Total,
+                    estimated ? (chain.Status == ChainStatus.Estimated ? "Estimated" : "Partial") : "Known",
+                    facts.SeriesCategories is { } series && series.TryGetValue($"{CardInstallmentProjector.BaseKey(chain.Description)}|{chain.Total}", out var seriesCategory) ? seriesCategory : null));
             }
         }
 
@@ -110,8 +108,9 @@ public static class CardProjectionEngine
             var closed = fact is { ClosedByBank: true };
             var phase = closed ? InvoicePhase.Closed : upcoming is null || cycle.Closing <= upcoming ? InvoicePhase.Open : InvoicePhase.Future;
             var composition = fact?.Composition ?? 0m;
+            // Informativo: quanto do total é prestação de financiamento de fatura (já incluído em composição/parcelas, nunca somado de novo).
             var financed = cycle.Financed + (fact?.Financed ?? 0m);
-            var projected = composition + financed + cycle.PendingKnown + cycle.KnownInstallments + cycle.Estimated;
+            var projected = composition + cycle.PendingKnown + cycle.KnownInstallments + cycle.Estimated;
             var confirmed = closed ? fact!.ConfirmedTotal ?? composition : (decimal?)null;
             var obligation = closed ? confirmed!.Value : projected;
             var paid = fact?.Paid ?? 0m;
@@ -123,15 +122,14 @@ public static class CardProjectionEngine
             var ambiguous = closed ? 0 : ambiguousChains;
             if (unprojected > 0) flags.Add(CardCoverageReasons.UnprojectedInstallments);
             if (ambiguous > 0) flags.Add(CardCoverageReasons.AmbiguousInstallments);
-            if (!closed && !schedule.Strong && (cycle.PendingKnown + cycle.KnownInstallments + cycle.Estimated + financed > 0)) flags.Add(CardCoverageReasons.WeakSchedule);
-            if (financed > 0m && !closed) flags.Add(CardCoverageReasons.InvoiceFinancingComposition);
+            if (!closed && !schedule.Strong && (cycle.PendingKnown + cycle.KnownInstallments + cycle.Estimated > 0)) flags.Add(CardCoverageReasons.WeakSchedule);
             var state = obligation <= 0m || paid <= 0m ? InvoicePaymentState.Unpaid : paid > obligation ? InvoicePaymentState.Overpaid : paid == obligation ? InvoicePaymentState.Paid : InvoicePaymentState.Partial;
             invoices.Add(new CardInvoiceProjection(
                 card.Id, fact?.InvoiceId, cycle.Competence, cycle.CycleStart, cycle.Closing, cycle.Due, phase,
                 closed ? ObligationBasis.BankTotal : phase == InvoicePhase.Open ? ObligationBasis.ProjectedOpen : ObligationBasis.ProjectedFuture,
                 !closed, awaiting, confirmed, closed ? fact!.ConfirmedSource : null, composition, cycle.PendingKnown, cycle.KnownInstallments, cycle.Estimated,
                 projected, obligation, paid, remaining, state, fact?.Reconciliation ?? "NotVerified", fact?.ReconciliationReason, fact?.BankReportedPaid,
-                closed ? confirmed - composition - financed : null, cycle.Absorbed, unprojected, ambiguous, flags, financed));
+                closed ? confirmed - composition : null, cycle.Absorbed, unprojected, ambiguous, flags, financed));
         }
 
         var items = new List<CardObligationItem>();
@@ -145,7 +143,6 @@ public static class CardProjectionEngine
         if (invoices.Any(i => i.UnprojectedInstallments > 0)) reasons.Add(CardCoverageReasons.UnprojectedInstallments);
         if (invoices.Any(i => i.AmbiguousChains > 0)) reasons.Add(CardCoverageReasons.AmbiguousInstallments);
         if (invoices.Any(i => i.Flags.Contains(CardCoverageReasons.WeakSchedule))) reasons.Add(CardCoverageReasons.WeakSchedule);
-        if (invoices.Any(i => i.Flags.Contains(CardCoverageReasons.InvoiceFinancingComposition))) reasons.Add(CardCoverageReasons.InvoiceFinancingComposition);
         if (card.PayerAccountId is null) reasons.Add(CardCoverageReasons.MissingPayerAccount);
         if (facts.KnownImported.Any(k => k.DueDate is null)) reasons.Add(CardCoverageReasons.KnownWithoutDueDate);
         if (card.SyncStatus is "ConsentExpired" or "Attention") reasons.Add(CardCoverageReasons.SyncAttention);

@@ -28,7 +28,7 @@ export interface FinancialEntry {
 
 /**
  * Resumo de um grupo (cartão ou conta) ou do conjunto filtrado inteiro, calculado no servidor em decimal sobre TODOS os lançamentos filtrados (nunca só a página). A soma é das linhas, não o total
- * oficial de uma fatura. Transferências são contadas e nunca somadas; pagamentos de fatura são caixa, não consumo; financiamento de fatura é obrigação sem novo consumo; cancelados ficam fora das somas.
+ * oficial de uma fatura. Transferências são contadas e nunca somadas; pagamentos de fatura são caixa, não consumo; financiamento de fatura é destaque do que já está nas saídas e no consumo; cancelados ficam fora das somas.
  */
 export interface EntryGroupSummary {
   key: string; kind: 'Card' | 'Account' | 'None' | 'All'; id: string | null; name: string; scope: string | null

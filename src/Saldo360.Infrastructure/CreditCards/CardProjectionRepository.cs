@@ -49,10 +49,10 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
         var installments = (await (from i in db.FinancialCreditCardInstallments.AsNoTracking()
                                    join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id
                                    where i.WorkspaceId == workspaceId && p.WorkspaceId == workspaceId && i.InvoiceId != null && invoiceIds.Contains(i.InvoiceId.Value)
-                                      && i.Status == CreditCardInstallmentStatus.Active && p.Status == CreditCardPurchaseStatus.Active && p.OperationKind == CreditCardOperationKind.Normal
+                                      && i.Status == CreditCardInstallmentStatus.Active && p.Status == CreditCardPurchaseStatus.Active
                                    group i.Amount by i.InvoiceId!.Value into g
                                    select new { Id = g.Key, Amount = g.Sum() }).ToListAsync(ct)).ToDictionary(x => x.Id, x => x.Amount);
-        // Financiamento de saldo de fatura já lançado: continua na obrigação da fatura, mas não é composição de consumo.
+        // Financiamento de saldo de fatura já lançado: é consumo da competência (já está na soma acima); aqui só se destaca quanto do total é prestação de financiamento.
         var financedByInvoice = (await (from i in db.FinancialCreditCardInstallments.AsNoTracking()
                                         join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id
                                         where i.WorkspaceId == workspaceId && p.WorkspaceId == workspaceId && i.InvoiceId != null && invoiceIds.Contains(i.InvoiceId.Value)

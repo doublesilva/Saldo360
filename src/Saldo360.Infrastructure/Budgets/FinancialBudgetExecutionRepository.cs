@@ -78,9 +78,6 @@ internal sealed class FinancialBudgetExecutionRepository(Saldo360DbContext db, T
         _ => BudgetTargetGroupingType.Category,
     };
 
-    public Task<IReadOnlyList<InvoiceFinancingLine>> ReadInvoiceFinancingAsync(Guid workspaceId, DateOnly first, DateOnly through, CancellationToken cancellationToken) =>
-        BudgetFactReader.ReadInvoiceFinancingAsync(db, workspaceId, first, through, cancellationToken);
-
     public async Task<(IReadOnlyList<BudgetFact> Facts, IReadOnlyDictionary<Guid, string> CategoryPaths)> ReadFactsAsync(Guid workspaceId, DateOnly first, DateOnly through, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);

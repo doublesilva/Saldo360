@@ -11,7 +11,7 @@ public sealed record CardCompetenceDiagnosis(
     decimal? OfficialTotal, decimal Projected, decimal Obligation, decimal Paid, decimal Remaining, decimal UnattributedToBank, decimal ComponentsGap, IReadOnlyList<string> Reasons, decimal InvoiceFinancing = 0m)
 {
     /// <summary>Soma das linhas individualizadas que o usuário vê (parcelas conhecidas e estimadas, assinaturas e compras pendentes), sem a composição já registrada.</summary>
-    public decimal IndividualizedLines => KnownInstallments + EstimatedInstallments + CommittedSubscriptions + EstimatedSubscriptions + PendingPurchases + InvoiceFinancing;
+    public decimal IndividualizedLines => KnownInstallments + EstimatedInstallments + CommittedSubscriptions + EstimatedSubscriptions + PendingPurchases;
 }
 
 public static class CardCompetenceDiagnostic
@@ -24,14 +24,15 @@ public static class CardCompetenceDiagnostic
         {
             var mine = occurrences.Where(o => o.Competence == invoice.Competence).ToList();
             decimal Sum(Func<CardOccurrence, bool> filter) => mine.Where(filter).Sum(o => o.Amount);
-            var known = Sum(o => o.Kind == "KnownInstallment"); var estimatedInstallments = Sum(o => o.Kind == "EstimatedInstallment");
+            // A prestação de financiamento é parcela como outra qualquer (consumo da competência); o destaque é o campo InvoiceFinancing, que já está dentro destas somas.
+            var known = Sum(o => o.Kind == "KnownInstallment" || o.Kind == "InvoiceFinancing" && o.Quality == "Known"); var estimatedInstallments = Sum(o => o.Kind == "EstimatedInstallment" || o.Kind == "InvoiceFinancing" && o.Quality != "Known");
             var committedSubscriptions = Sum(o => o.Kind is "Recurring" or "ManualRecurring" && o.Quality == "Known");
             var estimatedSubscriptions = Sum(o => o.Kind is "Recurring" or "ManualRecurring" && o.Quality != "Known");
             var pending = Sum(o => o.Kind == "Pending");
             var closed = invoice.Phase == InvoicePhase.Closed;
             // Fatura fechada: o total do banco prevalece e as parcelas individualizadas já foram absorvidas por ele; o que sobra sobre a composição conhecida não é distribuído.
-            var unattributed = closed && invoice.BankTotal is { } bank ? bank - invoice.Composition - invoice.Financed : 0m;
-            var gap = closed ? 0m : invoice.ProjectedTotal - invoice.Composition - invoice.Financed - known - estimatedInstallments - committedSubscriptions - estimatedSubscriptions - pending;
+            var unattributed = closed && invoice.BankTotal is { } bank ? bank - invoice.Composition : 0m;
+            var gap = closed ? 0m : invoice.ProjectedTotal - invoice.Composition - known - estimatedInstallments - committedSubscriptions - estimatedSubscriptions - pending;
             return new CardCompetenceDiagnosis(projection.Card.Id, projection.Card.Name, scope, invoice.Competence, invoice.Phase, invoice.Composition, known, estimatedInstallments, committedSubscriptions,
                 estimatedSubscriptions, pending, invoice.BankTotal, invoice.ProjectedTotal, invoice.Obligation, invoice.Paid, invoice.Remaining, unattributed, gap, invoice.Flags, invoice.Financed);
         }).OrderBy(d => d.Competence, StringComparer.Ordinal).ToList();

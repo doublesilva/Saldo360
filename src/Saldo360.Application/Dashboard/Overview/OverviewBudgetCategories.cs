@@ -153,7 +153,7 @@ public sealed partial class DashboardOverviewService
         BudgetReference? reference = control is null ? null : new(Dec(control.Total.Realized), Dec(control.Total.Committed), Dec(control.Total.Estimated), control.Total.Target is null ? null : Dec(control.Total.Target));
         // Ocorrências do motor de cartões com categoria da série (leitura do que já foi classificado; o Dashboard nunca chama a IA).
         var projectedCards = (await cardProjection.ComputeAsync(workspaceId, today, null, ct)).SelectMany(p => p.Occurrences ?? [])
-            .Where(o => o.Competence == month && o.CategoryId is not null && o.Kind is "KnownInstallment" or "EstimatedInstallment" or "Recurring" or "ManualRecurring")
+            .Where(o => o.Competence == month && o.CategoryId is not null && o.Kind is "KnownInstallment" or "EstimatedInstallment" or "InvoiceFinancing" or "Recurring" or "ManualRecurring")
             .Select(o => new BudgetProjectedCardLine(o.CardId, o.CategoryId!.Value, o.Amount, o.Quality == "Known")).ToList();
         return PlanActualResult<BudgetCategoriesDto>.Ok(BudgetCategoryForecastCalculator.Build(month, facts, categories, payers, pfAccounts.Select(a => a.Id).ToHashSet(), reference, projectedCards: projectedCards));
     }

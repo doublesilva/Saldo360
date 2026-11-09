@@ -359,7 +359,7 @@ describe('Lançamentos — formulário e avisos', () => {
       const nubankHeader = document.getElementById('entries-group-card:card-nubank') as HTMLElement
       const text = plain(nubankHeader.textContent)
       expect(text).toContain('Nubank PJ'); expect(text).toContain('40 lançamentos no total · 2 nesta página'); expect(text).toContain('R$ 4.000,00'); expect(text).toContain('R$ 3.500,00')
-      expect(text).toContain('Financiamento de fatura (obrigação, sem novo consumo)'); expect(text).toContain('R$ 1.814,73')
+      expect(text).toContain('Financiamento de fatura (já incluído em saídas e consumo)'); expect(text).toContain('R$ 1.814,73')
       const itauText = plain((document.getElementById('entries-group-account:acc-itau') as HTMLElement).textContent)
       expect(itauText).toContain('3 lançamentos no total · 1 nesta página'); expect(itauText).toContain('1 cancelado fora dos totais'); expect(itauText).toContain('1 transferência não somada')
       expect(itauText).toContain('Pagamentos de fatura/dívida (caixa)'); expect(itauText).not.toContain('Financiamento de fatura')

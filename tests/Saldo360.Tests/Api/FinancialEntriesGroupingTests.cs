@@ -131,7 +131,7 @@ public sealed class FinancialEntriesGroupingTests(PostgresFixture postgres) : Po
         Assert.Equal(("PF", "PJ"), (Str(a, "scope"), Str(b, "scope")));                                                              // PF e PJ separados pela conta pagadora
         // Cartão A: Mercado 100 + Mercado 100 + Geladeira 100 + financiamento 200.
         Assert.Equal(4, a.GetProperty("count").GetInt32());
-        Assert.Equal(["500.00", "0.00", "300.00", "0.00", "300.00", "200.00"], Money(a, "outflow", "inflow", "budgetConsumed", "budgetReduced", "budgetNet", "invoiceFinancing"));   // financiamento: obrigação, não consumo
+        Assert.Equal(["500.00", "0.00", "500.00", "0.00", "500.00", "200.00"], Money(a, "outflow", "inflow", "budgetConsumed", "budgetReduced", "budgetNet", "invoiceFinancing"));   // o financiamento é destaque DENTRO das saídas e do consumo
         Assert.Equal((1, "50.00", "50.00"), (b.GetProperty("count").GetInt32(), Str(b, "outflow"), Str(b, "budgetConsumed")));
         // Conta PF: despesa 40, receita 500 + estorno 10, pagamento de fatura 60, transferência (1, não somada) e um cancelado fora das somas.
         Assert.Equal(["40.00", "510.00", "60.00", "40.00", "10.00", "30.00"], Money(pf, "outflow", "inflow", "paymentsOut", "budgetConsumed", "budgetReduced", "budgetNet"));

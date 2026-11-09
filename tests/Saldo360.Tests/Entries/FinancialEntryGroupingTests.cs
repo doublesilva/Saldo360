@@ -94,11 +94,11 @@ public sealed class FinancialEntryGroupingTests
     }
 
     [Fact]
-    public void InvoiceFinancingIsHighlightedAsAnObligationButAddsNothingToBudgetConsumption()
+    public void InvoiceFinancingIsHighlightedButItsInstallmentsAreOutflowAndBudgetConsumptionLikeAnyOtherInstallment()
     {
-        var summary = Sum(Entry("1", "Expense", "1814.73", CardA, budget: "None", origin: "InvoiceFinancing"), Entry("2", "Expense", "50.00", CardA));
+        var summary = Sum(Entry("1", "Expense", "1814.73", CardA, origin: "InvoiceFinancing"), Entry("2", "Expense", "50.00", CardA));
 
-        Assert.Equal(("1864.73", "1814.73", "50.00", "50.00"), (summary.Outflow, summary.InvoiceFinancing, summary.BudgetConsumed, summary.BudgetNet));
+        Assert.Equal(("1864.73", "1814.73", "1864.73", "1864.73"), (summary.Outflow, summary.InvoiceFinancing, summary.BudgetConsumed, summary.BudgetNet));   // o destaque está dentro, nunca somado de novo
     }
 
     [Fact]

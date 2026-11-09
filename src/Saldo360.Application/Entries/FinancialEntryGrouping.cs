@@ -10,7 +10,7 @@ namespace Saldo360.Application.Entries;
 /// <item><c>Outflow</c> = despesas ativas (inclui as compras de cartão e o financiamento de fatura, que são saídas/obrigações); <c>Inflow</c> = receitas ativas (inclui estornos e créditos).</item>
 /// <item><c>PaymentsOut</c> = pagamentos de fatura e de dívida: caixa, nunca consumo, e fora de <c>Outflow</c> para não contar duas vezes.</item>
 /// <item><c>BudgetConsumed</c> − <c>BudgetReduced</c> = <c>BudgetNet</c> (impacto líquido no orçamento); <c>BudgetPlanned</c> = previsões que ainda consumirão.</item>
-/// <item><c>InvoiceFinancing</c> = parcelas de financiamento de fatura: obrigação de pagamento, sem novo consumo (impacto no orçamento "None").</item>
+/// <item><c>InvoiceFinancing</c> = parcelas de financiamento de fatura: destaque do que JÁ está em <c>Outflow</c> e no consumo (cada prestação, com principal e juros embutidos, é despesa da competência da sua fatura).</item>
 /// <item>Transferências são contadas (<c>TransferCount</c>) mas nunca somadas como receita ou despesa. Cancelados são contados à parte e não entram em nenhuma soma.</item>
 /// </list>
 /// </summary>

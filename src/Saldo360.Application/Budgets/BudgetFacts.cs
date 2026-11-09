@@ -52,7 +52,9 @@ public sealed record BudgetFact(
     /// <summary>Veio da integração bancária (Pluggy): categoria e tipo escolhidos pelo usuário sobrevivem às sincronizações.</summary>
     bool Imported = false,
     /// <summary>Registro relacionado: para <see cref="BudgetFactOrigin.BankRefund"/>, a despesa original devolvida (navegação devolução ↔ despesa).</summary>
-    Guid? RelatedRecordId = null)
+    Guid? RelatedRecordId = null,
+    /// <summary>Parcela de financiamento de saldo de fatura: consome o orçamento da competência da sua fatura como qualquer compra parcelada (principal + juros embutidos informados pelo banco); o marcador só distingue o rótulo.</summary>
+    bool InvoiceFinancing = false)
 {
     public bool IsCard => CardId is not null;
 
