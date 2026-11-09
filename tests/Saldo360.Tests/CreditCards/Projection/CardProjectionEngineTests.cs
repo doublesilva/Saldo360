@@ -262,6 +262,23 @@ public sealed class CardProjectionEngineTests
         Assert.Contains(CardCoverageReasons.KnownWithoutDueDate, projection.Coverage.Reasons);
     }
 
+    [Fact]
+    public void ParallelPurchasesOfTheSameSeriesAndNumberKeepDistinctOccurrenceIdentities()
+    {
+        // Duas compras diferentes com a mesma descrição, total e número de parcela (valores diferentes) caem na mesma cadeia: cada uma precisa da sua identidade, ou o Razão colapsaria uma delas.
+        var facts = Facts(installments:
+        [
+            Obs("p1", "Mercadolivre 02/04", 36.80m, 2, 4, new DateOnly(2026, 11, 9), inInvoice: false),
+            Obs("p2", "Mercadolivre 02/04", 157.13m, 2, 4, new DateOnly(2026, 11, 9), inInvoice: false),
+        ]);
+
+        var occurrences = CardProjectionEngine.Compute(facts, Today).Occurrences!.Where(o => o.Kind == "KnownInstallment").ToList();
+
+        Assert.Equal(2, occurrences.Count);
+        Assert.Equal(2, occurrences.Select(o => o.Key).Distinct().Count());
+        Assert.Equal(194m - 0.07m, occurrences.Sum(o => o.Amount));   // 36,80 + 157,13: nenhuma some do total
+    }
+
     internal static InstallmentObservation Obs(string id, string description, decimal amount, int number, int total, DateOnly date, bool inInvoice, DateOnly? bill = null) =>
         new(id, description, amount, number, total, date, inInvoice, bill, bill?.AddDays(7));
 }

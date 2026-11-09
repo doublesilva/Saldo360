@@ -69,7 +69,7 @@ public static class CardProjectionEngine
                 if (installment.Absorbed || cycle.Fact is { ClosedByBank: true }) { cycle.Absorbed++; continue; }
                 if (installment.Origin == InstallmentOrigin.Known) cycle.KnownInstallments += installment.Amount; else cycle.Estimated += installment.Amount;
                 var estimated = installment.Origin != InstallmentOrigin.Known;
-                occurrences.Add((cycle, estimated ? "EstimatedInstallment" : "KnownInstallment", $"{chain.Key}:{installment.Number}", chain.Description, installment.Amount, installment.Due, installment.Number, installment.Total,
+                occurrences.Add((cycle, estimated ? "EstimatedInstallment" : "KnownInstallment", $"{chain.Key}:{installment.Number}:{installment.SourceId ?? installment.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}", chain.Description, installment.Amount, installment.Due, installment.Number, installment.Total,
                     estimated ? (chain.Status == ChainStatus.Estimated ? "Estimated" : "Partial") : "Known", null));
             }
         }
