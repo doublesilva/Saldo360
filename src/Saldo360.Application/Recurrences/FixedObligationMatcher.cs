@@ -38,10 +38,34 @@ public static class FixedObligationMatcher
         return hits >= 1 && hits / (decimal)wanted.Count >= 0.6m;
     }
 
-    /// <summary>Pares com correspondência única nos dois sentidos (uma movimentação quita no máximo uma obrigação; uma obrigação, no máximo um pagamento).</summary>
-    public static IReadOnlyList<(FixedObligation Obligation, SettlementCandidate Transaction)> UniquePairs(IReadOnlyList<FixedObligation> obligations, IReadOnlyList<SettlementCandidate> transactions)
+    public const int SeriesMinimumMonths = 3;
+    public const int SeriesDayTolerance = 5;
+    public const decimal SeriesAmountTolerance = 0.01m;
+
+    /// <summary>
+    /// Evidência histórica da série: a movimentação se repete há pelo menos <see cref="SeriesMinimumMonths"/> meses distintos, anteriores, na mesma conta e tipo, com valor idêntico, descrição normalizada idêntica
+    /// e dia do mês próximo. Sozinha NÃO quita (exige a janela, a descrição compartilhando ao menos uma palavra significativa da obrigação e o valor a até 1% do esperado): é o que permite quitar uma
+    /// obrigação cadastrada com valor arredondado e nome resumido quando o banco sempre cobra o mesmo valor com a mesma descrição.
+    /// </summary>
+    public static bool MatchesWithSeries(FixedObligation o, SettlementCandidate t, IReadOnlyList<SettlementCandidate> history)
     {
-        var edges = obligations.SelectMany(o => transactions.Where(t => Matches(o, t)).Select(t => (o, t))).ToList();
+        if (t.AccountId != o.AccountId || t.Type != o.Type || t.Amount <= 0m || o.PlannedAmount <= 0m) return false;
+        if (t.Date < o.DueDate.AddDays(-DaysBefore) || t.Date > o.DueDate.AddDays(DaysAfter)) return false;
+        if (Math.Abs(t.Amount - o.PlannedAmount) > o.PlannedAmount * SeriesAmountTolerance) return false;
+        var wanted = Tokens(StripCompetenceSuffix(o.Description)); var haystack = Normalize(t.Description);
+        if (wanted.Count == 0 || !wanted.Any(w => haystack.Contains(w, StringComparison.Ordinal))) return false;
+        var signature = Normalize(t.Description);
+        var months = history.Where(h => h.Id != t.Id && h.AccountId == t.AccountId && h.Type == t.Type && h.Amount == t.Amount && h.Date < t.Date && Normalize(h.Description) == signature
+                && Math.Abs(h.Date.Day - t.Date.Day) <= SeriesDayTolerance)
+            .Select(h => (h.Date.Year, h.Date.Month)).Distinct().Count();
+        return months >= SeriesMinimumMonths;
+    }
+
+    /// <summary>Pares com correspondência única nos dois sentidos (uma movimentação quita no máximo uma obrigação; uma obrigação, no máximo um pagamento).</summary>
+    public static IReadOnlyList<(FixedObligation Obligation, SettlementCandidate Transaction)> UniquePairs(IReadOnlyList<FixedObligation> obligations, IReadOnlyList<SettlementCandidate> transactions,
+        IReadOnlyList<SettlementCandidate>? history = null)
+    {
+        var edges = obligations.SelectMany(o => transactions.Where(t => Matches(o, t) || history is not null && MatchesWithSeries(o, t, history)).Select(t => (o, t))).ToList();
         return edges.Where(e => edges.Count(x => ReferenceEquals(x.o, e.o)) == 1 && edges.Count(x => x.t.Id == e.t.Id) == 1).ToList();
     }
 

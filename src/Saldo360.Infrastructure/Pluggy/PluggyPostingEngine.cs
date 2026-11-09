@@ -263,11 +263,20 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
 
             // 1) Decisão por transação (pura). Transações sem posting ainda ganham um, exceto as fora do período de importação.
             var order = imported.Values.OrderBy(t => t.Date).ThenBy(t => t.Id).ToList();
+            var creditEvidence = BuildCreditOperationEvidence(order);
             foreach (var t in order)
             {
                 var link = linkOf[t.Id];
                 postings.TryGetValue(t.Id, out var existing);
-                var movement = PluggyFinancialMapper.Decide(ImportedFacts.From(t, link), today, existing?.Resolution);
+                // Débito de operação de crédito cuja própria série já foi decidida como despesa pelo usuário: a decisão é reaplicada (nunca persistida como se fosse humana).
+                var resolution = existing?.Resolution;
+                if (resolution is null && creditEvidence.TryGetValue(t.Id, out var evidence))
+                {
+                    resolution = PluggyCreditOperationHistory.Learn(evidence, creditEvidence.Values.ToList());
+                    // Em ordem cronológica: o mês reconhecido agora já é histórico tratado para o seguinte, na mesma passada.
+                    if (resolution is not null) creditEvidence[t.Id] = evidence with { Treatment = PriorTreatment.LearnedExpense };
+                }
+                var movement = PluggyFinancialMapper.Decide(ImportedFacts.From(t, link), today, resolution);
                 if (movement.Disposition == PluggyDisposition.OutOfRange) { outOfRange++; continue; }
                 decisions[t.Id] = movement;
                 if (existing is null)
@@ -319,6 +328,27 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 BillsEvaluated = billsEvaluated, BalanceAnchorsUpdated = anchorsUpdated,
             };
         }
+
+        /// <summary>Evidência por débito de operação de crédito: como cada movimentação foi tratada (decisão do usuário, regra aprendida ou outra). Só contas bancárias; cartões não entram.</summary>
+        private Dictionary<Guid, CreditOperationEvidence> BuildCreditOperationEvidence(List<PluggyImportedTransaction> order)
+        {
+            var result = new Dictionary<Guid, CreditOperationEvidence>();
+            foreach (var t in order)
+            {
+                if (PluggyOperationCodes.Normalize(t.OperationType) != PluggyCreditOperationHistory.OperationCode || t.Date is not { } date || t.Status != PluggyTransactionStatus.Posted) continue;
+                if (linkOfImported.TryGetValue(t.Id, out var l) && l.Kind != PluggyLinkedAccountKind.Bank) continue;
+                postings.TryGetValue(t.Id, out var posting);
+                var treatment = posting is { State: PluggyPostingState.Applied, Kind: PluggyPostingKind.BankMovement }
+                    ? posting.Resolution == PluggyResolution.AsExpense && posting.ResolvedByUserId is not null ? PriorTreatment.UserExpense
+                        : posting.Resolution is null ? PriorTreatment.LearnedExpense : PriorTreatment.Other
+                    : PriorTreatment.Other;
+                result[t.Id] = new(t.Id, AccountKey(t), PluggyCreditOperationHistory.OperationCode, Math.Abs(t.Amount ?? 0m), t.Description ?? t.DescriptionRaw ?? string.Empty,
+                    PluggyFinancialMapper.BusinessDate(date), string.Equals(t.Type, "DEBIT", StringComparison.OrdinalIgnoreCase), treatment);
+            }
+            return result;
+        }
+
+        private static Guid AccountKey(PluggyImportedTransaction t) => new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes($"{t.ConnectionId:N}:{t.PluggyAccountId}")));
 
         private void ClassifyNewPosting(PluggyPosting posting, PluggyImportedTransaction t, PluggyAccountLink link, PluggyMovement movement, CategoryType direction)
         {

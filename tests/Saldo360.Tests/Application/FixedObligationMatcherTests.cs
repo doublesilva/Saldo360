@@ -123,4 +123,44 @@ public sealed class FixedObligationMatcherTests
         Assert.Equal(FixedObligation.DeterministicId(recurrence, new DateOnly(2026, 11, 1)), FixedObligation.DeterministicId(recurrence, new DateOnly(2026, 11, 1)));
         Assert.NotEqual(FixedObligation.DeterministicId(recurrence, new DateOnly(2026, 11, 1)), FixedObligation.DeterministicId(recurrence, new DateOnly(2026, 12, 1)));
     }
+
+    // ---- T13.3: evidência histórica da própria série (caso real: obrigação 750,00 "Crediário Solar" × débito sempre de 748,31 "Saída Crediário…") ----
+
+    private static IReadOnlyList<SettlementCandidate> Series(int months = 4, decimal amount = 748.31m, string description = "Saída CREDIARIO 0123", Guid? account = null) =>
+        Enumerable.Range(1, months).Select(m => Tx(description, amount, Due.AddMonths(-m).AddDays(-3), account)).ToList();
+
+    [Fact]
+    public void ARoundedFixedObligationIsSettledByTheBankMovementWhenTheSeriesRepeatsTheSameAmountAndDescription()
+    {
+        var o = Obligation("Crediário Solar", planned: 750m);
+        var current = Tx("Saída CREDIARIO 0123", 748.31m, Due);
+
+        Assert.False(FixedObligationMatcher.Matches(o, current));   // sem histórico: valor fixo diferente nunca quita
+        Assert.Single(FixedObligationMatcher.UniquePairs([o], [current], Series().Append(current).ToList()));
+    }
+
+    [Theory]
+    [InlineData(2, 748.31, "Saída CREDIARIO 0123")]    // série curta demais
+    [InlineData(4, 700.00, "Saída CREDIARIO 0123")]    // série de outro valor: o movimento atual não repete o histórico
+    [InlineData(4, 748.31, "Saída OUTRA COISA 0123")]  // outra descrição
+    public void WithoutAStableSeriesTheMovementIsNotSettled(int months, decimal historyAmount, string historyDescription)
+    {
+        var o = Obligation("Crediário Solar", planned: 750m);
+        var current = Tx("Saída CREDIARIO 0123", 748.31m, Due);
+
+        Assert.Empty(FixedObligationMatcher.UniquePairs([o], [current], Series(months, historyAmount, historyDescription).Append(current).ToList()));
+    }
+
+    [Fact]
+    public void TheSeriesNeverOverridesTheAmountToleranceNorTheDescriptionOrAmbiguity()
+    {
+        var o = Obligation("Crediário Solar", planned: 750m);
+        var far = Tx("Saída CREDIARIO 0123", 600m, Due);                       // 20% abaixo: parcial, nunca quita
+        var generic = Tx("PIX ENVIADO", 748.31m, Due);                         // sem palavra em comum com a obrigação
+        var a = Tx("Saída CREDIARIO 0123", 748.31m, Due); var b = Tx("Saída CREDIARIO 0123", 748.31m, Due.AddDays(1));   // dois candidatos
+
+        Assert.Empty(FixedObligationMatcher.UniquePairs([o], [far], Series(4, 600m).Append(far).ToList()));
+        Assert.Empty(FixedObligationMatcher.UniquePairs([o], [generic], Series(4, 748.31m, "PIX ENVIADO").Append(generic).ToList()));
+        Assert.Empty(FixedObligationMatcher.UniquePairs([o], [a, b], Series().Append(a).Append(b).ToList()));
+    }
 }

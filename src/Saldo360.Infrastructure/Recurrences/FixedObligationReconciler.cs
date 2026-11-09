@@ -29,7 +29,12 @@ internal static class FixedObligationReconciler
         // a movimentação já existe; só a linha de vínculo é gravada.
         var byLink = await LinkedSettlementsAsync(db, workspaceId, obligations, candidates, ct);
         var linkedObligations = byLink.Select(p => p.Obligation.StableId).ToHashSet(); var linkedTransactions = byLink.Select(p => p.Transaction.Id).ToHashSet();
-        var pairs = byLink.Concat(FixedObligationMatcher.UniquePairs(obligations.Where(o => !linkedObligations.Contains(o.StableId)).ToList(), candidates.Where(c => !linkedTransactions.Contains(c.Id)).ToList())).ToList();
+        // Histórico da própria série bancária (movimentações já importadas, vinculadas ou não): só evidência, nunca é alterado.
+        var historyFrom = from.AddMonths(-13);
+        var history = await db.FinancialTransactions.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && !t.IsCancelled && t.Origin == FinancialTransactionOrigin.PluggyImport && t.TransactionDate >= historyFrom && t.TransactionDate <= through)
+            .Select(t => new SettlementCandidate(t.Id, t.AccountId, t.Type, t.Description, t.Amount, t.TransactionDate)).ToListAsync(ct);
+        var pairs = byLink.Concat(FixedObligationMatcher.UniquePairs(obligations.Where(o => !linkedObligations.Contains(o.StableId)).ToList(), candidates.Where(c => !linkedTransactions.Contains(c.Id)).ToList(), history)).ToList();
         foreach (var (o, t) in pairs)
             db.FinancialObligationSettlements.Add(FinancialObligationSettlement.Create(workspaceId, o.RecurrenceId, o.Competence, o.PlannedTransactionId, t.Id, SettlementOrigin.Auto, now));
         if (pairs.Count == 0) return 0;
