@@ -94,6 +94,20 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
             var cardBills = link is null ? [] : bills.Where(b => b.AccountLinkId == link.Id).ToList();
             var limit = await purchases.GetLimitAsync(workspaceId, dto.Id, ct);
             var creditLimit = Parse(dto.CreditLimit);
+        // Categoria da série: a de suas parcelas já lançadas (compras ativas). Só vale quando é única e não é o marcador "Outros"; parcelas projetadas herdam, nada é gravado.
+        var fallbackCategories = (await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).Select(c => new { c.Id, c.Name }).ToListAsync(ct))
+            .Where(c => PluggyFinancialMapper.Normalize(c.Name) == "outros").Select(c => c.Id).ToHashSet();
+        var seriesRows = await (from p in db.PluggyPostings.AsNoTracking()
+                                join i in db.PluggyImportedTransactions.AsNoTracking() on p.ImportedTransactionId equals i.Id
+                                join pu in db.FinancialCreditCardPurchases.AsNoTracking() on p.CreditCardPurchaseId equals pu.Id
+                                where p.WorkspaceId == workspaceId && p.State == PluggyPostingState.Applied && p.Kind == PluggyPostingKind.CardPurchase && i.TotalInstallments > 1
+                                    && pu.Status == CreditCardPurchaseStatus.Active && cardIds.Contains(pu.CreditCardId)
+                                select new { pu.CreditCardId, pu.CategoryId, i.Description, i.DescriptionRaw, Total = i.TotalInstallments }).ToListAsync(ct);
+        var seriesByCard = seriesRows.Where(r => r.Total is > 1 && !fallbackCategories.Contains(r.CategoryId))
+            .GroupBy(r => (r.CreditCardId, Key: $"{CardInstallmentProjector.BaseKey(string.IsNullOrWhiteSpace(r.Description) ? r.DescriptionRaw : r.Description)}|{r.Total}"))
+            .Where(g => g.Select(r => r.CategoryId).Distinct().Count() == 1)
+            .ToLookup(g => g.Key.CreditCardId, g => (g.Key.Key, Category: g.First().CategoryId));
+
             var (available, source) = link?.AvailableCreditLimit is { } bankAvailable ? (bankAvailable, "Bank") : (limit is null ? creditLimit : Parse(limit.AvailableLimit), "Saldo360");
             accounts.TryGetValue(dto.DefaultPaymentAccountId ?? Guid.Empty, out var payer);
             var info = new CardInfo(dto.Id, dto.Name, dto.Issuer, dto.LastFourDigits, dto.Scope, dto.Origin, dto.ClosingDay, dto.DueDay, creditLimit, available, source,
@@ -170,7 +184,8 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
                     recurring.Add(new(recurrence.Id, recurrence.Description, recurrence.Amount, occurrence.Date, recurrence.IsEstimated));
             }
             result.Add(new(info, cardBills.Select(b => new PluggyBillFact(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency)).ToList(), invoiceFacts, pending, observations,
-                known.Where(k => k.CreditCardId == dto.Id).Select(k => new KnownImportedFact(k.Id, k.Amount, k.DueDate)).ToList(), recurring));
+                known.Where(k => k.CreditCardId == dto.Id).Select(k => new KnownImportedFact(k.Id, k.Amount, k.DueDate)).ToList(), recurring,
+                seriesByCard[dto.Id].ToDictionary(x => x.Key, x => x.Category)));
         }
         return result;
     }

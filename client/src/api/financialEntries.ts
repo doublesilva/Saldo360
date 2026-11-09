@@ -21,6 +21,7 @@ export interface FinancialEntry {
   actions: EntryAction[]; flags: string[]
   /** Estágio financeiro (movimento efetivo, compra lançada no cartão, parcela prevista, estimativa, pagamento realizado…): nunca indica que a fatura foi paga. */
   stage?: string
+  installment?: { originalDescription: string; number: number | null; total: number | null; originalNumber: number | null; originalTotal: number | null; inconsistent: boolean }
 }
 
 export interface FinancialEntriesPage { items: FinancialEntry[]; page: number; pageSize: number; totalCount: number; competence: string }

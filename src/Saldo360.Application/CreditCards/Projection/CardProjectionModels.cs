@@ -46,7 +46,9 @@ public sealed record CardInfo(
 public sealed record CardFacts(
     CardInfo Card, IReadOnlyList<Saldo360.Application.Pluggy.PluggyBillFact> Bills, IReadOnlyList<CardInvoiceFact> Invoices,
     IReadOnlyList<PendingPurchaseFact> Pending, IReadOnlyList<InstallmentObservation> Installments, IReadOnlyList<KnownImportedFact> KnownImported,
-    IReadOnlyList<RecurringChargeFact>? Recurring = null);
+    IReadOnlyList<RecurringChargeFact>? Recurring = null,
+    /// <summary>Categoria única já conhecida de cada compra parcelada (chave "descrição-base|total"): as parcelas projetadas apenas a herdam, nada é gravado por ocorrência.</summary>
+    IReadOnlyDictionary<string, Guid>? SeriesCategories = null);
 
 public sealed record ProjectedInstallment(
     int Number, int Total, decimal Amount, DateOnly Closing, DateOnly Due, InstallmentOrigin Origin, bool Absorbed, string? SourceId);

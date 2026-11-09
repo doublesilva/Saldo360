@@ -81,7 +81,7 @@ public sealed class FinancialEntriesProjectionTests(PostgresFixture postgres) : 
         Assert.Single(bySource["Debt"]);                       // 1 das 400 parcelas do financiamento: só a da competência consultada
         Assert.Single(bySource["Recurrence"]);                 // salário projetado (virtual)
         Assert.Single(bySource["Transfer"]);                   // transferência prevista, uma linha
-        Assert.Equal(["Geladeira", "Streaming"], items.Where(e => Str(e, "source") is "CardPurchase" or "CardProjected").Select(e => Str(e, "description")).Select(d => d.Split(" (")[0]).Order(StringComparer.Ordinal));
+        Assert.Equal(["Geladeira", "Streaming"], items.Where(e => Str(e, "source") is "CardPurchase" or "CardProjected").Select(e => Str(e, "description")).Select(d => d.Split(" — ")[0]).Order(StringComparer.Ordinal));
         var subscription = items.Single(e => Str(e, "source") == "CardProjected");
         Assert.Equal(("ManualRecurring", "CardForecast", "Pending", Target.ToString("yyyy-MM")), (Str(subscription, "origin"), Str(subscription, "stage"), Str(subscription, "status"), Str(subscription, "competence")));
         Assert.Contains("Committed", subscription.GetProperty("flags").EnumerateArray().Select(f => f.GetString()));

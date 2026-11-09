@@ -35,7 +35,10 @@ public sealed record FinancialEntryDto(
     string Id, string Source, string Competence, DateOnly Date, string DateKind, string Description, string Type, string Direction, string Status, string Amount,
     EntryReference? Account, EntryReference? Counterpart, EntryReference? Card, EntryCategory? Category, string? Nature, string Origin, string BudgetImpact, string CashImpact,
     Guid? TransactionId, Guid? PlannedTransactionId, Guid? TransferId, Guid? PlannedTransferId, Guid? RecurrenceId, string? InvoiceCompetence,
-    IReadOnlyList<string> Actions, IReadOnlyList<string> Flags, string Stage = "");
+    IReadOnlyList<string> Actions, IReadOnlyList<string> Flags, string Stage = "", InstallmentInfo? Installment = null);
+
+/// <summary>Rastreabilidade da parcela: a descrição original do banco, a numeração que ele escreveu e a usada pelo motor. <c>Inconsistent</c> = divergem (nada é renumerado).</summary>
+public sealed record InstallmentInfo(string OriginalDescription, int? Number, int? Total, int? OriginalNumber, int? OriginalTotal, bool Inconsistent);
 
 public sealed record FinancialEntriesPage(IReadOnlyList<FinancialEntryDto> Items, int Page, int PageSize, int TotalCount, string Competence);
 
@@ -232,9 +235,13 @@ public sealed class FinancialEntriesQueryService(
             var category = f.CategoryId is { } id && categories.TryGetValue(id, out var cat) ? new EntryCategory(id, cat.Name, read.Paths.GetValueOrDefault(id) ?? cat.Name) : null;
             var flags = new List<string>(); if (!f.CompetenceReliable) flags.Add("CompetenceEstimated"); if (payer is null) flags.Add("NoPayerAccount"); if (f.Imported) flags.Add("Imported"); if (f.Origin == BudgetFactOrigin.CardKnownInstallment) flags.Add("KnownImported");
             var cardRef = new EntryReference(f.CardId, f.CardName ?? card?.Name ?? "Cartão");
-            yield return new($"{(f.Origin == BudgetFactOrigin.CardAdjustment ? "CardAdjustment" : "CardInstallment")}:{f.RecordId}", f.Origin == BudgetFactOrigin.CardAdjustment ? "CardAdjustment" : "CardPurchase", competence, f.Date, "Invoice", f.Description,
+            var label = f.Origin == BudgetFactOrigin.CardInstallment ? InstallmentLabel.Build(f.Description, null, null) : null;
+            if (label is not { Number: not null }) label = null;
+            if (label is { Inconsistent: true }) flags.Add("InstallmentInconsistent");
+            yield return new($"{(f.Origin == BudgetFactOrigin.CardAdjustment ? "CardAdjustment" : "CardInstallment")}:{f.RecordId}", f.Origin == BudgetFactOrigin.CardAdjustment ? "CardAdjustment" : "CardPurchase", competence, f.Date, "Invoice", label?.Display ?? f.Description,
                 credit ? "Income" : "Expense", credit ? "In" : "Out", "Realized", Money.Format(Math.Abs(f.Amount)), payer is { } p ? new(p, accountNames.GetValueOrDefault(p) ?? "Conta", scopeOf.GetValueOrDefault(p)) : null, null, cardRef, category,
-                f.Nature.ToString(), f.Origin.ToString(), credit ? "Reduces" : "Consumes", "AtInvoicePayment", null, null, null, null, null, competence, ["ViewDetails", "OpenCards"], flags);
+                f.Nature.ToString(), f.Origin.ToString(), credit ? "Reduces" : "Consumes", "AtInvoicePayment", null, null, null, null, null, competence, ["ViewDetails", "OpenCards"], flags,
+                Installment: label is null ? null : new(label.OriginalDescription, label.Number, label.Total, label.OriginalNumber, label.OriginalTotal, label.Inconsistent));
         }
     }
 
@@ -257,11 +264,13 @@ public sealed class FinancialEntriesQueryService(
                 var flags = new List<string> { o.Quality != "Known" ? "Estimated" : o.Kind == "ManualRecurring" ? "Committed" : "KnownImported" };
                 if (!projection.Coverage.Complete) flags.Add("PartialCoverage");
                 if (payer is null) flags.Add("NoPayerAccount");
-                var description = o.Number is { } n && o.Total is { } t ? $"{o.Description} ({n}/{t})" : o.Description;
+                var label = o.Number is not null ? InstallmentLabel.Build(o.Description, o.Number, o.Total) : null;
+                if (label is { Inconsistent: true }) flags.Add("InstallmentInconsistent");
+                var description = label?.Display ?? o.Description;
                 yield return new($"CardProjected:{o.CardId}:{o.Key}", "CardProjected", competence, o.Date, "Invoice", description, "Expense", "Out", "Pending", Money.Format(o.Amount),
                     payer is { } p ? new(p, accountNames.GetValueOrDefault(p) ?? projection.Card.PayerName ?? "Conta", scopeOf.GetValueOrDefault(p)) : null, null, new EntryReference(o.CardId, projection.Card.Name),
                     o.CategoryId is { } cid && categories.TryGetValue(cid, out var cat) ? new EntryCategory(cid, cat.Name, cat.Name) : null,
-                    null, o.Kind, "Planned", "AtInvoicePayment", null, null, null, null, o.Kind == "ManualRecurring" ? RecurrenceIdOf(o.Key) : null, competence, o.Kind == "ManualRecurring" ? ["ViewDetails", "OpenRecurrences"] : ["ViewDetails", "OpenCards"], flags);
+                    null, o.Kind, "Planned", "AtInvoicePayment", null, null, null, null, o.Kind == "ManualRecurring" ? RecurrenceIdOf(o.Key) : null, competence, o.Kind == "ManualRecurring" ? ["ViewDetails", "OpenRecurrences"] : ["ViewDetails", "OpenCards"], flags, Installment: label is null ? null : new(label.OriginalDescription, label.Number, label.Total, label.OriginalNumber, label.OriginalTotal, label.Inconsistent));
             }
         }
     }

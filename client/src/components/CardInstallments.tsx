@@ -42,6 +42,7 @@ function Chain({ chain }: { chain: InstallmentChain }) {
   return <li className="card-installments__chain">
     <div><strong>{chain.description}</strong> <span className="badge">{chainStatusLabels[chain.status]}</span> {chain.estimated > 0 && <span className="badge badge--estimated">{chain.estimated} estimada(s)</span>}</div>
     <p className="meta">{chain.total} parcelas de {formatBrlDecimal(chain.amount)}</p>
+    {chain.originalDescription && chain.originalDescription !== chain.description && <p className="meta">Descrição original do banco: {chain.originalDescription}</p>}
     {chain.unprojected > 0 && <p className="meta" role="status">{chain.unprojected} parcela(s) restante(s) sem evidência para projetar: não entram no total.</p>}
     <table className="card-installments__table">
       <thead><tr><th scope="col">Parcela</th><th scope="col">Vence</th><th scope="col">Valor</th><th scope="col">Origem</th></tr></thead>

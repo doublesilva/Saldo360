@@ -70,7 +70,7 @@ public static class CardProjectionEngine
                 if (installment.Origin == InstallmentOrigin.Known) cycle.KnownInstallments += installment.Amount; else cycle.Estimated += installment.Amount;
                 var estimated = installment.Origin != InstallmentOrigin.Known;
                 occurrences.Add((cycle, estimated ? "EstimatedInstallment" : "KnownInstallment", $"{chain.Key}:{installment.Number}:{installment.SourceId ?? installment.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}", chain.Description, installment.Amount, installment.Due, installment.Number, installment.Total,
-                    estimated ? (chain.Status == ChainStatus.Estimated ? "Estimated" : "Partial") : "Known", null));
+                    estimated ? (chain.Status == ChainStatus.Estimated ? "Estimated" : "Partial") : "Known", facts.SeriesCategories is { } series && series.TryGetValue($"{CardInstallmentProjector.BaseKey(chain.Description)}|{chain.Total}", out var seriesCategory) ? seriesCategory : null));
             }
         }
 

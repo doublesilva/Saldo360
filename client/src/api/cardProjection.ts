@@ -93,7 +93,7 @@ export interface ObligationProjection { from: string; months: number; today: str
 export type ChainStatus = 'Complete' | 'Estimated' | 'Ambiguous' | 'Interrupted' | 'InsufficientEvidence' | 'GapDetected'
 export type InstallmentOrigin = 'InInvoice' | 'Known' | 'Estimated'
 export interface ProjectedInstallment { number: number; total: number; amount: string; closing: string; due: string; origin: InstallmentOrigin; absorbed: boolean }
-export interface InstallmentChain { key: string; description: string; total: number; amount: string; status: ChainStatus; reason: string | null; estimated: number; unprojected: number; installments: ProjectedInstallment[] }
+export interface InstallmentChain { key: string; description: string; total: number; amount: string; status: ChainStatus; reason: string | null; estimated: number; unprojected: number; installments: ProjectedInstallment[]; originalDescription?: string | null }
 export interface CardInstallments { cardId: string; name: string; today: string; chains: InstallmentChain[]; coverage: CardCoverage }
 
 const base = (workspaceId: string) => `/api/financial-workspaces/${encodeURIComponent(workspaceId)}/credit-cards`

@@ -48,7 +48,7 @@ public sealed record MonthlyProjectionDto(
 public sealed record CardObligationProjectionDto(string From, int Months, DateOnly Today, string Carryover, IReadOnlyList<MonthlyProjectionDto> Items, CoverageDto Coverage);
 
 public sealed record ProjectedInstallmentDto(int Number, int Total, string Amount, DateOnly Closing, DateOnly Due, string Origin, bool Absorbed);
-public sealed record InstallmentChainDto(string Key, string Description, int Total, string Amount, string Status, string? Reason, int Estimated, int Unprojected, IReadOnlyList<ProjectedInstallmentDto> Installments);
+public sealed record InstallmentChainDto(string Key, string Description, int Total, string Amount, string Status, string? Reason, int Estimated, int Unprojected, IReadOnlyList<ProjectedInstallmentDto> Installments, string? OriginalDescription = null);
 public sealed record CardInstallmentsDto(Guid CardId, string Name, DateOnly Today, IReadOnlyList<InstallmentChainDto> Chains, CoverageDto Coverage);
 
 public enum CardProjectionAccess { Allowed, NotFound, Invalid }
@@ -115,8 +115,8 @@ public sealed class CardProjectionService(IFinancialWorkspaceRepository workspac
         var today = BusinessCalendar.Today(time.GetUtcNow());
         var projection = (await ComputeAsync(workspaceId, today, cardId, ct)).SingleOrDefault();
         if (projection is null) return CardProjectionResult<CardInstallmentsDto>.NotFound;
-        var chains = projection.Chains.Select(c => new InstallmentChainDto(c.Key, c.Description, c.Total, Money.Format(c.Amount), c.Status.ToString(), c.Reason, c.Estimated, c.Unprojected,
-            c.Installments.Select(i => new ProjectedInstallmentDto(i.Number, i.Total, Money.Format(i.Amount), i.Closing, i.Due, i.Origin.ToString(), i.Absorbed)).ToList())).ToList();
+        var chains = projection.Chains.Select(c => new InstallmentChainDto(c.Key, InstallmentLabel.Build(c.Description, null, null).Title, c.Total, Money.Format(c.Amount), c.Status.ToString(), c.Reason, c.Estimated, c.Unprojected,
+            c.Installments.Select(i => new ProjectedInstallmentDto(i.Number, i.Total, Money.Format(i.Amount), i.Closing, i.Due, i.Origin.ToString(), i.Absorbed)).ToList(), c.Description)).ToList();
         return CardProjectionResult<CardInstallmentsDto>.Ok(new(cardId, projection.Card.Name, today, chains, new(projection.Coverage.Complete, projection.Coverage.Reasons)));
     }
 

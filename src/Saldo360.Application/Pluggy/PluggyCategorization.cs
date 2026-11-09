@@ -20,6 +20,8 @@ public sealed class PluggyCategorizationCandidate
     /// <summary>Lançamento (banco) ou compra (cartão) gerado: é nele que a classificação é corrigida.</summary>
     public Guid? RecordId { get; init; }
     public Guid? CardId { get; init; }
+    /// <summary>Total de parcelas informado pelo banco (compra parcelada); base da identidade da série.</summary>
+    public int? TotalInstallments { get; init; }
     public Domain.Categories.ExpenseNature Nature { get; init; }
     /// <summary>A categoria atual é o marcador "Outros" que a compra de cartão recebe por não poder ficar sem categoria.</summary>
     public bool CurrentIsFallback { get; init; }
@@ -31,6 +33,13 @@ public sealed class PluggyCategorizationCandidate
     public string? Reason { get; init; }
 
     public bool IsCardPurchase => Kind == PluggyPostingKind.CardPurchase;
+
+    /// <summary>
+    /// Identidade da compra parcelada importada: cartão + descrição sem o sufixo de parcela + total de parcelas + valor. Não exige a parcela 1: uma compra anterior ao Saldo360 é identificada
+    /// por qualquer parcela observada. Compras paralelas com descrição igual mas valor ou total diferentes são séries distintas.
+    /// </summary>
+    public string? SeriesKey => IsCardPurchase && CardId is { } card && TotalInstallments is > 1
+        ? $"{card:N}|{Saldo360.Application.CreditCards.Projection.CardInstallmentProjector.BaseKey(Description)}|{TotalInstallments}|{Amount:0.00}" : null;
     public bool AiAttempted => MethodVersion?.StartsWith("ai:", StringComparison.Ordinal) == true;
 
     /// <summary>
@@ -73,7 +82,7 @@ public sealed record PluggyCategorizationOverview(PluggyCategorizationCounts Cou
 
 public sealed record PluggyCategorizationResult(int Considered, int Manual, int Pluggy, int Rule, int Ai, int Unresolved, int CategoriesCreated, int SkippedChanged,
     int AiItemsSent, int AiCalls, int InputTokens, int OutputTokens, decimal EstimatedCostUsd, string? AiStoppedBecause, string? AiFailure, string? Model,
-    PluggyCategorizationCounts Counts);
+    PluggyCategorizationCounts Counts, int Inherited = 0, int Series = 0);
 
 public enum PluggyCategorizationOutcome { Ok, ConfirmationRequired, AiUnavailable }
 
@@ -106,7 +115,10 @@ public sealed class PluggyCategorizationService(IPluggyCategorizationRepository 
 
         var categories = await repository.ListCategoriesAsync(workspaceId, ct);
         const int created = 0; // a categorização nunca cria categorias
-        var local = Classify(targets, categories);
+
+        // Compra parcelada = UMA classificação por série: herda a categoria já conhecida da série; sem ela, só um representante é classificado (IA inclusive) e o resultado vale para as demais parcelas.
+        var (classifyTargets, inherited, seriesMembers) = GroupBySeries(candidates, targets);
+        var local = Classify(classifyTargets, categories);
         // Categorizar nunca altera o catálogo: a categoria que a origem aponta e que o orçamento não tem (ou tem inativa) fica só como informação de
         // origem no movimento importado, e o movimento segue sem categoria local, para revisão. O usuário cria a categoria ou usa "Adicionar categorias padrão".
         local = local.Select(o => o.CategoryId is null && o.ProposedName is not null
@@ -133,7 +145,11 @@ public sealed class PluggyCategorizationService(IPluggyCategorizationRepository 
 
         // Sugestão de categoria nova da IA não é cadastro autorizado: o classificador já a devolve como revisão e nada é criado aqui.
 
-        var decisions = new List<PluggyCategoryDecision>();
+        // Parcelas da mesma série recebem o resultado do representante (nunca uma nova chamada à IA).
+        foreach (var (representative, members) in seriesMembers)
+            if (final.TryGetValue(representative, out var outcomeOfSeries))
+                foreach (var member in members) final[member.PostingId.ToString("N")] = outcomeOfSeries with { Key = member.PostingId.ToString("N") };
+        var decisions = new List<PluggyCategoryDecision>(inherited);
         int byPluggy = 0, byRule = 0, byAi = 0, unresolved = 0;
         foreach (var (key, outcome) in final)
         {
@@ -163,7 +179,36 @@ public sealed class PluggyCategorizationService(IPluggyCategorizationRepository 
 
         var counts = await repository.CountAsync(workspaceId, ct);
         return new(PluggyCategorizationOutcome.Ok, new(targets.Count, manual, byPluggy, byRule, byAi, unresolved,
-            created, applied.SkippedChanged, usage.Items, usage.Calls, usage.InputTokens, usage.OutputTokens, usage.EstimatedCostUsd, usage.StoppedBecause, usage.FailureCode, usage.Model, counts));
+            created, applied.SkippedChanged, usage.Items, usage.Calls, usage.InputTokens, usage.OutputTokens, usage.EstimatedCostUsd, usage.StoppedBecause, usage.FailureCode, usage.Model, counts, inherited.Count, seriesMembers.Count));
+    }
+
+    /// <summary>
+    /// Separa o que vai ao classificador do que a série já resolve. Categoria conhecida da série: manual prevalece sobre a automática; duas categorias diferentes = série ambígua, cada parcela segue o fluxo normal.
+    /// Sem categoria conhecida: o representante mais antigo é classificado e as demais parcelas copiam o resultado.
+    /// </summary>
+    private static (List<PluggyCategorizationCandidate> Classify, List<PluggyCategoryDecision> Inherited, Dictionary<string, List<PluggyCategorizationCandidate>> Members) GroupBySeries(
+        IReadOnlyList<PluggyCategorizationCandidate> candidates, IReadOnlyList<PluggyCategorizationCandidate> targets)
+    {
+        var classify = new List<PluggyCategorizationCandidate>(); var inherited = new List<PluggyCategoryDecision>(); var members = new Dictionary<string, List<PluggyCategorizationCandidate>>();
+        var known = candidates.Where(c => c.SeriesKey is not null).GroupBy(c => c.SeriesKey!).ToDictionary(g => g.Key, g => g.ToList());
+        foreach (var group in targets.GroupBy(t => t.SeriesKey))
+        {
+            if (group.Key is null) { classify.AddRange(group); continue; }
+            var manual = known[group.Key].Where(c => c.IsManual && !c.CurrentIsFallback && c.CurrentCategoryId is not null).Select(c => c.CurrentCategoryId!.Value).Distinct().ToList();
+            var automatic = known[group.Key].Where(c => c.HasAutomaticCategory && !c.NeedsReview && !c.CurrentIsFallback).Select(c => c.PostingCategoryId!.Value).Distinct().ToList();
+            var donors = manual.Count > 0 ? manual : automatic;
+            if (donors.Count > 1) { classify.AddRange(group); continue; }
+            if (donors.Count == 1)
+            {
+                var source = manual.Count > 0 ? PluggyCategorySource.Mapped : known[group.Key].First(c => c.PostingCategoryId == donors[0] && c.HasAutomaticCategory).Source;
+                foreach (var t in group) inherited.Add(new(t.PostingId, donors[0], null, null, source, "series:inherited", "Herdada da série da compra parcelada", false, t.CurrentCategoryId));
+                continue;
+            }
+            var ordered = group.OrderBy(t => t.Date).ThenBy(t => t.PostingId).ToList();
+            classify.Add(ordered[0]);
+            if (ordered.Count > 1) members[ordered[0].PostingId.ToString("N")] = ordered.Skip(1).ToList();
+        }
+        return (classify, inherited, members);
     }
 
     private IReadOnlyList<FinancialClassificationOutcome> Classify(IReadOnlyList<PluggyCategorizationCandidate> targets, IReadOnlyCollection<MappableCategory> categories) =>

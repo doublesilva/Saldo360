@@ -34,20 +34,20 @@ const typeLabels = { Income: 'Receita', Expense: 'Despesa', Transfer: 'Transfer�
 const statusLabels = { Realized: 'Realizado', Pending: 'Previsto', Overdue: 'Vencido', NeedsReview: 'Em revisão', Cancelled: 'Cancelado' } as const
 const stageLabels: Record<string, string> = {
   Effective: 'Movimento efetivo', InvoicePayment: 'Pagamento de fatura realizado', DebtPayment: 'Pagamento de dívida realizado', Planned: 'Previsto',
-  CardLaunched: 'Compra lançada no cartão (a fatura pode não estar paga)', CardForecast: 'Parcela prevista no cartão', CardEstimated: 'Estimativa do cartão', Cancelled: 'Cancelado',
+  CardLaunched: 'Compra lançada no cartão (a fatura pode não estar paga)', CardForecast: 'Parcela prevista no cartão', CardEstimated: 'Estimativa do cartão', InvoiceFinancing: 'Financiamento de fatura: obrigação de pagamento, sem novo consumo no orçamento', Cancelled: 'Cancelado',
 }
 const dateKindLabels = { Effective: 'Data efetiva', Due: 'Vencimento previsto', Invoice: 'Vencimento da fatura', Execution: 'Data da transferência' } as const
 const originLabels: Record<string, string> = {
   Manual: 'Manual', PlannedRealization: 'Previsão realizada', PluggyImport: 'Banco (Pluggy)', PluggyRefund: 'Devolução', CreditCardInvoicePayment: 'Pagamento de fatura', DebtInstallmentPayment: 'Pagamento de dívida',
   Transfer: 'Transferência', PlannedTransfer: 'Transferência prevista', CardInstallment: 'Cartão', CardAdjustment: 'Cartão (ajuste)', CardKnownInstallment: 'Cartão (parcela conhecida)',
-  EstimatedInstallment: 'Cartão (parcela estimada)', KnownInstallment: 'Cartão (parcela conhecida)', Pending: 'Cartão (compra pendente)', Recurring: 'Cartão (cobrança recorrente)',
+  EstimatedInstallment: 'Cartão (parcela estimada)', InvoiceFinancing: 'Cartão (financiamento de fatura)', KnownInstallment: 'Cartão (parcela conhecida)', Pending: 'Cartão (compra pendente)', Recurring: 'Cartão (cobrança recorrente)',
 }
 const sourceOrigin = (entry: FinancialEntry) => entry.source === 'Planned' ? 'Previsão' : entry.source === 'Recurrence' ? 'Recorrência' : entry.source === 'Debt' ? 'Dívida'
   : entry.card ? `${originLabels[entry.origin] ?? 'Cartão'} · ${entry.card.name}` : originLabels[entry.origin] ?? entry.origin
 const flagLabels: Record<string, string> = {
   Imported: 'Importado do banco', Refund: 'Devolução (não é receita)', RealizesPlanned: 'Realiza uma previsão', CategoryNeedsReview: 'Categoria a revisar', PartiallyRefunded: 'Parcialmente devolvido',
   Planned: 'Previsto: ainda não aconteceu', NoPaymentEvidence: 'Sem evidência de pagamento', CompetenceEstimated: 'Competência da fatura estimada', NoPayerAccount: 'Cartão sem conta pagadora',
-  PossibleDuplicate: 'Possível duplicidade: assinatura manual e detectada com o mesmo nome e valores diferentes. Revise; nada foi descartado', Estimated: 'Estimativa: ainda não confirmada pelo banco', Committed: 'Assinatura cadastrada: compromisso do cartão ainda sem cobrança na fatura',KnownImported: 'Conhecida pelo banco, ainda sem fatura fechada', PartialCoverage: 'Projeção do cartão incompleta: pode haver parcelas não previstas',
+  InstallmentInconsistent: 'A numeração escrita pelo banco diverge da usada pelo sistema; nada foi renumerado', PossibleDuplicate: 'Possível duplicidade: assinatura manual e detectada com o mesmo nome e valores diferentes. Revise; nada foi descartado', Estimated: 'Estimativa: ainda não confirmada pelo banco', Committed: 'Assinatura cadastrada: compromisso do cartão ainda sem cobrança na fatura',KnownImported: 'Conhecida pelo banco, ainda sem fatura fechada', PartialCoverage: 'Projeção do cartão incompleta: pode haver parcelas não previstas',
 }
 const budgetText = { Consumes: 'Consome o orçamento', Reduces: 'Reduz o consumo do orçamento', Planned: 'Previsto no orçamento', None: 'Não afeta o orçamento' } as const
 const cashText = { Immediate: 'Movimenta o caixa na data', AtInvoicePayment: 'Movimenta o caixa no pagamento da fatura', Pending: 'Caixa ainda não movimentado', None: 'Não movimenta o caixa' } as const
@@ -346,6 +346,10 @@ function Row({ entry, categories, busy, detailOpen, menuOpen, menuRef, onMenu, o
         <div><dt>Competência</dt><dd>{formatMonthYear(`${entry.competence}-01`)}</dd></div>
         <div><dt>{dateKindLabels[entry.dateKind]}</dt><dd>{formatDate(entry.date)}</dd></div>
         <div><dt>Origem</dt><dd>{sourceOrigin(entry)}</dd></div>
+        {entry.installment && <div><dt>Parcela</dt><dd>
+          Descrição original: {entry.installment.originalDescription}. Numeração do banco: {entry.installment.originalNumber != null ? `${entry.installment.originalNumber}/${entry.installment.originalTotal}` : 'não informada'}.
+          Utilizada: {entry.installment.number != null ? `${entry.installment.number}/${entry.installment.total}` : '—'}.
+        </dd></div>}
         {entry.stage && <div><dt>Estágio</dt><dd>{stageLabels[entry.stage] ?? entry.stage}</dd></div>}
         {entry.account && <div><dt>{entry.card ? 'Conta pagadora' : 'Conta'}</dt><dd>{entry.account.name}{entry.account.scope ? ` · ${entry.account.scope}` : ''}</dd></div>}
         {entry.counterpart && <div><dt>Destino</dt><dd>{entry.counterpart.name}</dd></div>}

@@ -36,6 +36,9 @@ public sealed record BudgetCategoriesDto(string State, string Competence, string
 /// <summary>Totais de referência do orçamento PF (realizado, comprometido e estimado) para a conciliação.</summary>
 public sealed record BudgetReference(decimal Realized, decimal Committed, decimal Estimated, decimal? Target);
 
+/// <summary>Ocorrência de cartão calculada pelo motor (parcela conhecida/estimada, assinatura) já com a categoria da série. Só leitura: é a mesma ocorrência que o Razão e o pfBudgetControl enxergam.</summary>
+public sealed record BudgetProjectedCardLine(Guid CardId, Guid CategoryId, decimal Amount, bool Committed);
+
 public static class BudgetCategoryForecastCalculator
 {
     public const int OverviewTop = 5;
@@ -47,9 +50,9 @@ public static class BudgetCategoryForecastCalculator
         public const string ReferenceUnavailable = "ReferenceUnavailable";
     }
 
-    private sealed record Group(Guid? Id, string Name, decimal Realized, decimal Committed, List<(Guid? Id, string Name, decimal Amount)> Children, decimal Card, decimal Bank, decimal Fixed, decimal Variable, decimal Undefined)
+    private sealed record Group(Guid? Id, string Name, decimal Realized, decimal Committed, List<(Guid? Id, string Name, decimal Amount)> Children, decimal Card, decimal Bank, decimal Fixed, decimal Variable, decimal Undefined, decimal Estimated = 0m)
     {
-        public decimal Projected => Realized + Committed;
+        public decimal Projected => Realized + Committed + Estimated;
     }
 
     /// <summary>
@@ -57,7 +60,7 @@ public static class BudgetCategoryForecastCalculator
     /// cartão (ex.: parcela de dívida pendente) não é atribuível ao escopo e fica na diferença da conciliação.
     /// </summary>
     public static BudgetCategoriesDto Build(string competence, IReadOnlyList<BudgetFact> facts, IReadOnlyDictionary<Guid, FinancialCategoryDto> categories, IReadOnlyDictionary<Guid, Guid> cardPayers,
-        IReadOnlySet<Guid> pfAccountIds, BudgetReference? reference, int top = OverviewTop)
+        IReadOnlySet<Guid> pfAccountIds, BudgetReference? reference, int top = OverviewTop, IReadOnlyList<BudgetProjectedCardLine>? projectedCards = null)
     {
         bool InScope(BudgetFact f) => f.CardId is { } card ? cardPayers.TryGetValue(card, out var payer) && pfAccountIds.Contains(payer) : f.AccountId is { } account && pfAccountIds.Contains(account);
         bool IsCommitted(BudgetFact f) => f.State == BudgetFactState.Pending || f.Origin == BudgetFactOrigin.CardKnownInstallment;
@@ -84,16 +87,25 @@ public static class BudgetCategoryForecastCalculator
             grouped[main] = g;
         }
 
+        // Parcelas e assinaturas de cartão ainda não faturadas que o motor projeta: a categoria vem da série já classificada (nenhuma chamada à IA aqui). Conhecida/fixa = comprometido; estimada = estimado.
+        foreach (var line in (projectedCards ?? []).Where(l => cardPayers.TryGetValue(l.CardId, out var payer) && pfAccountIds.Contains(payer)))
+        {
+            var main = MainOf(line.CategoryId, out var leaf);
+            if (!grouped.TryGetValue(main, out var g)) grouped[main] = g = new(main.Id, main.Name, 0m, 0m, [], 0m, 0m, 0m, 0m, 0m);
+            grouped[main] = g with { Committed = g.Committed + (line.Committed ? line.Amount : 0m), Estimated = g.Estimated + (line.Committed ? 0m : line.Amount), Card = g.Card + line.Amount, Undefined = g.Undefined + line.Amount };
+            g.Children.Add((leaf.Id, leaf.Name, line.Amount));
+        }
+
         var all = grouped.Values.Where(g => g.Projected != 0m).ToList();
         var ranked = all.Where(g => g.Id is not null).OrderByDescending(g => g.Projected).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Id).ToList();
         var uncategorized = all.FirstOrDefault(g => g.Id is null);
 
-        BudgetCategoryLineDto Line(Group g, string kind, int count, string? name = null) => new(g.Id, name ?? g.Name, kind, count, Cents(g.Realized), Cents(g.Committed), "0.00", Cents(g.Projected),
+        BudgetCategoryLineDto Line(Group g, string kind, int count, string? name = null) => new(g.Id, name ?? g.Name, kind, count, Cents(g.Realized), Cents(g.Committed), Cents(g.Estimated), Cents(g.Projected),
             g.Children.GroupBy(c => (c.Id, c.Name)).Select(c => (c.Key.Id, c.Key.Name, Amount: c.Sum(x => x.Amount))).Where(c => c.Amount != 0m)
                 .OrderByDescending(c => c.Amount).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Id).Select(c => new BudgetCategoryChildDto(c.Id, c.Name, Cents(c.Amount))).ToList(),
             [new("Payment", "Cards", Cents(g.Card)), new("Payment", "Bank", Cents(g.Bank)), new("Nature", "Fixed", Cents(g.Fixed)), new("Nature", "Variable", Cents(g.Variable)), new("Nature", "Undefined", Cents(g.Undefined))]);
         Group Merge(IEnumerable<Group> items, string name) => items.Aggregate(new Group(null, name, 0m, 0m, [], 0m, 0m, 0m, 0m, 0m), (a, g) => { a.Children.AddRange(g.Children);
-            return a with { Realized = a.Realized + g.Realized, Committed = a.Committed + g.Committed, Card = a.Card + g.Card, Bank = a.Bank + g.Bank, Fixed = a.Fixed + g.Fixed, Variable = a.Variable + g.Variable, Undefined = a.Undefined + g.Undefined }; });
+            return a with { Realized = a.Realized + g.Realized, Committed = a.Committed + g.Committed, Estimated = a.Estimated + g.Estimated, Card = a.Card + g.Card, Bank = a.Bank + g.Bank, Fixed = a.Fixed + g.Fixed, Variable = a.Variable + g.Variable, Undefined = a.Undefined + g.Undefined }; });
 
         var allLines = ranked.Select(g => Line(g, "Category", 1)).ToList();
         if (uncategorized is not null) allLines.Add(Line(uncategorized, "Uncategorized", 0));
@@ -103,20 +115,20 @@ public static class BudgetCategoryForecastCalculator
         if (rest.Count > 0) rows.Add(Line(Merge(rest, ExpenseDistributionCalculator.OtherCategories), "Others", rest.Count));
         if (uncategorized is not null) rows.Add(Line(uncategorized, "Uncategorized", 0));
 
-        var realized = all.Sum(g => g.Realized); var committed = all.Sum(g => g.Committed);
+        var realized = all.Sum(g => g.Realized); var committed = all.Sum(g => g.Committed); var estimatedAllocated = all.Sum(g => g.Estimated);
         var reasons = new List<string>();
         decimal unallocatedRealized = 0m, unallocatedCommitted = 0m, unallocatedEstimated = 0m;
         string projected;
-        if (reference is null) { reasons.Add(Reasons.ReferenceUnavailable); projected = Cents(realized + committed); }
+        if (reference is null) { reasons.Add(Reasons.ReferenceUnavailable); projected = Cents(realized + committed + estimatedAllocated); }
         else
         {
-            unallocatedRealized = reference.Realized - realized; unallocatedCommitted = reference.Committed - committed; unallocatedEstimated = reference.Estimated;
+            unallocatedRealized = reference.Realized - realized; unallocatedCommitted = reference.Committed - committed; unallocatedEstimated = reference.Estimated - estimatedAllocated;
             if (unallocatedRealized != 0m) reasons.Add(Reasons.RealizedNotDiscriminated);
             if (unallocatedCommitted != 0m) reasons.Add(Reasons.CommittedNotDiscriminated);
             projected = Cents(reference.Realized + reference.Committed + reference.Estimated);
         }
         var partial = reasons.Count > 0;
-        return new(partial ? "Partial" : "Complete", competence, "PF", reference?.Target is { } t ? Cents(t) : null, Cents(reference?.Realized ?? realized), Cents(reference?.Committed ?? committed), Cents(reference?.Estimated ?? 0m), projected,
+        return new(partial ? "Partial" : "Complete", competence, "PF", reference?.Target is { } t ? Cents(t) : null, Cents(reference?.Realized ?? realized), Cents(reference?.Committed ?? committed), Cents(reference?.Estimated ?? estimatedAllocated), projected,
             rows, allLines, ranked.Count, Cents(unallocatedRealized), Cents(unallocatedCommitted), Cents(unallocatedEstimated), reasons);
     }
 
@@ -139,6 +151,10 @@ public sealed partial class DashboardOverviewService
         // Referência: o mesmo pfBudgetControl do card (realizado + comprometido + estimado = total previsto).
         var control = await BuildBudgetControlAsync(workspaceId, userId, month, PlanActualScopes.All, null, "pf", today, new("Complete", false, null, month, null, null, NoCategories()), new("Unavailable", 0, 0), null, ct, pfAccounts);
         BudgetReference? reference = control is null ? null : new(Dec(control.Total.Realized), Dec(control.Total.Committed), Dec(control.Total.Estimated), control.Total.Target is null ? null : Dec(control.Total.Target));
-        return PlanActualResult<BudgetCategoriesDto>.Ok(BudgetCategoryForecastCalculator.Build(month, facts, categories, payers, pfAccounts.Select(a => a.Id).ToHashSet(), reference));
+        // Ocorrências do motor de cartões com categoria da série (leitura do que já foi classificado; o Dashboard nunca chama a IA).
+        var projectedCards = (await cardProjection.ComputeAsync(workspaceId, today, null, ct)).SelectMany(p => p.Occurrences ?? [])
+            .Where(o => o.Competence == month && o.CategoryId is not null && o.Kind is "KnownInstallment" or "EstimatedInstallment" or "Recurring" or "ManualRecurring")
+            .Select(o => new BudgetProjectedCardLine(o.CardId, o.CategoryId!.Value, o.Amount, o.Quality == "Known")).ToList();
+        return PlanActualResult<BudgetCategoriesDto>.Ok(BudgetCategoryForecastCalculator.Build(month, facts, categories, payers, pfAccounts.Select(a => a.Id).ToHashSet(), reference, projectedCards: projectedCards));
     }
 }

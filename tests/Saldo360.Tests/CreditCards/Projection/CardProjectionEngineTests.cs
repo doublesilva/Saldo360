@@ -263,6 +263,22 @@ public sealed class CardProjectionEngineTests
     }
 
     [Fact]
+    public void ProjectedInstallmentsInheritTheSeriesCategoryWithoutPersistingAnythingPerOccurrence()
+    {
+        var category = Guid.NewGuid();
+        var facts = Facts(installments:
+        [
+            Obs("b", "Geladeira 06/10", 100m, 6, 10, new DateOnly(2026, 11, 5), inInvoice: false),
+            Obs("c", "Geladeira 07/10", 100m, 7, 10, new DateOnly(2026, 12, 5), inInvoice: false),
+        ]) with { SeriesCategories = new Dictionary<string, Guid> { ["geladeira|10"] = category } };
+
+        var occurrences = CardProjectionEngine.Compute(facts, Today).Occurrences!;
+
+        Assert.NotEmpty(occurrences);
+        Assert.All(occurrences.Where(o => o.Kind is "KnownInstallment" or "EstimatedInstallment"), o => Assert.Equal(category, o.CategoryId));   // conhecidas e estimadas da mesma compra
+    }
+
+    [Fact]
     public void ParallelPurchasesOfTheSameSeriesAndNumberKeepDistinctOccurrenceIdentities()
     {
         // Duas compras diferentes com a mesma descrição, total e número de parcela (valores diferentes) caem na mesma cadeia: cada uma precisa da sua identidade, ou o Razão colapsaria uma delas.

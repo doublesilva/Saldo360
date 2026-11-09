@@ -91,4 +91,25 @@ public sealed class BudgetCategoryForecastCalculatorTests
         Assert.Equal(["1000.00", "-300.00"], result.Categories.Select(c => c.Projected));
         Assert.Equal([BudgetCategoryForecastCalculator.Reasons.ReferenceUnavailable], result.Reasons); Assert.Equal("Partial", result.State); Assert.Equal("700.00", result.Projected);
     }
+
+    [Fact]
+    public void ProjectedInstallmentsAndSubscriptionsWithASeriesCategoryLeaveTheUncategorizedEstimateWithoutChangingTheTotal()
+    {
+        var facts = new[] { Bank(1000m, Rent), Bank(500m, Housing, state: BudgetFactState.Pending), CardFact(300m, Food, PfCard), CardFact(200m, Food, PfCard, BudgetFactOrigin.CardKnownInstallment), Bank(100m, null) };
+        var reference = new BudgetReference(1400m, 800m, 1500m, 12500m);   // comprometido já inclui as 100 de parcela futura conhecida
+        var before = BudgetCategoryForecastCalculator.Build("2026-11", facts, Categories, Payers, PfIds, reference);
+
+        var after = BudgetCategoryForecastCalculator.Build("2026-11", facts, Categories, Payers, PfIds, reference, projectedCards:
+        [
+            new(PfCard, Food, 100m, Committed: true),       // parcela futura conhecida: comprometido
+            new(PfCard, Food, 50m, Committed: false),       // parcela estimada da série: estimado
+            new(PjCard, Food, 999m, Committed: false),      // cartão pago por conta PJ: fora do orçamento PF
+        ]);
+
+        var food = after.Categories.Single(c => c.Name == "Alimentação");
+        Assert.Equal(("300.00", "300.00", "50.00", "650.00"), (food.Realized, food.Committed, food.Estimated, food.Projected));
+        Assert.Equal(before.Projected, after.Projected);                                                    // o total projetado só foi redistribuído entre categorias
+        Assert.Equal(("1500.00", "1450.00"), (before.UnallocatedEstimated, after.UnallocatedEstimated));    // 50 saíram de "Estimativa sem categoria"
+        Assert.Equal(("100.00", "0.00"), (before.UnallocatedCommitted, after.UnallocatedCommitted));        // a parcela futura conhecida (100) deixou de ser "comprometido não discriminado"
+    }
 }

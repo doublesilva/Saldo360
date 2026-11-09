@@ -30,7 +30,7 @@ internal sealed class PluggyCategorizationRepository(Saldo360DbContext db) : IPl
                           {
                               p.Id, p.Kind, p.CategoryId, p.CategorySource, p.CategoryNeedsReview, p.CategoryClassifiedAt, p.CategoryMethodVersion, p.CategoryReason,
                               p.FinancialTransactionId, p.CreditCardPurchaseId, p.AppliedAmount, p.AppliedDate, p.AppliedType,
-                              i.Description, i.DescriptionRaw, i.Category, i.OperationType, i.Type,
+                              i.Description, i.DescriptionRaw, i.Category, i.OperationType, i.Type, i.TotalInstallments,
                           }).ToListAsync(ct);
 
         var txIds = rows.Where(r => r.FinancialTransactionId != null).Select(r => r.FinancialTransactionId!.Value).ToList();
@@ -62,7 +62,7 @@ internal sealed class PluggyCategorizationRepository(Saldo360DbContext db) : IPl
                 PostingId = r.Id, Kind = r.Kind, IsIncome = r.AppliedType == CategoryType.Income, Description = r.Description ?? r.DescriptionRaw ?? string.Empty,
                 Amount = r.AppliedAmount ?? 0m, Date = r.AppliedDate ?? default, ExternalCategory = r.Category, OperationType = r.OperationType,
                 CurrentCategoryId = current, RecordId = recordId, CardId = cardId, Nature = nature, CurrentIsFallback = current is { } c && fallbackIds.Contains(c), PostingCategoryId = r.CategoryId, Source = r.CategorySource,
-                NeedsReview = r.CategoryNeedsReview, ClassifiedAt = r.CategoryClassifiedAt, MethodVersion = r.CategoryMethodVersion, Reason = r.CategoryReason,
+                TotalInstallments = r.TotalInstallments, NeedsReview = r.CategoryNeedsReview, ClassifiedAt = r.CategoryClassifiedAt, MethodVersion = r.CategoryMethodVersion, Reason = r.CategoryReason,
             });
         }
         return list;
