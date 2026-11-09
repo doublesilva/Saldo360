@@ -14,6 +14,28 @@ namespace Saldo360.Application.CreditCards.Projection;
 /// </summary>
 public static class CardProjectionEngine
 {
+    /// <summary>
+    /// Total corrente de uma fatura ABERTA informado pelo banco, validado: mesma competência (mês do vencimento) da fatura do mesmo cartão, fechamento ainda por vir, total explícito (zero é um total
+    /// válido; ausente é indisponível), moeda BRL e observação recente (instante conhecido e dentro de <see cref="OpenBankTotalMaxAgeDays"/>). Várias observações da mesma competência: vale a mais recente.
+    /// Total da fatura NÃO é pagamento mínimo, saldo da conta nem total da compra parcelada: só o campo de total da fatura é lido. Devolve o motivo quando um candidato foi descartado.
+    /// </summary>
+    internal static (Saldo360.Application.Pluggy.PluggyBillFact? Bill, string? IgnoredReason) OpenBankBill(IReadOnlyList<Saldo360.Application.Pluggy.PluggyBillFact> bills, string competence, DateOnly today)
+    {
+        var candidates = bills.Where(b => b.Total is not null && b.ClosingDate is { } closing && closing >= today && b.DueDate?.ToString("yyyy-MM") == competence).ToList();
+        if (candidates.Count == 0) return (null, null);
+        Saldo360.Application.Pluggy.PluggyBillFact? best = null; string? reason = null;
+        foreach (var bill in candidates.OrderByDescending(b => b.ObservedAt))
+        {
+            if (bill.Total < 0m) { reason ??= "BankTotalInvalid"; continue; }
+            if (bill.Currency is { Length: > 0 } currency && !currency.Equals("BRL", StringComparison.OrdinalIgnoreCase)) { reason ??= "BankTotalCurrency"; continue; }
+            if (bill.ObservedAt is not { } at) { reason ??= "BankTotalStale"; continue; }
+            var observed = Saldo360.Domain.Common.BusinessCalendar.Today(at);
+            if (observed < today.AddDays(-OpenBankTotalMaxAgeDays) || observed > today.AddDays(1)) { reason ??= "BankTotalStale"; continue; }
+            best = bill; reason = null; break;
+        }
+        return (best, best is null ? reason : null);
+    }
+
     private sealed class Cycle(DateOnly closing)
     {
         public DateOnly Closing { get; } = closing;
@@ -27,6 +49,9 @@ public static class CardProjectionEngine
         public decimal Financed { get; set; }
         public int Absorbed { get; set; }
     }
+
+    /// <summary>Um total de fatura ABERTA informado pelo banco só vale se observado recentemente: observação mais velha que isto é ignorada (a projeção local segue valendo) e sinalizada.</summary>
+    public const int OpenBankTotalMaxAgeDays = 3;
 
     public static CardProjection Compute(CardFacts facts, DateOnly today)
     {
@@ -93,6 +118,11 @@ public static class CardProjectionEngine
             occurrences.Add((cycle, recurring.Manual ? "ManualRecurring" : "Recurring", key, recurring.Description, recurring.Amount, recurring.ChargeDate, null, null, committed ? "Known" : "Estimated", recurring.CategoryId));
         }
 
+        // Um total válido de fatura aberta informado pelo banco existe por si só, mesmo sem nenhum lançamento local naquela competência: não pode se perder.
+        foreach (var bill in facts.Bills.Where(b => b.Total is not null && b.ClosingDate is { } c && c >= today && b.DueDate is not null))
+            if (OpenBankBill(facts.Bills, bill.DueDate!.Value.ToString("yyyy-MM"), today).Bill is not null)
+                Ensure(bill.ClosingDate!.Value, bill.ClosingDate.Value.AddMonths(-1).AddDays(1), bill.DueDate.Value, bill.DueDate.Value.ToString("yyyy-MM"));
+
         // O ciclo aberto sempre existe, mesmo vazio, para que o cartão tenha "a fatura atual".
         EnsureFrom(schedule.CycleFor(today));
 
@@ -110,14 +140,21 @@ public static class CardProjectionEngine
             var composition = fact?.Composition ?? 0m;
             // Informativo: quanto do total é prestação de financiamento de fatura (já incluído em composição/parcelas, nunca somado de novo).
             var financed = cycle.Financed + (fact?.Financed ?? 0m);
-            var projected = composition + cycle.PendingKnown + cycle.KnownInstallments + cycle.Estimated;
+            var localTotal = composition + cycle.PendingKnown + cycle.KnownInstallments + cycle.Estimated;
+            var projected = localTotal;
             var confirmed = closed ? fact!.ConfirmedTotal ?? composition : (decimal?)null;
-            var obligation = closed ? confirmed!.Value : projected;
+            // Hierarquia: 1) total oficial da fatura fechada; 2) último total corrente VÁLIDO da fatura aberta; 3) projeção local. O total do banco substitui a composição local, não se soma a ela.
+            var (openBank, openBankIgnored) = closed ? (null, null) : OpenBankBill(facts.Bills, cycle.Competence, today);
+            var source = closed && fact!.ConfirmedTotal is not null ? "BankClosed" : openBank is not null ? "BankOpen" : "LocalProjection";
+            decimal? bankTotal = closed ? fact!.ConfirmedTotal : openBank?.Total;
+            var bankObservedAt = closed ? fact!.BankObservedAt : openBank?.ObservedAt;
+            var obligation = closed ? confirmed!.Value : openBank?.Total ?? projected;
             var paid = fact?.Paid ?? 0m;
             var remaining = Math.Max(0m, obligation - paid);
             var awaiting = !closed && cycle.Closing < today;
             var flags = new List<string>();
             if (awaiting) flags.Add(CardCoverageReasons.AwaitingBankBill);
+            if (openBankIgnored is not null) flags.Add(openBankIgnored);
             var unprojected = closed ? 0 : unprojectedTotal;
             var ambiguous = closed ? 0 : ambiguousChains;
             if (unprojected > 0) flags.Add(CardCoverageReasons.UnprojectedInstallments);
@@ -127,9 +164,9 @@ public static class CardProjectionEngine
             invoices.Add(new CardInvoiceProjection(
                 card.Id, fact?.InvoiceId, cycle.Competence, cycle.CycleStart, cycle.Closing, cycle.Due, phase,
                 closed ? ObligationBasis.BankTotal : phase == InvoicePhase.Open ? ObligationBasis.ProjectedOpen : ObligationBasis.ProjectedFuture,
-                !closed, awaiting, confirmed, closed ? fact!.ConfirmedSource : null, composition, cycle.PendingKnown, cycle.KnownInstallments, cycle.Estimated,
+                !closed, awaiting, bankTotal, closed ? fact!.ConfirmedSource : openBank is not null ? "BankOpenBill" : null, composition, cycle.PendingKnown, cycle.KnownInstallments, cycle.Estimated,
                 projected, obligation, paid, remaining, state, fact?.Reconciliation ?? "NotVerified", fact?.ReconciliationReason, fact?.BankReportedPaid,
-                closed ? confirmed - composition : null, cycle.Absorbed, unprojected, ambiguous, flags, financed));
+                closed ? confirmed - composition : null, cycle.Absorbed, unprojected, ambiguous, flags, financed, source, bankObservedAt, localTotal, bankTotal is { } bank ? bank - localTotal : null));
         }
 
         var items = new List<CardObligationItem>();

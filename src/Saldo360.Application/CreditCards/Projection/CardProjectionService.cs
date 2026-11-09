@@ -24,7 +24,8 @@ public sealed record CardInvoiceViewDto(
     Guid? InvoiceId, string Competence, DateOnly CycleStart, DateOnly Closing, DateOnly Due, string Cycle, string Phase, string Basis, bool Provisional, bool AwaitingBankBill,
     string? BankTotal, string? BankTotalSource, string ProjectedTotal, string Obligation, string Paid, string Remaining, string PaymentState,
     string Reconciliation, string? ReconciliationReason, string? Difference, string? BankReportedPaid, InvoiceComponentsDto Components,
-    IReadOnlyList<string> Flags, int AbsorbedItems, int UnprojectedInstallments);
+    IReadOnlyList<string> Flags, int AbsorbedItems, int UnprojectedInstallments,
+    string Source = "LocalProjection", DateTimeOffset? BankObservedAt = null, string? LocalTotal = null, string? Undistributed = null);
 
 public sealed record CardOverviewItemDto(
     Guid CardId, string Name, string Issuer, string? LastFour, string? Scope, string Origin, string CreditLimit, string AvailableLimit, string LimitSource,
@@ -141,8 +142,8 @@ public sealed class CardProjectionService(IFinancialWorkspaceRepository workspac
             var knownHere = p.Items.Where(i => i.Kind == ObligationKind.KnownImported && i.DueDate?.ToString("yyyy-MM", CultureInfo.InvariantCulture) == key).Sum(i => i.Remaining);
             var cConfirmed = invoices.Where(i => i.Phase == InvoicePhase.Closed).Sum(i => i.Obligation);
             var cOpen = invoices.Where(i => i.Phase == InvoicePhase.Open).Sum(i => i.Obligation);
-            var cFuture = invoices.Where(i => i.Phase == InvoicePhase.Future).Sum(i => i.Composition + i.PendingKnown + i.KnownInstallments);
-            var cEstimatedFuture = invoices.Where(i => i.Phase == InvoicePhase.Future).Sum(i => i.Estimated);
+            var cFuture = invoices.Where(i => i.Phase == InvoicePhase.Future).Sum(i => i.Source == "BankOpen" ? i.Obligation : i.Composition + i.PendingKnown + i.KnownInstallments);
+            var cEstimatedFuture = invoices.Where(i => i.Phase == InvoicePhase.Future && i.Source != "BankOpen").Sum(i => i.Estimated);
             var cEstimatedAll = invoices.Where(i => i.Phase != InvoicePhase.Closed).Sum(i => i.Estimated);
             var cObligation = cConfirmed + cOpen + cFuture + cEstimatedFuture + knownHere;
             var cPaid = invoices.Sum(i => i.Paid);
@@ -171,7 +172,8 @@ public sealed class CardProjectionService(IFinancialWorkspaceRepository workspac
         i.InvoiceId, i.Competence, i.CycleStart, i.Closing, i.Due, i.Phase == InvoicePhase.Closed ? "Closed" : "Open", i.Phase.ToString(), i.Basis.ToString(), i.Provisional, i.AwaitingBankBill,
         i.BankTotal is { } bank ? Money.Format(bank) : null, i.BankTotalSource, Money.Format(i.ProjectedTotal), Money.Format(i.Obligation), Money.Format(i.Paid), Money.Format(i.Remaining), i.PaymentState.ToString(),
         i.Reconciliation, i.ReconciliationReason, i.Difference is { } difference ? Money.Format(difference) : null, i.BankReportedPaid is { } reported ? Money.Format(reported) : null,
-        new(Money.Format(i.Composition), Money.Format(i.PendingKnown), Money.Format(i.KnownInstallments), Money.Format(i.Estimated)), i.Flags, i.AbsorbedItems, i.UnprojectedInstallments);
+        new(Money.Format(i.Composition), Money.Format(i.PendingKnown), Money.Format(i.KnownInstallments), Money.Format(i.Estimated)), i.Flags, i.AbsorbedItems, i.UnprojectedInstallments,
+        i.Source, i.BankObservedAt, Money.Format(i.LocalTotal), i.Undistributed is { } undistributed ? Money.Format(undistributed) : null);
 
     private static bool TryMonth(string text, out DateOnly month) =>
         DateOnly.TryParseExact(text + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out month) && text.Length == 7;

@@ -109,11 +109,12 @@ public sealed class FinancialEntriesQueryService(
         if (query.CardId is { } requestedCard && !cards.ContainsKey(requestedCard)) return new(null, new Dictionary<string, string[]> { ["cardId"] = ["Cartão não encontrado."] }, false);
 
         var entries = new List<FinancialEntryDto>();
+        IReadOnlyList<CardProjection> projections = [];
         var previous = string.Equals(status, "OverduePrevious", StringComparison.Ordinal);
         if (!previous)
         {
             entries.AddRange(await TransactionEntriesAsync(workspaceId, userId, first, last, query with { IncludeCancelled = query.IncludeCancelled || status == "Cancelled" }, scopeOf, ct));
-            var projections = await cardProjection.ComputeAsync(workspaceId, today, null, ct);
+            projections = await cardProjection.ComputeAsync(workspaceId, today, null, ct);
             var accountNames = accountList.ToDictionary(a => a.Id, a => a.Name);
             entries.AddRange(ProjectedCardEntries(projections, competence, categories, cards, scopeOf, accountNames));
             entries.AddRange(CardEntries(await budgetFacts.ReadFactsAsync(workspaceId, first.AddMonths(-1), first.AddMonths(2), ct), competence, categories, cards, scopeOf, accountList.ToDictionary(a => a.Id, a => a.Name)));
@@ -152,10 +153,26 @@ public sealed class FinancialEntriesQueryService(
 
         // Resumos sobre TODOS os lançamentos filtrados (nunca só a página), depois da precedência e dos filtros.
         IReadOnlyList<EntryGroupSummary> groups = groupBy == FinancialEntryGrouping.ByNone ? [] : sorted.Select((k, index) => (k, index)).GroupBy(x => x.k.Group!.Key, StringComparer.Ordinal)
-            .Select(g => FinancialEntryGrouping.Summarize(g.First().k.Group!, g.Select(x => x.k.Entry).ToList(), g.First().index, pageSize)).ToList();
+            .Select(g => WithInvoice(FinancialEntryGrouping.Summarize(g.First().k.Group!, g.Select(x => x.k.Entry).ToList(), g.First().index, pageSize), projections, competence)).ToList();
         var totals = FinancialEntryGrouping.Summarize(new("all", "All", null, "Todos os lançamentos filtrados", null, 0), filtered, 0, pageSize);
         var pageItems = sorted.Skip((page - 1) * pageSize).Take(pageSize).Select(k => k.Group is null ? k.Entry : k.Entry with { GroupKey = k.Group.Key }).ToList();
         return new(new(pageItems, page, pageSize, sorted.Count, competence, groups, totals, groupBy), null, false);
+    }
+
+    /// <summary>
+    /// Anexa a um grupo de CARTÃO a conciliação da fatura da competência, lida do mesmo motor que alimenta Orçamento, Cartões e Plano × Realizado (nenhum cálculo novo): o total que o orçamento usa, a soma
+    /// dos componentes individualizados e a diferença, com a origem do valor e a situação da conciliação.
+    /// </summary>
+    private static EntryGroupSummary WithInvoice(EntryGroupSummary group, IReadOnlyList<CardProjection> projections, string competence)
+    {
+        if (group.Kind != "Card" || group.Id is not { } cardId) return group;
+        var invoice = projections.FirstOrDefault(p => p.Card.Id == cardId)?.Invoices.FirstOrDefault(i => i.Competence == competence);
+        if (invoice is null) return group;
+        return group with
+        {
+            Invoice = new(invoice.Competence, invoice.Phase == InvoicePhase.Closed ? "Closed" : "Open", invoice.Source, Money.Format(invoice.Obligation), Money.Format(invoice.LocalTotal), Money.Format(invoice.Undistributed ?? 0m),
+                invoice.BankTotal is { } bank ? Money.Format(bank) : null, invoice.BankObservedAt, invoice.Reconciliation, Money.Format(invoice.Paid), Money.Format(invoice.Remaining)),
+        };
     }
 
     // ---- Transações efetivas e transferências realizadas ---------------------------------------------------------------------------------------------------------------------------------------

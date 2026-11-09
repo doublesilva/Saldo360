@@ -93,3 +93,8 @@
   .entries__table tr.entries__group, .entries__table tr.entries__group > th { display: block; }
   .entries__group-totals { gap: .4rem 1rem; }
 }
+
+/* T13.6: conciliação da fatura no cabeçalho do grupo de cartão. */
+.entries__invoice { margin: .5rem 0 0; font-size: .8125rem; color: var(--en-muted); overflow-wrap: anywhere; }
+.entries__invoice strong { color: var(--en-fg); white-space: nowrap; }
+.entries__invoice .ov-mono { white-space: nowrap; }

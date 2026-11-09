@@ -137,6 +137,12 @@ public sealed class FinancialEntriesGroupingTests(PostgresFixture postgres) : Po
         Assert.Equal(["40.00", "510.00", "60.00", "40.00", "10.00", "30.00"], Money(pf, "outflow", "inflow", "paymentsOut", "budgetConsumed", "budgetReduced", "budgetNet"));
         Assert.Equal((1, 1), (pf.GetProperty("transferCount").GetInt32(), pf.GetProperty("cancelledCount").GetInt32()));
         Assert.Equal(pf.GetProperty("count").GetInt32() - 1, pf.GetProperty("activeCount").GetInt32());
+        // Conciliação da fatura por cartão (mesmo motor do orçamento): total usado, componentes identificados, diferença, origem e situação. Conta bancária não tem fatura.
+        var invoiceA = a.GetProperty("invoice"); var invoiceB = b.GetProperty("invoice");
+        Assert.Equal(("Closed", "BankClosed", "500.00", "500.00", "0.00"), (Str(invoiceA, "phase"), Str(invoiceA, "source"), Str(invoiceA, "budgetTotal"), Str(invoiceA, "identifiedTotal"), Str(invoiceA, "difference")));
+        Assert.Equal(("Open", "LocalProjection", "50.00", "50.00", "0.00"), (Str(invoiceB, "phase"), Str(invoiceB, "source"), Str(invoiceB, "budgetTotal"), Str(invoiceB, "identifiedTotal"), Str(invoiceB, "difference")));
+        Assert.Equal(Month, Str(invoiceA, "competence"));
+        Assert.Equal(JsonValueKind.Null, pf.TryGetProperty("invoice", out var accountInvoice) ? accountInvoice.ValueKind : JsonValueKind.Null);
         // Nenhum lançamento aparece em dois grupos: a soma das quantidades é o total de linhas.
         Assert.Equal(page.GetProperty("totalCount").GetInt32(), page.GetProperty("groups").EnumerateArray().Sum(g => g.GetProperty("count").GetInt32()));
         Assert.Equal(Items(page).Count, Items(page).Select(e => Str(e, "id")).Distinct().Count());

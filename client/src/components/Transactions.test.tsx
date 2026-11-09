@@ -379,6 +379,25 @@ describe('Lançamentos — formulário e avisos', () => {
       await waitFor(() => expect(entryCalls(calls).at(-1)!.get('page')).toBe('2'))
     })
 
+    it('mostra no cabeçalho do cartão a conciliação da fatura: total usado no orçamento, origem, lançamentos identificados, diferença (positiva ou negativa) e situação', async () => {
+      const invoiceGroups = [
+        summary({ invoice: { competence: '2026-10', phase: 'Closed', source: 'BankClosed', budgetTotal: '1000.00', identifiedTotal: '600.00', difference: '400.00', bankTotal: '1000.00', bankObservedAt: '2026-10-29T12:00:00Z', reconciliation: 'Divergent', paid: '300.00', remaining: '700.00' } }),
+        summary({ key: 'card:card-pers', id: 'card-pers', name: 'Personnalité', invoice: { competence: '2026-10', phase: 'Open', source: 'LocalProjection', budgetTotal: '180.00', identifiedTotal: '180.00', difference: '0.00', bankTotal: null, bankObservedAt: null, reconciliation: 'NotVerified', paid: '0.00', remaining: '180.00' } }),
+        summary({ key: 'card:card-neg', id: 'card-neg', name: 'Credicard', invoice: { competence: '2026-10', phase: 'Closed', source: 'BankClosed', budgetTotal: '500.00', identifiedTotal: '600.00', difference: '-100.00', bankTotal: '500.00', bankObservedAt: null, reconciliation: 'Incomplete', paid: '0.00', remaining: '500.00' } }),
+      ]
+      const lines = [['card:card-nubank', 'Compra no Nubank'], ['card:card-pers', 'Compra na Personnalité'], ['card:card-neg', 'Compra no Credicard']]
+        .map(([groupKey, description], index) => entry({ id: `CardInstallment:i${index}`, source: 'CardPurchase', transactionId: null, description, groupKey }))
+      mockApi({ items: lines, page: { groups: invoiceGroups, totalCount: 3, pageSize: 25 } }); renderPage()
+      await screen.findByText('Compra no Nubank')
+      const closed = plain(document.getElementById('entries-group-card:card-nubank')!.textContent)
+      expect(closed).toContain('Fatura 2026-10 (fechada)'); expect(closed).toContain('R$ 1.000,00'); expect(closed).toContain('total oficial do banco (fatura fechada)')
+      expect(closed).toContain('lançamentos identificados R$ 600,00'); expect(closed).toContain('diferença não individualizada R$ 400,00'); expect(closed).toContain('conciliação divergente')
+      expect(closed).toContain('pago R$ 300,00, restante R$ 700,00')
+      const local = plain(document.getElementById('entries-group-card:card-pers')!.textContent)
+      expect(local).toContain('(aberta)'); expect(local).toContain('projeção local (sem total do banco)'); expect(local).toContain('conciliação não verificada'); expect(local).not.toContain('observado em')
+      expect(plain(document.getElementById('entries-group-card:card-neg')!.textContent)).toContain('diferença não individualizada −R$ 100,00'.replace('−R$', '-R$'))
+    })
+
     it('sem agrupamento ou sem grupos na resposta a tabela é a lista simples de sempre', async () => {
       mockApi({ items: [feira, salarioEntry] }); renderPage()
       await screen.findByText('Feira do mês')

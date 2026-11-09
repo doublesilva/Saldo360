@@ -16,7 +16,17 @@ namespace Saldo360.Application.Entries;
 /// </summary>
 public sealed record EntryGroupSummary(
     string Key, string Kind, Guid? Id, string Name, string? Scope, int Count, int ActiveCount, int CancelledCount, int TransferCount,
-    string Outflow, string Inflow, string PaymentsOut, string BudgetConsumed, string BudgetReduced, string BudgetNet, string BudgetPlanned, string InvoiceFinancing, int StartsOnPage);
+    string Outflow, string Inflow, string PaymentsOut, string BudgetConsumed, string BudgetReduced, string BudgetNet, string BudgetPlanned, string InvoiceFinancing, int StartsOnPage,
+    EntryInvoiceSummary? Invoice = null);
+
+/// <summary>
+/// Conciliação da fatura de UM cartão na competência (só em grupos de cartão). <c>BudgetTotal</c> é o valor que o orçamento usa; <c>IdentifiedTotal</c> é a soma dos componentes individualizados que o
+/// Saldo360 consegue listar; <c>Difference</c> = BudgetTotal − IdentifiedTotal (positiva ou negativa) é o componente NÃO individualizado: nunca vira lançamento nem é distribuído entre categorias.
+/// <c>Source</c>: BankClosed (total oficial de fechamento), BankOpen (último total corrente válido do banco) ou LocalProjection (compras, parcelas, assinaturas e estimativas do motor).
+/// <c>Reconciliation</c>: NotVerified, Reconciled, Divergent ou Incomplete, como persistido na fatura do banco.
+/// </summary>
+public sealed record EntryInvoiceSummary(string Competence, string Phase, string Source, string BudgetTotal, string IdentifiedTotal, string Difference, string? BankTotal, DateTimeOffset? BankObservedAt,
+    string Reconciliation, string Paid, string Remaining);
 
 /// <summary>Identidade do grupo de um lançamento.</summary>
 public sealed record EntryGroupKey(string Key, string Kind, Guid? Id, string Name, string? Scope, int KindOrder);

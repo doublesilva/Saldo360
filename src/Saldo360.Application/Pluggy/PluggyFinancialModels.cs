@@ -61,6 +61,8 @@ public sealed record PluggyBillFact(string BillId, DateOnly? ClosingDate, DateOn
 {
     public decimal? FinanceChargesTotal { get; init; }
     public decimal? MinimumPayment { get; init; }
+    /// <summary>Instante em que o Saldo360 observou este total na instituição (última observação). Sem ele, um total de fatura ABERTA não é aceito como fonte.</summary>
+    public DateTimeOffset? ObservedAt { get; init; }
     public IReadOnlyList<PluggyBillPaymentFact> Payments { get; init; } = [];
 }
 

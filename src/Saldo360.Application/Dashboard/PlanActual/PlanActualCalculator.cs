@@ -211,7 +211,8 @@ public static class PlanActualCalculator
         decimal confirmed = 0, pending = 0, estimated = 0;
         foreach (var invoice in projection.Invoices.Where(i => i.Competence == competence))
         {
-            if (invoice.Phase == InvoicePhase.Closed) { confirmed += invoice.Obligation; continue; }
+            // Total do banco (fechado ou aberto informado e válido) é a referência monetária da fatura: realizado no cartão, sem somar a composição local nem estimativas por cima.
+            if (invoice.Phase == InvoicePhase.Closed || invoice.Source == "BankOpen") { confirmed += invoice.Obligation; continue; }
             confirmed += invoice.Composition; pending += invoice.PendingKnown + invoice.KnownInstallments; estimated += invoice.Estimated;
         }
         pending += projection.Items.Where(i => i.Kind == ObligationKind.KnownImported && i.DueDate?.ToString("yyyy-MM", CultureInfo.InvariantCulture) == competence).Sum(i => i.Obligation);

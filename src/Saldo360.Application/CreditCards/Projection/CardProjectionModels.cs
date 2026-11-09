@@ -35,7 +35,7 @@ public sealed record RecurringChargeFact(Guid RecurrenceId, string Description, 
 public sealed record CardInvoiceFact(
     Guid InvoiceId, DateOnly CycleStart, DateOnly Closing, DateOnly Due, string Competence,
     bool ClosedByBank, decimal? ConfirmedTotal, string? ConfirmedSource, decimal Composition, decimal Paid,
-    string Reconciliation, string? ReconciliationReason, decimal? BankReportedPaid, decimal Financed = 0m);
+    string Reconciliation, string? ReconciliationReason, decimal? BankReportedPaid, decimal Financed = 0m, DateTimeOffset? BankObservedAt = null);
 
 public sealed record CardInfo(
     Guid Id, string Name, string Issuer, string? LastFour, string? Scope, string Origin, int ClosingDay, int DueDay,
@@ -69,7 +69,18 @@ public sealed record CardInvoiceProjection(
     string Reconciliation, string? ReconciliationReason, decimal? BankReportedPaid, decimal? Difference,
     int AbsorbedItems, int UnprojectedInstallments, int AmbiguousChains, IReadOnlyList<string> Flags,
     /// <summary>Quanto do total é prestação de financiamento de saldo de fatura. Informativo: o valor JÁ está em <c>Composition</c>/<c>KnownInstallments</c>/<c>Estimated</c> (é consumo da competência, como uma compra parcelada) e nunca é somado de novo.</summary>
-    decimal Financed = 0m);
+    decimal Financed = 0m,
+    /// <summary>
+    /// Fonte do valor da fatura (hierarquia): <c>BankClosed</c> = total oficial de fechamento; <c>BankOpen</c> = último total corrente válido informado pelo banco para a fatura aberta;
+    /// <c>LocalProjection</c> = compras, parcelas conhecidas, assinaturas e estimativas do próprio motor. O total do banco SUBSTITUI a composição local como referência (<c>Obligation</c>), nunca se soma a ela.
+    /// </summary>
+    string Source = "LocalProjection",
+    /// <summary>Instante da observação bancária que originou <see cref="BankTotal"/>.</summary>
+    DateTimeOffset? BankObservedAt = null,
+    /// <summary>Soma dos componentes individualizados (composição + pendentes + parcelas conhecidas + estimadas): o que o Saldo360 consegue listar.</summary>
+    decimal LocalTotal = 0m,
+    /// <summary>Diferença não individualizada = total bancário − <see cref="LocalTotal"/> (positiva ou negativa). Nula sem total bancário. Nunca vira lançamento nem é distribuída entre categorias.</summary>
+    decimal? Undistributed = null);
 
 /// <summary>Obrigação consumida por Agenda, saldo projetado e Dashboard. Uma por fatura, mais uma por obrigação conhecida sem fatura.</summary>
 public sealed record CardObligationItem(

@@ -132,7 +132,7 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
                 return new CardInvoiceFact(i.Id, i.CycleStartDate, i.ClosingDate, i.DueDate, i.Competence, closed, confirmed,
                     i.InstitutionTotal is not null ? i.InstitutionSource ?? "Institution" : i.OfficialTotal is not null ? "OfficialStatement" : null,
                     composition, payments.GetValueOrDefault(i.Id), bill?.Reconciliation.ToString() ?? "NotVerified", bill?.ReconciliationReason,
-                    bill is null || !billPaid.TryGetValue(bill.Id, out var reported) ? null : reported, financedByInvoice.GetValueOrDefault(i.Id));
+                    bill is null || !billPaid.TryGetValue(bill.Id, out var reported) ? null : reported, financedByInvoice.GetValueOrDefault(i.Id), bill?.LastObservedAt);
             }).ToList();
 
             var pending = new List<PendingPurchaseFact>();
@@ -169,7 +169,7 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
             }
 
             var recurring = new List<RecurringChargeFact>();
-            var cardSchedule = CardCycleSchedule.Resolve(cardBills.Select(b => new PluggyBillFact(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency)).ToList(), today, dto.ClosingDay, dto.DueDay);
+            var cardSchedule = CardCycleSchedule.Resolve(cardBills.Select(BillFactOf).ToList(), today, dto.ClosingDay, dto.DueDay);
             var cardManual = manualRecurrences.Where(r => r.FinancialCreditCardId == dto.Id).ToList();
             // A fatura aberta começa antes de hoje, e a anterior ainda não venceu quando o ciclo fechou mas o banco não devolveu o total: ambas seguem compostas pelas assinaturas do período
             // (o motor absorve o que o banco já fechou).
@@ -196,7 +196,7 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
                 foreach (var occurrence in occurrences.Where(o => !AlreadyObserved(recurrence.Description, o.Date)))
                     recurring.Add(new(recurrence.Id, recurrence.Description, recurrence.Amount, occurrence.Date, recurrence.IsEstimated));
             }
-            result.Add(new(info, cardBills.Select(b => new PluggyBillFact(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency)).ToList(), invoiceFacts, pending, observations,
+            result.Add(new(info, cardBills.Select(BillFactOf).ToList(), invoiceFacts, pending, observations,
                 known.Where(k => k.CreditCardId == dto.Id).Select(k => new KnownImportedFact(k.Id, k.Amount, k.DueDate)).ToList(), recurring,
                 seriesByCard[dto.Id].ToDictionary(x => x.Key, x => x.Category)));
         }
@@ -207,6 +207,9 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
     internal static bool SameSubscription(FinancialRecurrence manual, FinancialRecurrence detected) =>
         manual.FinancialCreditCardId == detected.FinancialCreditCardId && manual.Frequency == RecurrenceFrequency.Monthly && detected.Frequency == RecurrenceFrequency.Monthly
         && PluggyFinancialMapper.Normalize(manual.Description) == PluggyFinancialMapper.Normalize(detected.Description) && manual.Amount == detected.Amount;
+
+    /// <summary>Fatura do banco com o instante da última observação (validade de um total de fatura aberta).</summary>
+    private static PluggyBillFact BillFactOf(PluggyCardBill b) => new(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency) { ObservedAt = b.LastObservedAt };
 
     private static decimal Parse(string value) => decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
 }

@@ -37,6 +37,10 @@ const stageLabels: Record<string, string> = {
   Effective: 'Movimento efetivo', InvoicePayment: 'Pagamento de fatura realizado (caixa; não é uma nova despesa)', DebtPayment: 'Pagamento de dívida realizado', Planned: 'Previsto',
   CardLaunched: 'Compra lançada no cartão (a fatura pode não estar paga)', CardForecast: 'Parcela prevista no cartão', CardEstimated: 'Estimativa do cartão', InvoiceFinancing: 'Financiamento da fatura: prestação com principal e juros informados pelo banco, que consome a competência da sua fatura', Cancelled: 'Cancelado',
 }
+const invoiceSourceLabels: Record<string, string> = {
+  BankClosed: 'total oficial do banco (fatura fechada)', BankOpen: 'total corrente do banco (fatura aberta)', LocalProjection: 'projeção local (sem total do banco)',
+}
+const reconciliationLabels: Record<string, string> = { NotVerified: 'não verificada', Reconciled: 'conciliada', Divergent: 'divergente', Incomplete: 'incompleta' }
 const dateKindLabels = { Effective: 'Data efetiva', Due: 'Vencimento previsto', Invoice: 'Vencimento da fatura', Execution: 'Data da transferência' } as const
 const originLabels: Record<string, string> = {
   Manual: 'Manual', PlannedRealization: 'Previsão realizada', PluggyImport: 'Banco (Pluggy)', PluggyRefund: 'Devolução', CreditCardInvoicePayment: 'Pagamento de fatura', DebtInstallmentPayment: 'Pagamento de dívida',
@@ -380,6 +384,14 @@ function GroupHeader({ group, shown, expanded, onToggle }: { group: EntryGroupSu
         {group.cancelledCount > 0 && <span className="meta">{plural(group.cancelledCount, 'cancelado fora', 'cancelados fora')} dos totais</span>}
         {group.transferCount > 0 && <span className="meta">{plural(group.transferCount, 'transferência não somada', 'transferências não somadas')}</span>}
       </div>
+      {group.invoice && <p className="entries__invoice">
+        Fatura {group.invoice.competence} ({group.invoice.phase === 'Closed' ? 'fechada' : 'aberta'}): usada no orçamento <strong className="ov-mono">{formatBrlDecimal(group.invoice.budgetTotal)}</strong> — {invoiceSourceLabels[group.invoice.source] ?? group.invoice.source}
+        {' '}· lançamentos identificados <span className="ov-mono">{formatBrlDecimal(group.invoice.identifiedTotal)}</span>
+        {' '}· diferença não individualizada <span className="ov-mono">{formatBrlDecimal(group.invoice.difference)}</span>
+        {' '}· conciliação {reconciliationLabels[group.invoice.reconciliation] ?? group.invoice.reconciliation}
+        {' '}· pago <span className="ov-mono">{formatBrlDecimal(group.invoice.paid)}</span>, restante <span className="ov-mono">{formatBrlDecimal(group.invoice.remaining)}</span>
+        {group.invoice.bankObservedAt && <> · observado em {new Date(group.invoice.bankObservedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })}</>}
+      </p>}
       <dl className="entries__group-totals">
         <div><dt>Saídas</dt><dd className="ov-mono">{formatBrlDecimal(group.outflow)}</dd></div>
         <div><dt>Entradas</dt><dd className="ov-mono">{formatBrlDecimal(group.inflow)}</dd></div>

@@ -36,6 +36,18 @@ export interface EntryGroupSummary {
   outflow: string; inflow: string; paymentsOut: string; budgetConsumed: string; budgetReduced: string; budgetNet: string; budgetPlanned: string; invoiceFinancing: string
   /** Página em que aparece o primeiro item do grupo. */
   startsOnPage: number
+  /** Só em grupos de cartão: conciliação da fatura da competência (total usado no orçamento × lançamentos identificados). */
+  invoice?: EntryInvoiceSummary | null
+}
+
+/**
+ * Conciliação da fatura de um cartão na competência. `budgetTotal` é o valor que o orçamento usa; `identifiedTotal` a soma dos componentes individualizados; `difference` = budgetTotal − identifiedTotal
+ * (positiva ou negativa) é o componente NÃO individualizado: nunca vira lançamento nem é distribuído entre categorias.
+ */
+export interface EntryInvoiceSummary {
+  competence: string; phase: 'Open' | 'Closed'; source: 'BankClosed' | 'BankOpen' | 'LocalProjection' | string
+  budgetTotal: string; identifiedTotal: string; difference: string; bankTotal: string | null; bankObservedAt: string | null
+  reconciliation: 'NotVerified' | 'Reconciled' | 'Divergent' | 'Incomplete' | string; paid: string; remaining: string
 }
 
 export interface FinancialEntriesPage {
