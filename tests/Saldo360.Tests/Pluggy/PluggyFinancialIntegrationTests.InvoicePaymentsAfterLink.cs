@@ -68,7 +68,10 @@ public sealed partial class PluggyFinancialIntegrationTests
 
         await using var db = Db();
         Assert.Equal(2, await db.FinancialCreditCardInvoices.CountAsync()); // o banco devolveu as duas faturas: ambas ficam registradas para rastreio
-        var projection = await ProjectionAsync(c, 1);
+        // O transbordo é o que venceu ANTES do primeiro mês consultado. A fatura de 190 venceu há 8 dias: consultar o mês corrente a partir do dia 9 a colocaria DENTRO do período
+        // (e não no transbordo), então o período é o mês seguinte ao vencimento, o que vale em qualquer dia do mês.
+        var firstMonth = Today.AddDays(-8).AddMonths(1);
+        var projection = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/credit-cards/obligation-projection?from={firstMonth:yyyy-MM}&months=1");
 
         // Só a fatura que fechou depois do corte (190) é obrigação em atraso; a de antes do corte (10) é histórico e não soma.
         Assert.Equal("190.00", projection.GetProperty("carryover").GetString());
