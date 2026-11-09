@@ -100,7 +100,7 @@ public static class CardInstallmentProjector
         else if (items.Any(i => i.Origin == InstallmentOrigin.Estimated)) status = ChainStatus.Estimated;
 
         return new(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{key}|{total}")))[..12].ToLowerInvariant(),
-            description, total, last.Obs.Amount, status, reason, items.OrderBy(i => i.Number).ThenBy(i => i.Closing).ToList(), unprojected);
+            description, total, last.Obs.Amount, status, reason, items.OrderBy(i => i.Number).ThenBy(i => i.Closing).ToList(), unprojected, observations.Any(o => o.Financing));
     }
 
     private static int MonthIndex(DateOnly date) => date.Year * 12 + date.Month;

@@ -1719,6 +1719,14 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasDefaultValue("Undefined")
                         .HasColumnName("expense_nature");
 
+                    b.Property<string>("OperationKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasDefaultValue("Normal")
+                        .HasColumnName("operation_kind");
+
                     b.Property<int>("PreviouslyPaidInstallments")
                         .HasColumnType("integer")
                         .HasColumnName("previously_paid_installments");
@@ -1777,6 +1785,8 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_credit_card_purchases_expense_nature", "expense_nature IN ('Undefined', 'Fixed', 'Variable')");
 
                             t.HasCheckConstraint("ck_credit_card_purchases_installment_count", "installment_count BETWEEN 1 AND 120");
+
+                            t.HasCheckConstraint("ck_credit_card_purchases_operation_kind", "operation_kind IN ('Normal', 'InvoiceFinancing')");
 
                             t.HasCheckConstraint("ck_credit_card_purchases_paid_schedule", "previously_paid_installments >= 0 AND previously_paid_installments < installment_count AND (previously_paid_installments = 0 OR first_pending_competence IS NOT NULL) AND (first_pending_competence IS NULL OR EXTRACT(DAY FROM first_pending_competence) = 1)");
 

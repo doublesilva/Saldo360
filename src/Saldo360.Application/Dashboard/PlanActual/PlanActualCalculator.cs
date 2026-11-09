@@ -211,7 +211,8 @@ public static class PlanActualCalculator
         decimal confirmed = 0, pending = 0, estimated = 0;
         foreach (var invoice in projection.Invoices.Where(i => i.Competence == competence))
         {
-            if (invoice.Phase == InvoicePhase.Closed) { confirmed += invoice.Obligation; continue; }
+            // O total do banco prevalece, mas o principal de financiamento de fatura (já contabilizado como consumo na fatura original) é obrigação, não novo consumo.
+            if (invoice.Phase == InvoicePhase.Closed) { confirmed += invoice.Obligation - invoice.Financed; continue; }
             confirmed += invoice.Composition; pending += invoice.PendingKnown + invoice.KnownInstallments; estimated += invoice.Estimated;
         }
         pending += projection.Items.Where(i => i.Kind == ObligationKind.KnownImported && i.DueDate?.ToString("yyyy-MM", CultureInfo.InvariantCulture) == competence).Sum(i => i.Obligation);

@@ -6,6 +6,12 @@ namespace Saldo360.Domain.CreditCards;
 public enum CreditCardPurchaseStatus { Active, Cancelled }
 public enum CreditCardInstallmentStatus { Active, Cancelled }
 
+/// <summary>
+/// Natureza da operação de cartão. <c>InvoiceFinancing</c> = parcela de financiamento do saldo de uma fatura já contabilizada: o principal NÃO é novo consumo do orçamento, mas continua sendo obrigação de pagamento
+/// (fatura e caixa). A composição entre principal e encargos não é discriminada pelo banco e nunca é presumida.
+/// </summary>
+public enum CreditCardOperationKind { Normal, InvoiceFinancing }
+
 public sealed class FinancialCreditCardPurchase : Entity
 {
     public const int DescriptionMaxLength = 200;
@@ -17,6 +23,8 @@ public sealed class FinancialCreditCardPurchase : Entity
     public Guid CategoryId { get; private set; }
     /// <summary>Natureza da despesa da compra; as parcelas a herdam (não têm natureza própria). Compra de cartão é sempre despesa.</summary>
     public ExpenseNature Nature { get; private set; }
+    /// <summary>Compra comum (padrão) ou parcela de financiamento de fatura. Definida na origem a partir de evidência; nunca reclassificada em silêncio.</summary>
+    public CreditCardOperationKind OperationKind { get; private set; }
     public string Description { get; private set; }
     public DateOnly PurchaseDate { get; private set; }
     public decimal TotalAmount { get; private set; }
@@ -46,8 +54,13 @@ public sealed class FinancialCreditCardPurchase : Entity
     /// Compra vinda de transação de cartão importada da Pluggy (T09.3): uma parcela, sem histórico de parcelas pagas. Cada
     /// transação da Pluggy (inclusive cada parcela de uma compra parcelada) vira uma compra de parcela única, na fatura em que a Pluggy a lançou.
     /// </summary>
-    public static FinancialCreditCardPurchase CreateImported(Guid workspaceId, Guid cardId, Guid categoryId, string description, DateOnly date, decimal amount, Guid userId, DateTimeOffset now) =>
-        Create(workspaceId, cardId, categoryId, description.Trim(), date, amount, 1, userId, now);
+    public static FinancialCreditCardPurchase CreateImported(Guid workspaceId, Guid cardId, Guid categoryId, string description, DateOnly date, decimal amount, Guid userId, DateTimeOffset now,
+        CreditCardOperationKind kind = CreditCardOperationKind.Normal)
+    {
+        var purchase = Create(workspaceId, cardId, categoryId, description.Trim(), date, amount, 1, userId, now);
+        purchase.OperationKind = kind;
+        return purchase;
+    }
 
     /// <summary>Corrige apenas a categoria interna (dados de origem intactos).</summary>
     public void Recategorize(Guid categoryId, Guid userId, DateTimeOffset now)

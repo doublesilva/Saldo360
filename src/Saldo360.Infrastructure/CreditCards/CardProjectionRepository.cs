@@ -49,9 +49,16 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
         var installments = (await (from i in db.FinancialCreditCardInstallments.AsNoTracking()
                                    join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id
                                    where i.WorkspaceId == workspaceId && p.WorkspaceId == workspaceId && i.InvoiceId != null && invoiceIds.Contains(i.InvoiceId.Value)
-                                      && i.Status == CreditCardInstallmentStatus.Active && p.Status == CreditCardPurchaseStatus.Active
+                                      && i.Status == CreditCardInstallmentStatus.Active && p.Status == CreditCardPurchaseStatus.Active && p.OperationKind == CreditCardOperationKind.Normal
                                    group i.Amount by i.InvoiceId!.Value into g
                                    select new { Id = g.Key, Amount = g.Sum() }).ToListAsync(ct)).ToDictionary(x => x.Id, x => x.Amount);
+        // Financiamento de saldo de fatura já lançado: continua na obrigação da fatura, mas não é composição de consumo.
+        var financedByInvoice = (await (from i in db.FinancialCreditCardInstallments.AsNoTracking()
+                                        join p in db.FinancialCreditCardPurchases.AsNoTracking() on i.PurchaseId equals p.Id
+                                        where i.WorkspaceId == workspaceId && p.WorkspaceId == workspaceId && i.InvoiceId != null && invoiceIds.Contains(i.InvoiceId.Value)
+                                           && i.Status == CreditCardInstallmentStatus.Active && p.Status == CreditCardPurchaseStatus.Active && p.OperationKind == CreditCardOperationKind.InvoiceFinancing
+                                        group i.Amount by i.InvoiceId!.Value into g
+                                        select new { Id = g.Key, Amount = g.Sum() }).ToListAsync(ct)).ToDictionary(x => x.Id, x => x.Amount);
         var historical = (await db.FinancialCreditCardImportedInstallments.AsNoTracking()
             .Where(i => i.WorkspaceId == workspaceId && i.InvoiceId != null && invoiceIds.Contains(i.InvoiceId.Value) && i.IsHistorical && i.Status == FinancialCreditCardImportedInstallmentStatus.Active)
             .GroupBy(i => i.InvoiceId!.Value).Select(g => new { Id = g.Key, Amount = g.Sum(i => i.Amount) }).ToListAsync(ct)).ToDictionary(x => x.Id, x => x.Amount);
@@ -87,13 +94,6 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
             .Where(m => m.WorkspaceId == workspaceId && manualIds.Contains(m.RecurrenceId)).Select(m => new { m.RecurrenceId, m.OccurrenceNumber }).ToListAsync(ct))
             .Select(m => (m.RecurrenceId, m.OccurrenceNumber)).ToHashSet();
 
-        var result = new List<CardFacts>();
-        foreach (var dto in dtos)
-        {
-            linkByCard.TryGetValue(dto.Id, out var link);
-            var cardBills = link is null ? [] : bills.Where(b => b.AccountLinkId == link.Id).ToList();
-            var limit = await purchases.GetLimitAsync(workspaceId, dto.Id, ct);
-            var creditLimit = Parse(dto.CreditLimit);
         // Categoria da série: a de suas parcelas já lançadas (compras ativas). Só vale quando é única e não é o marcador "Outros"; parcelas projetadas herdam, nada é gravado.
         var fallbackCategories = (await db.FinancialCategories.AsNoTracking().Where(c => c.WorkspaceId == workspaceId).Select(c => new { c.Id, c.Name }).ToListAsync(ct))
             .Where(c => PluggyFinancialMapper.Normalize(c.Name) == "outros").Select(c => c.Id).ToHashSet();
@@ -108,6 +108,13 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
             .Where(g => g.Select(r => r.CategoryId).Distinct().Count() == 1)
             .ToLookup(g => g.Key.CreditCardId, g => (g.Key.Key, Category: g.First().CategoryId));
 
+        var result = new List<CardFacts>();
+        foreach (var dto in dtos)
+        {
+            linkByCard.TryGetValue(dto.Id, out var link);
+            var cardBills = link is null ? [] : bills.Where(b => b.AccountLinkId == link.Id).ToList();
+            var limit = await purchases.GetLimitAsync(workspaceId, dto.Id, ct);
+            var creditLimit = Parse(dto.CreditLimit);
             var (available, source) = link?.AvailableCreditLimit is { } bankAvailable ? (bankAvailable, "Bank") : (limit is null ? creditLimit : Parse(limit.AvailableLimit), "Saldo360");
             accounts.TryGetValue(dto.DefaultPaymentAccountId ?? Guid.Empty, out var payer);
             var info = new CardInfo(dto.Id, dto.Name, dto.Issuer, dto.LastFourDigits, dto.Scope, dto.Origin, dto.ClosingDay, dto.DueDay, creditLimit, available, source,
@@ -125,11 +132,17 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
                 return new CardInvoiceFact(i.Id, i.CycleStartDate, i.ClosingDate, i.DueDate, i.Competence, closed, confirmed,
                     i.InstitutionTotal is not null ? i.InstitutionSource ?? "Institution" : i.OfficialTotal is not null ? "OfficialStatement" : null,
                     composition, payments.GetValueOrDefault(i.Id), bill?.Reconciliation.ToString() ?? "NotVerified", bill?.ReconciliationReason,
-                    bill is null || !billPaid.TryGetValue(bill.Id, out var reported) ? null : reported);
+                    bill is null || !billPaid.TryGetValue(bill.Id, out var reported) ? null : reported, financedByInvoice.GetValueOrDefault(i.Id));
             }).ToList();
 
             var pending = new List<PendingPurchaseFact>();
             var observations = new List<InstallmentObservation>();
+            // Financiamento de saldo de fatura: só com a evidência da própria série (parcelas estruturadas + categoria "Credit card payment" + cronograma idêntico), nunca pela descrição sozinha.
+            static string DescriptionOf(PluggyImportedTransaction t) => t.Description ?? t.DescriptionRaw ?? string.Empty;
+            var financingSeries = link is null ? new HashSet<string>() : InvoiceFinancingEvidence.ConfirmedSeries(transactions
+                .Where(t => t.ConnectionId == link.ConnectionId && t.PluggyAccountId == link.PluggyAccountId)
+                .Select(t => new FinancingObservation(dto.Id, DescriptionOf(t), Math.Abs(t.Amount ?? 0m), t.TotalInstallments, t.Category)));
+            bool IsFinancing(PluggyImportedTransaction t) => InvoiceFinancingEvidence.IsFinancing(new(dto.Id, DescriptionOf(t), Math.Abs(t.Amount ?? 0m), t.TotalInstallments, t.Category), financingSeries);
             if (link is not null)
             {
                 foreach (var t in transactions.Where(t => t.ConnectionId == link.ConnectionId && t.PluggyAccountId == link.PluggyAccountId))
@@ -143,14 +156,14 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
                         var decision = PluggyFinancialMapper.Decide(ImportedFacts.From(t, link) with { Status = PluggyTransactionStatus.Posted }, today);
                         if (decision.Disposition != PluggyDisposition.CardPurchase || decision.Amount <= 0m) continue;
                         var text = string.IsNullOrWhiteSpace(t.Description) ? t.DescriptionRaw ?? decision.Description : t.Description;
-                        if (hasInstallments) observations.Add(new(t.Id.ToString("N"), text!, decision.Amount, t.InstallmentNumber!.Value, t.TotalInstallments!.Value, decision.Date, false, null, null));
+                        if (hasInstallments) observations.Add(new(t.Id.ToString("N"), text!, decision.Amount, t.InstallmentNumber!.Value, t.TotalInstallments!.Value, decision.Date, false, null, null, IsFinancing(t)));
                         else pending.Add(new(t.Id.ToString("N"), text!, decision.Amount, decision.Date));
                     }
                     else if (hasInstallments && posting is { State: PluggyPostingState.Applied, Kind: PluggyPostingKind.CardPurchase, AppliedAmount: { } applied, AppliedDate: { } date })
                     {
                         var bill = t.BillId is null ? null : cardBills.FirstOrDefault(b => b.PluggyBillId == t.BillId);
                         var text = string.IsNullOrWhiteSpace(t.Description) ? t.DescriptionRaw ?? string.Empty : t.Description;
-                        observations.Add(new(t.Id.ToString("N"), text, applied, t.InstallmentNumber!.Value, t.TotalInstallments!.Value, date, true, bill?.ClosingDate, bill?.DueDate));
+                        observations.Add(new(t.Id.ToString("N"), text, applied, t.InstallmentNumber!.Value, t.TotalInstallments!.Value, date, true, bill?.ClosingDate, bill?.DueDate, IsFinancing(t)));
                     }
                 }
             }

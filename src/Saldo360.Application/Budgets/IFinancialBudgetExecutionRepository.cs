@@ -1,5 +1,8 @@
 namespace Saldo360.Application.Budgets;
 
+/// <summary>Parcela de financiamento de saldo de fatura: obrigação de pagamento (fatura e caixa) que NÃO é consumo do orçamento. Fora de <see cref="BudgetFact"/> de propósito: nenhum consumidor do orçamento a soma por engano.</summary>
+public sealed record InvoiceFinancingLine(Guid InstallmentId, Guid PurchaseId, Guid CardId, string CardName, DateOnly DueDate, decimal Amount, string Competence, string Description, Guid? CategoryId);
+
 public interface IFinancialBudgetExecutionRepository
 {
     /// <summary>
@@ -11,6 +14,9 @@ public interface IFinancialBudgetExecutionRepository
 
     /// <summary>Todos os registros de despesa do intervalo [first, through), pela mesma lista do orçamento, com os caminhos "Categoria / Subcategoria". Somente leitura.</summary>
     Task<(IReadOnlyList<BudgetFact> Facts, IReadOnlyDictionary<Guid, string> CategoryPaths)> ReadFactsAsync(Guid workspaceId, DateOnly first, DateOnly through, CancellationToken cancellationToken);
+
+    /// <summary>Parcelas de financiamento de fatura do intervalo [first, through), por competência da fatura. Não entram no consumo do orçamento. Somente leitura.</summary>
+    Task<IReadOnlyList<InvoiceFinancingLine>> ReadInvoiceFinancingAsync(Guid workspaceId, DateOnly first, DateOnly through, CancellationToken cancellationToken);
 
     /// <summary>Os registros que compõem uma meta, pela MESMA lista e regra de cobertura do resumo. Null se o orçamento ou a meta não existirem (ou estiverem arquivados).</summary>
     Task<BudgetCompositionSource?> GetCompositionAsync(

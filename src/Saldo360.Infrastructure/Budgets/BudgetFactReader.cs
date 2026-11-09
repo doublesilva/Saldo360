@@ -22,6 +22,18 @@ namespace Saldo360.Infrastructure.Budgets;
 /// </summary>
 internal static class BudgetFactReader
 {
+    /// <summary>Parcelas de financiamento de fatura (obrigação, não consumo). Mesma regra de competência dos fatos de cartão.</summary>
+    public static async Task<IReadOnlyList<InvoiceFinancingLine>> ReadInvoiceFinancingAsync(Saldo360DbContext db, Guid workspaceId, DateOnly first, DateOnly through, CancellationToken ct) =>
+        (await (from installment in db.FinancialCreditCardInstallments.AsNoTracking()
+                join purchase in db.FinancialCreditCardPurchases.AsNoTracking() on installment.PurchaseId equals purchase.Id
+                join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
+                join card in db.FinancialCreditCards.AsNoTracking() on purchase.CreditCardId equals card.Id
+                where installment.WorkspaceId == workspaceId && installment.Status == CreditCardInstallmentStatus.Active
+                    && purchase.WorkspaceId == workspaceId && purchase.Status == CreditCardPurchaseStatus.Active && purchase.OperationKind == CreditCardOperationKind.InvoiceFinancing
+                    && invoice.WorkspaceId == workspaceId && invoice.DueDate >= first && invoice.DueDate < through
+                select new { installment.Id, PurchaseId = purchase.Id, CardId = card.Id, CardName = card.Name, invoice.DueDate, installment.Amount, invoice.Competence, purchase.Description, purchase.CategoryId }).ToListAsync(ct))
+        .Select(r => new InvoiceFinancingLine(r.Id, r.PurchaseId, r.CardId, r.CardName, r.DueDate, r.Amount, r.Competence, r.Description, r.CategoryId)).ToList();
+
     public static async Task<IReadOnlyList<BudgetFact>> ReadAsync(Saldo360DbContext db, Guid workspaceId, DateOnly first, DateOnly through, CancellationToken ct, DateOnly? today = null)
     {
         var facts = new List<BudgetFact>();
@@ -85,7 +97,7 @@ internal static class BudgetFactReader
                               join invoice in db.FinancialCreditCardInvoices.AsNoTracking() on installment.InvoiceId equals invoice.Id
                               join card in db.FinancialCreditCards.AsNoTracking() on purchase.CreditCardId equals card.Id
                               where installment.WorkspaceId == workspaceId && installment.Status == CreditCardInstallmentStatus.Active
-                                  && purchase.WorkspaceId == workspaceId && purchase.Status == CreditCardPurchaseStatus.Active
+                                  && purchase.WorkspaceId == workspaceId && purchase.Status == CreditCardPurchaseStatus.Active && purchase.OperationKind == CreditCardOperationKind.Normal
                                   && invoice.WorkspaceId == workspaceId && invoice.DueDate >= first && invoice.DueDate < through
                               select new
                               {

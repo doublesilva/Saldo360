@@ -105,6 +105,7 @@ public sealed class FinancialEntriesQueryService(
             var projections = await cardProjection.ComputeAsync(workspaceId, today, null, ct);
             var accountNames = accountList.ToDictionary(a => a.Id, a => a.Name);
             entries.AddRange(ProjectedCardEntries(projections, competence, categories, cards, scopeOf, accountNames));
+            entries.AddRange(FinancingEntries(await budgetFacts.ReadInvoiceFinancingAsync(workspaceId, first.AddMonths(-1), first.AddMonths(2), ct), competence, categories, cards, scopeOf, accountList.ToDictionary(a => a.Id, a => a.Name)));
             entries.AddRange(CardEntries(await budgetFacts.ReadFactsAsync(workspaceId, first.AddMonths(-1), first.AddMonths(2), ct), competence, categories, cards, scopeOf, accountList.ToDictionary(a => a.Id, a => a.Name)));
         }
         entries.AddRange(await CalendarEntriesAsync(workspaceId, userId, previous ? first.AddMonths(-OverdueLookbackMonths) : first, previous ? first.AddDays(-1) : last, query.AccountId, previous, scopeOf, ct));
@@ -246,6 +247,27 @@ public sealed class FinancialEntriesQueryService(
     }
 
     /// <summary>
+    /// Parcela de financiamento de saldo de fatura já lançada: aparece em Lançamentos como obrigação da fatura (caixa), sem consumir orçamento — o principal já foi contabilizado quando a fatura original foi lançada.
+    /// A composição entre principal e encargos não é discriminada pelo banco; fica sinalizada, nunca presumida como zero.
+    /// </summary>
+    private static IEnumerable<FinancialEntryDto> FinancingEntries(IReadOnlyList<InvoiceFinancingLine> lines, string competence, IReadOnlyDictionary<Guid, FinancialCategoryDto> categories,
+        IReadOnlyDictionary<Guid, FinancialCreditCardDto> cards, IReadOnlyDictionary<Guid, string> scopeOf, IReadOnlyDictionary<Guid, string> accountNames)
+    {
+        foreach (var l in lines.Where(l => l.Competence == competence))
+        {
+            var payer = cards.GetValueOrDefault(l.CardId)?.DefaultPaymentAccountId;
+            var label = InstallmentLabel.Build(l.Description, null, null);
+            var flags = new List<string> { "PrincipalInterestUnknown" }; if (payer is null) flags.Add("NoPayerAccount");
+            if (label is { Inconsistent: true }) flags.Add("InstallmentInconsistent");
+            yield return new($"CardInstallment:{l.InstallmentId}", "CardPurchase", competence, l.DueDate, "Invoice", label.Number is null ? l.Description : label.Display, "Expense", "Out", "Realized", Money.Format(l.Amount),
+                payer is { } p ? new(p, accountNames.GetValueOrDefault(p) ?? "Conta", scopeOf.GetValueOrDefault(p)) : null, null, new EntryReference(l.CardId, l.CardName),
+                l.CategoryId is { } id && categories.TryGetValue(id, out var cat) ? new EntryCategory(id, cat.Name, cat.Name) : null,
+                "Undefined", "InvoiceFinancing", "None", "AtInvoicePayment", null, null, null, null, null, competence, ["ViewDetails", "OpenCards"], flags,
+                Installment: label.Number is null ? null : new(label.OriginalDescription, label.Number, label.Total, label.OriginalNumber, label.OriginalTotal, label.Inconsistent));
+        }
+    }
+
+    /// <summary>
     /// Ocorrências que o motor de cartões calcula para faturas ainda não fechadas pelo banco (parcelas conhecidas/estimadas, compras pendentes, cobranças recorrentes). São leitura: nunca viram registro,
     /// nunca substituem um fato confirmado (o motor já as descarta quando a fatura fecha) e ficam sempre como Pendente, sinalizadas como estimativa quando não há confirmação.
     /// </summary>
@@ -262,6 +284,7 @@ public sealed class FinancialEntriesQueryService(
             {
                 if (o.Competence != competence) continue;
                 var flags = new List<string> { o.Quality != "Known" ? "Estimated" : o.Kind == "ManualRecurring" ? "Committed" : "KnownImported" };
+                if (o.Kind == "InvoiceFinancing") flags.Add("PrincipalInterestUnknown");
                 if (!projection.Coverage.Complete) flags.Add("PartialCoverage");
                 if (payer is null) flags.Add("NoPayerAccount");
                 var label = o.Number is not null ? InstallmentLabel.Build(o.Description, o.Number, o.Total) : null;
@@ -270,7 +293,7 @@ public sealed class FinancialEntriesQueryService(
                 yield return new($"CardProjected:{o.CardId}:{o.Key}", "CardProjected", competence, o.Date, "Invoice", description, "Expense", "Out", "Pending", Money.Format(o.Amount),
                     payer is { } p ? new(p, accountNames.GetValueOrDefault(p) ?? projection.Card.PayerName ?? "Conta", scopeOf.GetValueOrDefault(p)) : null, null, new EntryReference(o.CardId, projection.Card.Name),
                     o.CategoryId is { } cid && categories.TryGetValue(cid, out var cat) ? new EntryCategory(cid, cat.Name, cat.Name) : null,
-                    null, o.Kind, "Planned", "AtInvoicePayment", null, null, null, null, o.Kind == "ManualRecurring" ? RecurrenceIdOf(o.Key) : null, competence, o.Kind == "ManualRecurring" ? ["ViewDetails", "OpenRecurrences"] : ["ViewDetails", "OpenCards"], flags, Installment: label is null ? null : new(label.OriginalDescription, label.Number, label.Total, label.OriginalNumber, label.OriginalTotal, label.Inconsistent));
+                    null, o.Kind, o.Kind == "InvoiceFinancing" ? "None" : "Planned", "AtInvoicePayment", null, null, null, null, o.Kind == "ManualRecurring" ? RecurrenceIdOf(o.Key) : null, competence, o.Kind == "ManualRecurring" ? ["ViewDetails", "OpenRecurrences"] : ["ViewDetails", "OpenCards"], flags, Installment: label is null ? null : new(label.OriginalDescription, label.Number, label.Total, label.OriginalNumber, label.OriginalTotal, label.Inconsistent));
             }
         }
     }

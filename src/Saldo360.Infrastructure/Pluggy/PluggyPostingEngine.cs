@@ -923,11 +923,26 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             var target = InvoiceFor(card, link, movement.Date, t.BillId);
             if (target is null) { ToReview(posting, "InvoiceClosed"); return; }
             if ((ValidCategory(posting, CategoryType.Expense) ?? FallbackCategory()) is not { } categoryId) { ToReview(posting, "CategoryRequired"); return; }
-            var newPurchase = FinancialCreditCardPurchase.CreateImported(workspaceId, card.Id, categoryId, movement.Description, movement.Date, movement.Amount, userId, now);
+            var newPurchase = FinancialCreditCardPurchase.CreateImported(workspaceId, card.Id, categoryId, movement.Description, movement.Date, movement.Amount, userId, now, OperationKindFor(t, card.Id));
             foreach (var installment in newPurchase.Installments) installment.AssignInvoice(target.Id);
             db.FinancialCreditCardPurchases.Add(newPurchase);
             posting.ApplyCardPurchase(newPurchase.Id, movement.Amount, movement.Date, now);
             created++;
+        }
+
+        private IReadOnlySet<string>? financingSeries;
+
+        /// <summary>
+        /// Natureza da compra importada: financiamento de fatura só com a evidência da própria série (parcelas estruturadas + categoria "Credit card payment" + cronograma de valor idêntico em pelo menos
+        /// duas parcelas). Candidata sem confirmação continua compra comum. Nunca pela descrição sozinha, e registros já aplicados não são reclassificados (este ponto só roda na criação).
+        /// </summary>
+        private CreditCardOperationKind OperationKindFor(PluggyImportedTransaction t, Guid cardId)
+        {
+            financingSeries ??= InvoiceFinancingEvidence.ConfirmedSeries(imported.Values
+                .Where(r => linkOfImported.TryGetValue(r.Id, out var l) && l.Kind == PluggyLinkedAccountKind.Card && l.CreditCardId is not null)
+                .Select(r => new FinancingObservation(linkOfImported[r.Id].CreditCardId!.Value, r.Description ?? r.DescriptionRaw ?? string.Empty, Math.Abs(r.Amount ?? 0m), r.TotalInstallments, r.Category)));
+            var observation = new FinancingObservation(cardId, t.Description ?? t.DescriptionRaw ?? string.Empty, Math.Abs(t.Amount ?? 0m), t.TotalInstallments, t.Category);
+            return InvoiceFinancingEvidence.IsFinancing(observation, financingSeries) ? CreditCardOperationKind.InvoiceFinancing : CreditCardOperationKind.Normal;
         }
 
         /// <summary>Fatura do cartão para a data da compra (pelo calendário do cartão). Nula se a fatura já foi fechada oficialmente (importada por extrato): não se acrescenta nada a ela.</summary>

@@ -7,7 +7,7 @@ namespace Saldo360.Application.Entries;
 /// </summary>
 public static class FinancialEntryPrecedence
 {
-    public const string Effective = "Effective", InvoicePayment = "InvoicePayment", DebtPayment = "DebtPayment", Planned = "Planned", CardLaunched = "CardLaunched", CardForecast = "CardForecast", CardEstimated = "CardEstimated", Cancelled = "Cancelled";
+    public const string Effective = "Effective", InvoicePayment = "InvoicePayment", DebtPayment = "DebtPayment", Planned = "Planned", CardLaunched = "CardLaunched", CardForecast = "CardForecast", CardEstimated = "CardEstimated", InvoiceFinancing = "InvoiceFinancing", Cancelled = "Cancelled";
 
     private static readonly HashSet<string> EstimatedKinds = ["EstimatedInstallment", "Recurring"];
 
@@ -23,7 +23,7 @@ public static class FinancialEntryPrecedence
     };
 
     /// <summary>Estágio financeiro: o que o movimento é, sem insinuar que a fatura do cartão foi paga (compra lançada ≠ fatura paga ≠ pagamento realizado).</summary>
-    public static string Stage(FinancialEntryDto e) => e.Status == "Cancelled" ? Cancelled : e.Source switch
+    public static string Stage(FinancialEntryDto e) => e.Status == "Cancelled" ? Cancelled : e.Origin == "InvoiceFinancing" ? InvoiceFinancing : e.Source switch
     {
         "Transaction" => e.Origin switch { "CreditCardInvoicePayment" => InvoicePayment, "DebtInstallmentPayment" => DebtPayment, _ => Effective },
         "Transfer" => e.Status == "Realized" ? Effective : Planned,

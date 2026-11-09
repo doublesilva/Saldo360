@@ -21,7 +21,7 @@ public enum ObligationKind { Invoice, KnownImported }
 /// <summary>Parcela devolvida pela instituição (numero/total) que pertence a uma compra parcelada do cartão.</summary>
 public sealed record InstallmentObservation(
     string SourceId, string Description, decimal Amount, int Number, int Total, DateOnly Date,
-    bool InInvoice, DateOnly? BillClosingDate, DateOnly? BillDueDate);
+    bool InInvoice, DateOnly? BillClosingDate, DateOnly? BillDueDate, bool Financing = false);
 
 /// <summary>Compra à vista ainda pendente (não faturada): entra na fatura aberta como valor provisório.</summary>
 public sealed record PendingPurchaseFact(string SourceId, string Description, decimal Amount, DateOnly Date);
@@ -35,7 +35,7 @@ public sealed record RecurringChargeFact(Guid RecurrenceId, string Description, 
 public sealed record CardInvoiceFact(
     Guid InvoiceId, DateOnly CycleStart, DateOnly Closing, DateOnly Due, string Competence,
     bool ClosedByBank, decimal? ConfirmedTotal, string? ConfirmedSource, decimal Composition, decimal Paid,
-    string Reconciliation, string? ReconciliationReason, decimal? BankReportedPaid);
+    string Reconciliation, string? ReconciliationReason, decimal? BankReportedPaid, decimal Financed = 0m);
 
 public sealed record CardInfo(
     Guid Id, string Name, string Issuer, string? LastFour, string? Scope, string Origin, int ClosingDay, int DueDay,
@@ -56,7 +56,7 @@ public sealed record ProjectedInstallment(
 /// <summary>Compra parcelada reconstruída a partir das parcelas devolvidas. A estimativa só existe com evidência (periodicidade, valor e ciclo).</summary>
 public sealed record InstallmentChain(
     string Key, string Description, int Total, decimal Amount, ChainStatus Status, string? Reason,
-    IReadOnlyList<ProjectedInstallment> Installments, int Unprojected)
+    IReadOnlyList<ProjectedInstallment> Installments, int Unprojected, bool IsFinancing = false)
 {
     public int Estimated => Installments.Count(i => i.Origin == InstallmentOrigin.Estimated);
 }
@@ -67,7 +67,9 @@ public sealed record CardInvoiceProjection(
     decimal? BankTotal, string? BankTotalSource, decimal Composition, decimal PendingKnown, decimal KnownInstallments, decimal Estimated,
     decimal ProjectedTotal, decimal Obligation, decimal Paid, decimal Remaining, InvoicePaymentState PaymentState,
     string Reconciliation, string? ReconciliationReason, decimal? BankReportedPaid, decimal? Difference,
-    int AbsorbedItems, int UnprojectedInstallments, int AmbiguousChains, IReadOnlyList<string> Flags);
+    int AbsorbedItems, int UnprojectedInstallments, int AmbiguousChains, IReadOnlyList<string> Flags,
+    /// <summary>Financiamento de saldo de fatura: obrigação de pagamento (está em <c>ProjectedTotal</c>/<c>Obligation</c>), mas NÃO é consumo — fica fora de <c>Composition</c>, <c>KnownInstallments</c> e <c>Estimated</c>.</summary>
+    decimal Financed = 0m);
 
 /// <summary>Obrigação consumida por Agenda, saldo projetado e Dashboard. Uma por fatura, mais uma por obrigação conhecida sem fatura.</summary>
 public sealed record CardObligationItem(
@@ -94,4 +96,6 @@ public static class CardCoverageReasons
     public const string KnownWithoutDueDate = "KnownWithoutDueDate";
     public const string SyncAttention = "SyncAttention";
     public const string NoBankHistory = "NoBankHistory";
+    /// <summary>Há financiamento de fatura: o banco não discriminou principal e encargos, então a cobertura é parcial (encargos desconhecidos, nunca zero).</summary>
+    public const string InvoiceFinancingComposition = "InvoiceFinancingComposition";
 }
