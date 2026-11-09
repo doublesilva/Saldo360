@@ -36,7 +36,7 @@ public static class CardProjectionEngine
         DateOnly? latestClosed = closedByBank.Count == 0 ? null : closedByBank.Max();
 
         var cycles = new Dictionary<DateOnly, Cycle>();
-        var occurrences = new List<(Cycle Cycle, string Kind, string Key, string Description, decimal Amount, DateOnly Date, int? Number, int? Total, string Quality)>();
+        var occurrences = new List<(Cycle Cycle, string Kind, string Key, string Description, decimal Amount, DateOnly Date, int? Number, int? Total, string Quality, Guid? CategoryId)>();
         Cycle Ensure(DateOnly closing, DateOnly start, DateOnly due, string competence)
         {
             if (cycles.TryGetValue(closing, out var cycle)) return cycle;
@@ -56,7 +56,7 @@ public static class CardProjectionEngine
             var cycle = EnsureFrom(calendar);
             if (cycle.Fact is { ClosedByBank: true } || latestClosed is { } closed && cycle.Closing <= closed) { cycle.Absorbed++; continue; }
             cycle.PendingKnown += pending.Amount;
-            occurrences.Add((cycle, "Pending", pending.SourceId, pending.Description, pending.Amount, pending.Date, null, null, "Known"));
+            occurrences.Add((cycle, "Pending", pending.SourceId, pending.Description, pending.Amount, pending.Date, null, null, "Known", null));
         }
 
         // Compras parceladas: parcelas já devolvidas (pendentes) e as estimadas por evidência.
@@ -70,7 +70,7 @@ public static class CardProjectionEngine
                 if (installment.Origin == InstallmentOrigin.Known) cycle.KnownInstallments += installment.Amount; else cycle.Estimated += installment.Amount;
                 var estimated = installment.Origin != InstallmentOrigin.Known;
                 occurrences.Add((cycle, estimated ? "EstimatedInstallment" : "KnownInstallment", $"{chain.Key}:{installment.Number}", chain.Description, installment.Amount, installment.Due, installment.Number, installment.Total,
-                    estimated ? (chain.Status == ChainStatus.Estimated ? "Estimated" : "Partial") : "Known"));
+                    estimated ? (chain.Status == ChainStatus.Estimated ? "Estimated" : "Partial") : "Known", null));
             }
         }
 
@@ -79,8 +79,11 @@ public static class CardProjectionEngine
         {
             var cycle = EnsureFrom(schedule.CycleFor(recurring.ChargeDate));
             if (cycle.Fact is { ClosedByBank: true } || latestClosed is { } closed && cycle.Closing <= closed) { cycle.Absorbed++; continue; }
-            cycle.Estimated += recurring.Amount;
-            occurrences.Add((cycle, "Recurring", $"{recurring.RecurrenceId}:{recurring.ChargeDate:yyyyMMdd}", recurring.Description, recurring.Amount, recurring.ChargeDate, null, null, "Estimated"));
+            // Assinatura manual de valor fixo é compromisso declarado (comprometido); a de valor estimado e toda detecção do Pluggy são estimativa.
+            var committed = recurring.Manual && !recurring.IsEstimated;
+            if (committed) cycle.PendingKnown += recurring.Amount; else cycle.Estimated += recurring.Amount;
+            var key = recurring.Sequence is { } sequence ? $"{recurring.RecurrenceId}:{sequence}" : $"{recurring.RecurrenceId}:{recurring.ChargeDate:yyyyMMdd}";
+            occurrences.Add((cycle, recurring.Manual ? "ManualRecurring" : "Recurring", key, recurring.Description, recurring.Amount, recurring.ChargeDate, null, null, committed ? "Known" : "Estimated", recurring.CategoryId));
         }
 
         // O ciclo aberto sempre existe, mesmo vazio, para que o cartão tenha "a fatura atual".
@@ -135,7 +138,7 @@ public static class CardProjectionEngine
         if (facts.KnownImported.Any(k => k.DueDate is null)) reasons.Add(CardCoverageReasons.KnownWithoutDueDate);
         if (card.SyncStatus is "ConsentExpired" or "Attention") reasons.Add(CardCoverageReasons.SyncAttention);
         if (card.Origin == "Pluggy" && latestClosed is null) reasons.Add(CardCoverageReasons.NoBankHistory);
-        var result = occurrences.Select(o => new CardOccurrence(card.Id, o.Kind, o.Key, o.Description, o.Amount, o.Date, o.Cycle.Closing, o.Cycle.Due, o.Cycle.Competence, o.Number, o.Total, o.Quality)).ToList();
+        var result = occurrences.Select(o => new CardOccurrence(card.Id, o.Kind, o.Key, o.Description, o.Amount, o.Date, o.Cycle.Closing, o.Cycle.Due, o.Cycle.Competence, o.Number, o.Total, o.Quality, o.CategoryId)).ToList();
         return new(card, schedule, invoices, chains, items, new(reasons.Count == 0, reasons), result);
     }
 }

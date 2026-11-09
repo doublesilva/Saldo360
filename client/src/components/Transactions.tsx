@@ -47,7 +47,7 @@ const sourceOrigin = (entry: FinancialEntry) => entry.source === 'Planned' ? 'Pr
 const flagLabels: Record<string, string> = {
   Imported: 'Importado do banco', Refund: 'Devolução (não é receita)', RealizesPlanned: 'Realiza uma previsão', CategoryNeedsReview: 'Categoria a revisar', PartiallyRefunded: 'Parcialmente devolvido',
   Planned: 'Previsto: ainda não aconteceu', NoPaymentEvidence: 'Sem evidência de pagamento', CompetenceEstimated: 'Competência da fatura estimada', NoPayerAccount: 'Cartão sem conta pagadora',
-  Estimated: 'Estimativa: ainda não confirmada pelo banco', KnownImported: 'Conhecida pelo banco, ainda sem fatura fechada', PartialCoverage: 'Projeção do cartão incompleta: pode haver parcelas não previstas',
+  PossibleDuplicate: 'Possível duplicidade: assinatura manual e detectada com o mesmo nome e valores diferentes. Revise; nada foi descartado', Estimated: 'Estimativa: ainda não confirmada pelo banco', Committed: 'Assinatura cadastrada: compromisso do cartão ainda sem cobrança na fatura',KnownImported: 'Conhecida pelo banco, ainda sem fatura fechada', PartialCoverage: 'Projeção do cartão incompleta: pode haver parcelas não previstas',
 }
 const budgetText = { Consumes: 'Consome o orçamento', Reduces: 'Reduz o consumo do orçamento', Planned: 'Previsto no orçamento', None: 'Não afeta o orçamento' } as const
 const cashText = { Immediate: 'Movimenta o caixa na data', AtInvoicePayment: 'Movimenta o caixa no pagamento da fatura', Pending: 'Caixa ainda não movimentado', None: 'Não movimenta o caixa' } as const

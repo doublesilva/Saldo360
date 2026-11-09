@@ -83,8 +83,8 @@ public sealed class FinancialEntriesProjectionTests(PostgresFixture postgres) : 
         Assert.Single(bySource["Transfer"]);                   // transferência prevista, uma linha
         Assert.Equal(["Geladeira", "Streaming"], items.Where(e => Str(e, "source") is "CardPurchase" or "CardProjected").Select(e => Str(e, "description")).Select(d => d.Split(" (")[0]).Order(StringComparer.Ordinal));
         var subscription = items.Single(e => Str(e, "source") == "CardProjected");
-        Assert.Equal(("ManualRecurring", "CardEstimated", "Pending", Target.ToString("yyyy-MM")), (Str(subscription, "origin"), Str(subscription, "stage"), Str(subscription, "status"), Str(subscription, "competence")));
-        Assert.Contains("Estimated", subscription.GetProperty("flags").EnumerateArray().Select(f => f.GetString()));
+        Assert.Equal(("ManualRecurring", "CardForecast", "Pending", Target.ToString("yyyy-MM")), (Str(subscription, "origin"), Str(subscription, "stage"), Str(subscription, "status"), Str(subscription, "competence")));
+        Assert.Contains("Committed", subscription.GetProperty("flags").EnumerateArray().Select(f => f.GetString()));
         var installment = items.Single(e => Str(e, "source") == "CardPurchase");
         Assert.Equal(("CardLaunched", "100.00"), (Str(installment, "stage"), Str(installment, "amount")));   // compra lançada no cartão; nada diz que a fatura foi paga
 

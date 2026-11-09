@@ -28,7 +28,8 @@ public sealed record PendingPurchaseFact(string SourceId, string Description, de
 
 /// <summary>Obrigação conhecida importada sem fatura (extrato histórico); vence na data informada, se houver.</summary>
 public sealed record KnownImportedFact(Guid Id, decimal Amount, DateOnly? DueDate);
-public sealed record RecurringChargeFact(Guid RecurrenceId, string Description, decimal Amount, DateOnly ChargeDate, bool IsEstimated);
+/// <summary>Cobrança recorrente de cartão. <c>Manual</c> = cadastrada pelo usuário (identidade lógica = recorrência + sequência; valor fixo é comprometido); detectada pelo Pluggy é sempre estimativa.</summary>
+public sealed record RecurringChargeFact(Guid RecurrenceId, string Description, decimal Amount, DateOnly ChargeDate, bool IsEstimated, bool Manual = false, int? Sequence = null, Guid? CategoryId = null);
 
 /// <summary>Uma fatura persistida do Saldo360, com a composição local, os pagamentos e o que o banco informou.</summary>
 public sealed record CardInvoiceFact(
@@ -79,7 +80,7 @@ public sealed record CardProjection(
 
 /// <summary>Ocorrência individual que compõe uma fatura ainda não fechada pelo banco (leitura): parcela conhecida ou estimada, compra pendente ou cobrança recorrente. Nada é gravado.</summary>
 public sealed record CardOccurrence(
-    Guid CardId, string Kind, string Key, string Description, decimal Amount, DateOnly Date, DateOnly Closing, DateOnly Due, string Competence, int? Number, int? Total, string Quality);
+    Guid CardId, string Kind, string Key, string Description, decimal Amount, DateOnly Date, DateOnly Closing, DateOnly Due, string Competence, int? Number, int? Total, string Quality, Guid? CategoryId = null);
 
 public static class CardCoverageReasons
 {

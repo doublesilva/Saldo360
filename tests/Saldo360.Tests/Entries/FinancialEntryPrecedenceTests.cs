@@ -14,16 +14,15 @@ public sealed class FinancialEntryPrecedenceTests
             "Consumes", "None", null, null, null, null, null, competence, [], []);
 
     [Fact]
-    public void AnEstimatedCardChargeDisappearsWhenTheInvoiceAlreadyRegistersThatPurchaseAndOtherChargesRemain()
+    public void TwoLegitimateChargesWithTheSameNameAreBothKeptAndOnlyTheSameIdentityCollapses()
     {
-        var registered = Entry("CardInstallment:1", "CardPurchase", "Streaming (1/1)", "CardInstallment", card: CardId);
-        var projected = Entry($"CardProjected:{CardId}:r:1", "CardProjected", "STREAMING 01/01", "Recurring", "Pending", card: CardId);
-        var other = Entry($"CardProjected:{CardId}:r:2", "CardProjected", "Academia", "ManualRecurring", "Pending", card: CardId);
-        var nextMonth = Entry($"CardProjected:{CardId}:r:3", "CardProjected", "Streaming", "Recurring", "Pending", card: CardId, competence: "2027-01");
+        var registered = Entry("CardInstallment:1", "CardPurchase", "Streaming", "CardInstallment", card: CardId);
+        var first = Entry($"CardProjected:{CardId}:{Guid.NewGuid()}:1", "CardProjected", "Streaming", "ManualRecurring", "Pending", card: CardId);
+        var second = Entry($"CardProjected:{CardId}:{Guid.NewGuid()}:1", "CardProjected", "Streaming", "ManualRecurring", "Pending", card: CardId);
 
-        var resolved = FinancialEntryPrecedence.Resolve([registered, projected, other, nextMonth]);
+        var resolved = FinancialEntryPrecedence.Resolve([registered, first, second, first]);
 
-        Assert.Equal(new[] { "CardInstallment:1", other.Id, nextMonth.Id }.Order(StringComparer.Ordinal), resolved.Select(e => e.Id).Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { registered.Id, first.Id, second.Id }.Order(StringComparer.Ordinal), resolved.Select(e => e.Id).Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -46,6 +45,7 @@ public sealed class FinancialEntryPrecedenceTests
     [InlineData("CardPurchase", "CardInstallment", "Realized", FinancialEntryPrecedence.CardLaunched)]
     [InlineData("CardProjected", "KnownInstallment", "Pending", FinancialEntryPrecedence.CardForecast)]
     [InlineData("CardProjected", "EstimatedInstallment", "Pending", FinancialEntryPrecedence.CardEstimated)]
+    [InlineData("CardProjected", "ManualRecurring", "Pending", FinancialEntryPrecedence.CardForecast)]
     [InlineData("Planned", "Manual", "Overdue", FinancialEntryPrecedence.Planned)]
     [InlineData("Transaction", "Manual", "Cancelled", FinancialEntryPrecedence.Cancelled)]
     public void TheStageSeparatesCardPurchaseForecastEstimateAndPaymentWithoutSayingTheInvoiceWasPaid(string source, string origin, string status, string stage) =>

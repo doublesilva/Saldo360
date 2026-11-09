@@ -78,6 +78,14 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
         var detectedRecurrences = await db.FinancialRecurrences.AsNoTracking().Where(r => r.WorkspaceId == workspaceId
             && r.Origin == RecurrenceOrigin.PluggyDetected && r.Status == RecurrenceStatus.Active && r.FinancialCreditCardId != null
             && cardIds.Contains(r.FinancialCreditCardId.Value)).ToListAsync(ct);
+        var manualRecurrences = await db.FinancialRecurrences.AsNoTracking().Where(r => r.WorkspaceId == workspaceId
+            && r.Origin == RecurrenceOrigin.Manual && r.Status == RecurrenceStatus.Active && r.FinancialCreditCardId != null
+            && cardIds.Contains(r.FinancialCreditCardId.Value)).ToListAsync(ct);
+        var manualIds = manualRecurrences.Select(r => r.Id).ToList();
+        // Vínculo persistido: ocorrência materializada já é compra do cartão (compõe a fatura), então a projeção não a repete.
+        var materialized = manualIds.Count == 0 ? [] : (await db.FinancialRecurrenceMaterializations.AsNoTracking()
+            .Where(m => m.WorkspaceId == workspaceId && manualIds.Contains(m.RecurrenceId)).Select(m => new { m.RecurrenceId, m.OccurrenceNumber }).ToListAsync(ct))
+            .Select(m => (m.RecurrenceId, m.OccurrenceNumber)).ToHashSet();
 
         var result = new List<CardFacts>();
         foreach (var dto in dtos)
@@ -134,24 +142,43 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
             }
 
             var recurring = new List<RecurringChargeFact>();
-            foreach (var recurrence in detectedRecurrences.Where(r => r.FinancialCreditCardId == dto.Id))
+            var cardSchedule = CardCycleSchedule.Resolve(cardBills.Select(b => new PluggyBillFact(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency)).ToList(), today, dto.ClosingDay, dto.DueDay);
+            var cardManual = manualRecurrences.Where(r => r.FinancialCreditCardId == dto.Id).ToList();
+            // A fatura aberta começa antes de hoje, e a anterior ainda não venceu quando o ciclo fechou mas o banco não devolveu o total: ambas seguem compostas pelas assinaturas do período
+            // (o motor absorve o que o banco já fechou).
+            var openCycle = cardSchedule.CycleFor(today);
+            var previousCycle = cardSchedule.CycleFor(openCycle.CycleStartDate.AddDays(-1));
+            var manualFrom = previousCycle.DueDate >= today ? previousCycle.CycleStartDate : openCycle.CycleStartDate;
+            // Cobrança efetiva já importada do banco no mesmo ciclo (mesma descrição) substitui a projeção.
+            bool AlreadyObserved(string description, DateOnly chargeDate) => link is not null && postedSinglePurchases.Any(t => t.ConnectionId == link.ConnectionId && t.PluggyAccountId == link.PluggyAccountId
+                && t.Status == PluggyTransactionStatus.Posted && t.Date is { } date
+                && PluggyFinancialMapper.Normalize(t.Description ?? t.DescriptionRaw) == PluggyFinancialMapper.Normalize(description)
+                && CardCycleSchedule.Resolve([], today, dto.ClosingDay, dto.DueDay).CycleFor(PluggyFinancialMapper.BusinessDate(date)).Competence == cardSchedule.CycleFor(chargeDate).Competence);
+            foreach (var recurrence in cardManual)
+            {
+                IReadOnlyList<RecurrenceOccurrenceDto> occurrences;
+                try { occurrences = FinancialRecurrenceCalendar.CalculateOccurrences(recurrence, manualFrom, today.AddMonths(RecurringHorizonMonths)); } catch (ArgumentException) { continue; }
+                foreach (var occurrence in occurrences.Where(o => !materialized.Contains((recurrence.Id, o.Sequence)) && !AlreadyObserved(recurrence.Description, o.Date)))
+                    recurring.Add(new(recurrence.Id, recurrence.Description, occurrence.Amount, occurrence.Date, recurrence.IsEstimated, true, occurrence.Sequence, recurrence.FinancialCategoryId));
+            }
+            // A definição do usuário prevalece sobre a detecção só quando é comprovadamente a mesma assinatura (mesmo cartão, mensal, mesma descrição normalizada E mesmo valor).
+            // Descrição igual com valor diferente pode ser outra assinatura: preserva as duas (o Razão sinaliza a possível duplicidade para revisão).
+            foreach (var recurrence in detectedRecurrences.Where(r => r.FinancialCreditCardId == dto.Id && !cardManual.Any(m => SameSubscription(m, r))))
             {
                 var occurrences = FinancialRecurrenceCalendar.CalculateOccurrences(recurrence, today, today.AddMonths(RecurringHorizonMonths));
-                foreach (var occurrence in occurrences)
-                {
-                    var cycle = CardCycleSchedule.Resolve(cardBills.Select(b => new PluggyBillFact(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency)).ToList(), today, dto.ClosingDay, dto.DueDay).CycleFor(occurrence.Date);
-                    var alreadyObserved = link is not null && postedSinglePurchases.Any(t => t.ConnectionId == link.ConnectionId && t.PluggyAccountId == link.PluggyAccountId
-                        && t.Status == PluggyTransactionStatus.Posted && t.Date is { } date
-                        && PluggyFinancialMapper.Normalize(t.Description ?? t.DescriptionRaw) == PluggyFinancialMapper.Normalize(recurrence.Description)
-                        && CardCycleSchedule.Resolve([], today, dto.ClosingDay, dto.DueDay).CycleFor(PluggyFinancialMapper.BusinessDate(date)).Competence == cycle.Competence);
-                    if (!alreadyObserved) recurring.Add(new(recurrence.Id, recurrence.Description, recurrence.Amount, occurrence.Date, recurrence.IsEstimated));
-                }
+                foreach (var occurrence in occurrences.Where(o => !AlreadyObserved(recurrence.Description, o.Date)))
+                    recurring.Add(new(recurrence.Id, recurrence.Description, recurrence.Amount, occurrence.Date, recurrence.IsEstimated));
             }
             result.Add(new(info, cardBills.Select(b => new PluggyBillFact(b.PluggyBillId, b.ClosingDate, b.DueDate, b.TotalAmount, b.Currency)).ToList(), invoiceFacts, pending, observations,
                 known.Where(k => k.CreditCardId == dto.Id).Select(k => new KnownImportedFact(k.Id, k.Amount, k.DueDate)).ToList(), recurring));
         }
         return result;
     }
+
+    /// <summary>Evidência suficiente de que duas definições são a mesma assinatura: mesmo cartão, mensal, descrição normalizada e valor.</summary>
+    internal static bool SameSubscription(FinancialRecurrence manual, FinancialRecurrence detected) =>
+        manual.FinancialCreditCardId == detected.FinancialCreditCardId && manual.Frequency == RecurrenceFrequency.Monthly && detected.Frequency == RecurrenceFrequency.Monthly
+        && PluggyFinancialMapper.Normalize(manual.Description) == PluggyFinancialMapper.Normalize(detected.Description) && manual.Amount == detected.Amount;
 
     private static decimal Parse(string value) => decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
 }

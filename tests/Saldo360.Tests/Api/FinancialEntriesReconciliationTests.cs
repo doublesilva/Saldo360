@@ -77,9 +77,9 @@ public sealed class FinancialEntriesReconciliationTests(PostgresFixture postgres
     private static string Str(JsonElement e, string name) => e.GetProperty(name).GetString()!;
 
     /// <summary>Componentes do orçamento calculados a partir das linhas do Razão (PF). Cada linha cai em exatamente um balde, ou numa exclusão nomeada.</summary>
-    private sealed record Components(decimal Realized, decimal Committed, decimal Estimated, decimal CardsRealized, decimal CardsCommitted, decimal CardsEstimated, IReadOnlyDictionary<string, decimal> Excluded);
+    internal sealed record Components(decimal Realized, decimal Committed, decimal Estimated, decimal CardsRealized, decimal CardsCommitted, decimal CardsEstimated, IReadOnlyDictionary<string, decimal> Excluded);
 
-    private static Components Classify(IEnumerable<JsonElement> items)
+    internal static Components Classify(IEnumerable<JsonElement> items)
     {
         decimal realized = 0, committed = 0, estimated = 0, cardsRealized = 0, cardsCommitted = 0, cardsEstimated = 0;
         var excluded = new Dictionary<string, decimal>();
@@ -95,7 +95,7 @@ public sealed class FinancialEntriesReconciliationTests(PostgresFixture postgres
             {
                 case "Transaction": realized += signed; break;
                 case "CardPurchase" or "CardAdjustment": cardsRealized += signed; break;
-                case "CardProjected" when origin is "EstimatedInstallment" or "Recurring" or "ManualRecurring": cardsEstimated += signed; break;
+                case "CardProjected" when e.GetProperty("flags").EnumerateArray().Any(f => f.GetString() == "Estimated"): cardsEstimated += signed; break;
                 case "CardProjected": cardsCommitted += signed; break;
                 case "Planned" or "Recurrence" or "Debt": if (status is "Pending" or "Overdue" or "NeedsReview") committed += signed; else realized += signed; break;
                 default: Exclude("Não classificado: " + source, amount); break;
@@ -125,16 +125,10 @@ public sealed class FinancialEntriesReconciliationTests(PostgresFixture postgres
         Line("Total projetado", ledger.Realized + ledger.Committed + ledger.CardsRealized + ledger.CardsCommitted + ledger.CardsEstimated, Dec(total, "projected"));
         foreach (var (reason, amount) in ledger.Excluded.OrderBy(x => x.Key)) report.Add($"Excluído do orçamento: {reason} = {amount:0.00}");
         output.WriteLine(string.Join(Environment.NewLine, report));
-        // Diferença explicável: assinaturas cadastradas à mão num cartão aparecem no Razão (calculadas pela fatura) mas o orçamento PF ainda não as considera; só os detectados pelo Pluggy entram no motor do cartão.
-        var manualSubscriptions = items.Where(e => Str(e, "origin") == "ManualRecurring").Sum(e => Dec(e, "amount"));
-        report.Add($"Explicado: assinaturas manuais de cartão ainda fora do orçamento PF = {manualSubscriptions:0.00}");
-        var unexplained = ledger.CardsEstimated - Dec(cards, "estimated") - manualSubscriptions;
-        report.Add($"Diferença não explicada em cartões estimados = {unexplained:0.00}");
-        output.WriteLine(string.Join(Environment.NewLine, report));
-
-        Assert.Equal((Dec(cards, "realized"), Dec(cards, "committed")), (ledger.CardsRealized, ledger.CardsCommitted));
+        Assert.Equal((Dec(cards, "realized"), Dec(cards, "committed"), Dec(cards, "estimated")), (ledger.CardsRealized, ledger.CardsCommitted, ledger.CardsEstimated));
         Assert.Equal((Dec(outside, "realized"), Dec(outside, "committed")), (ledger.Realized, ledger.Committed));
-        Assert.True(unexplained == 0m, string.Join(Environment.NewLine, report));
+        Assert.Equal(Dec(total, "projected"), ledger.Realized + ledger.Committed + ledger.CardsRealized + ledger.CardsCommitted + ledger.CardsEstimated);
+        Assert.Equal(39.90m, ledger.CardsCommitted);   // a assinatura manual de valor fixo é compromisso do cartão e compõe o orçamento
         Assert.Equal(["Receita", "Transferência"], ledger.Excluded.Keys.Order(StringComparer.Ordinal));   // nada é consumo orçamentário além dos baldes acima
         Assert.Equal(items.Count, items.Select(e => Str(e, "id")).Distinct().Count());
     }

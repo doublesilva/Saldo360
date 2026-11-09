@@ -125,4 +125,15 @@ public sealed class ProjectionScenariosTests
         Assert.Equal(10000m - 1500m, months[1].CurrentClosing);       // Atual: só a previsão alimentar adicional, no mês do pagamento da fatura
         Assert.Equal(10000m - 1500m - 1000m, months[1].Closing);      // Tetos: soma até a meta (2.500 conhecidos + 2.500), a reserva não entra de novo
     }
+
+    [Fact]
+    public void ASubscriptionAlreadyInTheCardBaseShrinksTheFoodComplementWithoutCappingKnownSpendingOrCountingItTwice()
+    {
+        var withoutSubscription = ProjectionScenarios.FoodForecastWithinCardTarget(2000m, 500m, 2500m, 5000m);     // 1.500 de complemento
+        var withSubscription = ProjectionScenarios.FoodForecastWithinCardTarget(2000m, 500m, 2500m + 39.90m, 5000m);  // a assinatura entra na base antes do complemento
+
+        Assert.Equal(1500m, withoutSubscription);
+        Assert.Equal(1500m, withSubscription);                                    // ainda cabe: o gasto conhecido não limita o complemento
+        Assert.Equal(460.10m, ProjectionScenarios.FoodForecastWithinCardTarget(2000m, 0m, 4500m + 39.90m, 5000m));  // sem folga suficiente só o que falta até a meta, nunca soma por cima
+    }
 }

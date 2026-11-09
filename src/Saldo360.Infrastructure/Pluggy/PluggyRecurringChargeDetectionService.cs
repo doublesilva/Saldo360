@@ -37,9 +37,9 @@ internal static class PluggyRecurringChargeDetectionService
                 existing.ObservePluggy(detection.ProjectedAmount, detection.IsEstimated, detection.EvidenceCount, detection.LastDate, now);
                 continue;
             }
-            // Uma recorrência mensal já cadastrada pelo usuário prevalece; a sincronização não cria uma segunda definição.
+            // Uma recorrência mensal já cadastrada pelo usuário com a mesma descrição E o mesmo valor prevalece; com valor diferente pode ser outra assinatura e a detecção é preservada.
             if (recurrences.Any(x => x.FinancialCreditCardId == detection.CardId && x.Frequency == RecurrenceFrequency.Monthly
-                && PluggyFinancialMapper.Normalize(x.Description) == PluggyFinancialMapper.Normalize(detection.Description))) continue;
+                && PluggyFinancialMapper.Normalize(x.Description) == PluggyFinancialMapper.Normalize(detection.Description) && x.Amount == detection.ProjectedAmount)) continue;
             var nature = rows.Last(x => x.CardId == detection.CardId && x.CategoryId == detection.CategoryId
                 && x.AppliedDate == detection.LastDate).Nature;
             var details = new RecurrenceDetails(null, detection.CategoryId, CategoryType.Expense, detection.Description,
