@@ -4,9 +4,15 @@ export type PlanningScenarioStatus = 'Active' | 'Archived'
 export type RecoveryStatus = 'NotConfigured' | 'NoNegativeBalance' | 'Recovering' | 'Stable' | 'Worsening' | 'Recovered' | 'IncompleteProjection'
 
 export interface PlanningScenario { id: string; workspaceId: string; recoveryAccountId: string | null; name: string; description: string | null; startMonth: string; months: number; status: PlanningScenarioStatus; createdAt: string; updatedAt: string; archivedAt: string | null }
-export interface PlanningParameter { id: string; workspaceId: string; scenarioId: string; competence: string; expectedAdditionalIncome: string; expectedAdditionalExpense: string; contingencyReserve: string; recoveryTargetPercentage: string; notes: string | null }
+export interface PlanningParameter { id: string; workspaceId: string; scenarioId: string; competence: string; expectedAdditionalIncome: string; expectedAdditionalExpense: string; contingencyReserve: string; recoveryTargetPercentage: string; notes: string | null; adjustmentAccountId: string | null }
 export interface PlanningProjectionMonth {
   competence: string; openingBalance: string | null; realizedIncome: string; realizedExpense: string; pendingIncome: string; pendingExpense: string; creditCardOutstanding: string; baseClosingBalance: string | null; additionalIncome: string; additionalExpense: string; cumulativeAdjustment: string; scenarioClosingBalance: string | null; contingencyReserve: string; plannedAvailable: string | null; projectionComplete: boolean; usesBaseProjectionOnly: boolean; hasUnallocatedObligations: boolean; recoveryTargetPercentage: string; recoveryAccountId: string | null; openingNegativeBalance: string | null; closingNegativeBalance: string | null; projectedRecovery: string | null; cumulativeRecovery: string | null; recoveryCapacity: string | null; recoveryTarget: string | null; uncommittedMargin: string | null; remainingNegativeBalance: string | null; recoveryStatus: RecoveryStatus; recoveryProjectionComplete: boolean
+  /** T14.1: recuperação da CONTA-ALVO. Ajustes só a alteram quando atribuídos a ela; sem eles os campos Base* coincidem com os do cenário. */
+  targetAdjustment: string; targetCumulativeAdjustment: string; unattributedAdjustment: string
+  targetOpeningBalance: string | null; targetClosingBalance: string | null; targetBaseClosingBalance: string | null
+  targetRealizedIncome: string; targetRealizedExpense: string; targetPendingIncome: string; targetPendingExpense: string
+  baseClosingNegativeBalance: string | null; baseProjectedRecovery: string | null; contractedLimit: string | null
+  recoveryDeviation: string | null; officialRecoveryTarget: string | null; recoveryTargetSource: 'Official' | 'BaseProjection' | 'None'
 }
 export interface PlanningProjection { scenarioId: string; from: string; months: number; items: PlanningProjectionMonth[] }
 

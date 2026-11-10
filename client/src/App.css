@@ -1886,3 +1886,12 @@ button.calendar-day--selected {
   margin: 0 0 0.5rem;
   padding-left: 1.25rem;
 }
+
+/* T14.1: tabela compacta de recuperação, alternância base/simulado e detalhamento do mês. */
+.planning-view { display: flex; gap: 1rem; flex-wrap: wrap; padding: .25rem 0 .5rem; }
+.planning-view label { display: inline-flex; gap: .35rem; align-items: center; }
+.planning-table small { color: var(--muted, #5b6676); margin-left: .25rem; }
+.planning-detail td { background: var(--surface-2, #f5f7fa); white-space: normal; }
+.planning-detail__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .5rem 1rem; margin: 0; }
+.planning-detail__grid dt { font-size: .8rem; color: var(--muted, #5b6676); }
+.planning-detail__grid dd { margin: 0; font-weight: 600; }

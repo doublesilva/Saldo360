@@ -59,16 +59,27 @@ public sealed class FinancialPlanningScenarioService(IFinancialWorkspaceReposito
         var scenario = await repository.FindScenarioAsync(workspaceId, scenarioId, ct); if (scenario is null) return new(PlanningScenarioAccess.NotFound, null, null);
         if (scenario.Status == PlanningScenarioStatus.Archived) return new(PlanningScenarioAccess.Conflict, null, null, "Cenário arquivado não pode receber parâmetros.");
         var errors = ValidateParameter(competence, input, scenario, out var month, out var values);
+        await ValidateAdjustmentAccount(errors, workspaceId, input.AdjustmentAccountId, ct);
         if (errors.Count > 0) return new(PlanningScenarioAccess.Invalid, null, errors);
         var existing = await repository.FindParameterAsync(workspaceId, scenarioId, month, ct);
         if (existing is null)
         {
-            var entity = FinancialPlanningMonthlyParameter.Create(workspaceId, scenarioId, month, values.income, values.expense, values.reserve, values.recovery, values.notes);
+            var entity = FinancialPlanningMonthlyParameter.Create(workspaceId, scenarioId, month, values.income, values.expense, values.reserve, values.recovery, values.notes, input.AdjustmentAccountId);
             await repository.AddParameterAsync(entity, ct);
-            return new(PlanningScenarioAccess.Allowed, new(entity.Id, entity.WorkspaceId, entity.ScenarioId, entity.Competence, entity.ExpectedAdditionalIncome, entity.ExpectedAdditionalExpense, entity.ContingencyReserve, entity.RecoveryTargetPercentage, entity.Notes), null);
+            return new(PlanningScenarioAccess.Allowed, ToDto(entity), null);
         }
-        existing.Update(values.income, values.expense, values.reserve, values.recovery, values.notes); await repository.SaveAsync(ct);
-        return new(PlanningScenarioAccess.Allowed, new(existing.Id, existing.WorkspaceId, existing.ScenarioId, existing.Competence, existing.ExpectedAdditionalIncome, existing.ExpectedAdditionalExpense, existing.ContingencyReserve, existing.RecoveryTargetPercentage, existing.Notes), null);
+        existing.Update(values.income, values.expense, values.reserve, values.recovery, values.notes, input.AdjustmentAccountId); await repository.SaveAsync(ct);
+        return new(PlanningScenarioAccess.Allowed, ToDto(existing), null);
+    }
+
+    private static PlanningMonthlyParameterDto ToDto(FinancialPlanningMonthlyParameter x) => new(x.Id, x.WorkspaceId, x.ScenarioId, x.Competence, x.ExpectedAdditionalIncome, x.ExpectedAdditionalExpense, x.ContingencyReserve, x.RecoveryTargetPercentage, x.Notes, x.AdjustmentAccountId);
+
+    private async Task ValidateAdjustmentAccount(Dictionary<string, string[]> errors, Guid workspaceId, Guid? accountId, CancellationToken ct)
+    {
+        if (accountId is not { } id) return;
+        var account = await accounts.GetAsync(workspaceId, id, ct);
+        if (account is null) errors["adjustmentAccountId"] = ["A conta do ajuste não pertence à família."];
+        else if (!account.IsActive) errors["adjustmentAccountId"] = ["A conta do ajuste está arquivada ou inativa."];
     }
 
     private static Dictionary<string, string[]> ValidateScenario(PlanningScenarioInput input, out string? name, out string? description, out DateOnly startMonth, out int months, out Guid? recoveryAccountId)

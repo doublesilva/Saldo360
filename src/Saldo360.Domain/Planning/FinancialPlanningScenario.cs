@@ -54,15 +54,18 @@ public sealed class FinancialPlanningMonthlyParameter : Entity
     public decimal ContingencyReserve { get; private set; }
     public decimal RecoveryTargetPercentage { get; private set; }
     public string? Notes { get; private set; }
+    /// <summary>Conta que recebe os ajustes de receita/despesa adicional. Nula = ajuste só no consolidado (nenhuma conta); nunca é distribuído automaticamente.</summary>
+    public Guid? AdjustmentAccountId { get; private set; }
 
-    public static FinancialPlanningMonthlyParameter Create(Guid workspaceId, Guid scenarioId, DateOnly competence, decimal income, decimal expense, decimal reserve, decimal recovery, string? notes) => new()
+    public static FinancialPlanningMonthlyParameter Create(Guid workspaceId, Guid scenarioId, DateOnly competence, decimal income, decimal expense, decimal reserve, decimal recovery, string? notes, Guid? adjustmentAccountId = null) => new()
     {
         WorkspaceId = workspaceId, ScenarioId = scenarioId, Competence = competence, ExpectedAdditionalIncome = income,
-        ExpectedAdditionalExpense = expense, ContingencyReserve = reserve, RecoveryTargetPercentage = recovery, Notes = notes,
+        ExpectedAdditionalExpense = expense, ContingencyReserve = reserve, RecoveryTargetPercentage = recovery, Notes = notes, AdjustmentAccountId = adjustmentAccountId,
     };
 
-    public void Update(decimal income, decimal expense, decimal reserve, decimal recovery, string? notes)
+    public void Update(decimal income, decimal expense, decimal reserve, decimal recovery, string? notes, Guid? adjustmentAccountId = null)
     {
+        AdjustmentAccountId = adjustmentAccountId;
         ExpectedAdditionalIncome = income; ExpectedAdditionalExpense = expense; ContingencyReserve = reserve;
         RecoveryTargetPercentage = recovery; Notes = notes;
     }

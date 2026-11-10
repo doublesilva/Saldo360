@@ -3535,6 +3535,10 @@ namespace Saldo360.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("AdjustmentAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("adjustment_account_id");
+
                     b.Property<DateOnly>("Competence")
                         .HasColumnType("date")
                         .HasColumnName("competence");
