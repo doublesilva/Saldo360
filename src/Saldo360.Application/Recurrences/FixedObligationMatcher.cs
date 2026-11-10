@@ -38,6 +38,13 @@ public static class FixedObligationMatcher
         return hits >= 1 && hits / (decimal)wanted.Count >= 0.6m;
     }
 
+    /// <summary>Identificador estável embutido nas duas descrições (sequência de pelo menos 6 dígitos, como o número da instalação ou do contrato): evidência de identidade além do nome.</summary>
+    public static bool SharesStableIdentifier(string a, string b)
+    {
+        var ids = System.Text.RegularExpressions.Regex.Matches(a, @"\d{6,}").Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
+        return ids.Count > 0 && System.Text.RegularExpressions.Regex.Matches(b, @"\d{6,}").Any(m => ids.Contains(m.Value));
+    }
+
     public const int SeriesMinimumMonths = 3;
     public const int SeriesDayTolerance = 5;
     public const decimal SeriesAmountTolerance = 0.01m;

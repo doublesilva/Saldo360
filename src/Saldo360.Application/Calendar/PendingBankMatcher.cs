@@ -4,7 +4,7 @@ using Saldo360.Domain.Categories;
 namespace Saldo360.Application.Calendar;
 
 /// <summary>Regra que sustentou a associação: a correspondência segura única (<see cref="FixedObligationMatcher"/>) ou a evidência histórica da própria recorrência.</summary>
-public enum BankMatchRule { SafeMatcher, RecurrenceHistory }
+public enum BankMatchRule { SafeMatcher, RecurrenceHistory, StableIdentifier, NearAmount }
 
 public sealed record BankMatch(FixedObligation Obligation, PendingBankDebit Debit, BankMatchRule Rule);
 
@@ -17,11 +17,19 @@ public sealed record BankCandidateEvidence(Guid ObligationId, Guid? RecurrenceId
 /// 1) a correspondência segura existente (conta, descrição compatível, janela e valor esperado); 2) a evidência histórica: a descrição bancária repete a de uma competência
 /// anterior já paga da MESMA recorrência, na mesma conta, até <see cref="HistoryDays"/> dias da data esperada e com valor até <see cref="HistoryAmountTolerance"/> de diferença,
 /// sem nenhuma outra obrigação plausível disputando o débito e sem outro débito com a mesma evidência. Valor igual ou descrição genérica isolados nunca associam; ambiguidade nunca vira associação.
+/// Duas regras adicionais (T14.2), igualmente com par ÚNICO nos dois sentidos e sem rival: 3) identidade estável — obrigação ESTIMADA cuja competência anterior paga carrega o mesmo identificador
+/// (número de instalação/contrato) na descrição bancária: tolera valor distante do estimado (<see cref="FixedObligationMatcher.EstimateTolerance"/>) e a janela da competência
+/// (<see cref="FixedObligationMatcher.DaysBefore"/>/<see cref="FixedObligationMatcher.DaysAfter"/>), porque o identificador, e não o valor, prova a identidade; 4) valor praticamente igual
+/// (até <see cref="NearAmountTolerance"/>) com descrição compatível na janela da competência — a diferença de centavos nunca associa sozinha.
 /// </summary>
 public static class PendingBankMatcher
 {
     public const int HistoryDays = PendingBankCoverage.CandidateDays;
     public const decimal HistoryAmountTolerance = 0.05m;
+    /// <summary>Débito que é pagamento de fatura de cartão (marcador genérico na descrição): nunca é despesa de consumo nem associa a uma obrigação de despesa.</summary>
+    public static bool IsCardInvoicePayment(string description) => description.Contains("FATURA", StringComparison.OrdinalIgnoreCase);
+
+    public const decimal NearAmountTolerance = FixedObligationMatcher.SeriesAmountTolerance;
 
     public static IReadOnlyList<BankMatch> Match(IReadOnlyList<PendingBankDebit> debits, IReadOnlyList<FixedObligation> obligations,
         IReadOnlyDictionary<Guid, IReadOnlyList<string>> history)
@@ -48,12 +56,39 @@ public static class PendingBankMatcher
             var rivalObligation = restObligations.Any(x => x.StableId != o.StableId && Plausible(x, d));
             if (onlyEdgeForObligation && onlyEdgeForDebit && !rivalObligation) result.Add(new(o, d, BankMatchRule.RecurrenceHistory));
         }
+
+        AddUnique(result, obligations, positive, BankMatchRule.StableIdentifier, (o, d) =>
+            o.IsEstimated && o.RecurrenceId is { } r && history.TryGetValue(r, out var h) && StableIdentifierCompatible(o, d, h));
+        AddUnique(result, obligations, positive, BankMatchRule.NearAmount, NearAmountCompatible);
         return result;
     }
 
+    /// <summary>Acrescenta os pares únicos nos dois sentidos de uma regra, só entre o que as regras anteriores deixaram livre e sem obrigação rival plausível para o débito.</summary>
+    private static void AddUnique(List<BankMatch> result, IReadOnlyList<FixedObligation> obligations, IReadOnlyList<PendingBankDebit> debits, BankMatchRule rule, Func<FixedObligation, PendingBankDebit, bool> compatible)
+    {
+        var usedObligations = result.Select(x => x.Obligation.StableId).ToHashSet(); var usedDebits = result.Select(x => x.Debit.Id).ToHashSet();
+        var restObligations = obligations.Where(o => !usedObligations.Contains(o.StableId)).ToList();
+        var edges = (from o in restObligations from d in debits where !usedDebits.Contains(d.Id) && compatible(o, d) select (o, d)).ToList();
+        foreach (var (o, d) in edges)
+        {
+            var unique = edges.Count(e => e.o.StableId == o.StableId) == 1 && edges.Count(e => e.d.Id == d.Id) == 1;
+            if (unique && !restObligations.Any(x => x.StableId != o.StableId && Plausible(x, d))) result.Add(new(o, d, rule));
+        }
+    }
+
+    private static bool InCompetenceWindow(FixedObligation o, PendingBankDebit d) =>
+        o.AccountId == d.AccountId && o.PlannedAmount > 0m && d.Date >= o.DueDate.AddDays(-FixedObligationMatcher.DaysBefore) && d.Date <= o.DueDate.AddDays(FixedObligationMatcher.DaysAfter);
+
+    private static bool StableIdentifierCompatible(FixedObligation o, PendingBankDebit d, IReadOnlyList<string> descriptions) =>
+        InCompetenceWindow(o, d) && Math.Abs(o.PlannedAmount - d.Amount) <= o.PlannedAmount * FixedObligationMatcher.EstimateTolerance
+        && descriptions.Any(x => FixedObligationMatcher.DescriptionCompatible(x, d.Description) && FixedObligationMatcher.SharesStableIdentifier(x, d.Description));
+
+    private static bool NearAmountCompatible(FixedObligation o, PendingBankDebit d) =>
+        InCompetenceWindow(o, d) && Math.Abs(o.PlannedAmount - d.Amount) <= o.PlannedAmount * NearAmountTolerance && FixedObligationMatcher.DescriptionCompatible(o.Description, d.Description);
+
     /// <summary>Por que cada candidato próximo de um débito sem par não foi associado: o que falta (histórico, descrição, valor) para automatizar com segurança.</summary>
     public static IReadOnlyList<BankCandidateEvidence> Diagnose(PendingBankDebit debit, IReadOnlyList<FixedObligation> obligations, IReadOnlyDictionary<Guid, IReadOnlyList<string>> history) =>
-        obligations.Where(o => Plausible(o, debit)).Select(o =>
+        obligations.Where(o => Plausible(o, debit) || DescriptionRelated(o, debit, history)).Select(o =>
         {
             var descriptions = o.RecurrenceId is { } r && history.TryGetValue(r, out var h) ? h : [];
             return new BankCandidateEvidence(o.StableId, o.RecurrenceId, o.Description, o.PlannedAmount, o.DueDate, debit.Date.DayNumber - o.DueDate.DayNumber,
@@ -61,6 +96,11 @@ public static class PendingBankMatcher
                 FixedObligationMatcher.DescriptionCompatible(o.Description, debit.Description),
                 descriptions.Any(x => FixedObligationMatcher.DescriptionCompatible(x, debit.Description)), descriptions.Count > 0);
         }).ToList();
+
+    /// <summary>Mesma conta e janela da competência com descrição (ou histórico) compatível, mesmo com valor distante: o que falta é o valor, não a identidade.</summary>
+    private static bool DescriptionRelated(FixedObligation o, PendingBankDebit d, IReadOnlyDictionary<Guid, IReadOnlyList<string>> history) =>
+        InCompetenceWindow(o, d) && (FixedObligationMatcher.DescriptionCompatible(o.Description, d.Description)
+            || o.RecurrenceId is { } r && history.TryGetValue(r, out var h) && h.Any(x => FixedObligationMatcher.DescriptionCompatible(x, d.Description)));
 
     private static bool Plausible(FixedObligation o, PendingBankDebit d) =>
         o.AccountId == d.AccountId && o.PlannedAmount > 0m

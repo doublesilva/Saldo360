@@ -14,6 +14,8 @@ public enum AmountConfirmationEventKind
     SourceReplaced,
     /// <summary>Débito bancário com candidatos, mas sem par seguro: nada foi associado; guarda as evidências para evoluir as regras.</summary>
     Ambiguous,
+    /// <summary>Associação segura identificada, mas rejeitada na escrita (motivo estruturado em <c>Reason</c>): diagnóstico único por transação, nunca erro de integração.</summary>
+    Rejected,
 }
 
 /// <summary>

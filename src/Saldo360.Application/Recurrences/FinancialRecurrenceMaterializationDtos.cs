@@ -10,6 +10,7 @@ public sealed record MaterializationQueryItem(int OccurrenceNumber, DateOnly Sch
 public enum CompetenceAmountStatus { Ok, InvalidCompetence, Conflict }
 /// <summary>Valor real confirmado de uma competência (PROJ-04). Base = valor da recorrência; Adjusted = ajuste da competência; Confirmed = valor real. Confirmar não é pagar.</summary>
 public sealed record CompetenceAmountResult(Guid RecurrenceId, DateOnly Competence, Guid PlannedTransactionId, DateOnly DueDate, decimal BaseAmount, decimal AdjustedAmount, decimal ConfirmedAmount, DateTimeOffset ConfirmedAt, bool Created, string Source = "Manual", bool Changed = true);
-public sealed record CompetenceAmountOutcome(CompetenceAmountStatus Status, string? Message, CompetenceAmountResult? Result);
+/// <summary><paramref name="Code"/>: motivo estruturado e estável da rejeição (diagnóstico da conciliação); nulo quando aceito.</summary>
+public sealed record CompetenceAmountOutcome(CompetenceAmountStatus Status, string? Message, CompetenceAmountResult? Result, string? Code = null);
 /// <summary>Débito bancário (pendente ou efetivado) que o usuário pode vincular manualmente a uma competência quando o motor não decidiu com segurança.</summary>
 public sealed record BankTransactionCandidate(Guid TransactionId, DateOnly Date, decimal Amount, string Description, string Status);

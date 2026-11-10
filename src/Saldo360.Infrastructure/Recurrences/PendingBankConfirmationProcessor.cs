@@ -61,11 +61,14 @@ internal static class PendingBankConfirmationProcessor
         var monthStart = new DateOnly(today.Year, today.Month, 1);
         var through = today.AddMonths(HorizonMonths);
         var all = await FixedObligationReader.LoadAsync(db, workspaceId, monthStart, through, today, ct);
-        var eligible = all.Where(o => o.Type == CategoryType.Expense && o.RecurrenceId != null && o.Situation == ObligationSituation.Planned).ToList();
+        // Recorrências (inclusive a exceção de competência) e previsões avulsas pendentes: as mesmas regras de associação, o mesmo valor confirmado só daquela previsão.
+        var eligible = all.Where(o => o.Type == CategoryType.Expense && o.RecurrenceId != null && o.Situation == ObligationSituation.Planned).Concat(await LoadStandaloneAsync(db, workspaceId, monthStart, through, ct)).ToList();
         if (eligible.Count == 0) return new(0, 0, 0, 0, 0);
 
-        var recurrenceIds = eligible.Select(o => o.RecurrenceId!.Value).Distinct().ToList();
+        var recurrenceIds = eligible.Where(o => o.RecurrenceId != null).Select(o => o.RecurrenceId!.Value).Distinct().ToList();
         var recurrences = await db.FinancialRecurrences.Where(r => r.WorkspaceId == workspaceId && recurrenceIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
+        // A exceção de competência não carrega o marcador de estimada da recorrência: sem ele, um valor bancário diferente do estimado nunca casaria.
+        eligible = eligible.Select(o => o.RecurrenceId is { } r && !o.IsEstimated && recurrences.TryGetValue(r, out var recurrence) && recurrence.IsEstimated ? o with { IsEstimated = true } : o).ToList();
         var history = await LoadEvidenceAsync(db, workspaceId, monthStart, recurrences, await LoadHistoryAsync(db, workspaceId, recurrenceIds, ct), ct);
         var accountIds = eligible.Select(o => o.AccountId).Distinct().ToList();
         var rows = await LoadBankRowsAsync(db, workspaceId, accountIds, through, ct);
@@ -74,6 +77,9 @@ internal static class PendingBankConfirmationProcessor
         var linkedIds = (await db.FinancialPlannedTransactions.AsNoTracking().Where(p => p.WorkspaceId == workspaceId && p.AmountSourceTransactionId != null && !p.IsCancelled)
             .Select(p => p.AmountSourceTransactionId!.Value).ToListAsync(ct)).ToHashSet();
 
+        Task<CompetenceAmountOutcome> Write(FixedObligation o, decimal amount, Guid bankTransaction) => o.RecurrenceId is { } recurrenceId
+            ? CompetenceAmountWriter.ConfirmAsync(db, recurrences[recurrenceId], o.Competence, amount, AmountConfirmationSource.PluggyAuto, null, bankTransaction, owner.Value, now, ct)
+            : CompetenceAmountWriter.ConfirmPlannedAsync(db, workspaceId, o.PlannedTransactionId!.Value, amount, AmountConfirmationSource.PluggyAuto, null, bankTransaction, now, ct);
         int confirmed = 0, updated = 0, replaced = 0, reverted = 0;
         void Count(CompetenceAmountOutcome outcome, AmountConfirmationEventKind? expected = null)
         {
@@ -89,11 +95,11 @@ internal static class PendingBankConfirmationProcessor
         // A) Mantém as confirmações automáticas existentes: valor alterado, fonte efetivada, trocada, ausente ou definitivamente invalidada.
         foreach (var o in eligible.Where(o => o.ConfirmationSource == nameof(AmountConfirmationSource.PluggyAuto) && o.SourceTransactionId != null))
         {
-            var source = o.SourceTransactionId!.Value; var recurrence = recurrences[o.RecurrenceId!.Value];
+            var source = o.SourceTransactionId!.Value;
             if (pending.FirstOrDefault(d => d.Id == source) is { } current)
             {
                 if (current.Amount != o.PlannedAmount)
-                    Count(await CompetenceAmountWriter.ConfirmAsync(db, recurrence, o.Competence, current.Amount, AmountConfirmationSource.PluggyAuto, null, source, owner.Value, now, ct), AmountConfirmationEventKind.Updated);
+                    Count(await Write(o, current.Amount, source), AmountConfirmationEventKind.Updated);
                 continue;
             }
             rowById.TryGetValue(source, out var row);
@@ -103,7 +109,7 @@ internal static class PendingBankConfirmationProcessor
             if (replacement is not null)
             {
                 linkedIds.Add(replacement.Id);
-                Count(await CompetenceAmountWriter.ConfirmAsync(db, recurrence, o.Competence, replacement.Amount, AmountConfirmationSource.PluggyAuto, null, replacement.Id, owner.Value, now, ct),
+                Count(await Write(o, replacement.Amount, replacement.Id),
                     replacement.Amount == o.PlannedAmount ? AmountConfirmationEventKind.SourceReplaced : AmountConfirmationEventKind.Updated);
                 continue;
             }
@@ -112,21 +118,57 @@ internal static class PendingBankConfirmationProcessor
 
         // B) Novas associações seguras (obrigação nunca confirmada × débito pendente ainda sem dono). Confirmação manual e vínculo manual ficam de fora.
         var unconfirmed = eligible.Where(o => o.ConfirmationSource == null).ToList();
-        var free = pending.Where(d => !linkedIds.Contains(d.Id)).ToList();
+        // Pagamento de fatura de cartão nunca é despesa de consumo: não associa a obrigação alguma (a obrigação do cartão é a da Agenda). Só marcador genérico, nenhum fornecedor.
+        var free = pending.Where(d => !linkedIds.Contains(d.Id) && !PendingBankMatcher.IsCardInvoicePayment(d.Description)).ToList();
         var matches = PendingBankMatcher.Match(free, unconfirmed, history);
+        var rejections = new List<(BankMatch Match, CompetenceAmountOutcome Outcome)>();
         foreach (var m in matches.OrderBy(m => m.Obligation.DueDate).ThenBy(m => m.Debit.Id))
         {
-            var outcome = await CompetenceAmountWriter.ConfirmAsync(db, recurrences[m.Obligation.RecurrenceId!.Value], m.Obligation.Competence, m.Debit.Amount,
-                AmountConfirmationSource.PluggyAuto, null, m.Debit.Id, owner.Value, now, ct);
+            var outcome = await Write(m.Obligation, m.Debit.Amount, m.Debit.Id);
             if (outcome.Status == CompetenceAmountStatus.Ok) linkedIds.Add(m.Debit.Id);
+            else rejections.Add((m, outcome));
             Count(outcome);
         }
+        await RecordRejectionsAsync(db, workspaceId, rejections, now, ct);
 
         // C) Ambiguidade: nada é associado; registra candidatos, evidências e impacto (uma vez por situação) para evoluir as regras.
         var matchedDebits = matches.Select(m => m.Debit.Id).ToHashSet(); var matchedObligations = matches.Select(m => m.Obligation.StableId).ToHashSet();
         var openObligations = unconfirmed.Where(o => !matchedObligations.Contains(o.StableId)).ToList();
         var ambiguous = await RecordAmbiguitiesAsync(db, workspaceId, free.Where(d => !matchedDebits.Contains(d.Id)).ToList(), openObligations, history, now, ct);
         return new(confirmed, updated, replaced, reverted, ambiguous);
+    }
+
+    /// <summary>Previsões avulsas pendentes (sem recorrência nem ocorrência materializada), em Despesa: elegíveis às mesmas associações seguras.</summary>
+    private static async Task<List<FixedObligation>> LoadStandaloneAsync(Saldo360DbContext db, Guid workspaceId, DateOnly from, DateOnly through, CancellationToken ct)
+    {
+        var rows = await db.PendingPlanned(workspaceId).Where(p => p.Type == CategoryType.Expense && p.ExceptionRecurrenceId == null && p.DueDate >= from && p.DueDate <= through
+            && !db.FinancialRecurrenceMaterializations.Any(m => m.WorkspaceId == p.WorkspaceId && m.PlannedTransactionId == p.Id)).ToListAsync(ct);
+        return rows.Select(p => new FixedObligation(workspaceId, null, null, new DateOnly(p.DueDate.Year, p.DueDate.Month, 1), p.Id, p.AccountId, p.CategoryId, p.Type, p.Nature, p.Description,
+            p.EffectiveAmount, false, p.DueDate, ObligationSituation.Planned, false, null, null, null, p.Amount, p.ConfirmedAmount != null ? ObligationAmountSource.Confirmed : ObligationAmountSource.Base, p.Amount,
+            p.AmountSourceTransactionId, p.ConfirmedAmount == null ? null : (p.ConfirmationSource ?? AmountConfirmationSource.Manual).ToString())).ToList();
+    }
+
+    /// <summary>Rejeição de uma associação segura na escrita: um registro por (transação, motivo, obrigação), nunca repetido a cada sincronização e nunca um erro da integração.</summary>
+    private static async Task RecordRejectionsAsync(Saldo360DbContext db, Guid workspaceId, IReadOnlyList<(BankMatch Match, CompetenceAmountOutcome Outcome)> rejections, DateTimeOffset now, CancellationToken ct)
+    {
+        if (rejections.Count == 0) return;
+        var ids = rejections.Select(r => r.Match.Debit.Id).ToList();
+        var known = (await db.FinancialAmountConfirmationEvents.AsNoTracking().Where(e => e.WorkspaceId == workspaceId && e.Kind == AmountConfirmationEventKind.Rejected && e.SourceTransactionId != null && ids.Contains(e.SourceTransactionId.Value))
+            .Select(e => new { e.SourceTransactionId, e.Reason, e.RecurrenceId, e.PlannedTransactionId, e.Competence }).ToListAsync(ct)).Select(e => (e.SourceTransactionId!.Value, e.Reason, e.RecurrenceId, e.PlannedTransactionId, e.Competence)).ToHashSet();
+        foreach (var (match, outcome) in rejections)
+        {
+            var o = match.Obligation; var reason = outcome.Code ?? "Rejected";
+            var competence = new DateOnly(o.Competence.Year, o.Competence.Month, 1);
+            if (!known.Add((match.Debit.Id, reason, o.RecurrenceId, o.PlannedTransactionId, competence))) continue;
+            var details = JsonSerializer.Serialize(new
+            {
+                reason, message = outcome.Message, rule = match.Rule.ToString(), impactAmount = match.Debit.Amount,
+                debit = new { match.Debit.Id, match.Debit.AccountId, match.Debit.Amount, date = match.Debit.Date.ToString("yyyy-MM-dd"), match.Debit.Description },
+                obligation = new { o.RecurrenceId, o.PlannedTransactionId, o.Description, amount = o.PlannedAmount, dueDate = o.DueDate.ToString("yyyy-MM-dd") },
+            });
+            db.FinancialAmountConfirmationEvents.Add(FinancialAmountConfirmationEvent.Create(workspaceId, o.RecurrenceId, competence, o.PlannedTransactionId, AmountConfirmationEventKind.Rejected,
+                AmountConfirmationSource.PluggyAuto, null, match.Debit.Amount, match.Debit.Id, reason, details, now));
+        }
     }
 
     private static bool DefinitivelyMissing(BankRow row, DateTimeOffset now) =>
@@ -164,13 +206,19 @@ internal static class PendingBankConfirmationProcessor
         var recorded = 0;
         foreach (var (debit, evidence) in diagnoses)
         {
-            var reason = evidence.All(e => !e.HasHistory) ? "NoHistoryEvidence" : evidence.Count > 1 ? "MultipleCandidates" : "DescriptionIncompatible";
+            var reason = evidence.Count == 1 && (evidence[0].SafeMatcherDescription || evidence[0].HistoryEvidence) && Math.Abs(evidence[0].AmountDeltaPercent) > 100m * PendingBankCoverage.CandidateValueTolerance ? "AmountIncompatible"
+                : evidence.All(e => !e.HasHistory) ? "NoHistoryEvidence" : evidence.Count > 1 ? "MultipleCandidates" : "DescriptionIncompatible";
             var details = JsonSerializer.Serialize(new
             {
                 reason, impactAmount = debit.Amount,
                 debit = new { debit.Id, debit.AccountId, debit.Amount, date = debit.Date.ToString("yyyy-MM-dd"), debit.Description },
                 candidates = evidence.Select(e => new { e.ObligationId, e.RecurrenceId, e.Description, e.Amount, dueDate = e.DueDate.ToString("yyyy-MM-dd"), e.DateDeltaDays, e.AmountDeltaPercent, e.SafeMatcherDescription, e.HistoryEvidence, e.HasHistory }),
-                missing = reason == "NoHistoryEvidence" ? "Nenhuma competência anterior paga desta recorrência para comparar a descrição bancária." : "Descrição bancária diferente da descrição da obrigação e do histórico.",
+                missing = reason switch
+                {
+                    "NoHistoryEvidence" => "Nenhuma competência anterior paga desta recorrência para comparar a descrição bancária.",
+                    "AmountIncompatible" => "A descrição confere, mas o valor bancário está longe do previsto e não há identificador estável no histórico; vincule manualmente.",
+                    _ => "Descrição bancária diferente da descrição da obrigação e do histórico.",
+                },
             });
             if (known.Contains((debit.Id, details))) continue;
             db.FinancialAmountConfirmationEvents.Add(FinancialAmountConfirmationEvent.Create(workspaceId, evidence.Count == 1 ? evidence[0].RecurrenceId : null, null, null, AmountConfirmationEventKind.Ambiguous,
