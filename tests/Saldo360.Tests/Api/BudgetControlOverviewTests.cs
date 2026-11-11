@@ -38,7 +38,7 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
 
     private async Task<Guid> CardAsync(string name)
     {
-        var response = await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/credit-cards", _session, new { name, issuer = "Banco", creditLimit = "10000.00", closingDay = 5, dueDay = 10, defaultPaymentAccountId = _account });
+        var response = await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/credit-cards", _session, new { name, issuer = "Banco", creditLimit = "10000.00", closingDay = 27, dueDay = 28, defaultPaymentAccountId = _account });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await ReadAsync<IdDto>(response)).Id;
     }
@@ -217,7 +217,7 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
         var pfOld = await NewAccountAsync("PF antiga", "PF"); var pjOld = await NewAccountAsync("PJ antiga", "PJ");
         await SpendAsync(pfOld, "300.00"); await SpendAsync(pjOld, "200.00"); await ExpenseAsync("100.00");
         var card = (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/credit-cards", _session,
-            new { name = "Cartão da PF antiga", issuer = "Banco", creditLimit = "10000.00", closingDay = 5, dueDay = 10, defaultPaymentAccountId = pfOld }))).Id;
+            new { name = "Cartão da PF antiga", issuer = "Banco", creditLimit = "10000.00", closingDay = 27, dueDay = 28, defaultPaymentAccountId = pfOld }))).Id;
         await PurchaseAsync(card, "700.00");
         await using (var db = Db()) await db.FinancialAccounts.Where(a => a.Id == pfOld || a.Id == pjOld).ExecuteUpdateAsync(set => set.SetProperty(a => a.IsActive, false));
 
@@ -232,7 +232,7 @@ public sealed class BudgetControlOverviewTests(PostgresFixture postgres) : Postg
     }
 
     private async Task<Guid> CardPaidByAsync(string name, Guid? payer) => (await ReadAsync<IdDto>(await SendWithCsrfAsync(HttpMethod.Post, $"{Root}/credit-cards", _session,
-        new { name, issuer = "Banco", creditLimit = "10000.00", closingDay = 5, dueDay = 10, defaultPaymentAccountId = payer }))).Id;
+        new { name, issuer = "Banco", creditLimit = "10000.00", closingDay = 27, dueDay = 28, defaultPaymentAccountId = payer }))).Id;
 
     [Fact]
     public async Task BudgetCardsDetailReconcilesWithThePfBudgetAndKeepsPjAndUnassignedCardsOut()

@@ -18,6 +18,8 @@ namespace Saldo360.Tests.Api;
 public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static DateOnly Today => BusinessCalendar.Today(DateTimeOffset.UtcNow);
+    /// <summary>Dia do pagamento previsto: sempre depois de hoje no mês corrente (até o dia 27), para o recebimento do mês não ficar vencido conforme o dia em que a suíte roda.</summary>
+    private static int PaymentDay => Math.Min(28, Today.Day + 1);
     private static DateOnly ThisMonth => new(Today.Year, Today.Month, 1);
     private static string Month(DateOnly date) => date.ToString("yyyy-MM");
     private static decimal Num(JsonElement element, params string[] path) { foreach (var part in path) element = element.GetProperty(part); return decimal.Parse(element.GetString()!, CultureInfo.InvariantCulture); }
@@ -55,8 +57,8 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
     private Task<JsonElement> SixMonthsAsync(Setup s, string? scope = null) =>
         JsonAsync(SendAsync(HttpMethod.Get, $"{s.Plan}/six-months" + (scope is null ? "" : $"?scope={scope}"), s.Session).GetAwaiter().GetResult());
 
-    private Task<HttpResponseMessage> SaveForecastAsync(Setup s, bool active = true, string tax = "11.00", string rate = "100.00", string hours = "8", int day = 10, int offset = 1, string reserve = "0.00", Guid? account = null) =>
-        SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/income-forecast", s.Session, new { accountId = account ?? s.Pj, hourlyRate = rate, hoursPerDay = hours, paymentDay = day, paymentOffsetMonths = offset, taxReservePercent = tax, operationalReserve = reserve, isActive = active });
+    private Task<HttpResponseMessage> SaveForecastAsync(Setup s, bool active = true, string tax = "11.00", string rate = "100.00", string hours = "8", int? day = null, int offset = 1, string reserve = "0.00", Guid? account = null) =>
+        SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/income-forecast", s.Session, new { accountId = account ?? s.Pj, hourlyRate = rate, hoursPerDay = hours, paymentDay = day ?? PaymentDay, paymentOffsetMonths = offset, taxReservePercent = tax, operationalReserve = reserve, isActive = active });
 
     private Task<HttpResponseMessage> PostAsync(Setup s, string path, object body) => SendWithCsrfAsync(HttpMethod.Post, $"{s.Root}/{path}", s.Session, body);
 
@@ -119,7 +121,7 @@ public sealed class IncomeForecastApiTests(PostgresFixture postgres) : PostgresA
         var first = Integrated(plan, 0).GetProperty("income");
         var worked = ThisMonth.AddMonths(-1);
         Assert.Equal(Month(worked), Text(first, "workedCompetence"));
-        Assert.Equal(new DateOnly(Today.Year, Today.Month, 10).ToString("yyyy-MM-dd"), Text(first, "paymentDate"));
+        Assert.Equal(new DateOnly(Today.Year, Today.Month, PaymentDay).ToString("yyyy-MM-dd"), Text(first, "paymentDate"));
         var days = first.GetProperty("billableDays").GetInt32();
         Assert.Equal(days, first.GetProperty("businessDays").GetInt32());
         Assert.Equal(days * 8m * 100m, Num(first, "expectedGross"));

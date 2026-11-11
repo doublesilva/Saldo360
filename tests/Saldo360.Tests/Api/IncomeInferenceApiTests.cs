@@ -20,6 +20,8 @@ namespace Saldo360.Tests.Api;
 public sealed class IncomeInferenceApiTests(PostgresFixture postgres) : PostgresApiTestBase(postgres)
 {
     private static DateOnly Today => BusinessCalendar.Today(DateTimeOffset.UtcNow);
+    /// <summary>Dia do pagamento previsto: sempre depois de hoje no mês corrente (até o dia 27), para o recebimento do mês não ficar vencido conforme o dia em que a suíte roda.</summary>
+    private static int PaymentDay => Math.Min(28, Today.Day + 1);
     private static DateOnly ThisMonth => new(Today.Year, Today.Month, 1);
     private static decimal Num(JsonElement element, params string[] path) { foreach (var part in path) element = element.GetProperty(part); return decimal.Parse(element.GetString()!, CultureInfo.InvariantCulture); }
     private sealed record IdDto(Guid Id);
@@ -85,7 +87,7 @@ public sealed class IncomeInferenceApiTests(PostgresFixture postgres) : Postgres
     }
 
     private Task<HttpResponseMessage> SaveForecastAsync(Setup s) =>
-        SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/income-forecast", s.Session, new { accountId = s.Pj, hourlyRate = "100.00", hoursPerDay = "8", paymentDay = 10, paymentOffsetMonths = 1, taxReservePercent = "11.00", operationalReserve = "0.00", isActive = true });
+        SendWithCsrfAsync(HttpMethod.Put, $"{s.Plan}/income-forecast", s.Session, new { accountId = s.Pj, hourlyRate = "100.00", hoursPerDay = "8", paymentDay = PaymentDay, paymentOffsetMonths = 1, taxReservePercent = "11.00", operationalReserve = "0.00", isActive = true });
 
     [Fact]
     public async Task WithoutConfiguration_TheMedianOfTheValidMonthsIsProjected_FlaggedAsInferred_AndCoverageStaysPartial()

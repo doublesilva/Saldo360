@@ -45,7 +45,7 @@ public sealed class FinancialEntriesReconciliationTests(PostgresFixture postgres
         _pj = await PostAsync("accounts", new { name = "Conta PJ", type = "Checking", financialScope = "PJ", openingBalance = "9000.00", openingBalanceDate = opening });
         _expense = await PostAsync("categories", new { name = "Despesas", type = "Expense" });
         _income = await PostAsync("categories", new { name = "Receitas", type = "Income" });
-        _card = await PostAsync("credit-cards", new { name = "Nubank", issuer = "Banco", creditLimit = "10000.00", closingDay = 5, dueDay = 10, defaultPaymentAccountId = _pf });
+        _card = await PostAsync("credit-cards", new { name = "Nubank", issuer = "Banco", creditLimit = "10000.00", closingDay = 27, dueDay = 28, defaultPaymentAccountId = _pf });
         Task<Guid> Tx(Guid account, Guid category, string type, string description, string amount) =>
             PostAsync("transactions", new { accountId = account, categoryId = category, type, description, amount, transactionDate = Today });
         await Tx(_pf, _expense, "Expense", "Mercado PF", "100.00");
@@ -59,7 +59,7 @@ public sealed class FinancialEntriesReconciliationTests(PostgresFixture postgres
             previouslyPaidInstallments = 0, firstPendingCompetence = ThisMonth, expenseNature = (string?)null });
         await PostAsync($"credit-cards/{_card}/purchases", new { description = "Geladeira", purchaseDate = ThisMonth, totalAmount = "300.00", installmentCount = 3, categoryId = _expense, amountMode = "Total",
             previouslyPaidInstallments = 0, firstPendingCompetence = ThisMonth, expenseNature = (string?)null });
-        await PostAsync("recurrences", new { creditCardId = _card, categoryId = _expense, type = "Expense", description = "Streaming", amount = "39.90", isEstimated = false, frequency = "Monthly", interval = 1, startDate = ThisMonth.AddDays(1), dayOfMonth = 2 });
+        await PostAsync("recurrences", new { creditCardId = _card, categoryId = _expense, type = "Expense", description = "Streaming", amount = "39.90", isEstimated = false, frequency = "Monthly", interval = 1, startDate = ThisMonth.AddDays(26), dayOfMonth = 27 });
         var debt = await PostAsync("debts", new { name = "Financiamento", debtType = "Other", responsibleAccountId = _pf, originalPrincipal = "5000.00", contractDate = ThisMonth });
         await using var db = Db();
         db.FinancialDebtInstallments.Add(FinancialDebtInstallment.Create(_workspace.Id, debt, new(1, ThisMonth.AddDays(20), 1000m, null, null, null, null), DateTimeOffset.UtcNow));
