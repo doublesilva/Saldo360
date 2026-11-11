@@ -11,7 +11,8 @@ export function OverviewAlerts({ items, onNavigate, onReload }: { items: Priorit
   const shown = visibleItems(items, expanded)
   const hidden = items.length - shown.length
   const run = (action: PriorityAction) => { if (action.reload) onReload(); else if (action.to) onNavigate(action.to.section, action.to.context) }
-  return <section className="ov-alerts" aria-label="Pontos de atenção">
+  return <section className="ov-alerts" aria-labelledby="ov-alerts-title">
+    <h3 id="ov-alerts-title" className="ov-alerts__title">Próximas ações</h3>
     <ul>{shown.map(item => <li key={item.key} className={`ov-alert ov-alert--${item.rank}`}>
       <span className="ov-alert__dot" aria-hidden="true" />
       <p><strong>{item.title}</strong> <span>{item.impact}</span></p>

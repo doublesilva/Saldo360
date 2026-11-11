@@ -52,11 +52,11 @@ export function OverviewEvolution({ plan, competence }: { plan: SixMonthPlan; co
         </div>
       </div>}
     <footer className="ov-card__foot">
-      <span>{selected ? `Resultado de ${monthTitle(competence)}${kindOf(selected.periodKind) === 'Past' ? '' : ' (projetado)'}` : 'Receitas menos despesas, calculadas pelo servidor'}</span>
+      <span>{selected ? `Resultado orçamentário de ${monthTitle(competence)}${kindOf(selected.periodKind) === 'Past' ? '' : ' (projetado)'}: receitas menos consumo` : 'Resultado orçamentário: receitas menos consumo, calculado pelo servidor'}</span>
       {result !== null && <strong className={`ov-mono${isNegative(result) ? ' ov-negative' : ' ov-positive'}`}>{isNegative(result) ? '' : '+ '}{money(result)}</strong>}
     </footer>
     <details className="ov-details"><summary>Ver valores em tabela</summary>
-      <div className="ov-table-wrap"><table className="ov-table"><caption className="visually-hidden">Receitas e despesas por mês, realizadas e projetadas</caption>
+      <div className="ov-table-wrap"><table className="ov-table"><caption className="visually-hidden">Receitas e consumo orçamentário por mês, realizados e projetados</caption>
         <thead><tr><th scope="col">Mês</th><th scope="col">Situação</th><th scope="col">Receitas realizadas</th><th scope="col">Receitas projetadas</th><th scope="col">Despesas realizadas</th><th scope="col">Despesas projetadas</th></tr></thead>
         <tbody>{months.map(month => <tr key={month.competence}><th scope="row">{shortMonth(month.competence)}</th><td>{periodLabels[kindOf(month.periodKind)]}</td><td>{money(month.realizedIncome)}</td><td>{money(month.projectedIncome)}</td><td>{money(month.realizedExpense)}</td><td>{money(month.projectedExpense)}</td></tr>)}</tbody>
       </table></div></details>

@@ -69,3 +69,24 @@ export const explain = (reasons: string[]) => reasons.map(reason => reasonText[r
 
 export const scopeLabel = (scope: Pick<PlanActualScope, 'kind' | 'accountName'>) =>
   scope.kind === 'all' || !scope.accountName ? 'Todas as contas' : scope.kind === 'primary' ? `Conta principal · ${scope.accountName}` : scope.accountName
+
+/** Rótulos dos componentes do fluxo de caixa (códigos do servidor). */
+export const componentText: Record<string, string> = {
+  IncomeRealized: 'Receitas recebidas', IncomePending: 'Receitas previstas a receber', TransfersReceived: 'Transferências recebidas',
+  BankExpenses: 'Despesas pagas pela conta', CardInvoicePayments: 'Faturas de cartão pagas', PendingPlanned: 'Despesas e parcelas de dívidas e financiamentos pendentes',
+  PendingBank: 'Despesas bancárias pendentes', PendingCardInvoices: 'Faturas de cartão ainda devidas', TransfersSent: 'Transferências enviadas',
+}
+export const resultStatusText = { Positive: 'Positivo', Negative: 'Negativo', Neutral: 'Neutro', Unavailable: 'Indisponível' } as const
+export const bridgeReasonText: Record<string, string> = {
+  BridgeNotReconciled: 'Os dados existentes não explicam toda a diferença: a projeção é parcial.', NoBankBalance: 'Sem saldo observado do banco: a ponte não pode ser montada.',
+  ProjectionUnavailable: 'Sem saldo projetado confiável.', ClosedMonth: 'Mês encerrado: vale o saldo realizado.',
+}
+export const resultReasonText: Record<string, string> = {
+  PlanPartial: 'Há ressalvas nos dados do mês: o resultado é parcial.', TransfersUnavailable: 'As transferências da conta não puderam ser lidas: o resultado de caixa é parcial.',
+}
+
+/** Motivo pelo qual a meta de recuperação ainda não pôde ser fixada (códigos do servidor). */
+export const recoveryPendingText: Record<string, string> = {
+  ProjectionUnavailable: 'não há projeção confiável do fechamento', CardCoverageIncomplete: 'há faturas de cartão sem conta pagadora identificada',
+  DebtCoverageIncomplete: 'há parcelas de dívida sem conta responsável', NoBankObservation: 'o banco ainda não informou o saldo',
+}

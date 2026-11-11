@@ -15,7 +15,7 @@ const icons = {
   wallet: <svg className="ov-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 5.5V4a1.5 1.5 0 0 0-1.5-1.5h-8A1.5 1.5 0 0 0 2 4v8a1.5 1.5 0 0 0 1.5 1.5h8A1.5 1.5 0 0 0 13 12v-1.5" /><path d="M14.25 5.5H10.5a2.5 2.5 0 0 0 0 5h3.75z" /></svg>,
 }
 
-interface Row { key: string; title: string; icon: keyof typeof icons; status: BudgetGroupStatus; target: string | null; projected: string; projectedPercent: string | null; margin: string | null; excess: string | null }
+interface Row { key: string; title: string; icon: keyof typeof icons; status: BudgetGroupStatus; target: string | null; realized: string; committed: string; estimated: string; projected: string; projectedPercent: string | null; margin: string | null; excess: string | null }
 
 export function OverviewBudgetProgress({ control, fixedTarget, scopeLabel, monthLabel, workspaceId, competence, loading, error, retry, onOpenBudget, onOpenCards }: {
   control: BudgetControl | null; fixedTarget: string | null; scopeLabel: string; monthLabel: string; workspaceId: string; competence: string; loading: boolean; error: unknown; retry: () => void; onOpenBudget: () => void; onOpenCards: () => void
@@ -34,7 +34,7 @@ function Body({ control, fixedTarget, onOpenBudget, workspaceId, competence, onO
   const rows: Row[] = [
     { ...total, key: 'total', title: 'Meta total', icon: 'target' },
     ...(cards.state === 'NoCards' ? [] : [{ ...cards, key: 'cards', title: 'Cartões de crédito', icon: 'card' as const }]),
-    { ...outsideCards, key: 'outside', title: 'Fora dos cartões', icon: 'wallet' },
+    { ...outsideCards, key: 'outside', title: 'Despesas fora dos cartões', icon: 'wallet' },
   ]
   // A meta é global: numa conta isolada só o consumo aparece, sem percentual de atingimento.
   const global = !control.targetsAttributable
@@ -46,6 +46,7 @@ function Body({ control, fixedTarget, onOpenBudget, workspaceId, competence, onO
       : row.key === 'cards' ? { open: open === 'cards', onToggle: () => toggle('cards'), hint: null, content: <OverviewBudgetCardDetails id="ov-card-details-cards" workspaceId={workspaceId} competence={competence} onOpenCards={onOpenCards} /> } : null
   return <>
     <ul className="ov-goal-rows">{rows.map(row => <GoalRow key={row.key} row={row} global={global} panel={panel(row)} />)}</ul>
+    <p className="ov-meta">O orçamento PF considera todas as contas PF, independentemente da conta escolhida no topo. Pagamentos de fatura não entram como novo consumo.</p>
     {global && <p className="ov-meta">A meta mensal vale para todas as contas: aqui aparece só o consumo desta conta.</p>}
     {!global && !total.targetDefined && <button type="button" onClick={onOpenBudget}>Configurar orçamento</button>}
     {!global && fixedTarget !== null && <p className="ov-budget__fixed"><span>Meta complementar: despesas fixas</span><strong className="ov-mono">{money(fixedTarget)}</strong></p>}
@@ -71,6 +72,11 @@ function GoalRow({ row, global, panel }: { row: Row; global: boolean; panel: Pan
       <div className="ov-goal-row__foot">
         <span className="ov-mono">{money(row.projected)}{tone !== 'none' && <> / {money(row.target)}</>}</span>
         <span className="ov-goal-row__diff">{difference}</span></div>
+      <dl className="ov-goal-row__parts" aria-label={`Composição de ${row.title}`}>
+        <div><dt>Consumo realizado</dt><dd className="ov-mono">{money(row.realized)}</dd></div>
+        <div><dt>Consumo comprometido</dt><dd className="ov-mono">{money(row.committed)}</dd></div>
+        <div><dt>Consumo estimado</dt><dd className="ov-mono">{money(row.estimated)}</dd></div>
+      </dl>
       {panel?.open && panel.content}
     </div>
   </li>

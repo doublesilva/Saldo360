@@ -1,4 +1,4 @@
-import type { DashboardOverview } from '../../api/overview'
+import type { DashboardOverview, MonthlyResult } from '../../api/overview'
 
 /** Retrato sintético da Visão Geral (R01): conta principal PF, uma conta sem saldo, compromissos vencidos e próximos, metas e orçamento com um excesso. */
 export const overview: DashboardOverview = {
@@ -43,4 +43,23 @@ export const overview: DashboardOverview = {
     ],
   },
   classification: { state: 'Complete', needsReview: 2, notEvaluated: 1 },
+}
+
+/** Resultado mensal sintético (mês corrente): caixa e orçamento com valores diferentes de propósito, para provar que são perspectivas distintas. */
+export const monthlyResult: MonthlyResult = {
+  state: 'Complete', periodKind: 'Current', highlight: 'Projected', status: 'Positive',
+  inflows: { realized: '450.00', pending: '2000.00', projected: '2450.00' },
+  outflows: { realized: '900.00', pending: '600.00', projected: '1500.00' },
+  result: { realized: '-450.00', pending: '1400.00', projected: '950.00' },
+  transfersReceived: null, transfersSent: null,
+  components: [
+    { code: 'IncomeRealized', side: 'Inflow', status: 'Realized', amount: '450.00', target: 'Entries' },
+    { code: 'IncomePending', side: 'Inflow', status: 'Pending', amount: '2000.00', target: 'Calendar' },
+    { code: 'BankExpenses', side: 'Outflow', status: 'Realized', amount: '300.00', target: 'Entries' },
+    { code: 'CardInvoicePayments', side: 'Outflow', status: 'Realized', amount: '600.00', target: 'Entries' },
+    { code: 'PendingCardInvoices', side: 'Outflow', status: 'Pending', amount: '600.00', target: 'Cards' },
+  ],
+  budget: { income: '450.00', consumption: '1200.00', realized: '-750.00', projected: '1250.00' },
+  bridge: { state: 'Complete', observedBalance: '-1000.00', observedDate: '2026-11-04', inflowsAfter: '2000.00', outflowsAfter: '600.00', projectedClosing: '400.00', unreconciled: null, reasons: [] },
+  reasons: [], overdraft: null,
 }

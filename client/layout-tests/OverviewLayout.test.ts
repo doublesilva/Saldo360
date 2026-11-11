@@ -21,9 +21,12 @@ describe('Responsividade da Visão Geral', () => {
 
   it('o layout acompanha a largura real do conteúdo ao lado do menu (container), como no Folio: corpo e coluna de apoio no desktop, uma coluna no tablet e no celular', () => {
     expect(css).toMatch(/\.ov\s*\{[^}]*container:\s*ov \/ inline-size/)
-    expect(css).toMatch(/@container ov \(min-width: 62rem\)\s*\{[^@]*\.ov-hero\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1\.75fr\)/)
+    // Topo (T14.3): no desktop o resultado e a composição ocupam a coluna principal e o saldo/cheque especial fica ao lado; no celular é uma coluna na ordem A, B, C.
+    expect(css).toMatch(/\.ov-top\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
+    expect(css).toMatch(/@container ov \(min-width: 62rem\)\s*\{[^@]*\.ov-top\s*\{\s*grid-template-columns:\s*minmax\(0, 1\.75fr\) minmax\(0, 1fr\);\s*grid-template-areas:\s*'result balance' 'composition balance'/)
     expect(css).toMatch(/@container ov \(min-width: 62rem\)\s*\{[^@]*\.ov-grid\s*\{\s*grid-template-columns:\s*minmax\(0, 2\.6fr\) minmax\(0, 1fr\)/)
-    expect(css).toMatch(/@container ov \(min-width: 40rem\)\s*\{[^@]*\.ov-hero__kpis\s*\{\s*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/)
+    expect(css).toMatch(/@container ov \(min-width: 40rem\)\s*\{[^@]*\.ov-result__kpis\s*\{\s*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/)
+    expect(css).toMatch(/\.ov-result__kpis\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/)
     // Orçamento mensal (com as categorias dentro da Meta total): largura total e altura natural (sem altura fixa nem esticar).
     expect(css).toMatch(/\.ov-budget-area\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[^}]*gap:\s*1\.5rem;[^}]*align-items:\s*start/)
     expect(css).toMatch(/\.ov-budget-area > \.ov-card\s*\{[^}]*width:\s*100%;[^}]*height:\s*auto;[^}]*align-self:\s*start/)
@@ -54,9 +57,9 @@ describe('Responsividade da Visão Geral', () => {
 })
 
 describe('Composição Folio', () => {
-  it('a página segue a ordem do Folio e não monta os painéis antigos', () => {
+  it('a página segue a ordem da T14.3 (resultado, composição, saldo, orçamento, ações, evolução) e não monta os painéis antigos', () => {
     const page = src('components/overview/Overview.tsx')
-    const order = ['<OverviewHero', '<OverviewAlerts', '<OverviewEvolutionSection', '<OverviewBudgetProgress', '<OverviewRecent', '<OverviewAccounts', '<OverviewUpcoming', '<OverviewGoals'].map(tag => page.indexOf(tag))
+    const order = ['<OverviewResult', '<OverviewComposition', '<OverviewBalanceCard', '<OverviewBudgetProgress', '<OverviewAlerts', '<OverviewEvolutionSection', '<OverviewRecent', '<OverviewAccounts', '<OverviewUpcoming', '<OverviewGoals'].map(tag => page.indexOf(tag))
     expect(order.every(index => index > 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
     for (const legacy of ['Disclosure', 'OverviewDecision', 'OverviewBudgetControl', 'OverviewCashFlow', 'OverviewRecovery', 'OverviewProjectedRecovery', 'OverviewActions', 'OverviewIndicators', 'OverviewAside']) {
@@ -66,10 +69,20 @@ describe('Composição Folio', () => {
   })
 
   it('a recuperação do cheque especial é compacta, dentro do bloco do saldo, com medidor acessível', () => {
-    const hero = src('components/overview/OverviewHero.tsx')
+    const hero = src('components/overview/OverviewBalanceCard.tsx')
+    expect(existsSync(join(overviewDir, 'OverviewHero.tsx'))).toBe(false)
     expect(hero).toContain('role="meter"'); expect(hero).toContain('aria-valuetext')
     expect(hero).toMatch(/if \(!overdraft\.eligible\) return null/)
     expect(css).toMatch(/\.ov-meter > span\s*\{[^}]*calc\(100% \* var\(--ov-part\) \/ var\(--ov-whole\)\)/)
+  })
+})
+
+describe('Estados de carregamento (T14.3)', () => {
+  it('esqueletos são neutros e respeitam prefers-reduced-motion; "Carregando" nunca usa a cor de erro', () => {
+    expect(css).toMatch(/\.ov-skeleton\s*\{[^}]*var\(--ov-muted-bg\)/)
+    expect(css).not.toMatch(/\.ov-skeleton\s*\{[^}]*danger/)
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.ov-skeleton\s*\{\s*animation:\s*none/)
+    for (const file of ['OverviewResult.tsx', 'OverviewBalanceCard.tsx']) expect(src(`components/overview/${file}`)).not.toMatch(/Carregando…'/)
   })
 })
 

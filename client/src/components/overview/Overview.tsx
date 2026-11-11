@@ -4,7 +4,9 @@ import { getDashboardOverview } from '../../api/overview'
 import type { BudgetGroup } from '../budget/budgetText'
 import type { ExpenseNature } from '../../api/expenseNature'
 import { addCalendarMonths } from '../../dates'
-import { OverviewHero } from './OverviewHero'
+import { OverviewResult, OverviewComposition } from './OverviewResult'
+import { OverviewBalanceCard } from './OverviewBalanceCard'
+import { OverviewSummary } from './OverviewSummary'
 import { OverviewAlerts } from './OverviewAlerts'
 import { OverviewEvolutionSection } from './OverviewEvolution'
 import { OverviewBudgetProgress } from './OverviewBudgetProgress'
@@ -26,9 +28,8 @@ export type Go = (section: OverviewSection, context?: OverviewNavigation) => voi
 export interface BlockLoad<T> { data: T | null; loading: boolean; error: unknown; retry: () => void }
 
 /**
- * Visão Geral no padrão do dashboard Folio: cabeçalho com competência e conta; o saldo bancário como informação principal, com o cheque especial e a recuperação do mês
- * compactos e o resumo de receitas, despesas e fechamento; a evolução financeira; orçamento mensal e despesas por categoria, um abaixo do outro; últimos lançamentos; e, na
- * coluna de apoio, contas, próximos compromissos e metas. Consultas: `plan-actual`, `financial-dashboard/overview` e `monthly-plan/six-months` (e, ao pedir "Ver todas", a distribuição
+ * Visão Geral (T14.3): cabeçalho com competência e conta; A) resultado do mês, B) composição do fluxo de caixa e C) saldo e cheque especial; D) orçamento mensal; E) próximas ações;
+ * F) evolução (resultado orçamentário) e últimos lançamentos; e, na coluna de apoio, contas, próximos compromissos e metas. Cada seção carrega e falha de forma independente. Consultas: `plan-actual`, `financial-dashboard/overview` e `monthly-plan/six-months` (e, ao pedir "Ver todas", a distribuição
  * completa das despesas). Todo valor vem do servidor.
  */
 export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionChange, onNavigate }: {
@@ -82,20 +83,29 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
       </div>
     </header>
 
-    <OverviewHero competence={competence} plan={planBlock} decision={data?.decision ?? null} overview={overviewBlock} onNavigate={onNavigate}>
-      {planData && <OverviewSyncLine workspaceId={workspaceId} sync={planData.sync} onSynced={reloadAll} />}
-    </OverviewHero>
+    <OverviewSummary competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
 
-    <OverviewAlerts items={items} onNavigate={onNavigate} onReload={reloadAll} />
+    <details className="ov-details ov-more">
+      <summary>Resultado de caixa, composição e cheque especial</summary>
+    <div className="ov-top">
+      <div className="ov-top__result"><OverviewResult competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} block={overviewBlock}>
+        {planData && <OverviewSyncLine workspaceId={workspaceId} sync={planData.sync} onSynced={reloadAll} />}
+      </OverviewResult></div>
+      <div className="ov-top__composition"><OverviewComposition competence={competence} result={data?.monthlyResult ?? null} scopeAccountId={data?.scopeAccountId ?? null}
+        consolidated={(data?.scopeKind ?? scope.kind) === 'all'} block={overviewBlock} onNavigate={onNavigate} /></div>
+      <div className="ov-top__balance"><OverviewBalanceCard plan={planBlock} decision={data?.decision ?? null} limit={data?.monthlyResult?.overdraft ?? null} overview={overviewBlock} onNavigate={onNavigate} /></div>
+    </div>
+    </details>
 
     <div className="ov-grid">
       <div className="ov-grid__main">
-        <OverviewEvolutionSection workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} />
         <div className="ov-budget-area">
           <OverviewBudgetProgress control={data?.pfBudgetControl ?? null} fixedTarget={data?.budget.state === 'Complete' ? data.budget.fixed?.planned ?? null : null}
             scopeLabel="Orçamento PF · Todas as contas PF" monthLabel={monthTitle(competence)} workspaceId={workspaceId} competence={competence} {...overviewBlock}
             onOpenBudget={() => onNavigate('budgets', { competence })} onOpenCards={() => onNavigate('cards')} />
         </div>
+        <OverviewAlerts items={items} onNavigate={onNavigate} onReload={reloadAll} />
+        <OverviewEvolutionSection workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} />
         <OverviewRecent recent={data?.recent ?? null} {...overviewBlock}
           onOpenAll={() => recentRange && onNavigate('transactions', { transactions: recentRange, newTransaction: data?.recent.items.length === 0 })} />
       </div>

@@ -156,6 +156,21 @@ export interface ExpenseDistribution {
   gross: string; adjustments: string; reconciliation: ExpenseReconciliation[] | null
 }
 
+/**
+ * T14.3: resultado mensal composto no servidor a partir do plan-actual, das transferências e da decisão. Duas perspectivas distintas: CAIXA (`inflows`/`outflows`/`result`; fatura paga é saída,
+ * transferências só alteram o caixa de uma conta) e ORÇAMENTÁRIA (`budget`: receitas menos consumo da competência). `realized` nulo = nada realizado (mês futuro). `bridge.unreconciled` é
+ * a diferença que os dados não explicam; nunca é absorvida por um ajuste.
+ */
+export interface MonthlyAmounts { realized: string | null; pending: string | null; projected: string | null }
+export interface MonthlyComponent { code: string; side: 'Inflow' | 'Outflow'; status: 'Realized' | 'Pending'; amount: string; target: 'Entries' | 'Calendar' | 'Cards' }
+export interface MonthlyBridge { state: 'Complete' | 'Partial' | 'Unavailable'; observedBalance: string | null; observedDate: string | null; inflowsAfter: string | null; outflowsAfter: string | null; projectedClosing: string | null; unreconciled: string | null; reasons: string[] }
+export interface MonthlyOverdraft { contractedLimit: string; used: string; available: string; utilizationPercent: string | null; exceedsLimit: boolean; projectedUsed: string | null; projectedAvailable: string | null; projectedPercent: string | null }
+export interface MonthlyResult {
+  state: 'Complete' | 'Partial'; periodKind: 'Past' | 'Current' | 'Future'; highlight: 'Realized' | 'Projected'; status: 'Positive' | 'Negative' | 'Neutral' | 'Unavailable'
+  inflows: MonthlyAmounts; outflows: MonthlyAmounts; result: MonthlyAmounts; transfersReceived: string | null; transfersSent: string | null
+  components: MonthlyComponent[]; budget: { income: string | null; consumption: string | null; realized: string | null; projected: string | null }; bridge: MonthlyBridge; reasons: string[]; overdraft?: MonthlyOverdraft | null
+}
+
 export interface DashboardOverview {
   competence: string; asOf: string; scopeKind: 'primary' | 'all' | 'account'; scopeAccountId: string | null
   accounts: OverviewAccounts; commitments: OverviewCommitments; goals: OverviewGoals; budget: OverviewBudget; recent: OverviewRecent; classification: OverviewClassification
@@ -171,6 +186,8 @@ export interface DashboardOverview {
   expenseDistribution?: ExpenseDistribution | null
   /** Aditivo: orçamento PF (todas as contas PF pelo `FinancialScope`), independente da conta bancária escolhida; metas sempre atribuíveis. `budgetControl` segue o escopo bancário. */
   pfBudgetControl?: BudgetControl | null
+  /** Aditivo (T14.3): resultado de caixa × resultado orçamentário e ponte do saldo (null quando indisponível). */
+  monthlyResult?: MonthlyResult | null
 }
 
 export function getDashboardOverview(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<DashboardOverview> {

@@ -80,7 +80,7 @@ public sealed record OverviewTransfersDto(string State, string Received, string 
 
 public sealed record DashboardOverviewDto(string Competence, DateOnly AsOf, string ScopeKind, Guid? ScopeAccountId, OverviewAccountsDto Accounts, OverviewCommitmentsDto Commitments, OverviewGoalsDto Goals,
     OverviewBudgetDto Budget, OverviewRecentDto Recent, OverviewClassificationDto Classification, OverviewTransfersDto? Transfers = null, OverviewCashFlowDto? CashFlow = null,
-    FinancialDecisionDto? Decision = null, BudgetControlDto? BudgetControl = null, ExpenseDistributionDto? ExpenseDistribution = null, BudgetControlDto? PfBudgetControl = null);
+    FinancialDecisionDto? Decision = null, BudgetControlDto? BudgetControl = null, ExpenseDistributionDto? ExpenseDistribution = null, BudgetControlDto? PfBudgetControl = null, OverviewMonthlyResultDto? MonthlyResult = null);
 
 public sealed partial class DashboardOverviewService(
     IFinancialWorkspaceRepository workspaces,
@@ -168,7 +168,22 @@ public sealed partial class DashboardOverviewService(
         // Orçamento PF: independe da conta bancária escolhida (todas as contas PF pelo FinancialScope, inclusive as inativas que têm histórico), nunca o consolidado, que também tem PJ.
         var pfBudgetControl = await BuildBudgetControlAsync(workspaceId, userId, month, PlanActualScopes.All, null, "pf", today, budget, classification, null, ct, (await accountService.ListAsync(workspaceId, userId, includeInactive: true, ct) ?? all).Where(a => a.FinancialScope == Saldo360.Domain.Accounts.FinancialScope.PF).ToList());
         var distribution = await BuildExpenseDistributionAsync(workspaceId, userId, month, requested, selected?.Id, ExpenseDistributionCalculator.OverviewTop, ct);
-        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow, decision, budgetControl, distribution, pfBudgetControl));
+        var monthlyResult = await BuildMonthlyResultAsync(workspaceId, userId, month, requested, selected?.Id, transfers, decision, ct);
+        return PlanActualResult<DashboardOverviewDto>.Ok(new(month, today, kind, selected?.Id, accounts, commitments, goals, budget, recent, classification, transfers, cashFlow, decision, budgetControl, distribution, pfBudgetControl, monthlyResult));
+    }
+
+    /// <summary>Resultado mensal (caixa × orçamento) a partir do plan-actual do mesmo escopo; indisponível (nulo) se a leitura falhar, nunca zerado.</summary>
+    private async Task<OverviewMonthlyResultDto?> BuildMonthlyResultAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, OverviewTransfersDto transfers, FinancialDecisionDto? decision, CancellationToken ct)
+    {
+        try
+        {
+            var plan = await planActual.GetAsync(workspaceId, userId, month, requestedScope, accountId, ct);
+            return plan.Value is { } dashboard ? MonthlyResultCalculator.Build(dashboard, transfers, decision) : null;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
     }
 
     private async Task<OverviewTransfersDto> BuildTransfersAsync(Guid workspaceId, Guid userId, string month, string requestedScope, Guid? accountId, OverviewAccountsDto accounts, CancellationToken ct)
