@@ -5,15 +5,16 @@ import { AutomationCards } from './AutomationCards'
 import { AutomationConnections } from './AutomationConnections'
 import { AutomationHistory } from './AutomationHistory'
 import { ClassificationReviewList } from './ClassificationReviewList'
+import { DecisionQueue } from './decisionQueue/DecisionQueue'
 import type { ReviewKind } from '../api/pluggyAutomation'
 import '../Automation.css'
 
-export type AutomationTab = 'connections' | 'automations' | 'history'
+export type AutomationTab = 'connections' | 'automations' | 'decisions' | 'history'
 
 /** Ponto de entrada de outras telas (orçamento, visão geral): abre direto a lista de revisão da classificação, no recorte pedido. */
 export interface AutomationEntry { key: number; tab?: AutomationTab; connectionIds?: string[]; review?: { kind: ReviewKind; from?: string; to?: string } }
 
-const tabs: readonly (readonly [AutomationTab, string])[] = [['connections', 'Conexões'], ['automations', 'Automações'], ['history', 'Histórico']]
+const tabs: readonly (readonly [AutomationTab, string])[] = [['connections', 'Conexões'], ['automations', 'Automações'], ['decisions', 'Requer sua decisão'], ['history', 'Histórico']]
 
 type Load = { key: string; workspaceId: string; state: 'loading' } | { key: string; workspaceId: string; state: 'error'; error: unknown } | { key: string; workspaceId: string; state: 'loaded'; data: AutomationOverview }
 
@@ -48,8 +49,9 @@ export function AutomationCenter({ workspaceId, refreshKey = '', onChanged, entr
       {tabs.map(([id, label]) => <button key={id} type="button" role="tab" id={`automation-tab-${id}`} aria-selected={tab === id} aria-controls="automation-panel" onClick={() => setTab(id)}>{label}</button>)}
     </div>
     <div id="automation-panel" role="tabpanel" aria-labelledby={`automation-tab-${tab}`}>
-      {visible.state === 'loading' && tab !== 'history' && <OperationalLoading>Carregando a central de automação…</OperationalLoading>}
-      {visible.state === 'error' && tab !== 'history' && <OperationalError error={visible.error} onRetry={() => setReload(value => value + 1)} />}
+      {visible.state === 'loading' && tab !== 'history' && tab !== 'decisions' && <OperationalLoading>Carregando a central de automação…</OperationalLoading>}
+      {visible.state === 'error' && tab !== 'history' && tab !== 'decisions' && <OperationalError error={visible.error} onRetry={() => setReload(value => value + 1)} />}
+      {tab === 'decisions' && <DecisionQueue key={entry?.key} workspaceId={workspaceId} refreshKey={refreshKey} onChanged={onChanged} />}
       {tab === 'connections' && visible.state === 'loaded' && <AutomationConnections highlight={entry?.connectionIds} workspaceId={workspaceId} refreshKey={refreshKey} overview={visible.data} onChanged={refresh} />}
       {tab === 'automations' && visible.state === 'loaded' && <>
         <AutomationCards workspaceId={workspaceId} overview={visible.data} onChanged={refresh} onOpenConnections={() => setTab('connections')} onOpenHistory={goHistory} />

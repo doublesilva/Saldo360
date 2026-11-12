@@ -13,13 +13,14 @@ import { OverviewBudgetProgress } from './OverviewBudgetProgress'
 import { OverviewAccounts, OverviewGoals, OverviewRecent, OverviewUpcoming } from './OverviewLists'
 import { OverviewSyncLine } from './OverviewSync'
 import { buildPriorityItems } from './priorityItems'
+import { loadDecisionQueue } from '../decisionQueue/queueModel'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
 import { useLoad } from './useLoad'
 import '../../Overview.css'
 
 export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions' | 'transfers' | 'automation' | 'planning'
 /** Contexto levado ao detalhe: o mês da Agenda, a competência do orçamento ou o recorte da lista de lançamentos. */
-export interface OverviewNavigation { planningTab?: 'projection' | 'six'; recoveryScope?: PlanActualScopeChoice; month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature; type?: 'Transfer' }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; connectionIds?: string[]; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
+export interface OverviewNavigation { planningTab?: 'projection' | 'six'; recoveryScope?: PlanActualScopeChoice; month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature; type?: 'Transfer' }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'decisions' | 'history'; connectionIds?: string[]; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
 
 export interface OverviewSelection { competence: string; scope: PlanActualScopeChoice }
 
@@ -43,20 +44,23 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
   const plan = useLoad(key, useCallback((signal: AbortSignal) => getPlanActual(workspaceId, competence, scope, signal), [workspaceId, competence, scope]))
   const overview = useLoad(key, useCallback((signal: AbortSignal) => getDashboardOverview(workspaceId, competence, scope, signal), [workspaceId, competence, scope]))
 
+  // Fila "Requer sua decisão": mesma fonte da Central de Automação (somente leitura), recarregada junto com a tela depois de qualquer resolução.
+  const queue = useLoad(key, useCallback((signal: AbortSignal) => loadDecisionQueue(workspaceId, signal), [workspaceId]))
+  const queueData = queue.load.state === 'loaded' ? queue.load.data : null
   const planData = plan.load.state === 'loaded' ? plan.load.data : null
   const data = overview.load.state === 'loaded' ? overview.load.data : null
   const planBlock: BlockLoad<PlanActualDashboard> = { data: planData, loading: plan.load.state === 'loading', error: plan.load.state === 'error' ? plan.load.error : null, retry: plan.retry }
   const overviewBlock = { loading: overview.load.state === 'loading', error: overview.load.state === 'error' ? overview.load.error : null, retry: overview.retry }
   // A API é a fonte da verdade do escopo: guarda-se a última lista de contas para o seletor não esvaziar durante a recarga.
   const choices = planData?.scope ?? plan.previous?.scope ?? null
-  const reloadAll = () => { plan.retry(); overview.retry() }
+  const reloadAll = () => { plan.retry(); overview.retry(); queue.retry() }
 
   const scopeText = data
     ? data.scopeKind === 'all' || !data.scopeAccountId ? 'Todas as contas'
       : `${data.scopeKind === 'primary' ? 'Conta principal · ' : ''}${data.accounts.items.find(a => a.accountId === data.scopeAccountId)?.name ?? 'Conta'}`
     : planData ? scopeLabel(planData.scope) : ''
-  const items = useMemo(() => buildPriorityItems({ competence, decision: data?.decision ?? null, control: data?.budgetControl ?? null, pfControl: data?.pfBudgetControl ?? null, plan: planData, classification: data?.classification ?? null }),
-    [competence, data, planData])
+  const items = useMemo(() => buildPriorityItems({ competence, decision: data?.decision ?? null, control: data?.budgetControl ?? null, pfControl: data?.pfBudgetControl ?? null, plan: planData, classification: data?.classification ?? null, decisions: queueData }),
+    [competence, data, planData, queueData])
   const setCompetence = (value: string) => { if (/^\d{4}-\d{2}$/.test(value)) onSelectionChange({ competence: value, scope }) }
   const step = (months: number) => setCompetence(addCalendarMonths(`${competence}-01`, months).slice(0, 7))
   const recentRange = data ? { from: data.recent.from, to: data.recent.through, accountId: data.scopeAccountId } : null
@@ -85,7 +89,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
       </div>
     </header>
 
-    <OverviewAlerts items={items} state={{ loading: planBlock.loading || overviewBlock.loading, failed: Boolean(planBlock.error || overviewBlock.error) }} onNavigate={onNavigate} onReload={reloadAll} />
+    <OverviewAlerts items={items} state={{ loading: planBlock.loading || overviewBlock.loading || queue.load.state === 'loading', failed: Boolean(planBlock.error || overviewBlock.error || queue.load.state === 'error' || queueData?.failedSources.length) }} onNavigate={onNavigate} onReload={reloadAll} />
     <OverviewSummary competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
 
     <details className="ov-details ov-more">

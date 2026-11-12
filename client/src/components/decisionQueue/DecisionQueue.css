@@ -1,0 +1,12 @@
+/* Fila "Requer sua decisão": uma coluna em qualquer largura (320 px incluído); motivo, impacto e botão sempre legíveis, com quebra de linha em textos longos. */
+.decision-queue__list { list-style: none; margin: .75rem 0 0; padding: 0; display: grid; gap: .75rem; }
+.decision-item { display: grid; gap: .3rem; padding: .75rem; border: 1px solid var(--border, #cbd5e1); border-left-width: 4px; border-radius: .5rem; min-width: 0; overflow-wrap: anywhere; }
+.decision-item--out-of-totals { border-left-color: #b45309; }
+.decision-item--indeterminate { border-left-color: #6b7280; }
+.decision-item--accounted-until-decision, .decision-item--accounted-category-pending { border-left-color: #2563eb; }
+.decision-item p { margin: 0; }
+.decision-item__type { font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.decision-item__meta { display: flex; flex-wrap: wrap; gap: .25rem .75rem; }
+.decision-item__reason span, .decision-item__impact span { font-weight: 600; }
+.decision-item__action { justify-self: start; min-height: 2.75rem; padding-inline: 1.25rem; }
+@media (max-width: 480px) { .decision-item__action { justify-self: stretch; } }

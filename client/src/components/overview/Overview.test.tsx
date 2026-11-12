@@ -11,7 +11,9 @@ import { overview as baseOverview, monthlyResult } from './overviewFixtures'
 import { decision } from './decisionFixtures'
 import { budgetControl, group } from './budgetControlFixtures'
 
-type Overrides = { plan?: PlanActualDashboard | Response; overview?: DashboardOverview | Response; evolution?: SixMonthPlan | Response; all?: ExpenseDistribution | Response; budgetCards?: BudgetCards | Response; budgetCategories?: BudgetCategories | Response }
+type Overrides = { plan?: PlanActualDashboard | Response; overview?: DashboardOverview | Response; evolution?: SixMonthPlan | Response; all?: ExpenseDistribution | Response; budgetCards?: BudgetCards | Response; budgetCategories?: BudgetCategories | Response; review?: unknown | Response; classification?: unknown | Response }
+const emptyReview = { items: [], total: 0, page: 1, pageSize: 25, counts: {} }
+const emptyClassification = { kind: 'category', from: null, to: null, wholeBudget: true, items: [], total: 0, page: 1, pageSize: 25, unclassifiableCount: 0 }
 let calls: string[] = []
 
 const share = (categoryId: string | null, name: string, amount: string, percentage: string | null, kind: ExpenseCategoryShare['kind'] = 'Category', categoryCount = 1, gross = amount): ExpenseCategoryShare =>
@@ -45,6 +47,8 @@ function mockApi(overrides: Overrides = {}) {
     if (url.includes('/financial-dashboard/budget-cards')) return answer(overrides.budgetCards ?? budgetCards())
     if (url.includes('/financial-dashboard/expense-distribution')) return answer(overrides.all ?? distribution())
     if (url.includes('/monthly-plan/six-months')) return answer(overrides.evolution ?? sixMonths)
+    if (url.includes('/pluggy-integration/review')) return answer(overrides.review ?? emptyReview)
+    if (url.includes('/pluggy-integration/classification-review')) return answer(overrides.classification ?? emptyClassification)
     return new Response('{}', { status: 404 })
   }))
 }
@@ -567,6 +571,35 @@ describe('Visão Geral — pontos de atenção', () => {
     expect(items()).toHaveLength(6)
     fireEvent.click(within(alerts).getByRole('button', { name: 'Revisar classificação ›' }))
     expect(navigations.at(-1)).toMatchObject({ section: 'automation', context: { review: { kind: 'category' } } })
+  })
+
+  it('"Ver vencimentos" abre a Agenda na competência selecionada', async () => {
+    mockApi(); renderPage('2026-10')
+    const alerts = await screen.findByRole('region', { name: 'Próximas ações' })
+    fireEvent.click(within(alerts).getByRole('button', { name: 'Ver vencimentos' }))
+    expect(navigations.at(-1)).toEqual({ section: 'calendar', context: { month: '2026-10' } })
+  })
+
+  it('pendências da fila viram um único atalho "Requer sua decisão", que substitui os avisos separados de revisão e classificação', async () => {
+    mockApi({ review: { ...emptyReview, items: [{ postingId: 'a', accounted: false, description: 'PIX', reason: null, linkDisplayName: 'Conta', allowedResolutions: [] }], total: 1 }, classification: { ...emptyClassification, items: [{ action: 'Transaction', recordId: 'k', description: 'Loja', amount: '10.00', date: '2026-10-02' }], total: 2 } })
+    renderPage()
+    const alerts = await screen.findByRole('region', { name: 'Próximas ações' })
+    fireEvent.click(await within(alerts).findByRole('button', { name: /Ver todas as \d+ ações/ }))
+    const shortcut = (await within(alerts).findByText('3 pendências requerem sua decisão.')).closest('li') as HTMLElement
+    expect(text(shortcut)).toContain('Atenção')
+    expect(text(shortcut)).toContain('1 fora dos totais até a revisão.')
+    expect(within(alerts).getAllByRole('listitem').filter(item => /sua decisão/.test(text(item)))).toHaveLength(1)
+    expect(within(alerts).queryByRole('button', { name: 'Revisar classificação ›' })).toBeNull()
+    fireEvent.click(within(shortcut).getByRole('button', { name: 'Ver o que requer sua decisão ›' }))
+    expect(navigations.at(-1)).toEqual({ section: 'automation', context: { automationTab: 'decisions' } })
+  })
+
+  it('se a fila falha, a lista avisa que pode estar incompleta e mantém os avisos antigos por fonte', async () => {
+    mockApi({ review: new Response('{}', { status: 500 }), classification: new Response('{}', { status: 500 }) }); renderPage()
+    const alerts = await screen.findByRole('region', { name: 'Próximas ações' })
+    expect(await within(alerts).findByRole('alert')).toBeTruthy()
+    fireEvent.click(await within(alerts).findByRole('button', { name: /Ver todas as \d+ ações/ }))
+    expect(within(alerts).getByRole('button', { name: 'Revisar classificação ›' })).toBeTruthy()
   })
 
   it('sem pontos de atenção, mostra uma mensagem compacta (e nunca uma lista vazia)', async () => {

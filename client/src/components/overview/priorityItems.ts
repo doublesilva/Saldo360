@@ -5,6 +5,7 @@ import type { OverviewNavigation, OverviewSection } from './Overview'
 import { actionText, pressureText, recommendationText } from './budgetControlText'
 import { caveat, coverageMessage, unavailableReason } from './decisionText'
 import { formatDate } from '../../money'
+import type { DecisionQueue } from '../decisionQueue/queueModel'
 import { explain, isNegative, isPositiveAmount, money, monthTitle } from './overviewText'
 
 // T12.2 / dashboard Folio: pontos de atenção. Escolhe e ordena o que o servidor já entregou (cobertura, recuperação, orçamento, confiabilidade). Nenhum valor é calculado aqui:
@@ -46,10 +47,13 @@ const budgetSetup = new Set(['BudgetTotalNotDefined', 'CardTargetNotDefined'])
 export interface PriorityInput {
   /** `control` = contexto bancário da conta escolhida (encargos, receitas, cheque especial); `pfControl` = orçamento PF (metas, excessos, pendências do orçamento), igual em qualquer conta. */
   competence: string; decision: FinancialDecision | null; control: BudgetControl | null; pfControl?: BudgetControl | null; plan: PlanActualDashboard | null; classification: OverviewClassification | null
+  /** Fila "Requer sua decisão" já carregada; `null` enquanto carrega ou se falhou (aí valem os avisos antigos por fonte). */
+  decisions?: DecisionQueue | null
 }
 
-export function buildPriorityItems({ competence, decision, control, pfControl = null, plan, classification }: PriorityInput): PriorityItem[] {
+export function buildPriorityItems({ competence, decision, control, pfControl = null, plan, classification, decisions = null }: PriorityInput): PriorityItem[] {
   const items: PriorityItem[] = []
+  const queued = decisions !== null && decisions.total > 0
   const agenda: Destination = { section: 'calendar', context: { month: competence } }
   const projection: Destination = { section: 'planning', context: { planningTab: 'projection' } }
 
@@ -103,15 +107,16 @@ export function buildPriorityItems({ competence, decision, control, pfControl = 
   }
 
   items.push(...overdraftItems(plan, competence))
+  if (queued && decisions) items.push(decisionItem(decisions))
   const syncItem = syncAttentionItem(plan)
   if (syncItem) items.push(syncItem)
-  const dataCauses = dataReliabilityCauses({ competence, decision, control, pfControl, plan })
+  const dataCauses = dataReliabilityCauses({ competence, decision, control, pfControl, plan }, queued)
   // Se a cobertura não pode ser avaliada por falta de dados, a ação que explica a limitação passa a ser prioridade alta.
   if (dataCauses.length > 0) items.push({
     key: 'reliability-data', rank: decision?.coverage.state === 'Unavailable' ? 1 : 3, title: 'Alguns valores podem estar desatualizados ou incompletos.', impact: 'Saldos, cobertura e totais podem mudar quando estes pontos forem resolvidos.',
     action: dataCauses[0].action ?? null, causes: dataCauses,
   })
-  const setupCauses = budgetPendingCauses({ competence, control: pfControl, plan, classification })
+  const setupCauses = budgetPendingCauses({ competence, control: pfControl, plan, classification: queued ? null : classification })
   if (setupCauses.length > 0) items.push({
     key: 'reliability-budget', rank: 3, title: 'O orçamento tem pendências de classificação ou de metas.', impact: 'A comparação com a meta pode estar incompleta.',
     action: setupCauses[0].action ?? null, causes: setupCauses,
@@ -191,7 +196,19 @@ function pressureImpact(pressure: BudgetPressure): string {
   return pressure.amountKind === 'OverTarget' ? `Excesso de ${money(pressure.amount)} sobre a meta.` : `${money(pressure.amount)}.`
 }
 
-function dataReliabilityCauses({ competence, decision, control, pfControl, plan }: Pick<PriorityInput, 'competence' | 'decision' | 'control' | 'pfControl' | 'plan'>): PriorityCause[] {
+/** Atalho único para a fila: um item só, com a contagem das fontes que carregaram e o que já está fora dos totais. */
+function decisionItem(queue: DecisionQueue): PriorityItem {
+  const outside = queue.outOfTotals
+  const partial = queue.failedSources.length > 0 ? ' Cobertura parcial: uma das fontes não carregou.' : ''
+  return {
+    key: 'decision-queue', rank: outside > 0 ? 2 : 3,
+    title: queue.total === 1 ? '1 pendência requer sua decisão.' : `${queue.total} pendências requerem sua decisão.`,
+    impact: (outside > 0 ? `${outside} fora dos totais até a revisão.` : 'Nenhuma fora dos totais; as demais já estão contabilizadas.') + partial,
+    action: { label: 'Ver o que requer sua decisão', to: { section: 'automation', context: { automationTab: 'decisions' } } },
+  }
+}
+
+function dataReliabilityCauses({ competence, decision, control, pfControl, plan }: Pick<PriorityInput, 'competence' | 'decision' | 'control' | 'pfControl' | 'plan'>, queued = false): PriorityCause[] {
   const causes: PriorityCause[] = []
   const add = (cause: PriorityCause) => { if (!causes.some(c => c.key === cause.key || c.text === cause.text)) causes.push(cause) }
   const sync = plan?.sync
@@ -203,7 +220,7 @@ function dataReliabilityCauses({ competence, decision, control, pfControl, plan 
       action: { label: 'Ver conexões', to: { section: 'automation', context: { automationTab: 'connections' } } },
     })
   }
-  if (plan?.coverage.reviewAffectsConfidence) add({
+  if (plan?.coverage.reviewAffectsConfidence && !queued) add({
     key: 'review', text: `${plan.coverage.reviewCount} movimentação(ões) do banco aguardam sua decisão (ou foram ignoradas por você) e não entram nos totais.`, action: { label: 'Revisar em Contas', to: { section: 'accounts' } },
   })
   if (decision?.coverage.state === 'Unavailable') add({

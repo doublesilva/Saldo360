@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   applyCardScheduleSuggestion, applyOpeningBalanceSuggestion, confirmRefund, confirmTransfer, getCategorizationOverview, getLinkDetail, listLinks, listReview, previewRecovery, rejectTransfer,
   reprocessImported, resolveReview, runCategorization,
@@ -190,8 +190,19 @@ export function PluggyCategorizationPanel({ workspaceId, refreshKey, onChanged }
  * a evidência financeira ainda NÃO contabilizada (fora dos totais até a decisão) e o vínculo entre movimentos (transferência), que pode envolver pontas
  * já contabilizadas (continuam nos totais até a decisão). Cada item informa se já conta nos totais.
  */
-export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { workspaceId: string; refreshKey: string; onChanged?: () => void }) {
-  const [page, setPage] = useState<ReviewPage | null>(null)
+export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged, only, onMissing }: {
+  workspaceId: string; refreshKey: string; onChanged?: () => void
+  /** Mostra só este movimento (aberto pela fila "Requer sua decisão"); se ele já não estiver em revisão, informa o estado atual e chama `onMissing` uma vez. */
+  only?: string; onMissing?: () => void
+}) {
+  const [rawPage, setPage] = useState<ReviewPage | null>(null)
+  const missingNotified = useRef(false)
+  const page = useMemo(() => rawPage && only ? { ...rawPage, items: rawPage.items.filter(item => item.postingId === only) } : rawPage, [rawPage, only])
+  const missing = Boolean(only && page && page.items.length === 0)
+  useEffect(() => {
+    if (!missing || missingNotified.current) return
+    missingNotified.current = true; onMissing?.()
+  }, [missing, onMissing])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
@@ -236,10 +247,11 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { work
   }, [workspaceId, onChanged])
 
   return <section aria-labelledby="pluggy-review-title">
-    <h4 id="pluggy-review-title">Movimentos para revisar{page ? ` (${page.total})` : ''}</h4>
-    <p className="meta">Movimentos que o banco informou, mas sem classificação ou vínculo seguro. Os <strong>ainda não contabilizados</strong> ficam fora de receitas, despesas e saldos até você decidir; os <strong>já contabilizados</strong> continuam nos totais. Transferências e pagamentos de fatura nunca são identificados só pela descrição.</p>
+    <h4 id="pluggy-review-title">{only ? 'Revisão do movimento' : `Movimentos para revisar${page ? ` (${page.total})` : ''}`}</h4>
+    {missing && <p role="status" className="notice">Este movimento não está mais em revisão: foi resolvido agora, pela automação ou em outra aba. A fila foi atualizada.</p>}
+    {!only && <p className="meta">Movimentos que o banco informou, mas sem classificação ou vínculo seguro. Os <strong>ainda não contabilizados</strong> ficam fora de receitas, despesas e saldos até você decidir; os <strong>já contabilizados</strong> continuam nos totais. Transferências e pagamentos de fatura nunca são identificados só pela descrição.</p>}
     {error && <p role="alert" className="notice notice--error">{error}</p>}
-    {page && page.items.length === 0 && <p className="meta">Nada para revisar.</p>}
+    {page && page.items.length === 0 && !only && <p className="meta">Nada para revisar.</p>}
     {page && page.items.length > 0 && <ul className="transaction-list">
       {page.items.map(item => <li key={item.postingId} className="transaction">
         <div className="transaction__main"><span className="transaction__description">{item.description}</span>
@@ -284,7 +296,7 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged }: { work
         </div>}
       </li>)}
     </ul>}
-    {page && page.total > page.pageSize && <p>
+    {page && !only && page.total > page.pageSize && <p>
       <button type="button" disabled={pageNumber <= 1} onClick={() => setPageNumber(value => value - 1)}>Anterior</button>{' '}
       <span className="meta">página {page.page} de {Math.ceil(page.total / page.pageSize)}</span>{' '}
       <button type="button" disabled={pageNumber >= Math.ceil(page.total / page.pageSize)} onClick={() => setPageNumber(value => value + 1)}>Próxima</button>

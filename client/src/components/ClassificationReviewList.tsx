@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getClassificationReview, changePurchaseCategory, type ClassificationReview, type ReviewItem, type ReviewKind } from '../api/pluggyAutomation'
 import { listCategories, type FinancialCategory } from '../api/categories'
 import { changeTransactionNature, recategorizeTransaction } from '../api/transactions'
@@ -29,8 +29,13 @@ function failure(result: unknown): string | null {
  * inclusive compras de cartão importadas. É só edição de classificação — categoria e tipo — e cada correção vale para o próprio registro; não concilia nem
  * confere nada. O que não tem onde ser classificado (encargos, estornos, parcelas históricas, dívidas) fica explicitamente sem tipo.
  */
-export function ClassificationReviewList({ workspaceId, refreshKey = '', initial, onChanged }: { workspaceId: string; refreshKey?: string; initial?: { kind: ReviewKind; from?: string; to?: string }; onChanged?: () => void }) {
+export function ClassificationReviewList({ workspaceId, refreshKey = '', initial, onChanged, only, pageSize = PAGE_SIZE }: {
+  workspaceId: string; refreshKey?: string; initial?: { kind: ReviewKind; from?: string; to?: string }; onChanged?: () => void
+  /** Mostra só este registro (aberto pela fila "Requer sua decisão"); se ele já não estiver pendente, informa o estado atual e chama `onChanged` uma vez. */
+  only?: string; pageSize?: number
+}) {
   const today = todayInSaoPaulo()
+  const missingNotified = useRef(false)
   const [kind, setKind] = useState<ReviewKind>(initial?.kind ?? 'nature')
   const [from, setFrom] = useState(initial?.from ?? startOfMonth(today))
   const [to, setTo] = useState(initial?.to ?? endOfMonth(today))
@@ -55,13 +60,19 @@ export function ClassificationReviewList({ workspaceId, refreshKey = '', initial
   useEffect(() => {
     if (invalidPeriod) return
     const controller = new AbortController()
-    getClassificationReview(workspaceId, { kind, ...(kind === 'nature' ? { from, to } : {}), page, pageSize: PAGE_SIZE }, controller.signal)
+    getClassificationReview(workspaceId, { kind, ...(kind === 'nature' ? { from, to } : {}), page, pageSize }, controller.signal)
       .then(data => { if (!controller.signal.aborted) setLoaded({ key, state: 'loaded', data }) })
       .catch((error: unknown) => { if (!controller.signal.aborted) setLoaded({ key, state: 'error', error }) })
     return () => controller.abort()
-  }, [workspaceId, key, kind, from, to, page, invalidPeriod])
+  }, [workspaceId, key, kind, from, to, page, invalidPeriod, pageSize])
 
-  const data = visible.state === 'loaded' ? visible.data : null
+  const loadedData = visible.state === 'loaded' ? visible.data : null
+  const data = useMemo(() => loadedData && only ? { ...loadedData, items: loadedData.items.filter(item => item.recordId === only) } : loadedData, [loadedData, only])
+  const missing = Boolean(only && data && data.items.length === 0)
+  useEffect(() => {
+    if (!missing || missingNotified.current) return
+    missingNotified.current = true; onChanged?.()
+  }, [missing, onChanged])
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1
   const editOf = (item: ReviewItem): Edit => edits[rowKey(item)] ?? { nature: item.expenseNature, categoryId: item.categoryId ?? '' }
   const setEdit = (item: ReviewItem, change: Partial<Edit>) => setEdits(current => ({ ...current, [rowKey(item)]: { ...editOf(item), ...change } }))
@@ -90,9 +101,10 @@ export function ClassificationReviewList({ workspaceId, refreshKey = '', initial
   }
 
   return <section className="card" aria-labelledby="classification-review-title" id="classification-review">
-    <h4 id="classification-review-title">Revisar classificação</h4>
+    <h4 id="classification-review-title">{only ? 'Revisão da classificação' : 'Revisar classificação'}</h4>
+    {missing && <p role="status" className="notice">Este registro não está mais pendente: foi classificado agora, pela automação ou em outra aba. A fila foi atualizada.</p>}
     <p className="meta">Corrija a categoria e o tipo de despesa dos registros que ainda não têm classificação segura, inclusive compras de cartão importadas do banco. A sua escolha é guardada e não é desfeita por novas sincronizações nem pela IA.</p>
-    <form className="automation-history__filters" onSubmit={event => event.preventDefault()} aria-label="Filtros da revisão">
+    {!only && <form className="automation-history__filters" onSubmit={event => event.preventDefault()} aria-label="Filtros da revisão">
       <label>O que revisar<select value={kind} onChange={event => { setKind(event.target.value as ReviewKind); setPage(1) }}>
         <option value="nature">Despesas sem tipo definido (fixa ou variável)</option>
         <option value="category">Importados do banco sem categoria segura</option></select></label>
@@ -100,17 +112,17 @@ export function ClassificationReviewList({ workspaceId, refreshKey = '', initial
         <label>De<input type="date" value={from} onChange={event => { setFrom(event.target.value); setPage(1) }} /></label>
         <label>Até<input type="date" value={to} onChange={event => { setTo(event.target.value); setPage(1) }} /></label>
       </>}
-    </form>
+    </form>}
     {invalidPeriod && <p role="alert" className="field-error">O início do período não pode ser posterior ao fim.</p>}
-    {data && <p className="meta" role="status">{data.wholeBudget
+    {data && !only && <p className="meta" role="status">{data.wholeBudget
       ? `Orçamento inteiro (sem recorte de mês): ${data.total} registro(s) importado(s) sem categoria segura.`
       : `Período de ${data.from ? formatDate(data.from) : ''} a ${data.to ? formatDate(data.to) : ''}: ${data.total} despesa(s) sem tipo definido que podem ser classificadas aqui.`}</p>}
-    {data && data.unclassifiableCount > 0 && <p className="notice notice--warning" role="status">
+    {data && !only && data.unclassifiableCount > 0 && <p className="notice notice--warning" role="status">
       {data.unclassifiableCount} despesa(s) do período (encargos e estornos de fatura, parcelas históricas ou dívidas) também estão sem tipo, mas não têm onde ser classificadas aqui: continuam explicitamente sem tipo e ficam fora das despesas fixas.</p>}
     {saved && <p role="status" className="notice">{saved}</p>}
     {!invalidPeriod && visible.state === 'loading' && <OperationalLoading>Carregando a lista…</OperationalLoading>}
     {!invalidPeriod && visible.state === 'error' && <OperationalError error={visible.error} onRetry={() => setReload(value => value + 1)} />}
-    {!invalidPeriod && data && data.items.length === 0 && <OperationalEmpty>{kind === 'nature' ? 'Nenhuma despesa classificável sem tipo neste período.' : 'Nenhum lançamento importado aguardando categoria.'}</OperationalEmpty>}
+    {!invalidPeriod && data && !only && data.items.length === 0 && <OperationalEmpty>{kind === 'nature' ? 'Nenhuma despesa classificável sem tipo neste período.' : 'Nenhum lançamento importado aguardando categoria.'}</OperationalEmpty>}
     {!invalidPeriod && data && data.items.length > 0 && <>
       <ul className="classification-review">
         {data.items.map(item => {
@@ -137,11 +149,11 @@ export function ClassificationReviewList({ workspaceId, refreshKey = '', initial
           </li>
         })}
       </ul>
-      <nav className="automation-history__pager" aria-label="Paginação da revisão">
+      {!only && <nav className="automation-history__pager" aria-label="Paginação da revisão">
         <button type="button" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Anteriores</button>
         <span className="meta">Página {data.page} de {pages}</span>
         <button type="button" disabled={page >= pages} onClick={() => setPage(value => value + 1)}>Próximas</button>
-      </nav>
+      </nav>}
     </>}
   </section>
 }

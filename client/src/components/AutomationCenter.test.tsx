@@ -58,6 +58,17 @@ function mockApi(api: Api = {}) {
   return calls
 }
 
+describe('Central de automação — Requer sua decisão', () => {
+  it('tem a aba, abre pela entrada da Visão Geral e consultar a fila só faz leituras (sem sincronizar nem gravar)', async () => {
+    const calls = mockApi(); render(<AutomationCenter workspaceId="w" entry={{ key: 1, tab: 'decisions' }} />)
+    expect(await screen.findByRole('tab', { name: 'Requer sua decisão', selected: true })).toBeTruthy()
+    expect(await screen.findByText('Livraria Online')).toBeTruthy()
+    expect(text(screen.getByRole('alert'))).toContain('Cobertura parcial') // a fonte de movimentos importados não respondeu no cenário
+    expect(calls.filter(call => call.method !== 'GET')).toEqual([])
+    expect(calls.some(call => /sync|categorization\/run/.test(call.url) && !call.url.endsWith('/sync-status'))).toBe(false)
+  })
+})
+
 describe('Central de automação', () => {
   it('abre nas conexões com instituição, estado, contas e cartões vinculados e diferencia cadastrada de atualizada', async () => {
     mockApi(); render(<AutomationCenter workspaceId="w" />)
