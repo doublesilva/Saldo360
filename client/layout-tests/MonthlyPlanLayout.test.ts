@@ -37,6 +37,6 @@ describe('Responsividade e contrato visual do planejamento mensal', () => {
 
   it('o módulo Planejamento continua na navegação e abre o novo hub', () => {
     expect(read('components/AppShell.tsx')).toContain("['planning', 'Planejamento']")
-    expect(read('components/PersonalFinance.tsx')).toContain("<PlanningHub key={planningEntry.key} initialTab={planningEntry.tab} workspaceId={workspaceId}")
+    expect(read('components/PersonalFinance.tsx')).toContain("<PlanningHub key={planningEntry.key} initialTab={planningEntry.context?.planningTab}")
   })
 })
