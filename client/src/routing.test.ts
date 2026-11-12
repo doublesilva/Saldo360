@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountFromParams, accountToParam, parseRoute, planningTabFromParams, routeUrl } from './routing'
+import { accountFromParams, accountToParam, loginReturnUrl, parseRoute, planningTabFromParams, routeUrl } from './routing'
 
 const ACCOUNT = '3f2b8c1e-5a47-4d0e-9b61-0c7d2a9e4f10'
 const at = (pathname: string, search = '') => parseRoute({ pathname, search })
@@ -21,7 +21,7 @@ describe('rotas do shell autenticado', () => {
   it('mantém só parâmetros válidos e reporta os demais', () => {
     const route = at('/agenda', '?competencia=2026-13&conta=nome-da-conta&tipo=Transfer&aba=x&recuperacao=2&extra=1')
     expect([...route.params.keys()]).toEqual([])
-    expect(route.problems).toEqual(['competencia', 'conta', 'tipo', 'aba', 'recuperacao'])
+    expect(route.problems).toEqual(['aba', 'competencia', 'conta', 'tipo', 'recuperacao'])
     const valid = at('/agenda', `?competencia=2026-11&conta=${ACCOUNT.toUpperCase()}&tipo=Expense`)
     expect(valid.problems).toEqual([])
     expect(valid.params.get('conta')).toBe(ACCOUNT)
@@ -44,5 +44,21 @@ describe('rotas do shell autenticado', () => {
   it('a URL nunca carrega nome, saldo ou valor: só os parâmetros conhecidos', () => {
     const route = at('/agenda', '?competencia=2026-11&saldo=1234&nome=Itau')
     expect([...route.params.keys()]).toEqual(['competencia'])
+  })
+
+  it('o retorno do login preserva só rota interna reconhecida e parâmetros válidos', () => {
+    expect(loginReturnUrl({ pathname: '/agenda', search: '?competencia=2026-09&tipo=Expense&login=failed&ref=x' })).toBe('/agenda?competencia=2026-09&tipo=Expense')
+    expect(loginReturnUrl({ pathname: '/planejamento', search: `?aba=seis-meses&competencia=2026-11&conta=${ACCOUNT}&recuperacao=1` })).toBe(`/planejamento?aba=seis-meses&competencia=2026-11&conta=${ACCOUNT}&recuperacao=1`)
+    expect(loginReturnUrl({ pathname: '/agenda', search: '?competencia=2026-13' })).toBe('/agenda')
+  })
+
+  it('destino inválido ou externo volta para a Visão Geral', () => {
+    expect(loginReturnUrl({ pathname: '/nao-existe', search: '?competencia=2026-09' })).toBe('/')
+    expect(loginReturnUrl({ pathname: '//evil.invalid/agenda', search: '' })).toBe('/')
+    expect(loginReturnUrl({ pathname: '/https://evil.invalid', search: '' })).toBe('/')
+  })
+
+  it('caminhos liberados (convite) mantêm o endereço original', () => {
+    expect(loginReturnUrl({ pathname: '/convite', search: '?x=1' }, ['/convite'])).toBe('/convite?x=1')
   })
 })

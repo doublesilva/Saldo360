@@ -1,3 +1,5 @@
+import { INVITE_PATH } from '../invite'
+import { loginReturnUrl } from '../routing'
 import { CSRF_HEADER, getCsrfToken } from './csrf'
 
 export interface CurrentUser {
@@ -31,7 +33,7 @@ export async function fetchCurrentUser(signal?: AbortSignal): Promise<CurrentUse
 
 /** Navega para o login no provedor; ao final, a API devolve o usuário para a página atual. */
 export function login(navigate: (url: string) => void = (url) => window.location.assign(url)): void {
-  const returnUrl = window.location.pathname + window.location.search
+  const returnUrl = loginReturnUrl(window.location, [INVITE_PATH])
   navigate(`/auth/login?returnUrl=${encodeURIComponent(returnUrl)}`)
 }
 

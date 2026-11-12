@@ -78,3 +78,8 @@ it('does not offer the retired document, e-mail import, review or reconciliation
   const labels = within(screen.getByRole('navigation', { name: 'Navegação do orçamento pessoal' })).getAllByRole('button').map(button => button.textContent ?? '')
   for (const retired of [/Documentos/i, /Inbox/i, /E-?mail/i, /Importa/i, /Concilia/i, /Confer/i]) expect(labels.filter(label => retired.test(label))).toEqual([])
 })
+
+it('ao abrir a tela (link direto, recarga ou volta do login) o foco vai ao título, sem roubar foco já existente', () => {
+  render(<AppShell section="calendar" onNavigate={vi.fn()} workspaceName="Meu orçamento"><p>Conteúdo</p></AppShell>)
+  expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Agenda' }))
+})

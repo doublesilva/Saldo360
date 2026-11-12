@@ -3,6 +3,7 @@ import type { FamilyDetails } from './api/families'
 import { PersonalFinance } from './components/PersonalFinance'
 import { InvitePage } from './components/InvitePage'
 import { UserMenu } from './components/UserMenu'
+import { SessionGate } from './components/SessionGate'
 import { INVITE_PATH } from './invite'
 import { useSession } from './session'
 import './App.css'
@@ -35,7 +36,7 @@ function App() {
           <h1>Saldo360</h1>
           <p className="subtitle">Orçamento pessoal</p>
         </div>
-        <UserMenu session={session} />
+        {onInvitePage && <UserMenu session={session} />}
       </header>}
 
       {loginFailed && (
@@ -47,10 +48,10 @@ function App() {
 
       {onInvitePage ? (
         <InvitePage session={session} onAccepted={handleInvitationAccepted} />
+      ) : session.state.kind === 'authenticated' ? (
+        <PersonalFinance key={`${session.state.user.issuer}|${session.state.user.subject}`} userArea={<UserMenu session={session} />} />
       ) : (
-        session.state.kind === 'authenticated' && (
-          <PersonalFinance key={`${session.state.user.issuer}|${session.state.user.subject}`} userArea={<UserMenu session={session} />} />
-        )
+        <SessionGate session={session} />
       )}
     </main>
   )

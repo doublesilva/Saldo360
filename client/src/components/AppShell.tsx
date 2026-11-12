@@ -18,6 +18,8 @@ export function AppShell({ section, onNavigate, workspaceName, subtitle, control
   const toggle = useRef<HTMLButtonElement>(null)
   const sidebar = useRef<HTMLElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
+  // Abertura da tela (link direto, recarga ou volta do login): o foco vai ao título, a menos que algo já tenha recebido foco.
+  useEffect(() => { if (!document.activeElement || document.activeElement === document.body) heading.current?.focus() }, [])
   const title = groups.flatMap(group => [...group.items]).find(([id]) => id === section)?.[1] ?? 'Visão Geral'
   const close = () => { setOpen(false); requestAnimationFrame(() => toggle.current?.focus()) }
   useEffect(() => {

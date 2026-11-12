@@ -45,11 +45,14 @@ export function parseRoute(location: { pathname: string; search: string }): AppR
     if (valid(value)) params.set(name, name === 'conta' ? value.toLowerCase() : value)
     else problems.push(name)
   }
+  // Ordem canônica: a mesma das URLs que o app monta (aba, competência, conta, tipo, recuperação).
+  take('aba', value => Object.values(planningTabParams).includes(value as never))
   take('competencia', isCompetence)
   take('conta', value => value === 'todas' || isAccountId(value))
   take('tipo', value => value === 'Income' || value === 'Expense')
-  take('aba', value => Object.values(planningTabParams).includes(value as never))
   take('recuperacao', value => value === '1')
+  // Endereço desconhecido: os parâmetros não têm a quem se aplicar, então a Visão Geral abre com o padrão.
+  if (!section) for (const name of [...params.keys()]) params.delete(name)
   return { section: section ?? 'overview', params, problems }
 }
 
@@ -70,3 +73,19 @@ export function planningTabFromParams(params: URLSearchParams): PlanningTabKey |
 
 export const problemNotice = 'Parte do link não era válida e foi ajustada para o padrão. Os dados abaixo correspondem aos filtros exibidos.'
 export const unavailableAccountNotice = 'A conta do link não está disponível. Os dados abaixo correspondem ao padrão exibido.'
+
+/** Destino em linguagem simples ("Entre para abrir a Agenda"). */
+export const sectionPhrases: Record<RouteSection, string> = {
+  overview: 'a Visão Geral', transactions: 'os Lançamentos', accounts: 'as Contas', cards: 'os Cartões', budgets: 'o Orçamento', calendar: 'a Agenda', goals: 'as Metas', planning: 'o Planejamento',
+  categories: 'as Categorias', recurrences: 'as Recorrências', planned: 'as Previsões', transfers: 'as Transferências', debts: 'as Dívidas', settings: 'as Configurações', automation: 'a Automação',
+}
+
+/**
+ * Destino que o login deve devolver: só rota interna reconhecida e seus parâmetros válidos (o resto, como ?login=failed, cai fora).
+ * Caminho desconhecido volta para a Visão Geral. O servidor ainda confere que a URL é local.
+ */
+export function loginReturnUrl(location: { pathname: string; search: string }, passthroughPaths: string[] = []): string {
+  if (passthroughPaths.includes(location.pathname)) return location.pathname + location.search
+  const route = parseRoute(location)
+  return routeUrl(route.section, route.params)
+}
