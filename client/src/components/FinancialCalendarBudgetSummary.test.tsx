@@ -49,7 +49,7 @@ describe('FinancialCalendarBudgetSummary', () => {
     expect(names[0]).toContain('Aluguel')
     expect(names[1]).toContain('Mercado')
     expect(names[2]).toContain('Academia')
-    expect(screen.getByText(/independente dos filtros/)).toBeTruthy()
+    expect(screen.getByText('Independente dos filtros da Agenda')); expect(screen.getByText(/^Todas as contas PF · /)).toBeTruthy()
   })
 
   it('informa ausência de orçamento e permite navegar preservando competência', async () => {

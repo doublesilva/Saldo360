@@ -39,6 +39,12 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Erro desconhecido.'
 }
 
+const typeFilterLabels: Record<CategoryType, string> = { Income: 'Receitas', Expense: 'Despesas' }
+function agendaAccountLabel(accountId: string, accounts: Load<FinancialAccount[]>) {
+  if (!accountId) return 'Todas as contas'
+  return (accounts.kind === 'loaded' ? accounts.data.find((a) => a.id === accountId)?.name : undefined) ?? 'Conta selecionada'
+}
+
 /** Visão mensal da Agenda Financeira, com detalhes e operações financeiras existentes. */
 type FinancialCalendarPageProps = { workspaceId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void; onNavigateToCards?: () => void }
 
@@ -152,7 +158,7 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
       )}
       {view === 'month' && calendar.kind === 'loaded' && (
         <>
-          <FinancialCalendarSummary summary={calendar.data.summary} />
+          <FinancialCalendarSummary summary={calendar.data.summary} context={[agendaAccountLabel(accountId, accounts), formatMonthYear(month), type ? `Somente ${typeFilterLabels[type].toLowerCase()}` : 'Todos os tipos de evento'].join(' · ')} />
           <FinancialCalendarBudgetSummary
             workspaceId={workspaceId}
             competence={month}
@@ -183,6 +189,7 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
           from={from}
           through={through}
           accountId={accountId}
+          accountLabel={agendaAccountLabel(accountId, accounts)}
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
           refreshKey={refreshKey}
@@ -341,6 +348,7 @@ export function FinancialCalendarBalanceEvolution({
   from,
   through,
   accountId,
+  accountLabel,
   selectedDate,
   onSelectDate,
   refreshKey = 0,
@@ -349,6 +357,7 @@ export function FinancialCalendarBalanceEvolution({
   from: string
   through: string
   accountId: string
+  accountLabel?: string
   selectedDate: string
   onSelectDate?: (date: string) => void
   refreshKey?: number
@@ -382,7 +391,7 @@ export function FinancialCalendarBalanceEvolution({
       <div className="balance-evolution__heading">
         <div>
           <h3 id="balance-evolution-title">Evolução do saldo</h3>
-          <p className="meta">{accountId ? 'Conta selecionada' : 'Consolidado do orçamento'}</p>
+          <p className="meta">{accountLabel ?? (accountId ? 'Conta selecionada' : 'Consolidado do orçamento')} · {formatMonthYear(from)} · Histórico realizado e projeção · Independente do tipo de evento</p>
         </div>
         <div className="balance-evolution__legend" aria-label="Legenda da evolução">
           <span><i className="balance-line-sample" /> Histórico realizado</span>
@@ -599,9 +608,10 @@ export function FinancialCalendarHeader({
   )
 }
 
-export function FinancialCalendarSummary({ summary }: { summary: FinancialCalendarResponse['summary'] }) {
+export function FinancialCalendarSummary({ summary, context }: { summary: FinancialCalendarResponse['summary']; context?: string }) {
   return (
     <section className="calendar-summary" aria-label="Resumo financeiro do mês">
+      {context && <p className="meta calendar-summary__context">{context}</p>}
       <SummaryValue label="Receitas realizadas" value={summary.realizedIncome} kind="income" />
       <SummaryValue label="Despesas realizadas" value={summary.realizedExpense} kind="expense" />
       {summary.realizedRefunds && !isZeroDecimal(summary.realizedRefunds) && <SummaryValue label="Devoluções (já abatidas das despesas, fora das receitas)" value={summary.realizedRefunds} kind="income" />}

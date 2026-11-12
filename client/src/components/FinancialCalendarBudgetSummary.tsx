@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getBudgetExecution, listBudgets, type FinancialBudget, type FinancialBudgetAlertStatus, type FinancialBudgetExecution } from '../api/budgets'
+import { formatMonthYear } from '../dates'
 import { formatBrlDecimal } from '../money'
 
 type LoadState =
@@ -75,7 +76,8 @@ export function FinancialCalendarBudgetSummary({
       <div className="calendar-budget__heading">
         <div>
           <h3 id="calendar-budget-title">Situação do orçamento</h3>
-          <p className="meta">Orçamento pessoal da competência — independente dos filtros da Agenda.</p>
+          <p className="meta">Todas as contas PF · {formatMonthYear(`${competence.slice(0, 7)}-01`)}</p>
+          <p className="meta">Independente dos filtros da Agenda</p>
         </div>
         <button type="button" className="button--link" onClick={() => onNavigateToBudgets(competence.slice(0, 7))}>Ver orçamento completo</button>
       </div>

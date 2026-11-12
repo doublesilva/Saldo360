@@ -506,11 +506,12 @@ describe('FinancialCalendarPage — evolução diária do saldo', () => {
     await screen.findByRole('group', { name: /Gráfico da evolução diária/ })
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: itau.id } })
     await waitFor(() => expect(balanceCalls(calls).at(-1)?.url).toContain(`accountId=${itau.id}`))
+    expect(screen.getByText(new RegExp(`^${itau.name} · .* · Histórico realizado e projeção`))).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }))
     await waitFor(() => expect(balanceCalls(calls).at(-1)?.url).toContain('from=2027-01-01&through=2027-01-31'))
     fireEvent.change(screen.getByLabelText('Conta'), { target: { value: '' } })
     await waitFor(() => expect(balanceCalls(calls).at(-1)?.url).not.toContain('accountId='))
-    expect(await screen.findByText('Consolidado do orçamento')).toBeTruthy()
+    expect(await screen.findByText(/^Todas as contas · .* · Histórico realizado e projeção/)).toBeTruthy()
   })
 
   it('descarta saldo antigo e limpa conta ao trocar a família diretamente', async () => {

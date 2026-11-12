@@ -90,3 +90,7 @@ export const recoveryPendingText: Record<string, string> = {
   ProjectionUnavailable: 'não há projeção confiável do fechamento', CardCoverageIncomplete: 'há faturas de cartão sem conta pagadora identificada',
   DebtCoverageIncomplete: 'há parcelas de dívida sem conta responsável', NoBankObservation: 'o banco ainda não informou o saldo',
 }
+
+/** T-escopo: conta efetiva resolvida pela API (nunca o nome da opção "Conta principal"). */
+export const effectiveScopeLabel = (scope: { kind: 'primary' | 'all' | 'account'; accountName: string | null; primaryMissing?: boolean }) =>
+  scope.accountName && scope.kind !== 'all' ? scope.accountName : scope.kind === 'primary' && scope.primaryMissing ? 'Todas as contas (sem conta principal definida)' : 'Todas as contas'

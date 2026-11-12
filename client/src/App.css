@@ -1895,3 +1895,6 @@ button.calendar-day--selected {
 .planning-detail__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .5rem 1rem; margin: 0; }
 .planning-detail__grid dt { font-size: .8rem; color: var(--muted, #5b6676); }
 .planning-detail__grid dd { margin: 0; font-weight: 600; }
+
+.calendar-summary__context { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere; }
+.calendar-budget__heading .meta, .balance-evolution__heading .meta { overflow-wrap: anywhere; }
