@@ -157,8 +157,8 @@ export const applyCardScheduleSuggestion = (workspaceId: string, linkId: string)
 export const reprocessImported = (workspaceId: string) =>
   post<ApplySummary>(`${base(workspaceId)}/reprocess`, {}, 'Falha ao reprocessar as transações importadas.')
 
-export const listReview = (workspaceId: string, page = 1, signal?: AbortSignal) =>
-  get<ReviewPage>(`${base(workspaceId)}/review?page=${page}&pageSize=25`, 'Falha ao carregar os movimentos em revisão.', signal)
+export const listReview = (workspaceId: string, page = 1, signal?: AbortSignal, pageSize = 25) =>
+  get<ReviewPage>(`${base(workspaceId)}/review?page=${page}&pageSize=${pageSize}`, 'Falha ao carregar os movimentos em revisão.', signal)
 
 /** Confirma, rejeita ou desfaz o vínculo entre duas pontas. Todas as validações ficam no backend (mesmo dia, contas, operação, disponibilidade). */
 export const confirmTransfer = (workspaceId: string, postingId: string, counterpartPostingId: string) =>

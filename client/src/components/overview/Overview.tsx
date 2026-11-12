@@ -13,7 +13,7 @@ import { OverviewBudgetProgress } from './OverviewBudgetProgress'
 import { OverviewAccounts, OverviewGoals, OverviewRecent, OverviewUpcoming } from './OverviewLists'
 import { OverviewSyncLine } from './OverviewSync'
 import { buildPriorityItems } from './priorityItems'
-import { loadDecisionQueue } from '../decisionQueue/queueModel'
+import { loadDecisionSummary } from '../decisionQueue/queueModel'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
 import { useLoad } from './useLoad'
 import '../../Overview.css'
@@ -45,7 +45,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
   const overview = useLoad(key, useCallback((signal: AbortSignal) => getDashboardOverview(workspaceId, competence, scope, signal), [workspaceId, competence, scope]))
 
   // Fila "Requer sua decisão": mesma fonte da Central de Automação (somente leitura), recarregada junto com a tela depois de qualquer resolução.
-  const queue = useLoad(key, useCallback((signal: AbortSignal) => loadDecisionQueue(workspaceId, signal), [workspaceId]))
+  const queue = useLoad(key, useCallback((signal: AbortSignal) => loadDecisionSummary(workspaceId, signal), [workspaceId]))
   const queueData = queue.load.state === 'loaded' ? queue.load.data : null
   const planData = plan.load.state === 'loaded' ? plan.load.data : null
   const data = overview.load.state === 'loaded' ? overview.load.data : null

@@ -8,6 +8,7 @@ import { toUserMessage } from '../api/apiErrors'
 import { endOfMonth, startOfMonth, todayInSaoPaulo } from '../dates'
 import { formatBrlDecimal, formatDate } from '../money'
 import { CategoryOptions } from './CategoryOptions'
+import { locatePage } from './decisionQueue/queueModel'
 import { OperationalEmpty, OperationalError, OperationalLoading } from './OperationalFeedback'
 
 type Load = { key: string; state: 'loading' } | { key: string; state: 'error'; error: unknown } | { key: string; state: 'loaded'; data: ClassificationReview }
@@ -29,10 +30,12 @@ function failure(result: unknown): string | null {
  * inclusive compras de cartão importadas. É só edição de classificação — categoria e tipo — e cada correção vale para o próprio registro; não concilia nem
  * confere nada. O que não tem onde ser classificado (encargos, estornos, parcelas históricas, dívidas) fica explicitamente sem tipo.
  */
-export function ClassificationReviewList({ workspaceId, refreshKey = '', initial, onChanged, only, pageSize = PAGE_SIZE }: {
+export function ClassificationReviewList({ workspaceId, refreshKey = '', initial, onChanged, only, pageSize = PAGE_SIZE, onlyPage = 1 }: {
   workspaceId: string; refreshKey?: string; initial?: { kind: ReviewKind; from?: string; to?: string }; onChanged?: () => void
   /** Mostra só este registro (aberto pela fila "Requer sua decisão"); se ele já não estiver pendente, informa o estado atual e chama `onChanged` uma vez. */
   only?: string; pageSize?: number
+  /** Página em que a fila leu o registro (dica para achá-lo sem varrer tudo). */
+  onlyPage?: number
 }) {
   const today = todayInSaoPaulo()
   const missingNotified = useRef(false)
@@ -60,11 +63,14 @@ export function ClassificationReviewList({ workspaceId, refreshKey = '', initial
   useEffect(() => {
     if (invalidPeriod) return
     const controller = new AbortController()
-    getClassificationReview(workspaceId, { kind, ...(kind === 'nature' ? { from, to } : {}), page, pageSize }, controller.signal)
+    const request = only
+      ? locatePage(next => getClassificationReview(workspaceId, { kind, page: next, pageSize }, controller.signal), found => found.items.some(item => item.recordId === only), onlyPage)
+      : getClassificationReview(workspaceId, { kind, ...(kind === 'nature' ? { from, to } : {}), page, pageSize }, controller.signal)
+    request
       .then(data => { if (!controller.signal.aborted) setLoaded({ key, state: 'loaded', data }) })
       .catch((error: unknown) => { if (!controller.signal.aborted) setLoaded({ key, state: 'error', error }) })
     return () => controller.abort()
-  }, [workspaceId, key, kind, from, to, page, invalidPeriod, pageSize])
+  }, [workspaceId, key, kind, from, to, page, invalidPeriod, pageSize, only, onlyPage])
 
   const loadedData = visible.state === 'loaded' ? visible.data : null
   const data = useMemo(() => loadedData && only ? { ...loadedData, items: loadedData.items.filter(item => item.recordId === only) } : loadedData, [loadedData, only])

@@ -202,7 +202,7 @@ function decisionItem(queue: DecisionQueue): PriorityItem {
   const partial = queue.failedSources.length > 0 ? ' Cobertura parcial: uma das fontes não carregou.' : ''
   return {
     key: 'decision-queue', rank: outside > 0 ? 2 : 3,
-    title: queue.total === 1 ? '1 pendência requer sua decisão.' : `${queue.total} pendências requerem sua decisão.`,
+    title: queue.totalComplete ? (queue.total === 1 ? '1 pendência requer sua decisão.' : `${queue.total} pendências requerem sua decisão.`) : `Pelo menos ${queue.total} pendência(s) requer(em) sua decisão.`,
     impact: (outside > 0 ? `${outside} fora dos totais até a revisão.` : 'Nenhuma fora dos totais; as demais já estão contabilizadas.') + partial,
     action: { label: 'Ver o que requer sua decisão', to: { section: 'automation', context: { automationTab: 'decisions' } } },
   }

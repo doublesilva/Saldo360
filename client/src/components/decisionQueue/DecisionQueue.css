@@ -10,3 +10,7 @@
 .decision-item__reason span, .decision-item__impact span { font-weight: 600; }
 .decision-item__action { justify-self: start; min-height: 2.75rem; padding-inline: 1.25rem; }
 @media (max-width: 480px) { .decision-item__action { justify-self: stretch; } }
+.decision-queue__count { margin: .75rem 0 .25rem; }
+.decision-queue__more { min-height: 2.75rem; padding-inline: 1.25rem; }
+@media (max-width: 480px) { .decision-queue__more { width: 100%; } }
+.decision-queue .notice { overflow-wrap: anywhere; }

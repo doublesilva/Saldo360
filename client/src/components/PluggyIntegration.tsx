@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { locatePage } from './decisionQueue/queueModel'
 import {
   applyCardScheduleSuggestion, applyOpeningBalanceSuggestion, confirmRefund, confirmTransfer, getCategorizationOverview, getLinkDetail, listLinks, listReview, previewRecovery, rejectTransfer,
   reprocessImported, resolveReview, runCategorization,
@@ -190,10 +191,12 @@ export function PluggyCategorizationPanel({ workspaceId, refreshKey, onChanged }
  * a evidência financeira ainda NÃO contabilizada (fora dos totais até a decisão) e o vínculo entre movimentos (transferência), que pode envolver pontas
  * já contabilizadas (continuam nos totais até a decisão). Cada item informa se já conta nos totais.
  */
-export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged, only, onMissing }: {
+export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged, only, onMissing, onlyPage = 1, onlyPageSize = 25 }: {
   workspaceId: string; refreshKey: string; onChanged?: () => void
   /** Mostra só este movimento (aberto pela fila "Requer sua decisão"); se ele já não estiver em revisão, informa o estado atual e chama `onMissing` uma vez. */
   only?: string; onMissing?: () => void
+  /** Página e tamanho de página em que a fila leu o movimento (dica para achá-lo sem varrer tudo). */
+  onlyPage?: number; onlyPageSize?: number
 }) {
   const [rawPage, setPage] = useState<ReviewPage | null>(null)
   const missingNotified = useRef(false)
@@ -209,10 +212,13 @@ export function PluggyReviewPanel({ workspaceId, refreshKey, onChanged, only, on
   const [pageNumber, setPageNumber] = useState(1)
   useEffect(() => {
     const controller = new AbortController()
-    listReview(workspaceId, pageNumber, controller.signal).then(result => { setPage(result); setError(null) })
+    const request = only
+      ? locatePage(next => listReview(workspaceId, next, controller.signal, onlyPageSize), found => found.items.some(item => item.postingId === only), onlyPage)
+      : listReview(workspaceId, pageNumber, controller.signal)
+    request.then(result => { setPage(result); setError(null) })
       .catch((cause: unknown) => { if (!controller.signal.aborted) setError(errorText(cause)) })
     return () => controller.abort()
-  }, [workspaceId, refreshKey, version, pageNumber])
+  }, [workspaceId, refreshKey, version, pageNumber, only, onlyPage, onlyPageSize])
 
   const decide = useCallback(async (postingId: string, resolution: Resolution) => {
     if (resolution === 'Ignore' && !window.confirm('Não contabilizar este movimento? Ele continua guardado, mas não entra em receitas, despesas nem saldos.')) return
