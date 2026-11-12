@@ -23,6 +23,15 @@ const monitor = (connections: SyncConnection[], enabled = true): SyncMonitor => 
 })
 
 describe('PluggySyncPanel', () => {
+  it('mostra o intervalo efetivo e sua origem, não o padrão do servidor, quando há preferência salva', async () => {
+    const data = monitor([connection()]); data.auto = { ...data.auto, intervalHours: 12, effectiveIntervalHours: 6, intervalSource: 'WorkspacePreference' }
+    vi.stubGlobal('fetch', vi.fn((_url: string, _init?: RequestInit) => json(data)))
+    render(<PluggySyncPanel workspaceId="w" />)
+    expect(await screen.findByText(/Sincronização automática · a cada 6 h \(escolhido por você\)/)).toBeTruthy()
+    expect(screen.queryByText(/a cada 12 h/)).toBeNull()
+  })
+
+
   it('mostra o estado, a última atualização, a próxima sincronização, a duração e o histórico resumido', async () => {
     vi.stubGlobal('fetch', vi.fn((_url: string, _init?: RequestInit) => json(monitor([connection()]))))
     render(<PluggySyncPanel workspaceId="w" />)
@@ -32,7 +41,7 @@ describe('PluggySyncPanel', () => {
     expect(text(within(item).getByText('Próxima sincronização').nextElementSibling)).toBe('30/10/2026 07:30')
     expect(text(within(item).getByText('Última sincronização bem-sucedida').nextElementSibling)).toBe('29/10/2026 07:30')
     expect(text(within(item).getByText('Última execução').nextElementSibling)).toBe('1 min 15 s · 12 novo(s), 3 atualizado(s)')
-    expect(screen.getByText(/Sincronização automática ligada: a cada 24 h/)).toBeTruthy()
+    expect(screen.getByText(/Sincronização automática · a cada 24 h/)).toBeTruthy()
     fireEvent.click(within(item).getByText('Últimas execuções (2)'))
     const rows = within(item).getAllByRole('row')
     expect(text(rows[1])).toContain('Automática')
@@ -114,5 +123,16 @@ describe('PluggySyncPanel', () => {
     vi.stubGlobal('fetch', vi.fn((_url: string, _init?: RequestInit) => json(monitor([]))))
     const { container } = render(<PluggySyncPanel workspaceId="w" />)
     await waitFor(() => expect(container.querySelector('.pluggy-sync')).toBeNull())
+  })
+
+  it('vindo da Visão Geral, destaca a conexão e leva o foco ao título sem iniciar sincronização', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => { calls.push(`${init?.method ?? 'GET'} ${url}`); return json(monitor([connection(), connection({ connectionId: 'c2', label: 'Nubank' })])) }))
+    render(<PluggySyncPanel workspaceId="w" highlight={['c2']} />)
+    const item = await screen.findByRole('listitem', { name: 'Sincronização de Nubank' })
+    expect(item.getAttribute('aria-current')).toBe('true')
+    await waitFor(() => expect(document.activeElement?.textContent).toBe('Nubank'))
+    expect(screen.getByRole('listitem', { name: 'Sincronização de Itaú PF' }).getAttribute('aria-current')).toBeNull()
+    expect(calls.every(call => call.startsWith('GET'))).toBe(true)
   })
 })

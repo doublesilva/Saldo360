@@ -37,3 +37,7 @@
 .badge--sync-completed { color: var(--success, #1a7f37); }
 .badge--sync-running, .badge--sync-sourcenotupdated, .badge--sync-completedwitherrors, .badge--sync-neversynced { color: var(--warning, #9a6700); }
 .badge--sync-failed, .badge--sync-consentexpired { color: var(--danger, #b42318); }
+
+.pluggy-sync__title { display: inline; margin: 0; font-size: inherit; font-weight: 650; }
+.pluggy-sync__item--highlight { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; }
+.pluggy-sync dd, .pluggy-sync dt, .pluggy-sync .meta { overflow-wrap: anywhere; }

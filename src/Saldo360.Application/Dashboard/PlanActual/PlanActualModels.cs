@@ -64,7 +64,7 @@ public sealed record CoverageDto(
     bool Complete, int ReviewCount, int ReviewInMonth, int CardReviewCount, bool ReviewAffectsConfidence, bool PartialPeriod, IReadOnlyList<CoverageAccountDto> Accounts,
     IReadOnlyList<string> Reasons);
 
-public sealed record SyncConnectionDto(Guid ConnectionId, string? Label, string Status, DateTimeOffset? LastSuccessAt, DateTimeOffset? LastAttemptAt, DateTimeOffset? NextAttemptAt, bool ConsentExpiringSoon);
+public sealed record SyncConnectionDto(Guid ConnectionId, string? Label, string Status, DateTimeOffset? LastSuccessAt, DateTimeOffset? LastAttemptAt, DateTimeOffset? NextAttemptAt, bool ConsentExpiringSoon, bool Stale = false);
 
 /// <summary>Sincronização das conexões que alimentam o escopo. Nunca resume o escopo todo numa só data: <c>OldestSuccessAt</c> e <c>LatestSuccessAt</c> mostram a diferença.</summary>
 public sealed record SyncSummaryDto(

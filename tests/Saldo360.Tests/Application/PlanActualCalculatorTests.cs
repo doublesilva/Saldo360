@@ -313,6 +313,16 @@ public sealed class PlanActualCalculatorTests
     }
 
     [Fact]
+    public void StalenessIsMarkedPerConnectionWithTheSameThresholdAsTheAggregate()
+    {
+        var now = new DateTimeOffset(2026, 10, 29, 12, 0, 0, TimeSpan.Zero);
+        var summary = PlanActualCalculator.Sync([Connection("Completed", now.AddHours(-2)), Connection("Completed", now.AddHours(-40)), Connection("NeverSynced", null)], true, 24, now);
+
+        Assert.Equal([false, true, true], summary.Connections.Select(c => c.Stale).ToArray());
+        Assert.True(summary.Stale);
+    }
+
+    [Fact]
     public void ConnectionsSynchronizedTogetherShareOneMomentAndAnOldOneMakesTheScopeStale()
     {
         var now = new DateTimeOffset(2026, 10, 29, 12, 0, 0, TimeSpan.Zero);

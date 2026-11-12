@@ -37,7 +37,7 @@ const review = (items: ReviewItem[], overrides: Partial<ClassificationReview> = 
   kind: 'nature', from: '2026-10-01', to: '2026-10-31', wholeBudget: false, items, total: items.length, page: 1, pageSize: 10, unclassifiableCount: 0, ...overrides,
 })
 
-interface Api { overview?: AutomationOverview | Response | 'fail'; runs?: AutomationRun[]; review?: ClassificationReview }
+interface Api { overview?: AutomationOverview | Response | 'fail'; runs?: AutomationRun[]; review?: ClassificationReview; failPut?: boolean }
 function mockApi(api: Api = {}) {
   const calls: { url: string; method: string; body?: string }[] = []
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -45,7 +45,7 @@ function mockApi(api: Api = {}) {
     calls.push({ url, method, body: typeof init?.body === 'string' ? init.body : undefined })
     if (url === '/auth/csrf') return json({ token: 'csrf' })
     if (url.endsWith('/pluggy-integration/automation') && method === 'GET') return api.overview === 'fail' ? json({ title: 'Falha' }, 500) : json(api.overview ?? overview())
-    if (url.endsWith('/pluggy-integration/automation') && method === 'PUT') return json({})
+    if (url.endsWith('/pluggy-integration/automation') && method === 'PUT') return api.failPut ? json({ title: 'Falha ao salvar' }, 500) : json({})
     if (method === 'PUT' && (url.endsWith('/category') || url.endsWith('/expense-nature'))) return json({})
     if (url.includes('/automation/runs')) { const runs = api.runs ?? [syncRun(), catRun()]; return json({ items: runs, total: runs.length, page: 1, pageSize: 10 }) }
     if (url.includes('/classification-review')) return json(api.review ?? review([reviewItem()]))
@@ -95,7 +95,7 @@ describe('Central de automação', () => {
 
     const card = await screen.findByRole('region', { name: 'Sincronização bancária' })
     expect(within(card).getByText('Ativa', { selector: '.badge' })).toBeTruthy()
-    expect(text(within(card).getByText('Frequência').nextElementSibling)).toBe('a cada 24 h (padrão do servidor)')
+    expect(text(within(card).getByText('Frequência').nextElementSibling)).toBe('a cada 24 h (padrão do sistema)')
     expect(text(within(card).getByText('Próxima execução').nextElementSibling)).toBe('30/10/2026 07:30')
     expect(text(within(card).getByLabelText('Última execução'))).toContain('Concluída')
     expect(text(within(card).getByLabelText('Última execução'))).toContain('Lidas 30 · novas 12 · atualizadas 3 · sem mudança 15')
@@ -111,8 +111,24 @@ describe('Central de automação', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'Automações' }))
     const select = await screen.findByLabelText('Intervalo entre sincronizações') as HTMLSelectElement
     expect([...select.options].map(option => option.value)).toEqual(['6', '12', '24'])
+    // Alterar sem salvar não muda o intervalo em vigor nem chama a API.
     fireEvent.change(select, { target: { value: '12' } })
+    expect(await screen.findByText(/Alteração ainda não salva · em vigor: a cada 24 h/)).toBeTruthy()
+    expect(calls.some(call => call.method === 'PUT')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar intervalo' }))
     await waitFor(() => expect(calls.some(call => call.method === 'PUT' && call.body === JSON.stringify({ syncIntervalHours: 12 }))).toBe(true))
+  })
+
+  it('falha ao salvar o intervalo preserva o valor confirmado e a edição pendente', async () => {
+    const calls = mockApi({ failPut: true }); render(<AutomationCenter workspaceId="w" />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Automações' }))
+    const select = await screen.findByLabelText('Intervalo entre sincronizações') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: '6' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Salvar intervalo' }))
+    await waitFor(() => expect(calls.some(call => call.method === 'PUT')).toBe(true))
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect((screen.getByLabelText('Intervalo entre sincronizações') as HTMLSelectElement).value).toBe('6')
+    expect(screen.getByText(/Alteração ainda não salva · em vigor: a cada 24 h/)).toBeTruthy()
   })
 
   it('sem agendador no servidor, pausado ou sem conexão, não inventa uma próxima execução', async () => {

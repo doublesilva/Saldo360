@@ -4,6 +4,7 @@ import type { BudgetGroup } from '../budget/budgetText'
 import type { OverviewNavigation, OverviewSection } from './Overview'
 import { actionText, pressureText, recommendationText } from './budgetControlText'
 import { caveat, coverageMessage, unavailableReason } from './decisionText'
+import { formatDate } from '../../money'
 import { explain, isNegative, isPositiveAmount, money } from './overviewText'
 
 // T12.2 / dashboard Folio: pontos de atenção. Escolhe e ordena o que o servidor já entregou (cobertura, recuperação, orçamento, confiabilidade). Nenhum valor é calculado aqui:
@@ -94,6 +95,8 @@ export function buildPriorityItems({ competence, decision, control, pfControl = 
     })
   }
 
+  const syncItem = syncAttentionItem(plan)
+  if (syncItem) items.push(syncItem)
   const dataCauses = dataReliabilityCauses({ competence, decision, control, pfControl, plan })
   if (dataCauses.length > 0) items.push({
     key: 'reliability-data', rank: 3, title: 'Alguns valores podem estar desatualizados ou incompletos.', impact: 'Saldos, cobertura e totais podem mudar quando estes pontos forem resolvidos.',
@@ -108,6 +111,33 @@ export function buildPriorityItems({ competence, decision, control, pfControl = 
   return items.sort((a, b) => a.rank - b.rank)
 }
 
+const syncProblem: Record<string, string> = { ConsentExpired: 'Autorização do banco expirada', Failed: 'Falha na sincronização bancária', CompletedWithErrors: 'Sincronização bancária concluída com erros' }
+const lastSuccess = (iso: string | null) => iso ? `Último sucesso em ${formatDate(iso.slice(0, 10))} ${new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}.` : 'Ainda sem sincronização bem-sucedida.'
+
+/** Conexões que exigem atenção, pelos sinais do servidor (status e atraso por conexão). Não recalcula atraso aqui. */
+export function affectedConnections(sync: NonNullable<PlanActualDashboard['sync']>) {
+  return sync.connections.filter(c => c.stale === true || c.status in syncProblem)
+}
+
+function syncAttentionItem(plan: PlanActualDashboard | null): PriorityItem | null {
+  if (!plan?.sync) return null
+  const affected = affectedConnections(plan.sync)
+  if (affected.length === 0) return null
+  const name = (c: (typeof affected)[number]) => c.label ?? 'Conexão'
+  const ids = affected.map(c => c.connectionId)
+  if (affected.length === 1) {
+    const c = affected[0]
+    return {
+      key: 'sync-attention', rank: 3, title: `${syncProblem[c.status] ?? 'Sincronização bancária atrasada'} · ${name(c)}`,
+      impact: `${lastSuccess(c.lastSuccessAt)} Os dados dessa conexão requerem atenção.`, action: { label: 'Ver conexão', to: { section: 'automation', context: { automationTab: 'connections', connectionIds: ids } } },
+    }
+  }
+  return {
+    key: 'sync-attention', rank: 3, title: `Sincronização bancária com problema · ${affected.length} conexões`,
+    impact: `${affected.map(name).join(', ')}. Os dados dessas conexões requerem atenção.`, action: { label: 'Ver conexões', to: { section: 'automation', context: { automationTab: 'connections', connectionIds: ids } } },
+  }
+}
+
 function pressureImpact(pressure: BudgetPressure): string {
   if (pressure.amount === null) return 'O impacto ainda não pode ser calculado.'
   return pressure.amountKind === 'OverTarget' ? `Excesso de ${money(pressure.amount)} sobre a meta.` : `${money(pressure.amount)}.`
@@ -118,7 +148,8 @@ function dataReliabilityCauses({ competence, decision, control, pfControl, plan 
   const add = (cause: PriorityCause) => { if (!causes.some(c => c.key === cause.key || c.text === cause.text)) causes.push(cause) }
   const sync = plan?.sync
   if (plan && !plan.snapshotConsistent || decision && !decision.snapshotConsistent) add({ key: 'snapshot', text: caveat('PositionsInconsistent'), action: { label: 'Atualizar', reload: true } })
-  if (sync && (sync.stale || ['Failed', 'ConsentExpired', 'CompletedWithErrors'].includes(sync.state))) {
+  // Problemas de sincronização com conexão identificável têm item próprio (syncAttentionItem); aqui só o caso sem conexão apontada.
+  if (sync && affectedConnections(sync).length === 0 && (sync.stale || ['Failed', 'ConsentExpired', 'CompletedWithErrors'].includes(sync.state))) {
     add({
       key: 'sync', text: sync.state === 'ConsentExpired' ? 'A autorização do banco expirou.' : sync.state === 'Failed' ? 'A última sincronização com o banco falhou.' : 'Os dados do banco podem estar desatualizados.',
       action: { label: 'Ver conexões', to: { section: 'automation', context: { automationTab: 'connections' } } },

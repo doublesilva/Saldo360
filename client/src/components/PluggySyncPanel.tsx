@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { describeSyncError, getSyncMonitor, syncStatusLabels, triggerLabels, type SyncConnection, type SyncMonitor } from '../api/pluggySyncStatus'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { describeSyncError, getSyncMonitor, intervalSourceLabels, syncStatusLabels, triggerLabels, type SyncConnection, type SyncMonitor } from '../api/pluggySyncStatus'
 import { syncConnection } from '../api/pluggyPoc'
 import { toUserMessage } from '../api/apiErrors'
 import { formatDate } from '../money'
@@ -15,7 +15,7 @@ type Load = { key: string; state: 'loading' } | { key: string; state: 'error'; e
  * Sincronização das contas e cartões integrados: última tentativa e sucesso, próxima execução automática, o que mudou, erro resumido, autorização perto do
  * vencimento e as últimas execuções. "Sincronizar agora" usa a mesma sincronização de sempre (a automática nunca roda ao mesmo tempo na mesma conexão).
  */
-export function PluggySyncPanel({ workspaceId, refreshKey = '', onChanged }: { workspaceId: string; refreshKey?: string; onChanged?: () => void }) {
+export function PluggySyncPanel({ workspaceId, refreshKey = '', onChanged, highlight }: { highlight?: string[]; workspaceId: string; refreshKey?: string; onChanged?: () => void }) {
   const [reload, setReload] = useState(0)
   // O erro do botão sobrevive ao recarregamento da lista (que desmonta os cartões): fica por conexão.
   const [errors, setErrors] = useState<Record<string, string | null>>({})
@@ -37,30 +37,40 @@ export function PluggySyncPanel({ workspaceId, refreshKey = '', onChanged }: { w
     {visible.state === 'loading' && <OperationalLoading>Carregando a sincronização…</OperationalLoading>}
     {visible.state === 'error' && <OperationalError error={visible.error} onRetry={() => setReload(value => value + 1)} />}
     {visible.state === 'loaded' && <>
-      <p className="meta">{visible.data.auto.enabled
-        ? `Sincronização automática ligada: a cada ${visible.data.auto.intervalHours} h${visible.data.auto.windowStartHour === 0 && visible.data.auto.windowEndHour === 24 ? '' : `, entre ${visible.data.auto.windowStartHour}h e ${visible.data.auto.windowEndHour}h`}, quando a instituição tem dados novos.`
-        : 'Sincronização automática desligada: use "Sincronizar agora".'}</p>
-      <ul className="card-installments__list">{visible.data.connections.map(connection => <Connection key={connection.connectionId} workspaceId={workspaceId} connection={connection} autoEnabled={visible.data.auto.enabled} error={errors[connection.connectionId] ?? null}
+      <AutoSummary auto={visible.data.auto} />
+      <ul className="card-installments__list">{visible.data.connections.map(connection => <Connection key={connection.connectionId} workspaceId={workspaceId} connection={connection} autoEnabled={visible.data.auto.enabled} highlighted={highlight?.includes(connection.connectionId) ?? false} focusTitle={highlight?.[0] === connection.connectionId} error={errors[connection.connectionId] ?? null}
         onError={message => setErrors(current => ({ ...current, [connection.connectionId]: message }))} onDone={refresh} />)}</ul>
     </>}
   </section>
 }
 
-function Connection({ workspaceId, connection, autoEnabled, error, onError, onDone }: { workspaceId: string; connection: SyncConnection; autoEnabled: boolean; error: string | null; onError: (message: string | null) => void; onDone: () => void }) {
+function AutoSummary({ auto }: { auto: SyncMonitor['auto'] }) {
+  if (!auto.enabled) return <p className="meta">Sincronização automática desligada: use "Sincronizar agora".</p>
+  const hours = auto.effectiveIntervalHours ?? auto.intervalHours
+  const source = auto.intervalSource ? ` (${intervalSourceLabels[auto.intervalSource]})` : ''
+  const window = auto.windowStartHour === 0 && auto.windowEndHour === 24 ? '' : `, entre ${auto.windowStartHour}h e ${auto.windowEndHour}h`
+  return <p className="meta">Sincronização automática · a cada {hours} h{source}{window}. Só consulta o banco de novo quando a instituição tem dados novos; depois de uma falha, tenta antes, com espera crescente.</p>
+}
+
+function Connection({ workspaceId, connection, autoEnabled, highlighted, focusTitle, error, onError, onDone }: { workspaceId: string; connection: SyncConnection; autoEnabled: boolean; highlighted: boolean; focusTitle: boolean; error: string | null; onError: (message: string | null) => void; onDone: () => void }) {
   const [busy, setBusy] = useState(false)
+  const title = useRef<HTMLHeadingElement>(null)
+  // Vindo da Visão Geral: leva o foco ao título da conexão destacada (sem iniciar nenhuma sincronização).
+  useEffect(() => { if (focusTitle) { title.current?.focus(); title.current?.scrollIntoView?.({ block: 'center' }) } }, [focusTitle])
   const run = async () => {
     setBusy(true); onError(null)
     try { await syncConnection(workspaceId, connection.connectionId) } catch (failure: unknown) { onError(toUserMessage(failure)) } finally { setBusy(false); onDone() }
   }
   const problem = connection.status === 'Failed' || connection.status === 'CompletedWithErrors' || connection.status === 'ConsentExpired'
   const reason = describeSyncError(connection.lastError)
-  return <li className="card-installments__chain" aria-label={`Sincronização de ${connection.label ?? connection.institution ?? 'conexão'}`}>
+  return <li className={`card-installments__chain${highlighted ? ' pluggy-sync__item--highlight' : ''}`} aria-current={highlighted || undefined} aria-label={`Sincronização de ${connection.label ?? connection.institution ?? 'conexão'}`}>
     <div>
-      <strong>{connection.label ?? connection.institution ?? 'Conexão'}</strong>{' '}
+      <h5 ref={title} tabIndex={-1} className="pluggy-sync__title">{connection.label ?? connection.institution ?? 'Conexão'}</h5>{' '}
       <span className={`badge badge--sync-${connection.status.toLowerCase()}`}>{syncStatusLabels[connection.status]}</span>{' '}
       <span className="meta">{connection.integratedAccounts} conta(s)/cartão(ões) integrado(s)</span>
     </div>
     <dl className="card-overview__facts">
+      <div><dt>Última atualização informada pelo banco</dt><dd>{dateTime(connection.sourceUpdatedAt)}</dd></div>
       <div><dt>Última tentativa</dt><dd>{dateTime(connection.lastAttemptAt)}{connection.lastTrigger ? ` · ${triggerLabels[connection.lastTrigger]}` : ''}</dd></div>
       <div><dt>Última sincronização bem-sucedida</dt><dd>{dateTime(connection.lastSuccessAt)}</dd></div>
       <div><dt>Próxima sincronização</dt><dd>{autoEnabled ? dateTime(connection.nextAttemptAt) : 'Automática desligada'}</dd></div>

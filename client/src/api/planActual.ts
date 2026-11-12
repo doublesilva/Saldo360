@@ -48,7 +48,7 @@ export interface PlanCoverage {
   complete: boolean; reviewCount: number; reviewInMonth: number; cardReviewCount: number; reviewAffectsConfidence: boolean; partialPeriod: boolean
   accounts: CoverageAccount[]; reasons: string[]
 }
-export interface SyncConnectionSummary { connectionId: string; label: string | null; status: string; lastSuccessAt: string | null; lastAttemptAt: string | null; nextAttemptAt: string | null; consentExpiringSoon: boolean }
+export interface SyncConnectionSummary { connectionId: string; label: string | null; status: string; lastSuccessAt: string | null; lastAttemptAt: string | null; nextAttemptAt: string | null; consentExpiringSoon: boolean; stale?: boolean }
 export interface PlanSync {
   autoEnabled: boolean; autoIntervalHours: number; oldestSuccessAt: string | null; latestSuccessAt: string | null; sameMoment: boolean; stale: boolean; state: string
   nextAttemptAt: string | null; connections: SyncConnectionSummary[]

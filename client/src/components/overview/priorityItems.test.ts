@@ -136,3 +136,33 @@ describe('Destinos de ação do orçamento', () => {
     expect(budgetDestination('OpenAccounts', null, '2026-11')).toEqual({ section: 'accounts' })
   })
 })
+
+describe('pontos de atenção — sincronização bancária por conexão', () => {
+  const sync = (connections: Partial<NonNullable<PriorityInput['plan']>['sync'] extends infer S ? S extends { connections: (infer C)[] } ? C : never : never>[]) => ({
+    ...calm(), plan: { ...planActual, sync: { ...planActual.sync!, connections: connections.map((c, i) => ({ connectionId: `c${i + 1}`, label: `Banco ${i + 1}`, status: 'Completed', lastSuccessAt: '2026-11-11T12:00:00Z', lastAttemptAt: '2026-11-11T12:00:00Z', nextAttemptAt: null, consentExpiringSoon: false, stale: false, ...c })) } },
+  }) as PriorityInput
+  const find = (input: PriorityInput) => buildPriorityItems(input).find(item => item.key === 'sync-attention')
+
+  it('conexão saudável não gera alerta', () => expect(find(sync([{}]))).toBeUndefined())
+
+  it('uma conexão atrasada: nomeia o banco, mostra o último sucesso e abre aquela conexão', () => {
+    const item = find(sync([{ stale: true }, { connectionId: 'ok', label: 'Outro', stale: false }]))!
+    expect(item.title).toBe('Sincronização bancária atrasada · Banco 1')
+    expect(plain(item.impact)).toContain('Último sucesso em 11/11/2026')
+    expect(item.action).toEqual({ label: 'Ver conexão', to: { section: 'automation', context: { automationTab: 'connections', connectionIds: ['c1'] } } })
+  })
+
+  it('falha preserva o último sucesso e não é tratada como dado recente', () => {
+    const item = find(sync([{ status: 'Failed', lastAttemptAt: '2026-11-12T09:00:00Z' }]))!
+    expect(item.title).toBe('Falha na sincronização bancária · Banco 1')
+    expect(plain(item.impact)).toContain('Último sucesso em 11/11/2026')
+  })
+
+  it('nunca sincronizada não inventa data', () => expect(plain(find(sync([{ stale: true, lastSuccessAt: null }]))!.impact)).toContain('Ainda sem sincronização bem-sucedida.'))
+
+  it('várias conexões afetadas: mostra a quantidade e leva a todas elas', () => {
+    const item = find(sync([{ stale: true }, { status: 'ConsentExpired' }, {}]))!
+    expect(item.title).toBe('Sincronização bancária com problema · 2 conexões')
+    expect(item.action?.to?.context?.connectionIds).toEqual(['c1', 'c2'])
+  })
+})

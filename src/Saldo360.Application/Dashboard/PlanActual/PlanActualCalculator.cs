@@ -256,6 +256,9 @@ public static class PlanActualCalculator
         var state = StatePrecedence.FirstOrDefault(s => connections.Any(c => c.Status == s)) ?? "NeverSynced";
         var upcoming = connections.Where(c => c.NextAttemptAt is not null).Select(c => c.NextAttemptAt!.Value).ToList();
         DateTimeOffset? next = autoEnabled && upcoming.Count > 0 ? upcoming.Min() : null;
-        return new(autoEnabled, intervalHours, oldest, latest, same, stale, state, next, connections);
+        // Mesmo limiar do agregado, aplicado a cada conexão: nunca sincronizada ou último sucesso além do limite.
+        var limit = StaleAfter(autoEnabled, intervalHours);
+        var marked = connections.Select(c => c with { Stale = c.LastSuccessAt is null || now - c.LastSuccessAt.Value > limit }).ToList();
+        return new(autoEnabled, intervalHours, oldest, latest, same, stale, state, next, marked);
     }
 }

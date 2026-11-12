@@ -3,7 +3,12 @@ using Saldo360.Domain.Pluggy;
 
 namespace Saldo360.Application.Pluggy;
 
-public sealed record PluggyAutoSyncSettingsView(bool Enabled, int IntervalHours, int WindowStartHour, int WindowEndHour, int MaxConnectionsPerRun, int PollIntervalMinutes);
+/// <summary>
+/// <c>IntervalHours</c> é o padrão do servidor. <c>EffectiveIntervalHours</c> é o que o agendador usa depois de uma sincronização bem-sucedida: a preferência salva do orçamento
+/// (<c>IntervalSource</c> = WorkspacePreference) ou, sem escolha, o padrão do servidor (ServerDefault). Falhas, origem sem novidade e consentimento vencido têm esperas próprias.
+/// </summary>
+public sealed record PluggyAutoSyncSettingsView(bool Enabled, int IntervalHours, int WindowStartHour, int WindowEndHour, int MaxConnectionsPerRun, int PollIntervalMinutes,
+    int EffectiveIntervalHours, string IntervalSource);
 
 /// <summary>
 /// Estado de sincronização de uma conexão. <c>Status</c>: NeverSynced, Running, Completed, CompletedWithErrors, Failed, ConsentExpired ou SourceNotUpdated
@@ -29,7 +34,9 @@ public sealed class PluggySyncMonitorService(IFinancialWorkspaceRepository works
         var connections = await links.ListAsync(workspaceId, ct);
         var stateByConnection = (await states.ListAsync(workspaceId, ct)).ToDictionary(s => s.ConnectionId);
         var accounts = await states.AccountsByConnectionAsync(workspaceId, ct);
-        var paused = (await automation.FindSettingsAsync(workspaceId, ct))?.SyncPaused == true;
+        var settings = await automation.FindSettingsAsync(workspaceId, ct);
+        var paused = settings?.SyncPaused == true;
+        var preferred = settings?.SyncIntervalHours;
         var views = new List<PluggySyncConnectionView>();
         foreach (var link in connections)
         {
@@ -47,6 +54,7 @@ public sealed class PluggySyncMonitorService(IFinancialWorkspaceRepository works
                 state?.LastError ?? lastRun?.ErrorSummary, state?.ConsecutiveFailures ?? 0, state?.ConsentExpiresAt,
                 PluggyAutoSyncPolicy.ConsentExpiringSoon(state?.ConsentExpiresAt, now, auto), state?.SourceUpdatedAt, runs));
         }
-        return PluggyResult<PluggySyncMonitorView>.Ok(new(now, new(auto.Enabled, auto.IntervalHours, auto.WindowStartHour, auto.WindowEndHour, auto.MaxConnectionsPerRun, auto.PollIntervalMinutes), views));
+        return PluggyResult<PluggySyncMonitorView>.Ok(new(now, new(auto.Enabled, auto.IntervalHours, auto.WindowStartHour, auto.WindowEndHour, auto.MaxConnectionsPerRun, auto.PollIntervalMinutes,
+            Math.Max(1, preferred ?? auto.IntervalHours), preferred is null ? "ServerDefault" : "WorkspacePreference"), views));
     }
 }

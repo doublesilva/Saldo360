@@ -34,7 +34,8 @@ export interface SyncConnection {
 
 export interface SyncMonitor {
   now: string
-  auto: { enabled: boolean; intervalHours: number; windowStartHour: number; windowEndHour: number; maxConnectionsPerRun: number; pollIntervalMinutes: number }
+  /** intervalHours = padrão do servidor; effectiveIntervalHours = o que o agendador usa após um sucesso (preferência salva ou padrão). Servidores antigos não enviam os dois últimos. */
+  auto: { enabled: boolean; intervalHours: number; effectiveIntervalHours?: number; intervalSource?: 'WorkspacePreference' | 'ServerDefault'; windowStartHour: number; windowEndHour: number; maxConnectionsPerRun: number; pollIntervalMinutes: number }
   connections: SyncConnection[]
 }
 
@@ -64,3 +65,5 @@ export function describeSyncError(summary: string | null): string | null {
   const parts = summary.split(';').map(part => part.trim().split(':')[0]).filter(Boolean)
   return [...new Set(parts.map(code => text[code] ?? code))].join('; ')
 }
+
+export const intervalSourceLabels = { WorkspacePreference: 'escolhido por você', ServerDefault: 'padrão do sistema' } as const

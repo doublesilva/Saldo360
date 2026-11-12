@@ -18,7 +18,7 @@ const linkKindLabel = { Bank: 'Conta', Card: 'Cartão' } as const
  * Conexões bancárias: instituição, estado informado pela Pluggy, contas e cartões vinculados, última atualização da instituição e última sincronização concluída
  * (cadastrada não é atualizada). Só mostra ações que existem: cadastrar o Item, sincronizar e inspecionar. Não há desconectar: a conexão é encerrada no Meu Pluggy.
  */
-export function AutomationConnections({ workspaceId, refreshKey, overview, onChanged }: { workspaceId: string; refreshKey: string; overview: AutomationOverview; onChanged: () => void }) {
+export function AutomationConnections({ workspaceId, refreshKey, overview, onChanged, highlight }: { highlight?: string[]; workspaceId: string; refreshKey: string; overview: AutomationOverview; onChanged: () => void }) {
   const [reload, setReload] = useState(0)
   const [diagnostics, setDiagnostics] = useState(false)
   const available = overview.server.integrationAvailable
@@ -78,7 +78,7 @@ export function AutomationConnections({ workspaceId, refreshKey, overview, onCha
       <p className="meta">Para encerrar uma conexão, use o Meu Pluggy: o Saldo360 não desconecta instituições por conta própria. Os lançamentos já importados permanecem.</p>
     </section>
     {visible.state === 'loaded' && visible.connections.length > 0 && <section className="card" aria-label="Sincronização por conexão">
-      <PluggySyncPanel workspaceId={workspaceId} refreshKey={`${refreshKey}|${reload}`} onChanged={changed} />
+      <PluggySyncPanel highlight={highlight} workspaceId={workspaceId} refreshKey={`${refreshKey}|${reload}`} onChanged={changed} />
     </section>}
     <details className="automation-diagnostics" onToggle={event => setDiagnostics(event.currentTarget.open)}>
       <summary>Diagnóstico técnico da Pluggy (avançado)</summary>

@@ -42,10 +42,13 @@ export function AutomationCards({ workspaceId, overview, onChanged, onOpenConnec
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const { server, settings, sync, categorization } = overview
+  // Rascunho do seletor: só vira intervalo efetivo depois de salvo com sucesso (o resumo continua mostrando o valor confirmado).
+  const [draft, setDraft] = useState<number | null>(null)
+  const pending = draft !== null && draft !== settings.syncIntervalHours
 
   const save = async (name: string, update: AutomationUpdate, done: string) => {
     setBusy(name); setError(null); setMessage(null)
-    try { await updateAutomation(workspaceId, update); setMessage(done); onChanged() } catch (cause) { setError(toUserMessage(cause)) } finally { setBusy(null) }
+    try { await updateAutomation(workspaceId, update); setMessage(done); if (name === 'interval') setDraft(null); onChanged() } catch (cause) { setError(toUserMessage(cause)) } finally { setBusy(null) }
   }
   const categorize = async (useAi: boolean) => {
     if (useAi && !window.confirm(AI_ONCE)) return
@@ -58,7 +61,7 @@ export function AutomationCards({ workspaceId, overview, onChanged, onOpenConnec
     void save('after', { categorizeAfterSync: true, confirmExternal: true }, 'Categorização após a sincronização ligada, com o seu consentimento registrado.')
   }
 
-  const intervalText = settings.syncIntervalIsDefault ? `a cada ${settings.syncIntervalHours} h (padrão do servidor)` : `a cada ${settings.syncIntervalHours} h (escolhido por você)`
+  const intervalText = settings.syncIntervalIsDefault ? `a cada ${settings.syncIntervalHours} h (padrão do sistema)` : `a cada ${settings.syncIntervalHours} h (escolhido por você)`
   const windowText = server.windowStartHour === 0 && server.windowEndHour === 24 ? 'a qualquer hora' : `entre ${server.windowStartHour}h e ${server.windowEndHour}h`
   const nextText = sync.nextRunAt ? whenSp(sync.nextRunAt)
     : sync.state === 'Paused' ? 'não prevista: as execuções agendadas estão pausadas'
@@ -88,10 +91,13 @@ export function AutomationCards({ workspaceId, overview, onChanged, onOpenConnec
       {!server.schedulerEnabled && !syncBlocked && <p className="meta">O agendamento automático está desligado neste servidor: a sincronização acontece só quando você usa "Sincronizar agora". Suas preferências abaixo ficam salvas e passam a valer se ele for ligado.</p>}
       <div className="automation-card__controls">
         <label>Intervalo entre sincronizações
-          <select value={settings.syncIntervalHours} disabled={busy !== null || syncBlocked} onChange={event => void save('interval', { syncIntervalHours: Number(event.target.value) }, 'Intervalo salvo. Vale a partir da próxima sincronização concluída.')}>
+          <select value={draft ?? settings.syncIntervalHours} disabled={busy !== null || syncBlocked} onChange={event => setDraft(Number(event.target.value))}>
             {server.intervalOptions.map(hours => <option key={hours} value={hours}>{hours} h{hours === server.defaultIntervalHours ? ' (padrão)' : ''}</option>)}
           </select>
         </label>
+        {pending && <><span className="meta" role="status">Alteração ainda não salva · em vigor: a cada {settings.syncIntervalHours} h</span>
+          <button type="button" className="button--primary" disabled={busy !== null || syncBlocked} onClick={() => void save('interval', { syncIntervalHours: draft }, 'Intervalo salvo. Vale a partir da próxima sincronização concluída.')}>Salvar intervalo</button>
+          <button type="button" disabled={busy !== null} onClick={() => setDraft(null)}>Descartar</button></>}
         <button type="button" disabled={busy !== null || syncBlocked} aria-pressed={settings.syncPaused}
           onClick={() => void save('pause', { syncPaused: !settings.syncPaused }, settings.syncPaused ? 'Execuções agendadas retomadas.' : 'Execuções agendadas pausadas. Uma sincronização que já começou termina normalmente.')}>
           {settings.syncPaused ? 'Retomar execuções agendadas' : 'Pausar execuções agendadas'}

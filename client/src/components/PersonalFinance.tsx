@@ -65,7 +65,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     setTransactionContext(target === 'transactions' ? { key: Date.now(), filters: context?.transactions, newTransaction: context?.newTransaction } : null)
     setGoalId(target === 'goals' ? context?.goalId : undefined)
     if (target === 'planning') setPlanningEntry(entry => ({ key: entry.key + 1, context }))
-    if (target === 'automation') setAutomationEntry({ key: Date.now(), tab: context?.automationTab, review: context?.review })
+    if (target === 'automation') setAutomationEntry({ key: Date.now(), tab: context?.automationTab, review: context?.review, connectionIds: context?.connectionIds })
     setSection(target)
   }
   // Central de automação: só aparece quando a API habilita a Pluggy para este usuário (Pluggy:Enabled).

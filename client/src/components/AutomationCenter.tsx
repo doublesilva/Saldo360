@@ -11,7 +11,7 @@ import '../Automation.css'
 export type AutomationTab = 'connections' | 'automations' | 'history'
 
 /** Ponto de entrada de outras telas (orçamento, visão geral): abre direto a lista de revisão da classificação, no recorte pedido. */
-export interface AutomationEntry { key: number; tab?: AutomationTab; review?: { kind: ReviewKind; from?: string; to?: string } }
+export interface AutomationEntry { key: number; tab?: AutomationTab; connectionIds?: string[]; review?: { kind: ReviewKind; from?: string; to?: string } }
 
 const tabs: readonly (readonly [AutomationTab, string])[] = [['connections', 'Conexões'], ['automations', 'Automações'], ['history', 'Histórico']]
 
@@ -50,7 +50,7 @@ export function AutomationCenter({ workspaceId, refreshKey = '', onChanged, entr
     <div id="automation-panel" role="tabpanel" aria-labelledby={`automation-tab-${tab}`}>
       {visible.state === 'loading' && tab !== 'history' && <OperationalLoading>Carregando a central de automação…</OperationalLoading>}
       {visible.state === 'error' && tab !== 'history' && <OperationalError error={visible.error} onRetry={() => setReload(value => value + 1)} />}
-      {tab === 'connections' && visible.state === 'loaded' && <AutomationConnections workspaceId={workspaceId} refreshKey={refreshKey} overview={visible.data} onChanged={refresh} />}
+      {tab === 'connections' && visible.state === 'loaded' && <AutomationConnections highlight={entry?.connectionIds} workspaceId={workspaceId} refreshKey={refreshKey} overview={visible.data} onChanged={refresh} />}
       {tab === 'automations' && visible.state === 'loaded' && <>
         <AutomationCards workspaceId={workspaceId} overview={visible.data} onChanged={refresh} onOpenConnections={() => setTab('connections')} onOpenHistory={goHistory} />
         <ClassificationReviewList key={entry?.key} workspaceId={workspaceId} refreshKey={refreshKey} initial={entry?.review} onChanged={refresh} />

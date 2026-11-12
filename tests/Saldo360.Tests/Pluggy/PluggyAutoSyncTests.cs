@@ -427,6 +427,26 @@ public sealed class PluggyAutoSyncTests(PostgresFixture postgres) : PluggyApiTes
         Assert.True(monitor.GetProperty("connections")[0].GetProperty("consentExpiringSoon").GetBoolean());
     }
 
+    // ---- intervalo efetivo exposto pelo monitoramento ------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TheMonitorExposesTheEffectiveIntervalAndItsSource()
+    {
+        SeedBank(BankTx("b1", 3, -10.5m));
+        var s = await ArrangeAsync("t96-interval");
+        string Url(string tail) => $"/api/financial-workspaces/{s.Workspace}/pluggy-integration/{tail}";
+
+        var before = (await JsonOf(await Send(s.Client, HttpMethod.Get, Url("sync-status"), s.Session))).GetProperty("auto");
+        Assert.Equal("ServerDefault", before.GetProperty("intervalSource").GetString());
+        Assert.Equal(before.GetProperty("intervalHours").GetInt32(), before.GetProperty("effectiveIntervalHours").GetInt32());
+
+        Assert.True((await Send(s.Client, HttpMethod.Put, Url("automation"), s.Session, new { syncIntervalHours = 6 })).IsSuccessStatusCode);
+        var after = (await JsonOf(await Send(s.Client, HttpMethod.Get, Url("sync-status"), s.Session))).GetProperty("auto");
+        Assert.Equal("WorkspacePreference", after.GetProperty("intervalSource").GetString());
+        Assert.Equal(6, after.GetProperty("effectiveIntervalHours").GetInt32());
+        Assert.Equal(before.GetProperty("intervalHours").GetInt32(), after.GetProperty("intervalHours").GetInt32()); // o padrão do servidor não muda
+    }
+
     // ---- 9: execução abandonada ----------------------------------------------------------------------------------------------------------
 
     [Fact]
