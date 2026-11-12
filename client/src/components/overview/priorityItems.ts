@@ -5,7 +5,7 @@ import type { OverviewNavigation, OverviewSection } from './Overview'
 import { actionText, pressureText, recommendationText } from './budgetControlText'
 import { caveat, coverageMessage, unavailableReason } from './decisionText'
 import { formatDate } from '../../money'
-import { explain, isNegative, isPositiveAmount, money } from './overviewText'
+import { explain, isNegative, isPositiveAmount, money, monthTitle } from './overviewText'
 
 // T12.2 / dashboard Folio: pontos de atenção. Escolhe e ordena o que o servidor já entregou (cobertura, recuperação, orçamento, confiabilidade). Nenhum valor é calculado aqui:
 // os valores exibidos são os textos decimais do servidor, e só se compara sinal ou presença.
@@ -19,6 +19,13 @@ export interface PriorityItem {
 }
 
 export const VISIBLE_ITEMS = 3
+
+/** Gravidade em texto (nunca só cor): 1 = risco de caixa ou da meta, 2 = orçamento, 3 = confiabilidade dos dados. */
+export const severityText = { 1: 'Prioridade alta', 2: 'Atenção', 3: 'Dados' } as const
+
+// Desempate estável dentro da mesma gravidade: uso observado, falta de cobertura/vencimentos, risco projetado, recuperação, limitação dos dados.
+const urgencyOrder = ['overdraft-used', 'coverage', 'overdue', 'overdraft-projected', 'recovery', 'overdraft-unobserved']
+const urgencyOf = (item: PriorityItem) => { const index = urgencyOrder.indexOf(item.key); return index < 0 ? urgencyOrder.length : index }
 
 export function budgetDestination(action: BudgetAction, context: string | null, competence: string): Destination {
   switch (action) {
@@ -50,13 +57,13 @@ export function buildPriorityItems({ competence, decision, control, pfControl = 
     const { coverage, commitments, recovery } = decision
     if (coverage.state === 'Insufficient') items.push({
       key: 'coverage', rank: 1, title: coverageMessage(coverage),
-      impact: coverage.deficit !== null ? `Déficit estimado de ${money(coverage.deficit)}.` : 'O valor do déficit ainda não pode ser calculado.', action: { label: 'Ver evolução na Agenda', to: agenda },
+      impact: (coverage.deficit !== null ? `Déficit estimado de ${money(coverage.deficit)}` : 'O valor do déficit ainda não pode ser calculado') + (coverage.firstNegativeDate ? `, a partir de ${formatDate(coverage.firstNegativeDate)}.` : '.'), action: { label: 'Ver evolução na Agenda', to: agenda },
     })
     else if (coverage.state === 'CoveredWithCredit') items.push({
       key: 'coverage', rank: 1, title: coverageMessage(coverage), impact: 'Depende de crédito do banco, que não é saldo seu.', action: { label: 'Ver evolução na Agenda', to: agenda },
     })
     if (isPositiveAmount(commitments.overdue) && decision.context.period !== 'Closed') items.push({
-      key: 'overdue', rank: 1, title: 'Há compromissos vencidos e não pagos.', impact: `${money(commitments.overdue)} em aberto.`, action: { label: 'Abrir a Agenda', to: agenda },
+      key: 'overdue', rank: 1, title: 'Há compromissos vencidos e não pagos.', impact: `${money(commitments.overdue)} em aberto.`, action: { label: 'Ver vencimentos', to: agenda },
     })
     if ((recovery.state === 'Fixed' || recovery.state === 'Provisional') && isNegative(recovery.gapToTarget)) items.push({
       key: 'recovery', rank: 1, title: 'A recuperação projetada está abaixo da meta.',
@@ -95,11 +102,13 @@ export function buildPriorityItems({ competence, decision, control, pfControl = 
     })
   }
 
+  items.push(...overdraftItems(plan, competence))
   const syncItem = syncAttentionItem(plan)
   if (syncItem) items.push(syncItem)
   const dataCauses = dataReliabilityCauses({ competence, decision, control, pfControl, plan })
+  // Se a cobertura não pode ser avaliada por falta de dados, a ação que explica a limitação passa a ser prioridade alta.
   if (dataCauses.length > 0) items.push({
-    key: 'reliability-data', rank: 3, title: 'Alguns valores podem estar desatualizados ou incompletos.', impact: 'Saldos, cobertura e totais podem mudar quando estes pontos forem resolvidos.',
+    key: 'reliability-data', rank: decision?.coverage.state === 'Unavailable' ? 1 : 3, title: 'Alguns valores podem estar desatualizados ou incompletos.', impact: 'Saldos, cobertura e totais podem mudar quando estes pontos forem resolvidos.',
     action: dataCauses[0].action ?? null, causes: dataCauses,
   })
   const setupCauses = budgetPendingCauses({ competence, control: pfControl, plan, classification })
@@ -108,7 +117,46 @@ export function buildPriorityItems({ competence, decision, control, pfControl = 
     action: setupCauses[0].action ?? null, causes: setupCauses,
   })
 
-  return items.sort((a, b) => a.rank - b.rank)
+  // Ordem determinística: gravidade, urgência e, por fim, a ordem de inserção (Array.prototype.sort é estável).
+  return items.sort((a, b) => a.rank - b.rank || urgencyOf(a) - urgencyOf(b))
+}
+
+/**
+ * Cheque especial: três sinais distintos, cada um agrupando as contas que têm a mesma causa e a mesma ação — uso observado (posição bancária),
+ * risco projetado de uso (sem uso observado) e posição indisponível (não dá para avaliar). Valores e datas só quando a fonte os sustenta.
+ */
+function overdraftItems(plan: PriorityInput['plan'], competence: string): PriorityItem[] {
+  if (!plan?.overdraft.eligible || plan.periodKind === 'Past') return []
+  const stale = plan.sync?.stale === true
+  const syncExplains = plan.sync ? affectedConnections(plan.sync).length > 0 : false
+  const used: typeof plan.overdraft.accounts = [], projected: typeof used = [], unobserved: typeof used = []
+  for (const account of plan.overdraft.accounts.filter(a => isPositiveAmount(a.contractedLimit))) {
+    const observed = Boolean(account.observedAt && account.observedAsOf && account.state !== 'Unavailable')
+    if (observed && isPositiveAmount(account.usedLatest) && plan.periodKind === 'Current') used.push(account)
+    else if (isPositiveAmount(account.projectedUsedAtEnd)) projected.push(account)
+    else if (plan.periodKind === 'Current' && !observed) unobserved.push(account)
+  }
+  const recovery = (account: (typeof used)[number]): PriorityAction => ({ label: 'Ver recuperação', to: { section: 'planning', context: { planningTab: 'six', competence, recoveryScope: { kind: 'account', accountId: account.accountId } } } })
+  const named = (accounts: typeof used) => accounts.length === 1 ? accounts[0].name : `${accounts.length} contas`
+  const names = (accounts: typeof used) => accounts.map(a => a.name).join(', ')
+  const items: PriorityItem[] = []
+  if (used.length) items.push({
+    key: 'overdraft-used', rank: 1, title: `Cheque especial em uso${stale ? ' (posição desatualizada)' : ''} · ${named(used)}`,
+    impact: used.length === 1 ? `${money(used[0].usedLatest)} utilizados na posição de ${formatDate(used[0].observedAsOf!)}.` : `${names(used)}. Valores na posição bancária de cada conta.`,
+    action: recovery(used[0]),
+  })
+  if (projected.length) items.push({
+    key: 'overdraft-projected', rank: 1, title: `Risco projetado de uso do cheque especial · ${named(projected)}`,
+    impact: projected.length === 1 ? `Uso projetado de ${money(projected[0].projectedUsedAtEnd)} no fechamento de ${monthTitle(competence)}. Ainda não é uso observado.` : `${names(projected)}. Projeção para o fechamento de ${monthTitle(competence)}, ainda não é uso observado.`,
+    action: recovery(projected[0]),
+  })
+  // Quando uma conexão com problema já explica a limitação, o item de sincronização é o ponto de entrada (sem duplicar a causa).
+  if (unobserved.length && !syncExplains) items.push({
+    key: 'overdraft-unobserved', rank: 1, title: `Posição do cheque especial indisponível · ${named(unobserved)}`,
+    impact: 'Sem posição bancária recente, não é possível confirmar o uso do limite.',
+    action: { label: 'Ver conexões', to: { section: 'automation', context: { automationTab: 'connections' } } },
+  })
+  return items
 }
 
 const syncProblem: Record<string, string> = { ConsentExpired: 'Autorização do banco expirada', Failed: 'Falha na sincronização bancária', CompletedWithErrors: 'Sincronização bancária concluída com erros' }
@@ -191,8 +239,7 @@ function budgetPendingCauses({ competence, control, plan, classification }: { co
   return causes
 }
 
-/** Os três primeiros por prioridade, mais todo item de risco de caixa ou da meta (rank 1): um alerta crítico nunca fica atrás de "Ver todas". */
+/** A lista inicial tem no máximo três itens, na ordem de prioridade; os demais ficam atrás de "Ver todos" sem mudar a ordenação. */
 export function visibleItems(items: PriorityItem[], expanded: boolean): PriorityItem[] {
-  if (expanded) return items
-  return items.filter((item, index) => index < VISIBLE_ITEMS || item.rank === 1)
+  return expanded ? items : items.slice(0, VISIBLE_ITEMS)
 }

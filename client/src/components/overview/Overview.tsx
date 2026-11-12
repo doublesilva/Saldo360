@@ -6,7 +6,6 @@ import type { ExpenseNature } from '../../api/expenseNature'
 import { addCalendarMonths } from '../../dates'
 import { OverviewResult, OverviewComposition } from './OverviewResult'
 import { OverviewBalanceCard } from './OverviewBalanceCard'
-import { OverviewOverdraftAlert } from './OverviewOverdraftAlert'
 import { OverviewSummary } from './OverviewSummary'
 import { OverviewAlerts } from './OverviewAlerts'
 import { OverviewEvolutionSection } from './OverviewEvolution'
@@ -86,7 +85,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
       </div>
     </header>
 
-    <OverviewOverdraftAlert plan={planBlock} onNavigate={onNavigate} />
+    <OverviewAlerts items={items} state={{ loading: planBlock.loading || overviewBlock.loading, failed: Boolean(planBlock.error || overviewBlock.error) }} onNavigate={onNavigate} onReload={reloadAll} />
     <OverviewSummary competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
 
     <details className="ov-details ov-more">
@@ -108,7 +107,6 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
             scopeLabel="Orçamento PF · Todas as contas PF" monthLabel={monthTitle(competence)} workspaceId={workspaceId} competence={competence} {...overviewBlock}
             onOpenBudget={() => onNavigate('budgets', { competence })} onOpenCards={() => onNavigate('cards')} />
         </div>
-        <OverviewAlerts items={items} onNavigate={onNavigate} onReload={reloadAll} />
         <OverviewEvolutionSection workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} />
         <OverviewRecent recent={data?.recent ?? null} {...overviewBlock}
           onOpenAll={() => recentRange && onNavigate('transactions', { transactions: recentRange, newTransaction: data?.recent.items.length === 0 })} />

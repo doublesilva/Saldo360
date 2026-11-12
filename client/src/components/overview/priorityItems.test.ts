@@ -120,9 +120,10 @@ describe('Onde preciso agir — itens visíveis', () => {
     expect(visibleItems(items, true)).toHaveLength(5)
   })
 
-  it('nunca esconde um item de risco de caixa ou da meta', () => {
+  it('a lista inicial nunca passa de três, mesmo com mais de três riscos de caixa, sem mudar a ordem', () => {
     const items = [item('a', 1), item('b', 1), item('c', 1), item('d', 1), item('e', 2)]
-    expect(visibleItems(items, false).map(i => i.key)).toEqual(['a', 'b', 'c', 'd'])
+    expect(visibleItems(items, false).map(i => i.key)).toEqual(['a', 'b', 'c'])
+    expect(visibleItems(items, true).map(i => i.key)).toEqual(['a', 'b', 'c', 'd', 'e'])
   })
 })
 
@@ -164,5 +165,78 @@ describe('pontos de atenção — sincronização bancária por conexão', () =>
     const item = find(sync([{ stale: true }, { status: 'ConsentExpired' }, {}]))!
     expect(item.title).toBe('Sincronização bancária com problema · 2 conexões')
     expect(item.action?.to?.context?.connectionIds).toEqual(['c1', 'c2'])
+  })
+})
+
+describe('Cheque especial, vencimentos e ordenação', () => {
+  const account = (changes: Record<string, unknown> = {}) => ({
+    accountId: 'a1', name: 'Conta Exemplo', state: 'Complete', contractedLimit: '5000.00', usedLatest: '520.00', observedAt: '2026-11-11T11:00:00Z', observedAsOf: '2026-11-11',
+    usedAtStart: null, startAsOf: null, startApproximate: false, effectiveRecovery: null, direction: null, fullyRecovered: false, projectedUsedAtEnd: '800.00', projectedRecovery: null,
+    projectedRecoveryFromNow: null, projectedBalanceAtEnd: null, exceedsLimit: false, reasons: [], ...changes,
+  })
+  const withOverdraft = (accounts: ReturnType<typeof account>[], plan: Record<string, unknown> = {}): PriorityInput => {
+    const base = calm()
+    return { ...base, plan: { ...base.plan!, periodKind: 'Current', overdraft: { ...base.plan!.overdraft, eligible: true, accounts }, ...plan } as PriorityInput['plan'] }
+  }
+  const find = (input: PriorityInput, key: string) => buildPriorityItems(input).find(i => i.key === key)
+
+  it('uso observado: conta, valor e data da posição, com o atalho "Ver recuperação" na mesma conta e competência', () => {
+    const used = find(withOverdraft([account()]), 'overdraft-used')!
+    expect(used.title).toBe('Cheque especial em uso · Conta Exemplo')
+    expect(plain(used.impact)).toBe('R$ 520,00 utilizados na posição de 11/11/2026.')
+    expect(used.action).toEqual({ label: 'Ver recuperação', to: { section: 'planning', context: { planningTab: 'six', competence: '2026-11', recoveryScope: { kind: 'account', accountId: 'a1' } } } })
+  })
+
+  it('risco projetado não é apresentado como uso observado', () => {
+    const items = buildPriorityItems(withOverdraft([account({ usedLatest: '0.00' })]))
+    expect(items.some(i => i.key === 'overdraft-used')).toBe(false)
+    const projected = items.find(i => i.key === 'overdraft-projected')!
+    expect(projected.title).toContain('Risco projetado de uso do cheque especial')
+    expect(plain(projected.impact)).toContain('Ainda não é uso observado')
+  })
+
+  it('posição indisponível é um terceiro sinal, distinto de uso e de risco, sem inventar valor', () => {
+    const item = find(withOverdraft([account({ state: 'Unavailable', observedAt: null, observedAsOf: null, usedLatest: '0.00', projectedUsedAtEnd: null })]), 'overdraft-unobserved')!
+    expect(item.title).toBe('Posição do cheque especial indisponível · Conta Exemplo')
+    expect(item.impact).not.toMatch(/R\$/)
+  })
+
+  it('contas com a mesma causa e a mesma ação viram um único item', () => {
+    const items = buildPriorityItems(withOverdraft([account(), account({ accountId: 'a2', name: 'Outra conta' })]))
+    expect(items.filter(i => i.key === 'overdraft-used')).toHaveLength(1)
+    expect(items.find(i => i.key === 'overdraft-used')!.title).toBe('Cheque especial em uso · 2 contas')
+  })
+
+  it('sem elegibilidade ou em mês encerrado, não há item de cheque especial', () => {
+    expect(buildPriorityItems(withOverdraft([account()], { periodKind: 'Past' })).some(i => i.key.startsWith('overdraft'))).toBe(false)
+    const base = withOverdraft([account()]); base.plan!.overdraft.eligible = false
+    expect(buildPriorityItems(base).some(i => i.key.startsWith('overdraft'))).toBe(false)
+  })
+
+  it('ordem determinística com caixa, vencimentos e orçamento ao mesmo tempo: gravidade, urgência e inserção', () => {
+    const base = withOverdraft([account()])
+    const decisionBase = base.decision!
+    const input: PriorityInput = { ...base, decision: { ...decisionBase, coverage: { ...decisionBase.coverage, state: 'Insufficient', deficit: '300.00', firstNegativeDate: '2026-11-20' }, commitments: { ...decisionBase.commitments, overdue: '100.00' }, recovery: { ...decisionBase.recovery, gapToTarget: '-50.00', state: 'Fixed' } },
+      pfControl: budgetControl({ scopeKind: 'pf' }) }
+    const keys = buildPriorityItems(input).map(i => i.key)
+    expect(keys.slice(0, 4)).toEqual(['overdraft-used', 'coverage', 'overdue', 'recovery']) // rank 1 por urgência; o orçamento (rank 2) vem depois
+    expect(keys.some(key => key === 'overdraft-projected')).toBe(false) // a mesma conta com uso observado não gera também "risco projetado"
+    expect(buildPriorityItems(input).map(i => i.key)).toEqual(keys) // mesma entrada, mesma ordem
+    expect(new Set(keys).size).toBe(keys.length) // nenhuma causa duplicada
+  })
+
+  it('vencimento sem cobertura mostra o déficit, a data de início e leva à Agenda', () => {
+    const base = calm()
+    const input: PriorityInput = { ...base, decision: { ...base.decision!, coverage: { ...base.decision!.coverage, state: 'Insufficient', deficit: '300.00', firstNegativeDate: '2026-11-20' } } }
+    const item = find(input, 'coverage')!
+    expect(plain(item.impact)).toBe('Déficit estimado de R$ 300,00, a partir de 20/11/2026.')
+    const overdue = find({ ...base, decision: { ...base.decision!, commitments: { ...base.decision!.commitments, overdue: '100.00' } } }, 'overdue')!
+    expect(overdue.action).toEqual({ label: 'Ver vencimentos', to: { section: 'calendar', context: { month: '2026-11' } } })
+  })
+
+  it('cobertura que não pode ser avaliada promove a ação que explica a limitação', () => {
+    const base = calm()
+    const item = find({ ...base, decision: { ...base.decision!, coverage: { ...base.decision!.coverage, state: 'Unavailable', unavailableReason: null } } }, 'reliability-data')
+    expect(item?.rank).toBe(1)
   })
 })

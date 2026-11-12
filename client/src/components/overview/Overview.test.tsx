@@ -82,15 +82,17 @@ const accountOverdraft = {
   projectedRecoveryFromNow: null, projectedBalanceAtEnd: '-1800.00', exceedsLimit: false, reasons: [],
 }
 
-it('mostra o cheque especial antes do resumo e abre a recuperação na mesma conta e competência', async () => {
+it('mostra o cheque especial entre as ações, antes do resumo, e abre a recuperação na mesma conta e competência', async () => {
   mockApi({ plan: overdraftPlan({ accounts: [accountOverdraft] }) })
   renderPage()
-  const alert = await findCard('Situação do cheque especial')
-  expect(text(alert)).toContain('Limite em uso')
-  expect(text(alert)).toContain('Limite disponível R$ 3.800,00')
-  expect(text(alert)).toContain('12/10/2026')
-  expect(alert.compareDocumentPosition(card('Resumo do mês')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  fireEvent.click(within(alert).getByRole('button', { name: 'Ver recuperação de Conta de teste' }))
+  const actions = await screen.findByRole('region', { name: 'Próximas ações' })
+  const first = await within(actions).findByText('Cheque especial em uso · Conta de teste')
+  const item = first.closest('li')!
+  expect(text(item)).toContain('R$ 1.200,00 utilizados na posição de 12/10/2026')
+  expect(text(item)).toContain('Prioridade alta')
+  expect(actions.compareDocumentPosition(card('Resumo do mês')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.queryByRole('region', { name: 'Situação do cheque especial' })).toBeNull() // um único ponto de entrada
+  fireEvent.click(within(item).getByRole('button', { name: 'Ver recuperação' }))
   expect(navigations.at(-1)).toEqual({
     section: 'planning',
     context: { planningTab: 'six', competence: '2026-10', recoveryScope: { kind: 'account', accountId: 'a1' } },
@@ -103,11 +105,11 @@ it('distingue risco projetado de uso observado e preserva ausência de observaç
     { ...accountOverdraft, accountId: 'a2', name: 'Outra conta', state: 'Unavailable', observedAt: null, observedAsOf: null, projectedUsedAtEnd: null },
   ] }) })
   renderPage()
-  const alert = await findCard('Situação do cheque especial')
-  expect(text(alert)).toContain('Risco projetado')
-  expect(text(alert)).toContain('Posição indisponível')
-  expect(text(alert)).not.toContain('Limite em uso')
-  expect(within(alert).getAllByText(/Posição bancária de/)).toHaveLength(1)
+  const actions = await screen.findByRole('region', { name: 'Próximas ações' })
+  fireEvent.click(await within(actions).findByRole('button', { name: /Ver todas as \d+ ações/ }))
+  expect(text(actions)).toContain('Risco projetado de uso do cheque especial · Conta de teste')
+  expect(text(actions)).toContain('Posição do cheque especial indisponível · Outra conta')
+  expect(text(actions)).not.toContain('Cheque especial em uso')
 })
 
 describe('Visão Geral — composição do dashboard Folio', () => {
@@ -116,9 +118,9 @@ describe('Visão Geral — composição do dashboard Folio', () => {
     await loaded()
     expect(screen.getByRole('heading', { level: 2 }).textContent).toContain('Outubro de 2026')
     expect(screen.getAllByRole('heading', { level: 3 }).map(title)).toEqual([
-      'Resumo do mês', 'Resultado do mês', 'Composição do fluxo de caixa', 'Orçamento mensal', 'Próximas ações', 'Evolução financeira', 'Últimos lançamentos', 'Contas', 'Próximos compromissos', 'Metas',
+      'Próximas ações', 'Resumo do mês', 'Resultado do mês', 'Composição do fluxo de caixa', 'Orçamento mensal', 'Evolução financeira', 'Últimos lançamentos', 'Contas', 'Próximos compromissos', 'Metas',
     ])
-    const order = ['Resumo do mês', 'Resultado do mês', 'Composição do fluxo de caixa', 'Saldo e cheque especial', 'Orçamento mensal', 'Próximas ações', 'Evolução financeira'].map(name => document.body.innerHTML.indexOf(name))
+    const order = ['Próximas ações', 'Resumo do mês', 'Resultado do mês', 'Composição do fluxo de caixa', 'Saldo e cheque especial', 'Orçamento mensal', 'Evolução financeira'].map(name => document.body.innerHTML.indexOf(name))
     expect(order.every((index, position) => index > 0 && (position === 0 || index > order[position - 1]))).toBe(true)
     expect(within(screen.getByRole('complementary', { name: 'Contas, compromissos e metas' })).getAllByRole('heading').map(title)).toEqual(['Contas', 'Próximos compromissos', 'Metas'])
   })
@@ -558,20 +560,63 @@ describe('Visão Geral — pontos de atenção', () => {
     mockApi(); renderPage()
     const alerts = await screen.findByRole('region', { name: 'Próximas ações' })
     const items = () => within(alerts).getAllByRole('listitem')
-    expect(text(items()[0])).toContain('Há compromissos vencidos e não pagos. R$ 100,00 em aberto.')
+    expect(text(items()[0])).toContain('Há compromissos vencidos e não pagos.'); expect(text(items()[0])).toContain('R$ 100,00 em aberto.'); expect(text(items()[0])).toContain('Prioridade alta')
     expect(text(items()[1])).toContain('A recuperação projetada está abaixo da meta.')
     expect(items()).toHaveLength(3)
-    fireEvent.click(within(alerts).getByRole('button', { name: /Ver todos os 6 pontos de atenção/ }))
+    fireEvent.click(within(alerts).getByRole('button', { name: /Ver todas as 6 ações/ }))
     expect(items()).toHaveLength(6)
     fireEvent.click(within(alerts).getByRole('button', { name: 'Revisar classificação ›' }))
     expect(navigations.at(-1)).toMatchObject({ section: 'automation', context: { review: { kind: 'category' } } })
   })
 
-  it('sem pontos de atenção, o bloco não ocupa espaço', async () => {
+  it('sem pontos de atenção, mostra uma mensagem compacta (e nunca uma lista vazia)', async () => {
     const base = decision()
     mockApi({ overview: withSummary({ classification: { state: 'Complete', needsReview: 0, notEvaluated: 0 }, decision: { ...base, commitments: { ...base.commitments, overdue: '0.00' }, recovery: { ...base.recovery, gapToTarget: '100.00' } }, budgetControl: budgetControl({ pressures: [], recommendations: [] }), pfBudgetControl: budgetControl({ scopeKind: 'pf', pressures: [], recommendations: [] }) }) }); renderPage()
     await loaded()
-    expect(screen.queryByRole('region', { name: 'Próximas ações' })).toBeNull()
+    const actions = await screen.findByRole('region', { name: 'Próximas ações' })
+    expect(text(actions)).toContain('Nenhuma ação prioritária identificada com os dados atuais.')
+    expect(within(actions).queryAllByRole('listitem')).toHaveLength(0)
+  })
+
+  it('falha de uma fonte avisa que a lista pode estar incompleta e oferece "Tentar novamente"', async () => {
+    mockApi({ overview: new Response('{}', { status: 500 }) }); renderPage()
+    const actions = await screen.findByRole('region', { name: 'Próximas ações' })
+    expect(await within(actions).findByRole('alert')).toBeTruthy()
+    expect(text(actions)).toContain('pode estar incompleta')
+    expect(within(actions).getByRole('button', { name: 'Tentar novamente' })).toBeTruthy()
+    expect(text(actions)).not.toContain('Nenhuma ação prioritária')
+  })
+})
+
+describe('Visão Geral — ações prioritárias ao trocar o recorte', () => {
+  it('trocar a competência rapidamente nunca exibe ações do recorte anterior, nem quando a resposta antiga chega depois', async () => {
+    const pending: ((response: Response) => void)[] = []
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/financial-dashboard/overview')) {
+        if (url.includes('competence=2026-10')) return Promise.resolve(answer(overview))
+        return new Promise<Response>(resolve => pending.push(resolve))
+      }
+      if (url.includes('/financial-dashboard/plan-actual')) return Promise.resolve(answer(planActual))
+      if (url.includes('/monthly-plan/six-months')) return Promise.resolve(answer(sixMonths))
+      return Promise.resolve(new Response('{}', { status: 404 }))
+    }))
+    renderPage(); await loaded()
+    const actions = () => screen.getByRole('region', { name: 'Próximas ações' })
+    await waitFor(() => expect(text(actions())).toContain('Há compromissos vencidos e não pagos.'))
+    const base = decision()
+    const calm = withSummary({ decision: { ...base, commitments: { ...base.commitments, overdue: '0.00' }, recovery: { ...base.recovery, gapToTarget: '100.00' } }, budgetControl: budgetControl({ pressures: [], recommendations: [] }), pfBudgetControl: budgetControl({ scopeKind: 'pf', pressures: [], recommendations: [] }) })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }))
+    await waitFor(() => expect(pending).toHaveLength(1))
+    expect(text(actions())).not.toContain('Há compromissos vencidos') // a ação do mês anterior sai assim que o recorte muda
+    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }))
+    await waitFor(() => expect(pending).toHaveLength(2))
+    pending[1](answer(calm)) // a resposta mais recente chega primeiro
+    await waitFor(() => expect(text(actions())).not.toContain('Verificando pontos de atenção'))
+    pending[0](answer(overview)) // a resposta antiga, com a ação, chega por último
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(text(actions())).not.toContain('Há compromissos vencidos')
   })
 })
 
@@ -580,7 +625,7 @@ describe('Visão Geral — alertas do orçamento PF', () => {
     const pf = budgetControl({ scopeKind: 'pf' }); const bank = budgetControl({ scopeKind: 'account', pressures: [], recommendations: [] })
     mockApi({ overview: withSummary({ budgetControl: bank, pfBudgetControl: pf }) }); renderPage()
     const alerts = await screen.findByRole('region', { name: 'Próximas ações' })
-    fireEvent.click(within(alerts).getByRole('button', { name: /Ver todos os \d+ pontos de atenção/ }))
+    fireEvent.click(within(alerts).getByRole('button', { name: /Ver todas as \d+ ações/ }))
     const cards = () => within(screen.getByRole('region', { name: 'Próximas ações' })).getAllByText(/Cartões acima da meta mensal/)
     expect(cards()).toHaveLength(1)
     expect(text(cards()[0].closest('li'))).toContain('Excesso de R$ 400,00 sobre a meta.')

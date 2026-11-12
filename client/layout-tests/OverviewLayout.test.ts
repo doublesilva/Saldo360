@@ -57,9 +57,9 @@ describe('Responsividade da Visão Geral', () => {
 })
 
 describe('Composição Folio', () => {
-  it('a página segue a ordem da T14.3 (resultado, composição, saldo, orçamento, ações, evolução) e não monta os painéis antigos', () => {
+  it('a página segue a ordem: ações prioritárias logo abaixo dos filtros, depois resumo, resultado, composição, saldo, orçamento e evolução e não monta os painéis antigos', () => {
     const page = src('components/overview/Overview.tsx')
-    const order = ['<OverviewResult', '<OverviewComposition', '<OverviewBalanceCard', '<OverviewBudgetProgress', '<OverviewAlerts', '<OverviewEvolutionSection', '<OverviewRecent', '<OverviewAccounts', '<OverviewUpcoming', '<OverviewGoals'].map(tag => page.indexOf(tag))
+    const order = ['<OverviewAlerts', '<OverviewSummary', '<OverviewResult', '<OverviewComposition', '<OverviewBalanceCard', '<OverviewBudgetProgress', '<OverviewEvolutionSection', '<OverviewRecent', '<OverviewAccounts', '<OverviewUpcoming', '<OverviewGoals'].map(tag => page.indexOf(tag))
     expect(order.every(index => index > 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
     for (const legacy of ['Disclosure', 'OverviewDecision', 'OverviewBudgetControl', 'OverviewCashFlow', 'OverviewRecovery', 'OverviewProjectedRecovery', 'OverviewActions', 'OverviewIndicators', 'OverviewAside']) {
