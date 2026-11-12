@@ -134,15 +134,3 @@
 .rbp__editor, .rbp__reference, .rbp__add { display: grid; gap: .5rem; padding: .6rem; border: 1px dashed var(--border); border-radius: .6rem; }
 .rbp__editor fieldset { display: grid; gap: .25rem; border: 0; margin: 0; padding: 0; }
 .rbp__history ul { margin: .4rem 0 0; padding-left: 1.1rem; display: grid; gap: .2rem; font-size: .8rem; }
-
-/* Acompanhamento do mês: Meta, Consumido e Disponível lado a lado no desktop; empilhados (nessa ordem) em telas estreitas. */
-.budget-tracking { display: grid; gap: .5rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border, #cbd5e1); border-radius: .5rem; min-width: 0; }
-.budget-tracking__head h4, .budget-tracking__head p { margin: 0; }
-.budget-tracking__figures { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
-.budget-figure { display: grid; gap: .15rem; align-content: start; min-width: 0; overflow-wrap: anywhere; }
-.budget-figure__label { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
-.budget-figure__value { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
-.budget-figure--over .budget-figure__value { color: #b91c1c; }
-.budget-tracking__projected { margin: 0; overflow-wrap: anywhere; }
-.budget-scope-note { margin: .25rem 0 .5rem; }
-@media (max-width: 640px) { .budget-tracking__figures { grid-template-columns: minmax(0, 1fr); } }

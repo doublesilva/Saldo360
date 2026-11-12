@@ -3,6 +3,7 @@ import { getDashboardOverview, type BudgetControl } from '../../api/overview'
 import { OperationalError, OperationalLoading } from '../OperationalFeedback'
 import { monthTitle, money } from '../overview/overviewText'
 import { useLoad } from '../overview/useLoad'
+import './BudgetTracking.css'
 
 /**
  * Acompanhamento do mês: Meta, Consumido e Disponível do orçamento PF (todas as contas PF), na ordem em que se lê a pergunta "quanto posso gastar?".
