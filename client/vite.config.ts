@@ -17,6 +17,7 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: 'jsdom',
       restoreMocks: true,
+      setupFiles: ['./src/testSetup.ts'],
     },
     server: {
       // IPv4 explícito: com "localhost" o Node escuta só em ::1, e clientes que resolvem

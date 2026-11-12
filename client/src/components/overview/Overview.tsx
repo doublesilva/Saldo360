@@ -33,7 +33,9 @@ export interface BlockLoad<T> { data: T | null; loading: boolean; error: unknown
  * F) evolução (resultado orçamentário) e últimos lançamentos; e, na coluna de apoio, contas, próximos compromissos e metas. Cada seção carrega e falha de forma independente. Consultas: `plan-actual`, `financial-dashboard/overview` e `monthly-plan/six-months` (e, ao pedir "Ver todas", a distribuição
  * completa das despesas). Todo valor vem do servidor.
  */
-export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionChange, onNavigate }: {
+export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionChange, onNavigate, notice }: {
+  notice?: string | null
+ 
   workspaceId: string; refreshKey?: number; selection: OverviewSelection; onSelectionChange: (selection: OverviewSelection) => void; onNavigate: Go
 }) {
   const { competence, scope } = selection
@@ -64,7 +66,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
     <header className="ov-header">
       <div className="ov-header__title">
         <h2>{monthTitle(competence)}{planData && <span className="ov-period">{periodLabels[planData.periodKind]}</span>}</h2>
-        <p className="ov-meta">{scopeText || 'Carregando conta…'}</p>
+        <p className="ov-meta">{scopeText || 'Carregando conta…'}</p>{notice && <p className="ov-meta" role="status">{notice}</p>}
       </div>
       <div className="ov-filters">
         <div className="ov-month" role="group" aria-label="Competência analisada">

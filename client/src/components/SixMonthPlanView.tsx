@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getSixMonthPlan, type PlanMonth, type PlanScopeChoice, type SixMonthPlan } from '../api/monthlyPlan'
 import type { PlanActualScope } from '../api/planActual'
 import { formatMonthYear } from '../dates'
@@ -79,8 +79,11 @@ export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope
 function RecoverySummary({ plan }: { plan: SixMonthPlan }) {
   const upcoming = plan.months.filter(month => month.periodKind !== 'Past')
   const firstCovered = upcoming.find(month => month.coverage.dataComplete && month.closingBalance !== null && !isNegativeDecimal(month.closingBalance))
-  return <section className="monthly-plan__summary" aria-labelledby="recovery-summary-title">
-    <h4 id="recovery-summary-title">Recuperação do cheque especial · {plan.scope.accountName ?? 'Conta'}</h4>
+  const title = useRef<HTMLHeadingElement>(null)
+  // Chegando pelo atalho "Ver recuperação" (ou por link/recarga), o resumo fica em destaque e o foco vai ao título.
+  useEffect(() => { title.current?.focus(); title.current?.scrollIntoView?.({ block: 'start' }) }, [])
+  return <section className="monthly-plan__summary monthly-plan__summary--highlight" aria-labelledby="recovery-summary-title">
+    <h4 id="recovery-summary-title" ref={title} tabIndex={-1}>Recuperação do cheque especial · {plan.scope.accountName ?? 'Conta'}</h4>
     <p>{firstCovered
       ? `Primeiro fechamento projetado com saldo não negativo e cobertura completa: ${formatMonthYear(`${firstCovered.competence}-01`)}.`
       : 'Os dados disponíveis ainda não indicam um fechamento sem saldo negativo no horizonte consultado.'}</p>

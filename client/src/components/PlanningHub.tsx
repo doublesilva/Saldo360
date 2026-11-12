@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PlanScopeChoice } from '../api/monthlyPlan'
 import type { PlanActualScope } from '../api/planActual'
 import { todayInSaoPaulo } from '../dates'
@@ -17,10 +17,18 @@ const tabs: readonly (readonly [Tab, string])[] = [['monthly', 'Plano mensal'], 
  * Módulo Planejamento (T10.2): o plano mensal do orçamento (metas de receitas, despesas e limites por categoria), a visão de seis meses e o calendário de
  * dias úteis, além dos cenários de recuperação já existentes. Competência e conta escolhidas são compartilhadas entre as visões do plano.
  */
-export function PlanningHub({ workspaceId, refreshKey = 0, onChanged, initialTab = 'monthly', initialCompetence, recoveryScope }: { workspaceId: string; refreshKey?: number; onChanged?: () => void; initialTab?: PlanningTab; initialCompetence?: string; recoveryScope?: PlanScopeChoice }) {
+export interface PlanningState { tab: PlanningTab; competence: string; scope: PlanScopeChoice; recovery: boolean }
+
+export function PlanningHub({ workspaceId, refreshKey = 0, onChanged, initialTab = 'monthly', initialCompetence, recoveryScope, initialScope, notice, onStateChange }: {
+  workspaceId: string; refreshKey?: number; onChanged?: () => void; initialTab?: PlanningTab; initialCompetence?: string; recoveryScope?: PlanScopeChoice
+  /** Conta vinda da URL; sem ela vale a do atalho de recuperação ou a conta principal. */
+  initialScope?: PlanScopeChoice; notice?: string | null
+  /** Seleção confirmada (aba, competência, conta e abertura do resumo de recuperação); a primeira chamada só normaliza a entrada atual do histórico. */
+  onStateChange?: (state: PlanningState, mode: 'push' | 'replace') => void
+}) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const [competence, setCompetence] = useState(() => initialCompetence ?? todayInSaoPaulo().slice(0, 7))
-  const [scope, setScope] = useState<PlanScopeChoice>(recoveryScope ?? { kind: 'primary' })
+  const [scope, setScope] = useState<PlanScopeChoice>(initialScope ?? recoveryScope ?? { kind: 'primary' })
   // A API é a fonte da verdade do escopo: guardamos a última lista de contas para o seletor não piscar durante o carregamento.
   const [choices, setChoices] = useState<PlanActualScope | null>(null)
   const [version, setVersion] = useState(0)
@@ -29,6 +37,14 @@ export function PlanningHub({ workspaceId, refreshKey = 0, onChanged, initialTab
   const primaryName = choices?.primaryAccountName
   const filters = tab === 'monthly' || tab === 'six'
   const startOnly = tab === 'projection' || tab === 'calendar'
+  const recovery = tab === 'six' && recoveryScope?.kind === 'account' && scope.kind === 'account' && scope.accountId === recoveryScope.accountId
+  const report = useRef(onStateChange)
+  useEffect(() => { report.current = onStateChange })
+  const reported = useRef(false)
+  useEffect(() => {
+    report.current?.({ tab, competence, scope, recovery }, reported.current ? 'push' : 'replace')
+    reported.current = true
+  }, [tab, competence, scope, recovery])
 
   return <section className="family-section planning-hub" aria-labelledby="planning-hub-title">
     <div className="section-heading"><div><h3 id="planning-hub-title">Planejamento</h3>
@@ -50,10 +66,11 @@ export function PlanningHub({ workspaceId, refreshKey = 0, onChanged, initialTab
         </select>
       </label>
     </div>}
+    {notice && <p role="status" className="meta planning-hub__notice">{notice}</p>}
     {startOnly && <div className="planning-hub__filters"><label>{tab === 'projection' ? 'Competência inicial' : 'Competência'}<input type="month" aria-label="Competência" value={competence} onChange={event => event.target.value && setCompetence(event.target.value)} /></label></div>}
     <div id="planning-panel" role="tabpanel" aria-labelledby={`planning-tab-${tab}`}>
       {tab === 'monthly' && <MonthlyPlanView workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey + version} onScope={setChoices} onChanged={changed} />}
-      {tab === 'six' && <SixMonthPlanView workspaceId={workspaceId} from={competence} scope={scope} refreshKey={refreshKey + version} onScope={setChoices} showRecovery={recoveryScope?.kind === 'account' && scope.kind === 'account' && scope.accountId === recoveryScope.accountId} />}
+      {tab === 'six' && <SixMonthPlanView workspaceId={workspaceId} from={competence} scope={scope} refreshKey={refreshKey + version} onScope={setChoices} showRecovery={recovery} />}
       {tab === 'projection' && <FinancialProjectionView workspaceId={workspaceId} from={competence} refreshKey={refreshKey + version} />}
       {tab === 'calendar' && <WorkingCalendarView workspaceId={workspaceId} competence={competence} />}
       {tab === 'scenarios' && <><p className="meta" role="note">Cenários configuráveis: simulações que você monta manualmente. Não são os cenários automáticos Atual e Tetos da Projeção financeira.</p><FinancialPlanning workspaceId={workspaceId} refreshKey={refreshKey} /></>}

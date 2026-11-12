@@ -46,20 +46,27 @@ function agendaAccountLabel(accountId: string, accounts: Load<FinancialAccount[]
 }
 
 /** Visão mensal da Agenda Financeira, com detalhes e operações financeiras existentes. */
-type FinancialCalendarPageProps = { workspaceId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void; onNavigateToCards?: () => void }
+export interface CalendarFilters { month: string; /** undefined = padrão (conta principal); 'todas' = consolidado; ou o id da conta. */ account: string | undefined; type: CategoryType | '' }
+type FinancialCalendarPageProps = {
+  workspaceId: string; onChanged?: () => void; initialMonth?: string; onNavigateToBudgets?: (competence: string) => void; onNavigateToCards?: () => void
+  /** Filtros vindos da URL (conta: undefined = padrão; 'todas' = consolidado). */
+  initialAccount?: string; initialType?: CategoryType | ''; filterNotice?: string | null
+  /** Informa os filtros confirmados; a primeira chamada (estado inicial) deve substituir a entrada do histórico. */
+  onFiltersChange?: (filters: CalendarFilters, mode: 'push' | 'replace') => void
+}
 
 export function FinancialCalendarPage(props: FinancialCalendarPageProps) {
   return <FinancialCalendarPageContent key={props.workspaceId} {...props} />
 }
 
-function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, onNavigateToBudgets, onNavigateToCards }: FinancialCalendarPageProps) {
+function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, onNavigateToBudgets, onNavigateToCards, initialAccount, initialType, filterNotice, onFiltersChange }: FinancialCalendarPageProps) {
   const today = todayInSaoPaulo()
   const [month, setMonth] = useState(() => initialMonth ? startOfMonth(initialMonth) : startOfMonth(today))
   const [selectedDate, setSelectedDate] = useState(today)
-  const [accountId, setAccountId] = useState('')
+  const [accountId, setAccountId] = useState(initialAccount && initialAccount !== 'todas' ? initialAccount : '')
   // A conta principal é só a seleção inicial; o consolidado continua a uma escolha de distância e a escolha do usuário nunca é sobrescrita.
-  const accountChosen = useRef(false)
-  const [type, setType] = useState<CategoryType | ''>('')
+  const accountChosen = useRef(initialAccount !== undefined)
+  const [type, setType] = useState<CategoryType | ''>(initialType ?? '')
   const [view, setView] = useState<'month' | 'planning'>('month')
   const [refreshKey, setRefreshKey] = useState(0)
   const [opened, setOpened] = useState<{ item: FinancialCalendarItem; trigger: HTMLElement } | null>(null)
@@ -114,6 +121,15 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
     return () => controller.abort()
   }, [workspaceId, from, through, accountId, type, requestKey, refreshKey, accounts.kind])
 
+  // Os filtros confirmados vão para a URL (a primeira chamada só normaliza a entrada atual do histórico).
+  const reportFilters = useRef(onFiltersChange)
+  useEffect(() => { reportFilters.current = onFiltersChange })
+  const reported = useRef(false)
+  useEffect(() => {
+    reportFilters.current?.({ month: month.slice(0, 7), account: accountChosen.current ? accountId || 'todas' : undefined, type }, reported.current ? 'push' : 'replace')
+    reported.current = true
+  }, [month, accountId, type])
+
   const handleFinancialChange = () => {
     setRefreshKey((current) => current + 1)
     onChanged?.()
@@ -141,6 +157,7 @@ function FinancialCalendarPageContent({ workspaceId, onChanged, initialMonth, on
         onAccountChange={(value) => { accountChosen.current = true; setAccountId(value) }}
         onTypeChange={setType}
         showTypeFilter={view === 'month'}
+        notice={filterNotice}
       />
 
       <div className="calendar-view-switch" role="group" aria-label="Visualização da agenda">
@@ -547,6 +564,7 @@ export function FinancialCalendarHeader({
   onAccountChange,
   onTypeChange,
   showTypeFilter = true,
+  notice,
 }: {
   month: string
   today: string
@@ -559,6 +577,7 @@ export function FinancialCalendarHeader({
   onAccountChange: (value: string) => void
   onTypeChange: (value: CategoryType | '') => void
   showTypeFilter?: boolean
+  notice?: string | null
 }) {
   return (
     <header className="calendar-header">
@@ -603,6 +622,7 @@ export function FinancialCalendarHeader({
           </label>
         )}
       </div>
+      {notice && <p role="status" className="meta calendar-filters__notice">{notice}</p>}
       {accounts.kind === 'error' && <p className="field-error">{accounts.message}</p>}
     </header>
   )
