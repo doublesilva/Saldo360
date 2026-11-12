@@ -385,3 +385,19 @@
 .ov-more > summary { padding: .5rem 1rem; border: 1px solid var(--ov-border); border-radius: var(--ov-radius); background: var(--ov-card); font-weight: 600; }
 .ov-more[open] > summary { margin-bottom: 1rem; }
 @container ov (max-width: 26rem) { .ov-summary__balances, .ov-summary__flows { grid-template-columns: minmax(0, 1fr); } }
+.ov-overdraft-alert {
+  margin-block-end: 1rem;
+}
+
+.ov-overdraft-alert__account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem .65rem;
+  margin-block-start: .65rem;
+}
+
+.ov-overdraft-alert__account > p {
+  flex-basis: 100%;
+  margin: 0;
+}

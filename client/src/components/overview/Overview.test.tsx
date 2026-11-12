@@ -74,6 +74,42 @@ const overdraftPlan = (changes: Partial<PlanActualDashboard['overdraft']> = {}) 
 beforeEach(() => { navigations.length = 0 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+const accountOverdraft = {
+  accountId: 'a1', name: 'Conta de teste', state: 'Complete', contractedLimit: '5000.00',
+  usedLatest: '1200.00', observedAt: '2026-10-12T11:00:00Z', observedAsOf: '2026-10-12',
+  usedAtStart: null, startAsOf: null, startApproximate: false, effectiveRecovery: null, direction: null,
+  fullyRecovered: false, projectedUsedAtEnd: '1800.00', projectedRecovery: null,
+  projectedRecoveryFromNow: null, projectedBalanceAtEnd: '-1800.00', exceedsLimit: false, reasons: [],
+}
+
+it('mostra o cheque especial antes do resumo e abre a recuperação na mesma conta e competência', async () => {
+  mockApi({ plan: overdraftPlan({ accounts: [accountOverdraft] }) })
+  renderPage()
+  const alert = await findCard('Situação do cheque especial')
+  expect(text(alert)).toContain('Limite em uso')
+  expect(text(alert)).toContain('Limite disponível R$ 3.800,00')
+  expect(text(alert)).toContain('12/10/2026')
+  expect(alert.compareDocumentPosition(card('Resumo do mês')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  fireEvent.click(within(alert).getByRole('button', { name: 'Ver recuperação de Conta de teste' }))
+  expect(navigations.at(-1)).toEqual({
+    section: 'planning',
+    context: { planningTab: 'six', competence: '2026-10', recoveryScope: { kind: 'account', accountId: 'a1' } },
+  })
+})
+
+it('distingue risco projetado de uso observado e preserva ausência de observação', async () => {
+  mockApi({ plan: overdraftPlan({ accounts: [
+    { ...accountOverdraft, usedLatest: '0.00' },
+    { ...accountOverdraft, accountId: 'a2', name: 'Outra conta', state: 'Unavailable', observedAt: null, observedAsOf: null, projectedUsedAtEnd: null },
+  ] }) })
+  renderPage()
+  const alert = await findCard('Situação do cheque especial')
+  expect(text(alert)).toContain('Risco projetado')
+  expect(text(alert)).toContain('Posição indisponível')
+  expect(text(alert)).not.toContain('Limite em uso')
+  expect(within(alert).getAllByText(/Posição bancária de/)).toHaveLength(1)
+})
+
 describe('Visão Geral — composição do dashboard Folio', () => {
   it('segue a ordem da T14.3: resultado, composição, saldo e cheque especial, orçamento, próximas ações, evolução, lançamentos e, na coluna de apoio, contas, compromissos e metas', async () => {
     mockApi(); renderPage()

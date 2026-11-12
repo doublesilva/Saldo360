@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getSixMonthPlan, type PlanMonth, type PlanScopeChoice, type SixMonthPlan } from '../api/monthlyPlan'
 import type { PlanActualScope } from '../api/planActual'
 import { formatMonthYear } from '../dates'
+import { isNegativeDecimal } from '../money'
 import { IncomeForecastEditor } from './IncomeForecastEditor'
 import { IntegratedProjectionView } from './IntegratedProjectionView'
 import { OperationalError, OperationalLoading } from './OperationalFeedback'
@@ -28,7 +29,7 @@ const rows: Row[] = [
 ]
 
 /** Visão de seis meses: o mês selecionado e os cinco seguintes, com planejado, projetado, realizado e risco. Tudo vem do backend; o navegador só apresenta. */
-export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope }: { workspaceId: string; from: string; scope: PlanScopeChoice; refreshKey: number; onScope: (choices: PlanActualScope) => void }) {
+export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope, showRecovery = false }: { workspaceId: string; from: string; scope: PlanScopeChoice; refreshKey: number; onScope: (choices: PlanActualScope) => void; showRecovery?: boolean }) {
   const [reload, setReload] = useState(0)
   const key = `${workspaceId}|${from}|${scope.kind}|${scope.accountId ?? ''}|${refreshKey}|${reload}`
   const [loaded, setLoaded] = useState<Load>({ key, state: 'loading' })
@@ -48,6 +49,7 @@ export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope
   const reasons = [...new Set(plan.months.flatMap(month => month.riskReasons))]
   const withoutFutureIncome = plan.months.filter(month => month.periodKind === 'Future').some(month => /^-?0+(\.0+)?$/.test(month.projectedIncome))
   return <div className="monthly-plan">
+    {showRecovery && <RecoverySummary plan={plan} />}
     <p className="meta">{formatMonthYear(`${plan.from}-01`)} a {formatMonthYear(`${plan.through}-01`)} · {plan.scope.kind === 'all' ? 'Todas as contas' : plan.scope.accountName ?? 'Conta'}</p>
     <section className="monthly-plan__summary" aria-label="Resumo dos seis meses">
       {summary.highestRiskMonths.length > 0
@@ -72,4 +74,20 @@ export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope
       <li key={month.competence}><strong>{formatMonthYear(`${month.competence}-01`)}:</strong> {month.riskReasons.map(reason => riskReasonText[reason] ?? reason).join(' ')}</li>)}</ul></section>}
     <p className="meta">Meses futuros mostram apenas os compromissos já conhecidos (faturas, parcelas, previsões e recorrências materializadas): nenhuma receita ou despesa é inventada para preencher o período. O plano é meta e não altera o saldo projetado da Agenda.</p>
   </div>
+}
+
+function RecoverySummary({ plan }: { plan: SixMonthPlan }) {
+  const upcoming = plan.months.filter(month => month.periodKind !== 'Past')
+  const firstCovered = upcoming.find(month => month.coverage.dataComplete && month.closingBalance !== null && !isNegativeDecimal(month.closingBalance))
+  return <section className="monthly-plan__summary" aria-labelledby="recovery-summary-title">
+    <h4 id="recovery-summary-title">Recuperação do cheque especial · {plan.scope.accountName ?? 'Conta'}</h4>
+    <p>{firstCovered
+      ? `Primeiro fechamento projetado com saldo não negativo e cobertura completa: ${formatMonthYear(`${firstCovered.competence}-01`)}.`
+      : 'Os dados disponíveis ainda não indicam um fechamento sem saldo negativo no horizonte consultado.'}</p>
+    <ul>{upcoming.map(month => <li key={month.competence}>
+      {formatMonthYear(`${month.competence}-01`)} · Saldo projetado {month.closingBalance === null ? 'indisponível' : money(month.closingBalance)}
+      {month.closingBalance !== null && isNegativeDecimal(month.closingBalance) && <> · Falta cobrir {money(month.closingBalance.slice(1))}</>}
+      {!month.coverage.dataComplete && ' · Projeção parcial'}
+    </li>)}</ul>
+  </section>
 }

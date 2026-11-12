@@ -1,0 +1,291 @@
+diff --git a/client/src/Overview.css b/client/src/Overview.css
+index 7d71a99..8645ef5 100644
+--- a/client/src/Overview.css
++++ b/client/src/Overview.css
+@@ -385,3 +385,19 @@
+ .ov-more > summary { padding: .5rem 1rem; border: 1px solid var(--ov-border); border-radius: var(--ov-radius); background: var(--ov-card); font-weight: 600; }
+ .ov-more[open] > summary { margin-bottom: 1rem; }
+ @container ov (max-width: 26rem) { .ov-summary__balances, .ov-summary__flows { grid-template-columns: minmax(0, 1fr); } }
++.ov-overdraft-alert {
++  margin-block-end: 1rem;
++}
++
++.ov-overdraft-alert__account {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: .35rem .65rem;
++  margin-block-start: .65rem;
++}
++
++.ov-overdraft-alert__account > p {
++  flex-basis: 100%;
++  margin: 0;
++}
+diff --git a/client/src/components/Accounts.tsx b/client/src/components/Accounts.tsx
+index 080dc3a..c6b567f 100644
+--- a/client/src/components/Accounts.tsx
++++ b/client/src/components/Accounts.tsx
+@@ -439,7 +439,7 @@ function RealizedBalance({ workspaceId, accountId, refreshKey }: { workspaceId:
+       </p>
+       {negative && balance.overdraftLimit == null && <p className="meta">Saldo negativo de {formatBrlDecimal(balance.balance)}. O limite de cheque especial não foi informado; o Saldo360 não afirma que exista limite contratado. Use “Editar” (Informar limite) para cadastrá-lo.</p>}
+       {balance.overdraftLimit != null && <p className="meta">
+-        Limite contratado {formatBrlDecimal(balance.overdraftLimit)} · usado {formatBrlDecimal(balance.overdraftUsed ?? '0.00')} · disponível estimado pelo Saldo360 {formatBrlDecimal(balance.overdraftAvailable ?? '0.00')}
++        Cheque especial · Limite contratado {formatBrlDecimal(balance.overdraftLimit)} · usado pelo saldo calculado {balance.overdraftUsed == null ? 'indisponível' : formatBrlDecimal(balance.overdraftUsed)} · limite disponível estimado {balance.overdraftAvailable == null ? 'indisponível' : formatBrlDecimal(balance.overdraftAvailable)}
+         {balance.overdraftExcess != null && balance.overdraftExcess !== '0.00' ? ` · acima do limite ${formatBrlDecimal(balance.overdraftExcess)}` : ''}
+       </p>}
+       {balance.openingSource === 'BalanceAnchor' && (
+diff --git a/client/src/components/PersonalFinance.tsx b/client/src/components/PersonalFinance.tsx
+index 756051d..6401f48 100644
+--- a/client/src/components/PersonalFinance.tsx
++++ b/client/src/components/PersonalFinance.tsx
+@@ -53,7 +53,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
+   const budgets = (value: string) => { setCompetence(value); setBudgetGroup(undefined); setSection('budgets') }
+   // Orçamento → central de automação: abre a lista de revisão com as despesas do período sem tipo definido, inclusive as compras de cartão importadas.
+   const [goalId, setGoalId] = useState<string | undefined>()
+-  const [planningEntry, setPlanningEntry] = useState<{ key: number; tab?: 'projection' }>({ key: 0 })
++  const [planningEntry, setPlanningEntry] = useState<{ key: number; context?: OverviewNavigation }>({ key: 0 })
+   const [automationEntry, setAutomationEntry] = useState<AutomationEntry | undefined>()
+   const reviewClassification = (range: { from: string; to: string }) => { setAutomationEntry({ key: Date.now(), tab: 'automations', review: { kind: 'nature', ...range } }); setSection('automation') }
+   const workspaceId = workspace.id
+@@ -64,7 +64,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
+     setBudgetGroup(target === 'budgets' ? context?.budgetGroup : undefined)
+     setTransactionContext(target === 'transactions' ? { key: Date.now(), filters: context?.transactions, newTransaction: context?.newTransaction } : null)
+     setGoalId(target === 'goals' ? context?.goalId : undefined)
+-    if (target === 'planning') setPlanningEntry({ key: Date.now(), tab: context?.planningTab })
++    if (target === 'planning') setPlanningEntry(entry => ({ key: entry.key + 1, context }))
+     if (target === 'automation') setAutomationEntry({ key: Date.now(), tab: context?.automationTab, review: context?.review })
+     setSection(target)
+   }
+@@ -75,7 +75,10 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
+     isPluggyLabAvailable(workspaceId, controller.signal).then(available => { if (!controller.signal.aborted) setPluggyLab(available) }).catch(() => undefined)
+     return () => controller.abort()
+   }, [workspaceId])
+-  return <AppShell section={section} onNavigate={setSection} automation={pluggyLab} workspaceName={workspace.name} userArea={userArea} subtitle={section === 'overview' ? 'Sua situação, o mês e os próximos compromissos.' : 'Seu orçamento pessoal, sem compartilhar dados com a família.'}>
++  return <AppShell section={section} onNavigate={target => {
++    if (target === 'planning' && section !== 'planning') setPlanningEntry(entry => ({ key: entry.key + 1 }))
++    setSection(target)
++  }} automation={pluggyLab} workspaceName={workspace.name} userArea={userArea} subtitle={section === 'overview' ? 'Sua situação, o mês e os próximos compromissos.' : 'Seu orçamento pessoal, sem compartilhar dados com a família.'}>
+     {section === 'automation' && pluggyLab && <AutomationCenter key={automationEntry?.key} workspaceId={workspaceId} refreshKey={String(version)} onChanged={changed} entry={automationEntry} />}
+     {section === 'settings' && <WorkspaceSettings workspaceId={workspaceId} onReset={onReset} />}
+     {section === 'overview' && <Overview workspaceId={workspaceId} refreshKey={version} selection={overviewSelection} onSelectionChange={setOverviewSelection} onNavigate={openFromOverview} />}
+@@ -83,7 +86,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
+     {section === 'budgets' && <FinancialBudgetsPage key={`${competence}:${budgetGroup}`} workspaceId={workspaceId} initialCompetence={competence} initialGroup={budgetGroup} refreshKey={version} onNavigateToAgenda={agenda} onReviewClassification={reviewClassification} />}
+     {section === 'cards' && <FinancialCreditCardsPage workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
+     {section === 'recurrences' && <FinancialRecurrences workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToAgenda={agenda} />}
+-    {section === 'planning' && <PlanningHub key={planningEntry.key} initialTab={planningEntry.tab} workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
++    {section === 'planning' && <PlanningHub key={planningEntry.key} initialTab={planningEntry.context?.planningTab} initialCompetence={planningEntry.context?.competence} recoveryScope={planningEntry.context?.recoveryScope} workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
+     {section === 'debts' && <FinancialDebts workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
+     {section === 'goals' && <FinancialGoals key={goalId} initialGoalId={goalId} workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToPlanning={() => setSection('planning')} />}
+     {section === 'accounts' && <Accounts workspaceId={workspaceId} members={[{ userId: workspace.ownerUserId, displayName: 'Você', isCurrentUser: true }]} balanceVersion={version} onOpenStatement={(filters) => { setTransactionContext({ key: Date.now(), filters: { from: filters.from, to: filters.to, accountId: filters.accountId, type: filters.type } }); setSection('transactions') }} />}
+diff --git a/client/src/components/PlanningHub.tsx b/client/src/components/PlanningHub.tsx
+index 3ec9676..32b5b19 100644
+--- a/client/src/components/PlanningHub.tsx
++++ b/client/src/components/PlanningHub.tsx
+@@ -17,10 +17,10 @@ const tabs: readonly (readonly [Tab, string])[] = [['monthly', 'Plano mensal'],
+  * Módulo Planejamento (T10.2): o plano mensal do orçamento (metas de receitas, despesas e limites por categoria), a visão de seis meses e o calendário de
+  * dias úteis, além dos cenários de recuperação já existentes. Competência e conta escolhidas são compartilhadas entre as visões do plano.
+  */
+-export function PlanningHub({ workspaceId, refreshKey = 0, onChanged, initialTab = 'monthly' }: { workspaceId: string; refreshKey?: number; onChanged?: () => void; initialTab?: PlanningTab }) {
++export function PlanningHub({ workspaceId, refreshKey = 0, onChanged, initialTab = 'monthly', initialCompetence, recoveryScope }: { workspaceId: string; refreshKey?: number; onChanged?: () => void; initialTab?: PlanningTab; initialCompetence?: string; recoveryScope?: PlanScopeChoice }) {
+   const [tab, setTab] = useState<Tab>(initialTab)
+-  const [competence, setCompetence] = useState(() => todayInSaoPaulo().slice(0, 7))
+-  const [scope, setScope] = useState<PlanScopeChoice>({ kind: 'primary' })
++  const [competence, setCompetence] = useState(() => initialCompetence ?? todayInSaoPaulo().slice(0, 7))
++  const [scope, setScope] = useState<PlanScopeChoice>(recoveryScope ?? { kind: 'primary' })
+   // A API é a fonte da verdade do escopo: guardamos a última lista de contas para o seletor não piscar durante o carregamento.
+   const [choices, setChoices] = useState<PlanActualScope | null>(null)
+   const [version, setVersion] = useState(0)
+@@ -45,6 +45,7 @@ export function PlanningHub({ workspaceId, refreshKey = 0, onChanged, initialTab
+         }}>
+           <option value="primary">{primaryName ? `Conta principal · ${primaryName}` : 'Conta principal'}</option>
+           <option value="all">Todas as contas (consolidado)</option>
++          {scope.kind === 'account' && !choices?.accounts.some(account => account.accountId === scope.accountId) && <option value={value}>Conta selecionada</option>}
+           {(choices?.accounts ?? []).map(account => <option key={account.accountId} value={`account:${account.accountId}`}>{account.name} · {account.scope}{account.isActive ? '' : ' (inativa)'}</option>)}
+         </select>
+       </label>
+@@ -52,7 +53,7 @@ export function PlanningHub({ workspaceId, refreshKey = 0, onChanged, initialTab
+     {startOnly && <div className="planning-hub__filters"><label>{tab === 'projection' ? 'Competência inicial' : 'Competência'}<input type="month" aria-label="Competência" value={competence} onChange={event => event.target.value && setCompetence(event.target.value)} /></label></div>}
+     <div id="planning-panel" role="tabpanel" aria-labelledby={`planning-tab-${tab}`}>
+       {tab === 'monthly' && <MonthlyPlanView workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey + version} onScope={setChoices} onChanged={changed} />}
+-      {tab === 'six' && <SixMonthPlanView workspaceId={workspaceId} from={competence} scope={scope} refreshKey={refreshKey + version} onScope={setChoices} />}
++      {tab === 'six' && <SixMonthPlanView workspaceId={workspaceId} from={competence} scope={scope} refreshKey={refreshKey + version} onScope={setChoices} showRecovery={recoveryScope?.kind === 'account' && scope.kind === 'account' && scope.accountId === recoveryScope.accountId} />}
+       {tab === 'projection' && <FinancialProjectionView workspaceId={workspaceId} from={competence} refreshKey={refreshKey + version} />}
+       {tab === 'calendar' && <WorkingCalendarView workspaceId={workspaceId} competence={competence} />}
+       {tab === 'scenarios' && <><p className="meta" role="note">Cenários configuráveis: simulações que você monta manualmente. Não são os cenários automáticos Atual e Tetos da Projeção financeira.</p><FinancialPlanning workspaceId={workspaceId} refreshKey={refreshKey} /></>}
+diff --git a/client/src/components/SixMonthPlanView.tsx b/client/src/components/SixMonthPlanView.tsx
+index 0aa6e0f..90fb744 100644
+--- a/client/src/components/SixMonthPlanView.tsx
++++ b/client/src/components/SixMonthPlanView.tsx
+@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
+ import { getSixMonthPlan, type PlanMonth, type PlanScopeChoice, type SixMonthPlan } from '../api/monthlyPlan'
+ import type { PlanActualScope } from '../api/planActual'
+ import { formatMonthYear } from '../dates'
++import { isNegativeDecimal } from '../money'
+ import { IncomeForecastEditor } from './IncomeForecastEditor'
+ import { IntegratedProjectionView } from './IntegratedProjectionView'
+ import { OperationalError, OperationalLoading } from './OperationalFeedback'
+@@ -28,7 +29,7 @@ const rows: Row[] = [
+ ]
+ 
+ /** Visão de seis meses: o mês selecionado e os cinco seguintes, com planejado, projetado, realizado e risco. Tudo vem do backend; o navegador só apresenta. */
+-export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope }: { workspaceId: string; from: string; scope: PlanScopeChoice; refreshKey: number; onScope: (choices: PlanActualScope) => void }) {
++export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope, showRecovery = false }: { workspaceId: string; from: string; scope: PlanScopeChoice; refreshKey: number; onScope: (choices: PlanActualScope) => void; showRecovery?: boolean }) {
+   const [reload, setReload] = useState(0)
+   const key = `${workspaceId}|${from}|${scope.kind}|${scope.accountId ?? ''}|${refreshKey}|${reload}`
+   const [loaded, setLoaded] = useState<Load>({ key, state: 'loading' })
+@@ -48,6 +49,7 @@ export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope
+   const reasons = [...new Set(plan.months.flatMap(month => month.riskReasons))]
+   const withoutFutureIncome = plan.months.filter(month => month.periodKind === 'Future').some(month => /^-?0+(\.0+)?$/.test(month.projectedIncome))
+   return <div className="monthly-plan">
++    {showRecovery && <RecoverySummary plan={plan} />}
+     <p className="meta">{formatMonthYear(`${plan.from}-01`)} a {formatMonthYear(`${plan.through}-01`)} · {plan.scope.kind === 'all' ? 'Todas as contas' : plan.scope.accountName ?? 'Conta'}</p>
+     <section className="monthly-plan__summary" aria-label="Resumo dos seis meses">
+       {summary.highestRiskMonths.length > 0
+@@ -73,3 +75,19 @@ export function SixMonthPlanView({ workspaceId, from, scope, refreshKey, onScope
+     <p className="meta">Meses futuros mostram apenas os compromissos já conhecidos (faturas, parcelas, previsões e recorrências materializadas): nenhuma receita ou despesa é inventada para preencher o período. O plano é meta e não altera o saldo projetado da Agenda.</p>
+   </div>
+ }
++
++function RecoverySummary({ plan }: { plan: SixMonthPlan }) {
++  const upcoming = plan.months.filter(month => month.periodKind !== 'Past')
++  const firstCovered = upcoming.find(month => month.coverage.dataComplete && month.closingBalance !== null && !isNegativeDecimal(month.closingBalance))
++  return <section className="monthly-plan__summary" aria-labelledby="recovery-summary-title">
++    <h4 id="recovery-summary-title">Recuperação do cheque especial · {plan.scope.accountName ?? 'Conta'}</h4>
++    <p>{firstCovered
++      ? `Primeiro fechamento projetado com saldo não negativo e cobertura completa: ${formatMonthYear(`${firstCovered.competence}-01`)}.`
++      : 'Os dados disponíveis ainda não indicam um fechamento sem saldo negativo no horizonte consultado.'}</p>
++    <ul>{upcoming.map(month => <li key={month.competence}>
++      {formatMonthYear(`${month.competence}-01`)} · Saldo projetado {month.closingBalance === null ? 'indisponível' : money(month.closingBalance)}
++      {month.closingBalance !== null && isNegativeDecimal(month.closingBalance) && <> · Falta cobrir {money(month.closingBalance.slice(1))}</>}
++      {!month.coverage.dataComplete && ' · Projeção parcial'}
++    </li>)}</ul>
++  </section>
++}
+diff --git a/client/src/components/overview/Overview.test.tsx b/client/src/components/overview/Overview.test.tsx
+index 5b30d13..f239511 100644
+--- a/client/src/components/overview/Overview.test.tsx
++++ b/client/src/components/overview/Overview.test.tsx
+@@ -74,6 +74,42 @@ const overdraftPlan = (changes: Partial<PlanActualDashboard['overdraft']> = {})
+ beforeEach(() => { navigations.length = 0 })
+ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+ 
++const accountOverdraft = {
++  accountId: 'a1', name: 'Conta de teste', state: 'Complete', contractedLimit: '5000.00',
++  usedLatest: '1200.00', observedAt: '2026-10-12T11:00:00Z', observedAsOf: '2026-10-12',
++  usedAtStart: null, startAsOf: null, startApproximate: false, effectiveRecovery: null, direction: null,
++  fullyRecovered: false, projectedUsedAtEnd: '1800.00', projectedRecovery: null,
++  projectedRecoveryFromNow: null, projectedBalanceAtEnd: '-1800.00', exceedsLimit: false, reasons: [],
++}
++
++it('mostra o cheque especial antes do resumo e abre a recuperação na mesma conta e competência', async () => {
++  mockApi({ plan: overdraftPlan({ accounts: [accountOverdraft] }) })
++  renderPage()
++  const alert = await findCard('Situação do cheque especial')
++  expect(text(alert)).toContain('Limite em uso')
++  expect(text(alert)).toContain('Limite disponível R$ 3.800,00')
++  expect(text(alert)).toContain('12/10/2026')
++  expect(alert.compareDocumentPosition(card('Resumo do mês')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
++  fireEvent.click(within(alert).getByRole('button', { name: 'Ver recuperação de Conta de teste' }))
++  expect(navigations.at(-1)).toEqual({
++    section: 'planning',
++    context: { planningTab: 'six', competence: '2026-10', recoveryScope: { kind: 'account', accountId: 'a1' } },
++  })
++})
++
++it('distingue risco projetado de uso observado e preserva ausência de observação', async () => {
++  mockApi({ plan: overdraftPlan({ accounts: [
++    { ...accountOverdraft, usedLatest: '0.00' },
++    { ...accountOverdraft, accountId: 'a2', name: 'Outra conta', state: 'Unavailable', observedAt: null, observedAsOf: null, projectedUsedAtEnd: null },
++  ] }) })
++  renderPage()
++  const alert = await findCard('Situação do cheque especial')
++  expect(text(alert)).toContain('Risco projetado')
++  expect(text(alert)).toContain('Posição indisponível')
++  expect(text(alert)).not.toContain('Limite em uso')
++  expect(within(alert).getAllByText(/Posição bancária de/)).toHaveLength(1)
++})
++
+ describe('Visão Geral — composição do dashboard Folio', () => {
+   it('segue a ordem da T14.3: resultado, composição, saldo e cheque especial, orçamento, próximas ações, evolução, lançamentos e, na coluna de apoio, contas, compromissos e metas', async () => {
+     mockApi(); renderPage()
+diff --git a/client/src/components/overview/Overview.tsx b/client/src/components/overview/Overview.tsx
+index fe4bbbb..7e3901d 100644
+--- a/client/src/components/overview/Overview.tsx
++++ b/client/src/components/overview/Overview.tsx
+@@ -6,6 +6,7 @@ import type { ExpenseNature } from '../../api/expenseNature'
+ import { addCalendarMonths } from '../../dates'
+ import { OverviewResult, OverviewComposition } from './OverviewResult'
+ import { OverviewBalanceCard } from './OverviewBalanceCard'
++import { OverviewOverdraftAlert } from './OverviewOverdraftAlert'
+ import { OverviewSummary } from './OverviewSummary'
+ import { OverviewAlerts } from './OverviewAlerts'
+ import { OverviewEvolutionSection } from './OverviewEvolution'
+@@ -19,7 +20,7 @@ import '../../Overview.css'
+ 
+ export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions' | 'transfers' | 'automation' | 'planning'
+ /** Contexto levado ao detalhe: o mês da Agenda, a competência do orçamento ou o recorte da lista de lançamentos. */
+-export interface OverviewNavigation { planningTab?: 'projection'; month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature; type?: 'Transfer' }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
++export interface OverviewNavigation { planningTab?: 'projection' | 'six'; recoveryScope?: PlanActualScopeChoice; month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature; type?: 'Transfer' }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
+ 
+ export interface OverviewSelection { competence: string; scope: PlanActualScopeChoice }
+ 
+@@ -83,6 +84,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
+       </div>
+     </header>
+ 
++    <OverviewOverdraftAlert plan={planBlock} onNavigate={onNavigate} />
+     <OverviewSummary competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
+ 
+     <details className="ov-details ov-more">
+diff --git a/client/src/components/overview/OverviewOverdraftAlert.tsx b/client/src/components/overview/OverviewOverdraftAlert.tsx
+new file mode 100644
+index 0000000..44542ef
+--- /dev/null
++++ b/client/src/components/overview/OverviewOverdraftAlert.tsx
+@@ -0,0 +1,45 @@
++import type { PlanActualDashboard } from '../../api/planActual'
++import { formatDate, isNegativeDecimal, subtractMoneyDecimal } from '../../money'
++import type { BlockLoad, Go } from './Overview'
++import { isPositiveAmount, money } from './overviewText'
++
++export function OverviewOverdraftAlert({ plan, onNavigate }: { plan: BlockLoad<PlanActualDashboard>; onNavigate: Go }) {
++  const data = plan.data
++  if (plan.error) return <section className="notice notice--warning" aria-label="Cheque especial">
++    Posição do cheque especial indisponível. <button type="button" onClick={plan.retry}>Tentar novamente</button>
++  </section>
++  if (!data?.overdraft.eligible || data.periodKind === 'Past') return null
++
++  const accounts = data.overdraft.accounts.filter(account => isPositiveAmount(account.contractedLimit))
++  const stale = data.sync?.stale === true
++  const alerts = accounts.flatMap(account => {
++    const observed = account.observedAt && account.observedAsOf && account.state !== 'Unavailable'
++    const used = observed && isPositiveAmount(account.usedLatest)
++    const projected = isPositiveAmount(account.projectedUsedAtEnd)
++    if (data.periodKind === 'Future' && !projected) return []
++    if (data.periodKind === 'Current' && !used && !projected && observed && !stale) return []
++    return [{ account, observed, used, projected }]
++  })
++  if (!alerts.length) return null
++
++  return <section className="ov-card ov-overdraft-alert" aria-label="Situação do cheque especial">
++    <h3>Cheque especial</h3>
++    {alerts.map(({ account, observed, used, projected }) => {
++      const available = observed && account.contractedLimit ? subtractMoneyDecimal(account.contractedLimit, account.usedLatest) : null
++      const current = data.periodKind === 'Current'
++      return <div key={account.accountId} className="ov-overdraft-alert__account">
++        <strong>{account.name}</strong>
++        <span className={current && used && !stale ? 'ov-tag ov-tag--danger' : 'ov-tag ov-tag--warning'}>
++          {!current ? 'Risco projetado' : !observed ? 'Posição indisponível' : stale ? 'Última posição · sincronização desatualizada' : used ? 'Limite em uso' : 'Risco projetado'}
++        </span>
++        {current && observed && account.observedAsOf && <p className="ov-meta">
++          Utilizado {money(account.usedLatest)} · Limite disponível {money(available && isNegativeDecimal(available) ? '0.00' : available)} · Posição bancária de {formatDate(account.observedAsOf)}
++        </p>}
++        {projected && <p className="ov-meta">Uso projetado no fechamento {money(account.projectedUsedAtEnd)}</p>}
++        <button type="button" className="ov-link" onClick={() => onNavigate('planning', {
++          planningTab: 'six', competence: data.competence, recoveryScope: { kind: 'account', accountId: account.accountId },
++        })}>Ver recuperação de {account.name}</button>
++      </div>
++    })}
++  </section>
++}

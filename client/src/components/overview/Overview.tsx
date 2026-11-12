@@ -6,6 +6,7 @@ import type { ExpenseNature } from '../../api/expenseNature'
 import { addCalendarMonths } from '../../dates'
 import { OverviewResult, OverviewComposition } from './OverviewResult'
 import { OverviewBalanceCard } from './OverviewBalanceCard'
+import { OverviewOverdraftAlert } from './OverviewOverdraftAlert'
 import { OverviewSummary } from './OverviewSummary'
 import { OverviewAlerts } from './OverviewAlerts'
 import { OverviewEvolutionSection } from './OverviewEvolution'
@@ -19,7 +20,7 @@ import '../../Overview.css'
 
 export type OverviewSection = 'accounts' | 'cards' | 'goals' | 'budgets' | 'calendar' | 'transactions' | 'transfers' | 'automation' | 'planning'
 /** Contexto levado ao detalhe: o mês da Agenda, a competência do orçamento ou o recorte da lista de lançamentos. */
-export interface OverviewNavigation { planningTab?: 'projection'; month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature; type?: 'Transfer' }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
+export interface OverviewNavigation { planningTab?: 'projection' | 'six'; recoveryScope?: PlanActualScopeChoice; month?: string; competence?: string; budgetGroup?: BudgetGroup; transactions?: { from: string; to: string; accountId: string | null; expenseNature?: ExpenseNature; type?: 'Transfer' }; newTransaction?: boolean; goalId?: string; automationTab?: 'connections' | 'automations' | 'history'; review?: { kind: 'nature' | 'category'; from?: string; to?: string } }
 
 export interface OverviewSelection { competence: string; scope: PlanActualScopeChoice }
 
@@ -83,6 +84,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
       </div>
     </header>
 
+    <OverviewOverdraftAlert plan={planBlock} onNavigate={onNavigate} />
     <OverviewSummary competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
 
     <details className="ov-details ov-more">
