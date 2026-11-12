@@ -15,6 +15,7 @@ import {
 import { addCalendarMonths, formatMonthYear, startOfMonth, todayInSaoPaulo } from '../dates'
 import { formatBrlDecimal } from '../money'
 import { BudgetTargetCard } from './budget/BudgetTargetCard'
+import { BudgetTracking } from './budget/BudgetTracking'
 import { BudgetTargetForm } from './budget/BudgetTargetForm'
 import { RecurringBudgetPanel } from './budget/RecurringBudgetPanel'
 import { groupHints, groupTitles, groupingOfGroup, type BudgetGroup } from './budget/budgetText'
@@ -141,9 +142,9 @@ export function FinancialBudgetsPage({ workspaceId, initialCompetence, initialGr
         </div>
       </div>
 
-      <RecurringBudgetPanel workspaceId={workspaceId} competence={competence} categories={categories} refreshKey={externalRefreshKey} onChanged={refresh} />
+      <BudgetTracking workspaceId={workspaceId} competence={competence} refreshKey={reloadKey + externalRefreshKey} />
 
-      {notice && <p className="notice" role="status">{notice}</p>}
+      {notice &&<p className="notice" role="status">{notice}</p>}
       {state.kind === 'loading' && <p className="status status--pending">Carregando orçamento…</p>}
       {state.kind === 'error' && <p className="status status--down" role="alert">{state.message}</p>}
       {state.kind === 'loaded' && form && (
@@ -184,6 +185,9 @@ export function FinancialBudgetsPage({ workspaceId, initialCompetence, initialGr
           }
         }}>Arquivar orçamento</button></div>
       </>}
+
+      <p className="meta budget-scope-note">Gestão do orçamento: <strong>Nova meta</strong>, <strong>Editar</strong>, <strong>Arquivar meta</strong> e <strong>Arquivar orçamento</strong> valem só para {formatMonthYear(`${competence}-01`)}. No orçamento padrão abaixo, cada ação diz se vale só para este mês ou também para os próximos.</p>
+      <RecurringBudgetPanel workspaceId={workspaceId} competence={competence} categories={categories} refreshKey={externalRefreshKey} onChanged={refresh} />
     </div>
   )
 }

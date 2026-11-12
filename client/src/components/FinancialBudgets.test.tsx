@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BudgetComposition, FinancialBudget, FinancialBudgetExecution, FinancialBudgetTarget, FinancialBudgetTargetExecution } from '../api/budgets'
 import type { FinancialCategory } from '../api/categories'
 import { FinancialBudgetsPage } from './FinancialBudgets'
+import { overview as baseOverview } from './overview/overviewFixtures'
+import { budgetControl } from './overview/budgetControlFixtures'
+import type { BudgetControl } from '../api/overview'
 
 /** R03: orçamento com metas de despesas fixas, todos os cartões e categorias. API simulada; os valores vêm prontos do servidor. */
 
@@ -58,7 +61,7 @@ const composition = (page: number, totalCount = 12): BudgetComposition => ({
 
 type Call = { url: string; init?: RequestInit }
 
-function mockApi(options: { budgets?: FinancialBudget[]; runs?: FinancialBudgetTargetExecution[]; saveStatus?: number; failList?: boolean; effective?: unknown } = {}) {
+function mockApi(options: { budgets?: FinancialBudget[]; runs?: FinancialBudgetTargetExecution[]; saveStatus?: number; failList?: boolean; effective?: unknown; pf?: (competence: string) => Partial<BudgetControl> | 'fail' } = {}) {
   const calls: Call[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input); calls.push({ url, init })
@@ -69,6 +72,12 @@ function mockApi(options: { budgets?: FinancialBudget[]; runs?: FinancialBudgetT
       return Response.json(budget, { status: init.method === 'POST' ? 201 : 200 })
     }
     if (init?.method === 'DELETE') return new Response(null, { status: 204 })
+    if (url.includes('/financial-dashboard/overview')) {
+      const competence = new URL(url, 'http://x').searchParams.get('competence') ?? '2026-10'
+      const pf = options.pf?.(competence) ?? {}
+      if (pf === 'fail') return new Response('x', { status: 500 })
+      return Response.json({ ...baseOverview, pfBudgetControl: budgetControl({ scopeKind: 'pf', competence, ...pf }) })
+    }
     if (options.effective && url.includes('/budgets/effective') && !url.includes('/execution')) return Response.json(options.effective)
     if (url.includes('/composition')) return Response.json(composition(Number(new URL(url, 'http://x').searchParams.get('page'))))
     if (url.includes('/execution')) return Response.json(execution(options.runs ?? baseRuns))
@@ -90,7 +99,7 @@ describe('FinancialBudgetsPage — metas fixas, todos os cartões e categorias',
 
     const fixedCard = await screen.findByRole('article', { name: 'Meta Despesas fixas' })
     const headings = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)
-    expect(headings.slice(0, 3)).toEqual(['Despesas fixas', 'Todos os cartões', 'Categorias'])
+    expect(headings.slice(0, 4)).toEqual(['Acompanhamento do mês', 'Despesas fixas', 'Todos os cartões', 'Categorias'])
     expect(within(fixedCard).getByText('Limite R$ 600,00')).toBeTruthy()
     expect(fixedCard.textContent).toMatch(/Consumido\s*R\$\s540,00/)
     expect(fixedCard.textContent).toMatch(/Disponível\s*R\$\s60,00/)
@@ -254,5 +263,104 @@ describe('FinancialBudgetsPage — metas fixas, todos os cartões e categorias',
 
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.queryByRole('article')).toBeNull()
+  })
+})
+
+describe('FinancialBudgetsPage — Acompanhamento do mês', () => {
+  const total = (over: Partial<BudgetControl['total']>) => ({ ...budgetControl().total, ...over })
+  const tracking = async () => screen.findByRole('region', { name: 'Acompanhamento do mês' })
+  const figure = (region: HTMLElement, label: string) => (within(region).getByText(label).closest('li') as HTMLElement).textContent ?? ''
+  const plain = (value: string) => value.replace(/[\u00a0\u202f]/g, ' ')
+
+  it('mostra Meta, Consumido e Disponível antes da gestão do orçamento padrão, com escopo, competência e projeção separada', async () => {
+    mockApi()
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    await waitFor(() => expect(plain(region.textContent ?? '')).toContain('R$ 12.500,00'))
+    expect(plain(region.textContent ?? '')).toContain('Todas as contas PF · Outubro de 2026')
+    const labels = within(region).getAllByRole('listitem').map(item => item.querySelector('.budget-figure__label')?.textContent)
+    expect(labels).toEqual(['Meta', 'Consumido', 'Disponível'])
+    expect(plain(figure(region, 'Meta'))).toContain('R$ 12.500,00')
+    expect(plain(figure(region, 'Consumido'))).toContain('R$ 5.000,00')
+    expect(plain(figure(region, 'Disponível'))).toContain('R$ 5.000,00')
+    expect(plain(region.textContent ?? '')).toContain('Projetado: total previsto de R$ 7.500,00')
+    expect(plain(region.textContent ?? '')).toContain('não é consumo realizado')
+    const panel = await screen.findByText(/Orçamento padrão ·/)
+    expect(region.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Histórico de alterações' }).compareDocumentPosition(region) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+
+  it('meta ausente: diz que não há meta e não inventa o disponível; o consumo continua visível', async () => {
+    mockApi({ pf: () => ({ state: 'TargetNotDefined', total: total({ targetDefined: false, target: null, margin: null, excess: null, realizedPercent: null, projectedPercent: null }) }) })
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    await waitFor(() => expect(figure(region, 'Meta')).toContain('Meta não definida'))
+    expect(figure(region, 'Disponível')).toContain('Indisponível')
+    expect(plain(figure(region, 'Consumido'))).toContain('R$ 5.000,00')
+  })
+
+  it('meta zero é um valor válido (R$ 0,00), diferente de meta ausente', async () => {
+    mockApi({ pf: () => ({ total: total({ target: '0.00', margin: '0.00', projectedPercent: null }) }) })
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 0,00'))
+    expect(figure(region, 'Meta')).not.toContain('Meta não definida')
+  })
+
+  it('estouro: texto "Meta estourada" com o excesso do servidor, além da cor', async () => {
+    mockApi({ pf: () => ({ total: total({ status: 'Exceeded', margin: null, excess: '800.00', projected: '13300.00' }) }) })
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    await waitFor(() => expect(figure(region, 'Disponível')).toContain('Meta estourada'))
+    expect(plain(figure(region, 'Disponível'))).toContain('R$ 800,00 acima da meta')
+  })
+
+  it('cobertura parcial é dita em texto', async () => {
+    mockApi({ pf: () => ({ state: 'Partial', notes: ['Faturas de cartão sem confirmação.'] }) })
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    expect(await within(region).findByText(/Cobertura parcial/)).toBeTruthy()
+    expect(region.textContent).toContain('Faturas de cartão sem confirmação.')
+  })
+
+  it('erro de carregamento do acompanhamento: mensagem com Tentar novamente, sem valores', async () => {
+    let fail = true
+    mockApi({ pf: () => fail ? 'fail' : {} })
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    const retry = await within(region).findByRole('button', { name: 'Tentar novamente' })
+    expect(within(region).queryByText('Meta')).toBeNull()
+    fail = false
+    fireEvent.click(retry)
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 12.500,00'))
+  })
+
+  it('trocar de competência não reaproveita valores do mês anterior e Ver na Agenda abre a competência acompanhada', async () => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>(resolve => { release = resolve })
+    mockApi({ pf: competence => competence === '2026-11' ? ({ total: total({ target: '9000.00', realized: '100.00' }) }) : {} })
+    const original = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/financial-dashboard/overview') && String(input).includes('competence=2026-11')) await gate
+      return original(input, init)
+    }))
+    const agenda = vi.fn()
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" onNavigateToAgenda={agenda} />)
+    const region = await tracking()
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 12.500,00'))
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima competência' }))
+    await waitFor(() => expect(within(region).getByText('Carregando o acompanhamento…')).toBeTruthy())
+    expect(plain(region.textContent ?? '')).not.toContain('R$ 12.500,00')
+    expect(plain(region.textContent ?? '')).toContain('Novembro de 2026')
+    release()
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 9.000,00'))
+    fireEvent.click(screen.getByRole('button', { name: 'Ver na Agenda' }))
+    expect(agenda).toHaveBeenCalledWith('2026-11')
+  })
+
+  it('deixa explícito o efeito temporal das ações de gestão', async () => {
+    mockApi()
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    expect(await screen.findByText((_, element) => Boolean(element?.classList.contains('budget-scope-note')) && /valem só para Outubro de 2026/.test(element?.textContent ?? ''))).toBeTruthy()
   })
 })
