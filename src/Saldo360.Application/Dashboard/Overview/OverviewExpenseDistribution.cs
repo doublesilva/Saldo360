@@ -150,7 +150,7 @@ public sealed partial class DashboardOverviewService
             ExpenseReference? reference = null;
             try
             {
-                if ((await planActual.GetAsync(workspaceId, userId, month, requestedScope, accountId, ct)).Value is { } dashboard)
+                if ((await PlanOnceAsync(workspaceId, userId, month, requestedScope, accountId, ct)).Value is { } dashboard)
                 {
                     var consumption = dashboard.Expenses.Consumption;
                     decimal Component(string code) => consumption.Components.Where(c => c.Code == code).Select(c => Num(c.Amount)).FirstOrDefault();

@@ -111,12 +111,25 @@ public sealed partial class DashboardOverviewService(
     public const int MaxRecent = 6;
     private const int OverdueLookbackDays = 366;
 
+    // Plano × Realizado já calculado nesta chamada: o mesmo (competência, escopo, conta) alimenta resultado mensal, transferências, competência, controle de orçamento e distribuição.
+    // O serviço é por requisição e somente leitura; a memória é zerada no início de cada leitura pública, então nunca atravessa duas leituras.
+    private Dictionary<(Guid Workspace, Guid User, string Month, string Scope, Guid? Account), Task<PlanActualResult<PlanActualDashboardDto>>> _planMemo = [];
+
+    private Task<PlanActualResult<PlanActualDashboardDto>> PlanOnceAsync(Guid workspaceId, Guid userId, string month, string? scope, Guid? accountId, CancellationToken ct)
+    {
+        var normalized = string.IsNullOrWhiteSpace(scope) ? PlanActualScopes.Primary : scope.Trim().ToLowerInvariant();
+        var key = (workspaceId, userId, month, normalized, normalized == PlanActualScopes.Account ? accountId : null);
+        if (!_planMemo.TryGetValue(key, out var task)) _planMemo[key] = task = planActual.GetAsync(workspaceId, userId, month, scope, accountId, ct);
+        return task;
+    }
+
     /// <summary>Competência, escopo e conta validados (ou o erro a devolver). Mesma regra para o <c>overview</c> e para a distribuição completa das despesas.</summary>
     private sealed record Resolution(string? Month, string? Requested, FinancialAccountDto? Selected, string? Kind, IReadOnlyList<FinancialAccountDto> All, DateOnly Today,
         (PlanActualAccess Access, IDictionary<string, string[]>? Errors)? Error = null);
 
     private async Task<Resolution> ResolveAsync(Guid workspaceId, Guid userId, string? competence, string? scope, Guid? accountId, CancellationToken ct)
     {
+        _planMemo = []; // toda leitura pública começa por aqui: a memória de cálculos nunca atravessa duas leituras
         var today = BusinessCalendar.Today(time.GetUtcNow());
         Resolution Fail(PlanActualAccess access, IDictionary<string, string[]>? errors = null) => new(null, null, null, null, [], today, (access, errors));
         Resolution Bad(string field, string message) => Fail(PlanActualAccess.Invalid, new Dictionary<string, string[]> { [field] = [message] });
@@ -177,7 +190,7 @@ public sealed partial class DashboardOverviewService(
     {
         try
         {
-            var plan = await planActual.GetAsync(workspaceId, userId, month, requestedScope, accountId, ct);
+            var plan = await PlanOnceAsync(workspaceId, userId, month, requestedScope, accountId, ct);
             return plan.Value is { } dashboard ? MonthlyResultCalculator.Build(dashboard, transfers, decision) : null;
         }
         catch (Exception) when (!ct.IsCancellationRequested)
@@ -200,7 +213,7 @@ public sealed partial class DashboardOverviewService(
         if (inScope.Count > 0) available = Money.Format(inScope.Sum(a => decimal.Parse(a.Balance!, System.Globalization.CultureInfo.InvariantCulture)));
         try
         {
-            var plan = await planActual.GetAsync(workspaceId, userId, month, requestedScope, accountId, ct);
+            var plan = await PlanOnceAsync(workspaceId, userId, month, requestedScope, accountId, ct);
             if (plan.Value is { } dashboard)
             {
                 var parse = (string v) => decimal.Parse(v, System.Globalization.CultureInfo.InvariantCulture);
@@ -272,7 +285,7 @@ public sealed partial class DashboardOverviewService(
     {
         try
         {
-            var plan = await planActual.GetAsync(workspaceId, userId, month, requestedScope, accountId, ct);
+            var plan = await PlanOnceAsync(workspaceId, userId, month, requestedScope, accountId, ct);
             if (plan.Value is not { } dashboard) return new(null, null, null);
             var income = Num(dashboard.Income.Realized); var expenses = Num(dashboard.Expenses.Consumption.Realized);
             return new(Money.Format(income), Money.Format(expenses), Money.Format(income - expenses));

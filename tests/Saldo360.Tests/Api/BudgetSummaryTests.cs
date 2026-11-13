@@ -190,6 +190,33 @@ public sealed class BudgetSummaryTests(PostgresFixture postgres, ITestOutputHelp
     }
 
     /// <summary>
+    /// P1 (abertura da Visão Geral): mediana de 7 execuções do overview em cada recorte e do budget-summary, com seis contas PF, três cartões e 25 lançamentos por conta.
+    /// Serve para comparar antes/depois de eliminar o Plano × Realizado repetido dentro da mesma requisição.
+    /// </summary>
+    [Fact(Skip = "Medição manual (leva ~3 min e depende da máquina): remova o Skip para reproduzir os tempos registrados na entrega.")]
+    public async Task MeasureOverviewOpening()
+    {
+        await ArrangeAsync("bs-abertura", 6);
+        foreach (var account in _accounts) for (var i = 0; i < 25; i++) await ExpenseAsync(account, $"{10 + i}.00", $"Despesa {i}");
+        for (var c = 0; c < 3; c++) { var card = await CardAsync($"Cartão {c}", _accounts[c]); for (var p = 0; p < 4; p++) await PurchaseAsync(card, $"{100 + p * 10}.00"); }
+        await ConfigureTotalAsync(20000m);
+
+        async Task<double> MedianAsync(string path)
+        {
+            await GetAsync(path);
+            var times = new List<double>();
+            for (var i = 0; i < 7; i++) { var watch = Stopwatch.StartNew(); await GetAsync(path); times.Add(watch.Elapsed.TotalMilliseconds); }
+            times.Sort(); return times[3];
+        }
+        foreach (var (name, path) in new[] {
+            ("overview scope=all", $"overview?competence={Month}&scope=all"),
+            ("overview scope=primary", $"overview?competence={Month}&scope=primary"),
+            ("overview scope=account(PF 2)", $"overview?competence={Month}&scope=account&accountId={_accounts[1]}"),
+            ("budget-summary", $"budget-summary?competence={Month}") })
+            output.WriteLine($"MEDIÇÃO ABERTURA {name}: mediana {await MedianAsync(path):F0} ms");
+    }
+
+    /// <summary>
     /// P1 (guia de configuração): tempo das consultas que o guia faz sozinho (contas, resumo PF, seis meses) contra as da Visão Geral completa (overview e plan-actual).
     /// Mesmo conjunto de dados da medição acima.
     /// </summary>

@@ -104,7 +104,7 @@ public sealed partial class DashboardOverviewService
             RecoveryProjectionInput? projection = null;
             if (today <= last)
             {
-                var plan = await planActual.GetAsync(workspaceId, userId, month, PlanActualScopes.Account, id, ct);
+                var plan = await PlanOnceAsync(workspaceId, userId, month, PlanActualScopes.Account, id, ct);
                 if (plan.Value is { } dashboard)
                 {
                     var reasons = dashboard.Coverage.Reasons.Concat(dashboard.Overdraft.Accounts.SelectMany(a => a.Reasons)).Distinct().ToArray();

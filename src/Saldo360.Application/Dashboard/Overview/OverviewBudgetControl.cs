@@ -48,7 +48,7 @@ public sealed partial class DashboardOverviewService
             BudgetTotals totals;
             if (pfAccounts is null)
             {
-                var plan = await planActual.GetAsync(workspaceId, userId, month, requestedScope, selected?.Id, ct);
+                var plan = await PlanOnceAsync(workspaceId, userId, month, requestedScope, selected?.Id, ct);
                 if (plan.Value is not { } dashboard) return null;
                 totals = TotalsOf(dashboard);
             }
@@ -58,7 +58,7 @@ public sealed partial class DashboardOverviewService
                 var parts = new List<BudgetTotals>(); var incompleteInactive = false;
                 foreach (var account in pfAccounts)
                 {
-                    var plan = await planActual.GetAsync(workspaceId, userId, month, PlanActualScopes.Account, account.Id, ct);
+                    var plan = await PlanOnceAsync(workspaceId, userId, month, PlanActualScopes.Account, account.Id, ct);
                     if (plan.Value is { } dashboard) parts.Add(TotalsOf(dashboard));
                     else if (account.IsActive) return null; // sem uma conta ativa o total PF seria parcial sem aviso: indisponível
                     else incompleteInactive = true; // conta inativa sem dados consolidáveis: o total sai marcado como parcial
