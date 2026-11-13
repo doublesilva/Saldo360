@@ -53,8 +53,8 @@ describe('rotas — a tela e os filtros ficam na URL', () => {
     render(<PersonalFinance />)
     expect(await screen.findByText(/Parte do link não era válida/)).toBeTruthy()
     expect((screen.getByLabelText('Tipo') as HTMLSelectElement).value).toBe('')
-    expect(path()).not.toContain('tipo=')
-    expect(path()).not.toContain('2026-13')
+    // A URL é normalizada por replace depois do aviso aparecer: espera o ajuste em vez de assumir a ordem.
+    await waitFor(() => { expect(path()).not.toContain('tipo='); expect(path()).not.toContain('2026-13') })
     expect(window.history.length).toBe(before)
   })
 
