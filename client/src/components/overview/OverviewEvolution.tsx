@@ -1,11 +1,7 @@
-import { useCallback } from 'react'
 import type { PlanMonth, SixMonthPlan } from '../../api/monthlyPlan'
-import type { PlanActualScopeChoice } from '../../api/planActual'
-import { getSixMonthPlan } from '../../api/monthlyPlan'
-import { addCalendarMonths } from '../../dates'
 import { OperationalError, OperationalLoading } from '../OperationalFeedback'
 import { isNegative, money, monthTitle, periodLabels, shortMonth } from './overviewText'
-import { useLoad } from './useLoad'
+import type { SixMonthLoad } from './useSixMonthPlan'
 
 const kindLabels = { Past: 'Realizado', Current: 'Mês atual', Future: 'Projeção' } as const
 
@@ -63,12 +59,9 @@ export function OverviewEvolution({ plan, competence }: { plan: SixMonthPlan; co
   </>
 }
 
-const EVOLUTION_MONTHS_BEFORE = 3
-
 /** O gráfico principal: três meses antes da competência, ela e os dois seguintes, no mesmo escopo. A moldura não muda entre carregando, erro e pronto. */
-export function OverviewEvolutionSection({ workspaceId, competence, scope, refreshKey }: { workspaceId: string; competence: string; scope: PlanActualScopeChoice; refreshKey: number }) {
-  const from = addCalendarMonths(`${competence}-01`, -EVOLUTION_MONTHS_BEFORE).slice(0, 7)
-  const { load, retry } = useLoad(`${workspaceId}|${from}|${scope.kind}:${scope.accountId ?? ''}|${refreshKey}`, useCallback((signal: AbortSignal) => getSixMonthPlan(workspaceId, from, scope, signal), [workspaceId, from, scope]))
+export function OverviewEvolutionSection({ competence, plan }: { competence: string; plan: SixMonthLoad }) {
+  const { load, retry } = plan
   const months = load.state === 'loaded' ? load.data.months : []
   return <section className="ov-card ov-evolution" aria-labelledby="ov-evolution-title">
     <header className="ov-card__head">

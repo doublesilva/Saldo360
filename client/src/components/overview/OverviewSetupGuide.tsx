@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { listAccounts } from '../../api/accounts'
 import { getBudgetSummary } from '../../api/overview'
-import { getSixMonthPlan } from '../../api/monthlyPlan'
 import type { PlanActualScopeChoice } from '../../api/planActual'
 import { listAutomationRuns } from '../../api/pluggyAutomation'
 import { isPluggyIntegrationAvailable, listIntegrationConnections } from '../../api/pluggyIntegration'
 import type { Go } from './Overview'
 import { buildSetupGuide, type Signal, type SetupAction, type SetupQuery, type SetupStep } from './setupGuide'
 import { useLoad, type Load } from './useLoad'
+import type { SixMonthLoad } from './useSixMonthPlan'
 import './OverviewSetup.css'
 
 // P1: "Configure seu orçamento". Cada etapa tem a sua consulta (contas, integração, importações, meta PF da competência atual e planejamento de seis meses do recorte mostrado), todas
@@ -23,8 +23,8 @@ const doneKey = (workspaceId: string) => `saldo360.setup-done.${workspaceId}`
 const wasDone = (workspaceId: string) => { try { return window.localStorage.getItem(doneKey(workspaceId)) === '1' } catch { return false } }
 const markDone = (workspaceId: string, done: boolean) => { try { if (done) window.localStorage.setItem(doneKey(workspaceId), '1'); else window.localStorage.removeItem(doneKey(workspaceId)) } catch { /* sem armazenamento */ } }
 
-export function OverviewSetupGuide({ workspaceId, competence, scope, refreshKey, onNavigate }: {
-  workspaceId: string; competence: string; scope: PlanActualScopeChoice; refreshKey: number; onNavigate: Go
+export function OverviewSetupGuide({ workspaceId, competence, scope, refreshKey, plan, onNavigate }: {
+  workspaceId: string; competence: string; scope: PlanActualScopeChoice; refreshKey: number; plan: SixMonthLoad; onNavigate: Go
 }) {
   const [current] = useState(currentCompetence)
   const base = `${workspaceId}|${refreshKey}`
@@ -44,7 +44,8 @@ export function OverviewSetupGuide({ workspaceId, competence, scope, refreshKey,
     if (summary.state === 'Unavailable' || !summary.total) throw new Error('Meta indisponível')
     return { targetDefined: summary.total.targetDefined, target: summary.total.target, competence: current }
   }, [workspaceId, current]))
-  const projection = useLoad(`${base}|${competence}|${scope.kind}:${scope.accountId ?? ''}`, useCallback((s: AbortSignal) => getSixMonthPlan(workspaceId, competence, scope, s), [workspaceId, competence, scope]))
+  // Planejamento de seis meses: leitura compartilhada com a Evolução (mesmo recorte); o guia só procura nela o mês da competência.
+  const projection = plan
 
   const retries: Record<SetupQuery, () => void> = { accounts: accounts.retry, integration: integration.retry, imports: imports.retry, budget: budget.retry, projection: projection.retry }
   const importedSignal = signal(imports.load)

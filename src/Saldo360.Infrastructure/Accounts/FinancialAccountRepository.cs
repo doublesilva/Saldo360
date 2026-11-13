@@ -124,6 +124,8 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             {
                 Income = g.Sum(t => t.Type == CategoryType.Income ? t.Amount : 0m),
                 Expense = g.Sum(t => t.Type == CategoryType.Expense ? t.Amount : 0m),
+                // Mesma regra de FinancialTransactionKpi: devolução bancária confirmada = origem PluggyRefund (entra no Income do caixa, mas não é receita).
+                Refunds = g.Sum(t => t.Origin == Saldo360.Domain.Transactions.FinancialTransactionOrigin.PluggyRefund ? t.Amount : 0m),
             })
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -139,7 +141,7 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
             .SingleOrDefaultAsync(cancellationToken);
 
         return new AccountTotals(
-            transactions?.Income ?? 0m, transactions?.Expense ?? 0m, transfers?.In ?? 0m, transfers?.Out ?? 0m);
+            transactions?.Income ?? 0m, transactions?.Expense ?? 0m, transfers?.In ?? 0m, transfers?.Out ?? 0m, transactions?.Refunds ?? 0m);
     }
 
     // Uma consulta: SUM condicional por tipo e por vencimento (antes da data-base = vencida) sobre as previsões

@@ -154,7 +154,8 @@ describe('Visão Geral — composição do dashboard Folio', () => {
     await screen.findByRole('img', { name: /Receitas e despesas de out\/26 a mar\/27/ })
     expect(calls.filter(url => url.includes('/plan-actual'))).toHaveLength(1)
     expect(calls.filter(url => url.includes('/financial-dashboard/overview'))).toHaveLength(1)
-    expect(calls.filter(url => url.includes('/six-months') && url.includes('from=2026-07'))).toHaveLength(1)
+    expect(calls.filter(url => url.includes('/six-months'))).toHaveLength(1) // evolução e guia de configuração dividem a mesma leitura
+    expect(calls.filter(url => url.includes('/six-months'))[0]).toContain('from=2026-07')
     expect(calls.some(url => url.includes('overdraft-recovery') || url.includes('/monthly-plan/projection'))).toBe(false)
   })
 })
@@ -724,7 +725,7 @@ describe('Visão Geral — filtros', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }))
     await waitFor(() => expect(calls.some(url => url.includes('competence=2026-11'))).toBe(true))
     fireEvent.change(screen.getByLabelText('Conta ou consolidado'), { target: { value: 'account:pj' } })
-    await waitFor(() => expect(calls.filter(url => url.includes('scope=account') && url.includes('accountId=pj')).length).toBe(4)) // plan-actual, overview, evolução e a projeção do guia de configuração (mesmo planejamento de seis meses)
+    await waitFor(() => expect(calls.filter(url => url.includes('scope=account') && url.includes('accountId=pj')).length).toBe(3)) // plan-actual, overview e UM planejamento de seis meses, compartilhado pela evolução e pelo guia de configuração
   })
 
   it('lista a conta principal, o consolidado e cada conta; novo lançamento reutiliza Lançamentos', async () => {

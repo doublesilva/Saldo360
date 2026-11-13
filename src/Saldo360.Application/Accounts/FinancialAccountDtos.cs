@@ -76,14 +76,17 @@ public sealed record AccountPeriodCashDto(Guid AccountId, string Name, bool IsAc
 }
 
 /// <summary>Totais de uma conta no período: lançamentos (receita/despesa) e transferências (recebidas/enviadas).</summary>
-public sealed record AccountTotals(decimal Income, decimal Expense, decimal TransferIn, decimal TransferOut);
+/// <c>Refunds</c> é a parte de <c>Income</c> que são devoluções bancárias confirmadas (informativo: o saldo continua somando todo o <c>Income</c>).
+public sealed record AccountTotals(decimal Income, decimal Expense, decimal TransferIn, decimal TransferOut, decimal Refunds = 0m);
 
 /// <summary>
 /// Entradas e saídas de uma conta no período: <c>Income</c>/<c>Expense</c> são receitas e despesas (sem transferências), <c>TransfersReceived</c>/<c>TransfersSent</c> as transferências da
 /// conta, e <c>TotalInflows</c>/<c>TotalOutflows</c> a soma dos dois grupos (mostrados sempre separados). Mesmos movimentos e mesma regra do saldo realizado.
 /// </summary>
-public sealed record AccountFlowDto(Guid AccountId, string Name, bool IsActive, decimal Income, decimal Expense, decimal TransfersReceived, decimal TransfersSent)
+public sealed record AccountFlowDto(Guid AccountId, string Name, bool IsActive, decimal Income, decimal Expense, decimal TransfersReceived, decimal TransfersSent, decimal Refunds = 0m)
 {
+    /// <summary><c>Income</c> inclui as devoluções bancárias (entrada de caixa que não é receita): <c>Revenue</c> é a receita de verdade, a mesma da Agenda e da Visão Geral.</summary>
+    public decimal Revenue => Income - Refunds;
     public decimal TotalInflows => Income + TransfersReceived;
     public decimal TotalOutflows => Expense + TransfersSent;
 }
@@ -92,7 +95,7 @@ public sealed record AccountFlowDto(Guid AccountId, string Name, bool IsActive, 
 /// Fluxos do período por conta e do conjunto de todas as contas. No conjunto de todas as contas do orçamento toda transferência é interna
 /// (<see cref="Saldo360.Application.Transfers.TransferPerspective"/>): <c>InternalTransfers</c> é só informativo e não entra em entradas nem saídas.
 /// </summary>
-public sealed record AccountFlowsDto(DateOnly From, DateOnly Through, IReadOnlyList<AccountFlowDto> Accounts, decimal ConsolidatedIncome, decimal ConsolidatedExpense, decimal InternalTransfers);
+public sealed record AccountFlowsDto(DateOnly From, DateOnly Through, IReadOnlyList<AccountFlowDto> Accounts, decimal ConsolidatedIncome, decimal ConsolidatedExpense, decimal InternalTransfers, decimal ConsolidatedRefunds = 0m);
 
 /// <summary>
 /// Previsões PENDENTES da conta até a data-alvo, por tipo: vencidas (DueDate &lt; data-base) e do período

@@ -71,10 +71,10 @@ public sealed class FinancialAccountService(
         {
             var totals = await accounts.SumMovementsAsync(workspaceId, account.Id, first, last, cancellationToken);
             if (!account.IsActive && totals is { Income: 0m, Expense: 0m, TransferIn: 0m, TransferOut: 0m }) continue;
-            flows.Add(new(account.Id, account.Name, account.IsActive, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut));
+            flows.Add(new(account.Id, account.Name, account.IsActive, totals.Income, totals.Expense, totals.TransferIn, totals.TransferOut, totals.Refunds));
         }
         // Conjunto de todas as contas: cada transferência tem origem e destino dentro dele, então só é informada (cada uma é contada uma vez, no destino).
-        return new(first, last, flows, flows.Sum(f => f.Income), flows.Sum(f => f.Expense), flows.Sum(f => f.TransfersReceived));
+        return new(first, last, flows, flows.Sum(f => f.Income), flows.Sum(f => f.Expense), flows.Sum(f => f.TransfersReceived), flows.Sum(f => f.Refunds));
     }
 
     /// <summary>

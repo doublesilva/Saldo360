@@ -7,6 +7,7 @@ import type { SixMonthPlan } from '../../api/monthlyPlan'
 import type { PlanActualScopeChoice } from '../../api/planActual'
 import type { PluggyConnection } from '../../api/pluggyPoc'
 import { sixMonths } from '../monthlyPlanFixtures'
+import { useSixMonthPlan } from './useSixMonthPlan'
 
 // P1: guia "Configure seu orçamento" com dados fictícios. Cada etapa tem a sua consulta; nenhuma depende do resumo da Visão Geral.
 
@@ -59,8 +60,10 @@ const runs = (...ids: string[]) => ({ items: ids.map((connectionId, i) => ({ id:
 const count = (part: string) => calls.filter(call => call.url.includes(part)).length
 
 const navigations: { section: OverviewSection; context?: OverviewNavigation }[] = []
-function Guide({ scope = { kind: 'primary' } as PlanActualScopeChoice, competence = COMPETENCE, refreshKey = 0 }) {
-  return <OverviewSetupGuide workspaceId="w" competence={competence} scope={scope} refreshKey={refreshKey} onNavigate={(section, context) => { navigations.push({ section, context }) }} />
+const PRIMARY: PlanActualScopeChoice = { kind: 'primary' } // referência estável, como a seleção da Visão Geral (um objeto novo por render refaria a consulta)
+function Guide({ scope = PRIMARY, competence = COMPETENCE, refreshKey = 0 }) {
+  const plan = useSixMonthPlan('w', competence, scope, refreshKey) // a mesma leitura que a Visão Geral compartilha com a Evolução
+  return <OverviewSetupGuide workspaceId="w" competence={competence} scope={scope} refreshKey={refreshKey} plan={plan} onNavigate={(section, context) => { navigations.push({ section, context }) }} />
 }
 const setup = (props: Parameters<typeof Guide>[0] = {}) => { navigations.length = 0; return render(<Guide {...props} />) }
 const step = (name: string) => within(screen.getByRole('list')).getByText(name).closest('li') as HTMLElement

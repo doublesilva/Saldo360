@@ -374,14 +374,16 @@ function ProjectedBalance({
  */
 function MonthFlows({ flow, period, onOpenStatement }: { flow: AccountFlow | null; period: AccountFlows | null; onOpenStatement?: (filters: { from: string; to: string; accountId: string; type: 'Transfer' }) => void }) {
   if (!flow || !period) return null
+  const hasRefunds = flow.refunds !== undefined && Number(flow.refunds) !== 0
   return (
     <div className="account__flows" aria-label={`Entradas e saídas de ${flow.name} no mês`}>
       <p className="meta">
-        No mês ({formatDate(period.from)} a {formatDate(period.through)}): entradas <strong>{formatBrlDecimal(flow.totalInflows)}</strong> (receitas {formatBrlDecimal(flow.income)} + transferências recebidas{' '}
-        {formatBrlDecimal(flow.transfersReceived)}) · saídas <strong>{formatBrlDecimal(flow.totalOutflows)}</strong> (despesas {formatBrlDecimal(flow.expense)} + transferências enviadas{' '}
-        {formatBrlDecimal(flow.transfersSent)})
+        No mês ({formatDate(period.from)} a {formatDate(period.through)}): entradas de caixa <strong>{formatBrlDecimal(flow.totalInflows)}</strong> (receitas {formatBrlDecimal(flow.revenue ?? flow.income)}
+        {hasRefunds && <> + devoluções {formatBrlDecimal(flow.refunds!)}</>} + transferências recebidas {formatBrlDecimal(flow.transfersReceived)}) · saídas de caixa <strong>{formatBrlDecimal(flow.totalOutflows)}</strong>{' '}
+        (despesas e pagamentos {formatBrlDecimal(flow.expense)} + transferências enviadas {formatBrlDecimal(flow.transfersSent)})
       </p>
-      <p className="meta">Transferências entre contas próprias não são receita nem despesa e movimentam o saldo das duas contas.</p>
+      <p className="meta">Transferências entre contas próprias não são receita nem despesa e movimentam o saldo das duas contas. Pagamento de fatura é saída de caixa; o consumo do cartão está nas compras.</p>
+      {hasRefunds && <p className="meta">Devolução confirmada é crédito na conta, não receita: a Agenda e a Visão Geral a mostram à parte e ela reduz o consumo da despesa devolvida.</p>}
       {onOpenStatement && (
         <button type="button" onClick={() => onOpenStatement({ from: period.from, to: period.through, accountId: flow.accountId, type: 'Transfer' })}>
           Ver transferências desta conta no extrato

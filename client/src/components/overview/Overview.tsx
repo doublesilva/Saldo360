@@ -12,6 +12,7 @@ import { OverviewEvolutionSection } from './OverviewEvolution'
 import { OverviewBudgetProgress } from './OverviewBudgetProgress'
 import { OverviewAccounts, OverviewGoals, OverviewRecent, OverviewUpcoming } from './OverviewLists'
 import { OverviewSetupGuide } from './OverviewSetupGuide'
+import { useSixMonthPlan } from './useSixMonthPlan'
 import { OverviewSyncLine } from './OverviewSync'
 import { buildPriorityItems } from './priorityItems'
 import { loadDecisionSummary } from '../decisionQueue/queueModel'
@@ -46,6 +47,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
   const overview = useLoad(key, useCallback((signal: AbortSignal) => getDashboardOverview(workspaceId, competence, scope, signal), [workspaceId, competence, scope]))
 
   // Fila "Requer sua decisão": mesma fonte da Central de Automação (somente leitura), recarregada junto com a tela depois de qualquer resolução.
+  const sixMonths = useSixMonthPlan(workspaceId, competence, scope, refreshKey)
   const queue = useLoad(key, useCallback((signal: AbortSignal) => loadDecisionSummary(workspaceId, signal), [workspaceId]))
   const queueData = queue.load.state === 'loaded' ? queue.load.data : null
   const planData = plan.load.state === 'loaded' ? plan.load.data : null
@@ -91,7 +93,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
     </header>
 
     <OverviewAlerts items={items} state={{ loading: planBlock.loading || overviewBlock.loading || queue.load.state === 'loading', failed: Boolean(planBlock.error || overviewBlock.error || queue.load.state === 'error' || queueData?.failedSources.length) }} onNavigate={onNavigate} onReload={reloadAll} />
-    <OverviewSetupGuide workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} onNavigate={onNavigate} />
+    <OverviewSetupGuide workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} plan={sixMonths} onNavigate={onNavigate} />
     <OverviewSummary competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
 
     <details className="ov-details ov-more">
@@ -113,7 +115,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
             scopeLabel="Orçamento PF · Todas as contas PF" monthLabel={monthTitle(competence)} workspaceId={workspaceId} competence={competence} {...overviewBlock}
             onOpenBudget={() => onNavigate('budgets', { competence })} onOpenCards={() => onNavigate('cards')} />
         </div>
-        <OverviewEvolutionSection workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} />
+        <OverviewEvolutionSection competence={competence} plan={sixMonths} />
         <OverviewRecent recent={data?.recent ?? null} {...overviewBlock}
           onOpenAll={() => recentRange && onNavigate('transactions', { transactions: recentRange, newTransaction: data?.recent.items.length === 0 })} />
       </div>

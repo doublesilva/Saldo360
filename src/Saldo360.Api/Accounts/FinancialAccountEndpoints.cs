@@ -375,13 +375,13 @@ public sealed record AccountProjectionResponse(
     private static string? Format(decimal? amount) => amount is { } value ? Money.Format(value) : null;
 }
 
-public sealed record AccountFlowResponse(Guid AccountId, string Name, bool IsActive, string Income, string Expense, string TransfersReceived, string TransfersSent, string TotalInflows, string TotalOutflows)
+public sealed record AccountFlowResponse(Guid AccountId, string Name, bool IsActive, string Income, string Expense, string TransfersReceived, string TransfersSent, string TotalInflows, string TotalOutflows, string Revenue, string Refunds)
 {
     public static AccountFlowResponse From(AccountFlowDto f) => new(f.AccountId, f.Name, f.IsActive, Money.Format(f.Income), Money.Format(f.Expense), Money.Format(f.TransfersReceived),
-        Money.Format(f.TransfersSent), Money.Format(f.TotalInflows), Money.Format(f.TotalOutflows));
+        Money.Format(f.TransfersSent), Money.Format(f.TotalInflows), Money.Format(f.TotalOutflows), Money.Format(f.Revenue), Money.Format(f.Refunds));
 }
 
-public sealed record AccountFlowsResponse(DateOnly From, DateOnly Through, IReadOnlyList<AccountFlowResponse> Accounts, string ConsolidatedIncome, string ConsolidatedExpense, string InternalTransfers)
+public sealed record AccountFlowsResponse(DateOnly From, DateOnly Through, IReadOnlyList<AccountFlowResponse> Accounts, string ConsolidatedIncome, string ConsolidatedExpense, string InternalTransfers, string ConsolidatedRefunds)
 {
-    public static AccountFlowsResponse Create(AccountFlowsDto f) => new(f.From, f.Through, f.Accounts.Select(AccountFlowResponse.From).ToList(), Money.Format(f.ConsolidatedIncome), Money.Format(f.ConsolidatedExpense), Money.Format(f.InternalTransfers));
+    public static AccountFlowsResponse Create(AccountFlowsDto f) => new(f.From, f.Through, f.Accounts.Select(AccountFlowResponse.From).ToList(), Money.Format(f.ConsolidatedIncome), Money.Format(f.ConsolidatedExpense), Money.Format(f.InternalTransfers), Money.Format(f.ConsolidatedRefunds));
 }

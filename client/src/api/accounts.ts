@@ -227,9 +227,11 @@ export async function getAccountProjection(
 /** Entradas e saídas do mês por conta (calculadas na API): receitas/despesas e transferências SEPARADAS, mais os totais. Só formatar, nunca somar. */
 export interface AccountFlow {
   accountId: string; name: string; isActive: boolean
+  /** Créditos de caixa do mês: INCLUI as devoluções bancárias (contrato preservado). `revenue` = receita de verdade e `refunds` = devoluções, os mesmos conceitos da Agenda e da Visão Geral. */
   income: string; expense: string; transfersReceived: string; transfersSent: string; totalInflows: string; totalOutflows: string
+  revenue?: string; refunds?: string
 }
-export interface AccountFlows { from: string; through: string; accounts: AccountFlow[]; consolidatedIncome: string; consolidatedExpense: string; internalTransfers: string }
+export interface AccountFlows { from: string; through: string; accounts: AccountFlow[]; consolidatedIncome: string; consolidatedExpense: string; internalTransfers: string; consolidatedRefunds?: string }
 
 export async function getAccountFlows(workspaceId: string, competence: string, signal?: AbortSignal): Promise<AccountFlows> {
   const response = await fetch(`${accountsUrl(workspaceId)}/flows?competence=${encodeURIComponent(competence)}`, { signal, headers: jsonHeaders })
