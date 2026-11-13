@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BudgetComposition, FinancialBudget, FinancialBudgetExecution, FinancialBudgetTarget, FinancialBudgetTargetExecution } from '../api/budgets'
 import type { FinancialCategory } from '../api/categories'
 import { FinancialBudgetsPage } from './FinancialBudgets'
-import { overview as baseOverview } from './overview/overviewFixtures'
 import { budgetControl } from './overview/budgetControlFixtures'
 import type { BudgetControl } from '../api/overview'
 
@@ -72,11 +71,12 @@ function mockApi(options: { budgets?: FinancialBudget[]; runs?: FinancialBudgetT
       return Response.json(budget, { status: init.method === 'POST' ? 201 : 200 })
     }
     if (init?.method === 'DELETE') return new Response(null, { status: 204 })
-    if (url.includes('/financial-dashboard/overview')) {
+    if (url.includes('/financial-dashboard/budget-summary')) {
       const competence = new URL(url, 'http://x').searchParams.get('competence') ?? '2026-10'
       const pf = options.pf?.(competence) ?? {}
       if (pf === 'fail') return new Response('x', { status: 500 })
-      return Response.json({ ...baseOverview, pfBudgetControl: budgetControl({ scopeKind: 'pf', competence, ...pf }) })
+      const control = budgetControl({ scopeKind: 'pf', competence, ...pf })
+      return Response.json({ state: control.state, competence, scopeKind: 'pf', total: control.total, notes: control.notes })
     }
     if (options.effective && url.includes('/budgets/effective') && !url.includes('/execution')) return Response.json(options.effective)
     if (url.includes('/composition')) return Response.json(composition(Number(new URL(url, 'http://x').searchParams.get('page'))))
@@ -358,9 +358,78 @@ describe('FinancialBudgetsPage — Acompanhamento do mês', () => {
     expect(agenda).toHaveBeenCalledWith('2026-11')
   })
 
+  it('depois de salvar uma mudança de gestão, o resumo da competência é consultado de novo e substitui o anterior', async () => {
+    let target = '12500.00'
+    const calls = mockApi({ pf: () => ({ total: total({ target }) }) })
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 12.500,00'))
+    const summaryCalls = () => calls.filter(call => call.url.includes('/budget-summary?competence=2026-10')).length
+    const before = summaryCalls()
+    target = '4500.00'
+    const card = await screen.findByRole('article', { name: 'Meta Todos os cartões' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Editar' }))
+    fireEvent.change(within(card).getByLabelText('Valor do limite de Todos os cartões'), { target: { value: '4.500,00' } })
+    fireEvent.click(within(card).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(summaryCalls()).toBeGreaterThan(before))
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 4.500,00'))
+  })
+
   it('deixa explícito o efeito temporal das ações de gestão', async () => {
     mockApi()
     render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
     expect(await screen.findByText((_, element) => Boolean(element?.classList.contains('budget-scope-note')) && /valem só para Outubro de 2026/.test(element?.textContent ?? ''))).toBeTruthy()
   })
+
+  it('carrega só o resumo do orçamento PF: não depende do overview completo do dashboard', async () => {
+    const calls = mockApi()
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 12.500,00'))
+    expect(calls.some(call => call.url.includes('/financial-dashboard/budget-summary?competence=2026-10'))).toBe(true)
+    expect(calls.some(call => call.url.includes('/financial-dashboard/overview'))).toBe(false)
+  })
+
+  it('falha (inclusive timeout) é falha de leitura: mensagem própria, com Tentar novamente; competência, gestão e Ver na Agenda continuam utilizáveis', async () => {
+    let fail = true
+    mockApi({ pf: () => fail ? 'fail' : {} })
+    const agenda = vi.fn()
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" onNavigateToAgenda={agenda} />)
+    const region = await tracking()
+    expect(await within(region).findByText('Não foi possível carregar o acompanhamento deste mês.')).toBeTruthy()
+    expect(within(region).queryByText('Meta')).toBeNull()
+    // o restante da tela segue utilizável enquanto o resumo falha
+    expect(await screen.findByRole('article', { name: 'Meta Despesas fixas' })).toBeTruthy()
+    expect(screen.getByText(/Orçamento padrão ·/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver na Agenda' })); expect(agenda).toHaveBeenCalledWith('2026-10')
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima competência' }))
+    expect(await within(region).findByText('Não foi possível carregar o acompanhamento deste mês.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver na Agenda' })); expect(agenda).toHaveBeenLastCalledWith('2026-11')
+    fail = false
+    fireEvent.click(within(region).getByRole('button', { name: 'Tentar novamente' }))
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 12.500,00'))
+  })
+
+  it('trocas rápidas de competência mostram só o resumo mais recente, mesmo se a resposta antiga chegar depois', async () => {
+    const pending: Record<string, () => void> = {}
+    mockApi({ pf: competence => competence === '2026-10' ? ({ total: total({ target: '1000.00' }) }) : competence === '2026-11' ? ({ total: total({ target: '2000.00' }) }) : ({ total: total({ target: '3000.00' }) }) })
+    const original = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/budget-summary') && !url.includes('competence=2026-12')) await new Promise<void>(resolve => { pending[url.includes('2026-10') ? '10' : '11'] = resolve })
+      return original(input, init)
+    }))
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    await waitFor(() => expect(pending['10']).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima competência' }))
+    await waitFor(() => expect(pending['11']).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima competência' }))
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 3.000,00'))
+    pending['11'](); pending['10']() // respostas antigas chegam por último
+    await new Promise(resolve => setTimeout(resolve, 40))
+    expect(plain(figure(region, 'Meta'))).toContain('R$ 3.000,00')
+    expect(plain(region.textContent ?? '')).toContain('Dezembro de 2026')
+  })
+
 })

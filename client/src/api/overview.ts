@@ -190,6 +190,22 @@ export interface DashboardOverview {
   monthlyResult?: MonthlyResult | null
 }
 
+/**
+ * Resumo do orçamento PF de uma competência (tela de Orçamento): o mesmo total de `pfBudgetControl.total` da Visão Geral, sem os demais blocos do dashboard.
+ * `total` nulo (estado Unavailable) = indisponível, nunca zerado. Competência e valores vêm da mesma resposta.
+ */
+export interface BudgetSummary {
+  state: 'Complete' | 'Partial' | 'TargetNotDefined' | 'Unavailable'; competence: string; scopeKind: string; total: BudgetControlTotal | null; notes: string[]
+  totalTargetOrigin?: TargetOrigin | null; totalTargetFrom?: string | null
+}
+export function getBudgetSummary(workspaceId: string, competence: string, signal?: AbortSignal): Promise<BudgetSummary> {
+  return requestJson<BudgetSummary>(`/api/financial-workspaces/${encodeURIComponent(workspaceId)}/financial-dashboard/budget-summary?${new URLSearchParams({ competence })}`,
+    { signal, headers: { Accept: 'application/json' } }, { fallback: 'Falha ao carregar o acompanhamento do orçamento.' }).then(data => {
+    if (!data || typeof data !== 'object' || !('state' in data) || !('competence' in data)) throw new Error('Resposta inesperada do acompanhamento do orçamento.')
+    return data
+  })
+}
+
 export function getDashboardOverview(workspaceId: string, competence: string, scope: PlanActualScopeChoice, signal?: AbortSignal): Promise<DashboardOverview> {
   const query = new URLSearchParams({ competence, scope: scope.kind })
   if (scope.kind === 'account' && scope.accountId) query.set('accountId', scope.accountId)
