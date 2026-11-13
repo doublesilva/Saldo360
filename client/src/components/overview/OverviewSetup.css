@@ -1,0 +1,17 @@
+/* P1: bloco "Configure seu orçamento". Uma coluna em qualquer largura; em contêineres largos as etapas se distribuem em até quatro colunas. Sem larguras fixas em px. */
+.ov-setup { display: grid; gap: .5rem; min-width: 0; padding: .75rem 1rem; border: 1px solid var(--ov-border); border-radius: var(--ov-radius); background: var(--ov-card); }
+.ov-setup__title { font-size: .9375rem; font-weight: 650; }
+.ov-setup__next { display: flex; flex-wrap: wrap; gap: .25rem .5rem; align-items: baseline; overflow-wrap: anywhere; }
+.ov-setup__label { font-size: .75rem; color: var(--ov-muted); }
+.ov-setup__steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.ov-setup__step { display: grid; gap: .25rem; min-width: 0; padding: .5rem .75rem; border: 1px solid var(--ov-border); border-radius: var(--ov-radius); overflow-wrap: anywhere; }
+.ov-setup__step--next { border-color: var(--ov-primary); }
+.ov-setup__head { display: flex; flex-wrap: wrap; gap: .25rem .5rem; align-items: baseline; }
+.ov-setup__index, .ov-setup__state { font-size: .75rem; color: var(--ov-muted); }
+.ov-setup__state { font-weight: 600; }
+.ov-setup__step--done .ov-setup__state { color: var(--ov-primary); }
+.ov-setup__step--blocked .ov-setup__state, .ov-setup__step--unknown .ov-setup__state { color: var(--ov-danger); }
+.ov-setup__detail { font-size: .875rem; }
+.ov-setup__actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+@container ov (min-width: 40rem) { .ov-setup__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container ov (min-width: 62rem) { .ov-setup__steps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

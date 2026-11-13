@@ -122,7 +122,7 @@ describe('Visão Geral — composição do dashboard Folio', () => {
     await loaded()
     expect(screen.getByRole('heading', { level: 2 }).textContent).toContain('Outubro de 2026')
     expect(screen.getAllByRole('heading', { level: 3 }).map(title)).toEqual([
-      'Próximas ações', 'Resumo do mês', 'Resultado do mês', 'Composição do fluxo de caixa', 'Orçamento mensal', 'Evolução financeira', 'Últimos lançamentos', 'Contas', 'Próximos compromissos', 'Metas',
+      'Próximas ações', 'Configure seu orçamento', 'Resumo do mês', 'Resultado do mês', 'Composição do fluxo de caixa', 'Orçamento mensal', 'Evolução financeira', 'Últimos lançamentos', 'Contas', 'Próximos compromissos', 'Metas',
     ])
     const order = ['Próximas ações', 'Resumo do mês', 'Resultado do mês', 'Composição do fluxo de caixa', 'Saldo e cheque especial', 'Orçamento mensal', 'Evolução financeira'].map(name => document.body.innerHTML.indexOf(name))
     expect(order.every((index, position) => index > 0 && (position === 0 || index > order[position - 1]))).toBe(true)

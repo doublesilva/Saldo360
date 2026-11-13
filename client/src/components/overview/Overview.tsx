@@ -11,6 +11,7 @@ import { OverviewAlerts } from './OverviewAlerts'
 import { OverviewEvolutionSection } from './OverviewEvolution'
 import { OverviewBudgetProgress } from './OverviewBudgetProgress'
 import { OverviewAccounts, OverviewGoals, OverviewRecent, OverviewUpcoming } from './OverviewLists'
+import { OverviewSetupGuide } from './OverviewSetupGuide'
 import { OverviewSyncLine } from './OverviewSync'
 import { buildPriorityItems } from './priorityItems'
 import { loadDecisionSummary } from '../decisionQueue/queueModel'
@@ -90,6 +91,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
     </header>
 
     <OverviewAlerts items={items} state={{ loading: planBlock.loading || overviewBlock.loading || queue.load.state === 'loading', failed: Boolean(planBlock.error || overviewBlock.error || queue.load.state === 'error' || queueData?.failedSources.length) }} onNavigate={onNavigate} onReload={reloadAll} />
+    <OverviewSetupGuide workspaceId={workspaceId} competence={competence} scope={scope} scopeText={scopeText} data={data} plan={planData} refreshKey={refreshKey} onNavigate={onNavigate} />
     <OverviewSummary competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
 
     <details className="ov-details ov-more">
