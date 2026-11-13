@@ -17,10 +17,6 @@ const connection = (over: Partial<PluggyConnection> = {}): PluggyConnection => (
   id: 'c1', label: 'Itaú', itemReference: 'item', institution: 'Itaú', institutionType: null, isOpenFinance: null, state: 'Healthy', status: null, executionStatus: null,
   lastUpdatedAt: '2026-11-04T12:00:00Z', consentExpiresAt: null, errorCode: null, errorMessage: null, integrationError: null, createdAt: '2026-11-01T00:00:00Z', ...over,
 })
-const planWithSync = (connections: { connectionId: string; lastSuccessAt: string | null }[]): PlanActualDashboard => ({
-  ...planActual, sync: { autoEnabled: false, autoIntervalHours: 6, oldestSuccessAt: null, latestSuccessAt: null, sameMoment: true, stale: false, state: 'Fresh', nextAttemptAt: null,
-    connections: connections.map(c => ({ ...c, label: 'Itaú', status: 'Healthy', lastAttemptAt: c.lastSuccessAt, nextAttemptAt: null, consentExpiringSoon: false })) },
-})
 const noTarget = budgetControl({ state: 'TargetNotDefined', total: { ...budgetControl().total, targetDefined: false, target: null, status: 'NoTarget' } })
 const zeroTarget = budgetControl({ total: { ...budgetControl().total, targetDefined: true, target: '0.00' } })
 const noAccounts: DashboardOverview['accounts'] = { state: 'Complete', asOf: '2026-11-05', items: [] }
@@ -28,7 +24,7 @@ const withData = (over: Partial<DashboardOverview> = {}): DashboardOverview => (
 
 type Integration = 'unavailable' | 'error' | { connections: PluggyConnection[] }
 let calls: string[] = []
-function mockApi({ integration = { connections: [] }, summary }: { integration?: Integration; summary?: unknown } = {}) {
+function mockApi({ integration = { connections: [] }, summary, imported = [] }: { integration?: Integration; summary?: unknown; imported?: string[] } = {}) {
   calls = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
@@ -38,6 +34,7 @@ function mockApi({ integration = { connections: [] }, summary }: { integration?:
       return integration === 'unavailable' ? new Response('{}', { status: 404 }) : new Response('{}', { status: 200 })
     }
     if (url.endsWith('/pluggy-integration/connections')) return new Response(JSON.stringify(typeof integration === 'object' ? integration.connections : []), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    if (url.includes('/automation/runs')) return new Response(JSON.stringify({ items: imported.map((connectionId, i) => ({ id: `r${i}`, kind: 'Sync', state: 'Completed', connectionId })), total: imported.length, page: 1, pageSize: 100 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     if (url.includes('/financial-dashboard/budget-summary')) return new Response(JSON.stringify(summary ?? { state: 'Complete', competence: COMPETENCE, scopeKind: 'pf', total: noTarget.total, notes: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     return new Response('{}', { status: 404 })
   }))
@@ -90,9 +87,9 @@ describe('guia de primeira configuração', () => {
     await waitFor(() => expect(within(step('Conectar uma conta')).getByRole('button', { name: 'Conectar banco' })).toBeTruthy())
   })
 
-  it('conexão criada sem primeira importação é um estado distinto e leva à conexão', async () => {
+  it('conexão criada sem primeira importação (mesmo com escopo sem sync) é um estado distinto e leva à conexão', async () => {
     mockApi({ integration: { connections: [connection({ state: 'Updating', lastUpdatedAt: null })] } })
-    setup({ data: withData({ pfBudgetControl: noTarget }), plan: planWithSync([{ connectionId: 'c1', lastSuccessAt: null }]) })
+    setup({ data: withData({ pfBudgetControl: noTarget }) })
     await block()
     const data = step('Conferir os dados')
     expect(within(data).getByText('Importando')).toBeTruthy()
@@ -101,9 +98,16 @@ describe('guia de primeira configuração', () => {
     expect(navigations[0]).toEqual({ section: 'automation', context: { automationTab: 'connections', connectionIds: ['c1'] } })
   })
 
+  it('importação anterior conta mesmo quando a Visão Geral não traz sync (escopo sem esse dado)', async () => {
+    mockApi({ integration: { connections: [connection()] }, imported: ['c1'] })
+    setup({ data: withData({ pfBudgetControl: noTarget }), plan: { ...planActual, sync: null } })
+    await block()
+    expect(within(step('Conferir os dados')).getByText('Concluída')).toBeTruthy()
+  })
+
   it('primeira importação com falha leva à conexão afetada', async () => {
     mockApi({ integration: { connections: [connection({ id: 'c9', state: 'Error', errorCode: 'X' })] } })
-    setup({ data: withData({ pfBudgetControl: noTarget }), plan: planWithSync([{ connectionId: 'c9', lastSuccessAt: null }]) })
+    setup({ data: withData({ pfBudgetControl: noTarget }) })
     await block()
     const data = step('Conferir os dados')
     expect(within(data).getByText('Pendência')).toBeTruthy()
@@ -136,7 +140,7 @@ describe('guia de primeira configuração', () => {
     expect(within(projection).getByText('Projeção parcial')).toBeTruthy()
     expect(within(projection).getByText(/Novembro de 2026 · Conta principal.*limitações/)).toBeTruthy()
     fireEvent.click(within(projection).getByRole('button', { name: 'Ver projeção' }))
-    expect(navigations[0]).toEqual({ section: 'planning', context: { planningTab: 'projection', competence: COMPETENCE, recoveryScope: { kind: 'all', accountId: undefined } } })
+    expect(navigations[0]).toEqual({ section: 'planning', context: { planningTab: 'six', competence: COMPETENCE, recoveryScope: { kind: 'all', accountId: undefined } } })
   })
 
   it('projeção indisponível é um estado distinto, sem ação de abrir', async () => {
@@ -161,8 +165,8 @@ describe('guia de primeira configuração', () => {
   })
 
   it('orçamento completo sem pendências: o bloco não aparece', async () => {
-    mockApi({ integration: { connections: [connection()] } })
-    setup({ data: withData(), plan: planWithSync([{ connectionId: 'c1', lastSuccessAt: '2026-11-04T12:00:00Z' }]) })
+    mockApi({ integration: { connections: [connection()] }, imported: ['c1'] })
+    setup({ data: withData() })
     await waitFor(() => expect(calls.some(url => url.endsWith('/pluggy-integration/connections'))).toBe(true))
     await new Promise(resolve => setTimeout(resolve, 30))
     expect(screen.queryByRole('region', { name: 'Configure seu orçamento' })).toBeNull()
@@ -191,8 +195,8 @@ describe('guia de primeira configuração', () => {
   })
 
   it('o bloco é somente leitura: nenhuma consulta de escrita ao abrir', async () => {
-    mockApi({ integration: { connections: [connection()] } })
-    setup({ data: withData({ pfBudgetControl: noTarget }), plan: planWithSync([{ connectionId: 'c1', lastSuccessAt: '2026-11-04T12:00:00Z' }]) })
+    mockApi({ integration: { connections: [connection()] }, imported: ['c1'] })
+    setup({ data: withData({ pfBudgetControl: noTarget }) })
     await block()
     const fetchMock = globalThis.fetch as unknown as { mock: { calls: [unknown, RequestInit | undefined][] } }
     expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true)

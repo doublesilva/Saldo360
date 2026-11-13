@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { getBudgetSummary, type DashboardOverview } from '../../api/overview'
 import type { PlanActualDashboard, PlanActualScopeChoice } from '../../api/planActual'
 import { isPluggyIntegrationAvailable, listIntegrationConnections } from '../../api/pluggyIntegration'
+import { listAutomationRuns } from '../../api/pluggyAutomation'
 import type { Go } from './Overview'
 import { buildSetupGuide, type BudgetSignal, type IntegrationSignal, type SetupAction, type SetupStep } from './setupGuide'
 import { useLoad } from './useLoad'
@@ -14,8 +15,14 @@ export function OverviewSetupGuide({ workspaceId, competence, scope, scopeText, 
   workspaceId: string; competence: string; scope: PlanActualScopeChoice; scopeText: string; data: DashboardOverview | null; plan: PlanActualDashboard | null; refreshKey: number; onNavigate: Go
 }) {
   const integrationLoad = useLoad(`${workspaceId}|${refreshKey}`, useCallback(async (signal: AbortSignal) => {
-    if (!await isPluggyIntegrationAvailable(workspaceId, signal)) return { available: false, connections: [] }
-    return { available: true, connections: await listIntegrationConnections(workspaceId, signal) }
+    if (!await isPluggyIntegrationAvailable(workspaceId, signal)) return { available: false, connections: [], imported: [] }
+    const connections = await listIntegrationConnections(workspaceId, signal)
+    if (connections.length === 0) return { available: true, connections, imported: [] }
+    // Primeira importação = sincronização concluída no histórico (por conexão; execução sem conexão cobre todas). Não depende do escopo da Visão Geral.
+    const runs = await listAutomationRuns(workspaceId, { kind: 'Sync', pageSize: 100 }, signal)
+    const done = runs.items.filter(run => run.state === 'Completed' || run.state === 'CompletedWithPending')
+    const imported = done.some(run => !run.connectionId) ? connections.map(c => c.id) : done.map(run => run.connectionId as string)
+    return { available: true, connections, imported }
   }, [workspaceId]))
 
   // A meta é a da competência atual, não a navegada. Quando coincidem, reaproveita o orçamento PF já carregado pela Visão Geral (sem nova consulta).

@@ -16,7 +16,7 @@ export interface SetupAction { label: string; to?: Destination; retry?: 'integra
 export interface SetupStep { key: SetupStepKey; title: string; state: SetupState; stateLabel: string; detail: string; actions: SetupAction[] }
 export interface SetupGuide { steps: SetupStep[]; next: SetupStep }
 
-export type IntegrationSignal = { state: 'loading' } | { state: 'error' } | { state: 'loaded'; available: boolean; connections: PluggyConnection[] }
+export type IntegrationSignal = { state: 'loading' } | { state: 'error' } | { state: 'loaded'; available: boolean; connections: PluggyConnection[]; /** Conexões com ao menos uma sincronização concluída (histórico da automação, independente do escopo da Visão Geral). */ imported: string[] }
 /** Meta PF da competência atual: `targetDefined` distingue meta ausente de meta definida com valor zero. */
 export type BudgetSignal = { state: 'loading' } | { state: 'error' } | { state: 'loaded'; targetDefined: boolean; target: string | null; competence: string }
 
@@ -52,7 +52,7 @@ function accountStep({ accounts, integration }: SetupInput): SetupStep {
     actions: [{ label: 'Conectar banco', to: { section: 'automation', context: { automationTab: 'connections' } } }, manual] }
 }
 
-function dataStep({ accounts, integration, plan }: SetupInput, hasAccount: boolean): SetupStep {
+function dataStep({ accounts, integration }: SetupInput, hasAccount: boolean): SetupStep {
   const base = { key: 'data' as const, title: 'Conferir os dados' }
   if (!hasAccount) return { ...base, state: 'pending', stateLabel: 'Aguardando a conta', detail: 'Disponível depois que houver uma conta.', actions: [] }
   if (integration.state === 'error') {
@@ -65,7 +65,8 @@ function dataStep({ accounts, integration, plan }: SetupInput, hasAccount: boole
       ? { ...base, state: 'done', stateLabel: 'Concluída', detail: 'As contas cadastradas têm saldo para uma primeira projeção.', actions: [] }
       : { ...base, state: 'pending', stateLabel: 'Pendente', detail: 'Nenhuma conta tem saldo disponível. Informe o saldo da conta para a primeira projeção.', actions: [{ label: 'Usar conta manual', to: { section: 'accounts' } }] }
   }
-  const synced = new Map((plan?.sync?.connections ?? []).map(c => [c.connectionId, c.lastSuccessAt]))
+  const importedIds = new Set(integration.state === 'loaded' ? integration.imported : [])
+  const synced = { get: (id: string) => importedIds.has(id) }
   const name = (c: PluggyConnection) => c.label ?? c.institution ?? 'Conexão'
   const bad = connections.filter(c => badStates.has(c.state))
   const open = (ids: string[], label: string): SetupAction => ({ label, to: { section: 'automation', context: { automationTab: 'connections', connectionIds: ids } } })
@@ -106,7 +107,7 @@ function projectionStep({ decision, plan, competence, scopeText, scope }: SetupI
     return { ...base, state: 'unavailable', stateLabel: 'Projeção indisponível', actions: [],
       detail: `${where}: ${coverageMessage(decision.coverage)}` }
   }
-  const open: SetupAction = { label: 'Ver projeção', to: { section: 'planning', context: { planningTab: 'projection', competence, recoveryScope: scope } } }
+  const open: SetupAction = { label: 'Ver projeção', to: { section: 'planning', context: { planningTab: 'six', competence, recoveryScope: scope } } }
   const partial = decision.state === 'Partial' || (plan !== null && !plan.coverage.complete)
   return partial
     ? { ...base, state: 'partial', stateLabel: 'Projeção parcial', actions: [open], detail: `${where}: há dados incompletos, então a projeção tem limitações. ${decision.notes[0] ?? ''}`.trim() }
