@@ -1,120 +1,142 @@
-import type { FinancialDecision, OverviewAccounts } from '../../api/overview'
-import type { PlanActualDashboard } from '../../api/planActual'
+import type { FinancialAccount } from '../../api/accounts'
+import type { SixMonthPlan } from '../../api/monthlyPlan'
 import type { PluggyConnection } from '../../api/pluggyPoc'
 import type { Destination } from './priorityItems'
-import { coverageMessage } from './decisionText'
-import { money, monthTitle } from './overviewText'
+import { money, monthTitle, scopeLabel } from './overviewText'
 
-// P1: guia da primeira configuração. Só descreve sinais que as APIs já entregam (contas, conexões, última importação, meta PF, cobertura da projeção);
-// nada é gravado e nenhum valor é calculado aqui. Cada etapa tem estado em texto, e só a próxima etapa pendente oferece ação.
+// P1: guia da primeira configuração. Cada etapa vem de uma consulta própria (contas, integração, importações, meta PF e planejamento de seis meses), sem depender do resumo
+// completo da Visão Geral. Só descreve sinais que as APIs já entregam; nada é gravado nem calculado aqui. Uma etapa só é dada como pendente com evidência: consulta em
+// andamento é "Consultando" e consulta com falha é "não consultada" com nova tentativa — nunca se presume pendente.
 
 export type SetupStepKey = 'account' | 'data' | 'budget' | 'projection'
-/** `done` conta para retirar o bloco; `partial` é utilizável com limitação; `blocked` precisa de decisão; `unknown` = sinal não pôde ser lido. */
-export type SetupState = 'done' | 'pending' | 'running' | 'partial' | 'blocked' | 'unavailable' | 'unknown'
+/** `done` conta para retirar o bloco; `checking` = consultando; `unknown` = a consulta falhou; os demais são estados confirmados que ainda pedem algo. */
+export type SetupState = 'done' | 'pending' | 'running' | 'partial' | 'blocked' | 'unavailable' | 'checking' | 'unknown'
+export type SetupQuery = 'accounts' | 'integration' | 'imports' | 'budget' | 'projection'
 
-export interface SetupAction { label: string; to?: Destination; retry?: 'integration' | 'budget' }
+export interface SetupAction { label: string; to?: Destination; retry?: SetupQuery }
 export interface SetupStep { key: SetupStepKey; title: string; state: SetupState; stateLabel: string; detail: string; actions: SetupAction[] }
-export interface SetupGuide { steps: SetupStep[]; next: SetupStep }
+export interface SetupGuide {
+  steps: SetupStep[]; next: SetupStep
+  /** Alguma etapa confirmada ainda pede algo (não é só consulta em andamento ou com falha). */
+  applicable: boolean
+}
 
-export type IntegrationSignal = { state: 'loading' } | { state: 'error' } | { state: 'loaded'; available: boolean; connections: PluggyConnection[]; /** Conexões com ao menos uma sincronização concluída (histórico da automação, independente do escopo da Visão Geral). */ imported: string[] }
+export type Signal<T> = { state: 'loading' } | { state: 'error' } | { state: 'loaded'; data: T }
+export interface IntegrationData { available: boolean; connections: PluggyConnection[] }
 /** Meta PF da competência atual: `targetDefined` distingue meta ausente de meta definida com valor zero. */
-export type BudgetSignal = { state: 'loading' } | { state: 'error' } | { state: 'loaded'; targetDefined: boolean; target: string | null; competence: string }
+export interface BudgetData { targetDefined: boolean; target: string | null; competence: string }
 
 export interface SetupInput {
-  accounts: OverviewAccounts; decision: FinancialDecision | null; plan: PlanActualDashboard | null
-  integration: IntegrationSignal; budget: BudgetSignal
-  /** Competência e escopo que a Visão Geral está mostrando: é o que "Ver projeção" abre. */
-  competence: string; scopeText: string; scope: { kind: 'primary' | 'all' | 'account'; accountId?: string }
+  accounts: Signal<FinancialAccount[]>
+  integration: Signal<IntegrationData>
+  /** Conexões com ao menos uma sincronização concluída (histórico da automação, independente do escopo da Visão Geral). */
+  imports: Signal<string[]>
+  budget: Signal<BudgetData>
+  /** Planejamento de seis meses da competência e do escopo mostrados: é o destino de "Ver projeção". */
+  projection: Signal<SixMonthPlan>
+  competence: string; scope: { kind: 'primary' | 'all' | 'account'; accountId?: string }
 }
 
 const manual: SetupAction = { label: 'Usar conta manual', to: { section: 'accounts' } }
+const connect: SetupAction = { label: 'Conectar banco', to: { section: 'automation', context: { automationTab: 'connections' } } }
 const badStates = new Set(['ActionRequired', 'ConsentExpired', 'Error'])
+const retry = (query: SetupQuery): SetupAction => ({ label: 'Tentar novamente', retry: query })
 
 function accountStep({ accounts, integration }: SetupInput): SetupStep {
   const base = { key: 'account' as const, title: 'Conectar uma conta' }
-  const connections = integration.state === 'loaded' ? integration.connections : []
-  if (accounts.items.length > 0) {
-    return { ...base, state: 'done', stateLabel: 'Concluída', actions: [],
-      detail: connections.length > 0 ? 'Há uma conta conectada ao banco.' : 'Há uma conta cadastrada manualmente.' }
+  if (accounts.state === 'loading') return { ...base, state: 'checking', stateLabel: 'Consultando', detail: 'Consultando as contas do orçamento.', actions: [] }
+  if (accounts.state === 'error') return { ...base, state: 'unknown', stateLabel: 'Contas não consultadas', detail: 'Não foi possível consultar as contas. Você pode tentar de novo ou cadastrar a conta manualmente.', actions: [retry('accounts'), manual] }
+  const list = accounts.data
+  if (list.length > 0) {
+    const connected = list.some(a => a.origin === 'Pluggy') || (integration.state === 'loaded' && integration.data.connections.length > 0)
+    return { ...base, state: 'done', stateLabel: 'Concluída', actions: [], detail: connected ? 'Há uma conta conectada ao banco.' : 'Há uma conta cadastrada manualmente.' }
   }
+  if (integration.state === 'loading') return { ...base, state: 'checking', stateLabel: 'Consultando', detail: 'Nenhuma conta cadastrada. Consultando a integração bancária.', actions: [] }
   if (integration.state === 'error') {
-    return { ...base, state: 'unknown', stateLabel: 'Integração não consultada', detail: 'Não foi possível consultar a integração bancária. Você pode tentar de novo ou cadastrar a conta manualmente.',
-      actions: [{ label: 'Tentar novamente', retry: 'integration' }, manual] }
+    return { ...base, state: 'unknown', stateLabel: 'Integração não consultada', detail: 'Nenhuma conta cadastrada e não foi possível consultar a integração bancária. Tente de novo ou cadastre a conta manualmente.', actions: [retry('integration'), manual] }
   }
-  if (integration.state === 'loaded' && !integration.available) {
+  if (!integration.data.available) {
     return { ...base, state: 'pending', stateLabel: 'Pendente', detail: 'A integração bancária não está disponível neste orçamento. Cadastre a conta manualmente.', actions: [manual] }
   }
-  if (connections.length > 0) {
+  if (integration.data.connections.length > 0) {
     return { ...base, state: 'pending', stateLabel: 'Pendente', detail: 'A conexão foi criada, mas nenhuma conta foi vinculada ainda.',
       actions: [{ label: 'Ver conexão', to: { section: 'automation', context: { automationTab: 'connections' } } }, manual] }
   }
-  return { ...base, state: 'pending', stateLabel: 'Pendente', detail: 'Nenhuma conta conectada ou cadastrada.',
-    actions: [{ label: 'Conectar banco', to: { section: 'automation', context: { automationTab: 'connections' } } }, manual] }
+  return { ...base, state: 'pending', stateLabel: 'Pendente', detail: 'Nenhuma conta conectada ou cadastrada.', actions: [connect, manual] }
 }
 
-function dataStep({ accounts, integration }: SetupInput, hasAccount: boolean): SetupStep {
+const runningLabel = (importing: boolean) => importing ? 'Importando' : 'Aguardando a primeira importação'
+
+function dataStep({ accounts, integration, imports }: SetupInput, hasAccount: boolean): SetupStep {
   const base = { key: 'data' as const, title: 'Conferir os dados' }
-  if (!hasAccount) return { ...base, state: 'pending', stateLabel: 'Aguardando a conta', detail: 'Disponível depois que houver uma conta.', actions: [] }
-  if (integration.state === 'error') {
-    return { ...base, state: 'unknown', stateLabel: 'Integração não consultada', detail: 'Não foi possível confirmar o estado da conexão.', actions: [{ label: 'Tentar novamente', retry: 'integration' }] }
-  }
-  const connections = integration.state === 'loaded' ? integration.connections : []
+  if (!hasAccount) return { ...base, state: accounts.state === 'loaded' ? 'pending' : 'checking', stateLabel: accounts.state === 'loaded' ? 'Aguardando a conta' : 'Consultando', detail: 'Disponível depois que houver uma conta.', actions: [] }
+  if (integration.state === 'loading') return { ...base, state: 'checking', stateLabel: 'Consultando', detail: 'Consultando o estado da conexão.', actions: [] }
+  if (integration.state === 'error') return { ...base, state: 'unknown', stateLabel: 'Integração não consultada', detail: 'Não foi possível confirmar o estado da conexão.', actions: [retry('integration')] }
+  const connections = integration.data.connections
   if (connections.length === 0) {
-    // Percurso manual: o critério é o mesmo da projeção, saldo disponível em alguma conta.
-    return accounts.items.some(a => a.balanceAvailable)
+    // Percurso manual: saldo inicial informado em alguma conta (mesmo critério da projeção); saldo observado pelo banco também vale.
+    const list = accounts.state === 'loaded' ? accounts.data : []
+    return list.some(a => a.openingBalance !== null || a.integration?.observedBalance != null)
       ? { ...base, state: 'done', stateLabel: 'Concluída', detail: 'As contas cadastradas têm saldo para uma primeira projeção.', actions: [] }
-      : { ...base, state: 'pending', stateLabel: 'Pendente', detail: 'Nenhuma conta tem saldo disponível. Informe o saldo da conta para a primeira projeção.', actions: [{ label: 'Usar conta manual', to: { section: 'accounts' } }] }
+      : { ...base, state: 'pending', stateLabel: 'Pendente', detail: 'Nenhuma conta tem saldo informado. Informe o saldo da conta para a primeira projeção.', actions: [{ label: 'Usar conta manual', to: { section: 'accounts' } }] }
   }
-  const importedIds = new Set(integration.state === 'loaded' ? integration.imported : [])
-  const synced = { get: (id: string) => importedIds.has(id) }
   const name = (c: PluggyConnection) => c.label ?? c.institution ?? 'Conexão'
-  const bad = connections.filter(c => badStates.has(c.state))
   const open = (ids: string[], label: string): SetupAction => ({ label, to: { section: 'automation', context: { automationTab: 'connections', connectionIds: ids } } })
+  const bad = connections.filter(c => badStates.has(c.state))
+  // Importação desconhecida nunca é presumida pendente: enquanto não se sabe, a etapa fica "Consultando" (ou "não consultada" com nova tentativa).
+  if (imports.state === 'error') {
+    return bad.length > 0 ? { ...base, state: 'blocked', stateLabel: 'Pendência', actions: [open(bad.map(c => c.id), 'Ver pendência')], detail: `Há uma pendência na conexão: ${bad.map(name).join(', ')}.` }
+      : { ...base, state: 'unknown', stateLabel: 'Importação não consultada', detail: 'Não foi possível confirmar a primeira importação.', actions: [retry('imports')] }
+  }
+  if (imports.state === 'loading') return { ...base, state: 'checking', stateLabel: 'Consultando', detail: 'Consultando a primeira importação.', actions: [] }
+  const imported = new Set(imports.data)
   if (bad.length > 0) {
-    const ids = bad.map(c => c.id)
-    const firstImportFailed = bad.some(c => !synced.get(c.id))
-    return { ...base, state: 'blocked', stateLabel: 'Pendência', actions: [open(ids, 'Ver pendência')],
+    const firstImportFailed = bad.some(c => !imported.has(c.id))
+    return { ...base, state: 'blocked', stateLabel: 'Pendência', actions: [open(bad.map(c => c.id), 'Ver pendência')],
       detail: `${firstImportFailed ? 'A primeira importação não foi concluída' : 'Há uma pendência na conexão'}: ${bad.map(name).join(', ')}.` }
   }
-  if (connections.some(c => !synced.get(c.id))) {
-    const waiting = connections.filter(c => !synced.get(c.id))
+  const waiting = connections.filter(c => !imported.has(c.id))
+  if (waiting.length > 0) {
     return { ...base, state: 'running', stateLabel: runningLabel(waiting.some(w => w.state === 'Updating')), actions: [open(waiting.map(w => w.id), 'Ver conexão')],
       detail: 'A conexão foi criada; os dados aparecem depois da primeira importação.' }
   }
   return { ...base, state: 'done', stateLabel: 'Concluída', detail: 'A primeira importação foi concluída.', actions: [] }
 }
 
-const runningLabel = (importing: boolean) => importing ? 'Importando' : 'Aguardando a primeira importação'
-
 function budgetStep({ budget }: SetupInput, hasData: boolean): SetupStep {
   const base = { key: 'budget' as const, title: 'Definir o orçamento' }
-  if (budget.state === 'error') return { ...base, state: 'unknown', stateLabel: 'Meta não consultada', detail: 'Não foi possível consultar a meta do orçamento PF.', actions: [{ label: 'Tentar novamente', retry: 'budget' }] }
-  if (budget.state === 'loading') return { ...base, state: 'pending', stateLabel: 'Consultando', detail: 'Consultando a meta do orçamento PF.', actions: [] }
-  const month = monthTitle(budget.competence)
-  if (budget.targetDefined) {
+  if (budget.state === 'error') return { ...base, state: 'unknown', stateLabel: 'Meta não consultada', detail: 'Não foi possível consultar a meta do orçamento PF.', actions: [retry('budget')] }
+  if (budget.state === 'loading') return { ...base, state: 'checking', stateLabel: 'Consultando', detail: 'Consultando a meta do orçamento PF.', actions: [] }
+  const { targetDefined, target, competence } = budget.data
+  const month = monthTitle(competence)
+  if (targetDefined) {
     return { ...base, state: 'done', stateLabel: 'Concluída', actions: [],
-      detail: budget.target === null ? `Há uma meta total PF para ${month}.` : `Meta total PF de ${money(budget.target)} para ${month}${/^0+\.0+$/.test(budget.target) ? ' (valor zero, definido por você)' : ''}.` }
+      detail: target === null ? `Há uma meta total PF para ${month}.` : `Meta total PF de ${money(target)} para ${month}${/^0+\.0+$/.test(target) ? ' (valor zero, definido por você)' : ''}.` }
   }
   return { ...base, state: 'pending', stateLabel: 'Meta ausente', detail: `Ainda não há meta total PF para ${month}.${hasData ? '' : ' Você pode defini-la enquanto os dados chegam.'}`,
-    actions: [{ label: 'Configurar orçamento', to: { section: 'budgets', context: { competence: budget.competence } } }] }
+    actions: [{ label: 'Configurar orçamento', to: { section: 'budgets', context: { competence } } }] }
 }
 
-function projectionStep({ decision, plan, competence, scopeText, scope }: SetupInput): SetupStep {
+function projectionStep({ projection, competence, scope }: SetupInput): SetupStep {
   const base = { key: 'projection' as const, title: 'Abrir a primeira projeção' }
-  const where = `${monthTitle(competence)} · ${scopeText || 'escopo atual'}`
-  if (!decision) return { ...base, state: 'pending', stateLabel: 'Consultando', detail: `Consultando a cobertura de ${where}.`, actions: [] }
-  if (decision.coverage.state === 'Unavailable') {
-    return { ...base, state: 'unavailable', stateLabel: 'Projeção indisponível', actions: [],
-      detail: `${where}: ${coverageMessage(decision.coverage)}` }
-  }
+  if (projection.state === 'loading') return { ...base, state: 'checking', stateLabel: 'Consultando', detail: `Consultando a projeção de ${monthTitle(competence)}.`, actions: [] }
+  if (projection.state === 'error') return { ...base, state: 'unknown', stateLabel: 'Projeção não consultada', detail: `Não foi possível consultar a projeção de ${monthTitle(competence)}.`, actions: [retry('projection')] }
+  const plan = projection.data
+  const where = `${monthTitle(competence)} · ${scopeLabel(plan.scope)}`
+  const month = plan.months.find(m => m.competence === competence) ?? plan.months[0]
+  // Destino: Seis meses (detalhado), que aplica a mesma competência e o mesmo escopo.
   const open: SetupAction = { label: 'Ver projeção', to: { section: 'planning', context: { planningTab: 'six', competence, recoveryScope: scope } } }
-  const partial = decision.state === 'Partial' || (plan !== null && !plan.coverage.complete)
-  return partial
-    ? { ...base, state: 'partial', stateLabel: 'Projeção parcial', actions: [open], detail: `${where}: há dados incompletos, então a projeção tem limitações. ${decision.notes[0] ?? ''}`.trim() }
-    : { ...base, state: 'done', stateLabel: 'Disponível', actions: [open], detail: `${where}: cobertura completa.` }
+  if (!month || (!month.coverage.dataComplete && month.closingBalance === null && month.minimumProjectedBalance === null)) {
+    return { ...base, state: 'unavailable', stateLabel: 'Projeção indisponível', actions: [], detail: `${where}: os dados atuais não permitem projetar este recorte.` }
+  }
+  return month.coverage.dataComplete
+    ? { ...base, state: 'done', stateLabel: 'Disponível', actions: [open], detail: `${where}: cobertura completa.` }
+    : { ...base, state: 'partial', stateLabel: 'Projeção parcial', actions: [open], detail: `${where}: há dados incompletos, então a projeção tem limitações.` }
 }
 
-/** `null` = nada a configurar (todas as etapas aplicáveis concluídas) ou ainda sem sinais suficientes para decidir. */
+const confirmedOpen = new Set<SetupState>(['pending', 'running', 'partial', 'blocked', 'unavailable'])
+
+/** `null` = todas as etapas aplicáveis concluídas. */
 export function buildSetupGuide(input: SetupInput): SetupGuide | null {
   const account = accountStep(input)
   const data = dataStep(input, account.state === 'done')
@@ -124,5 +146,5 @@ export function buildSetupGuide(input: SetupInput): SetupGuide | null {
   // Projeção parcial ainda não conclui a configuração: o bloco fica com "Ver projeção" e a limitação explícita até a cobertura ficar completa.
   if (steps.every(step => step.state === 'done')) return null
   const next = steps.find(step => step.state !== 'done') as SetupStep
-  return { steps, next }
+  return { steps, next, applicable: steps.some(step => confirmedOpen.has(step.state)) }
 }

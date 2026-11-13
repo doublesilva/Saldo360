@@ -188,4 +188,33 @@ public sealed class BudgetSummaryTests(PostgresFixture postgres, ITestOutputHelp
         Assert.True(summary.Median < overview.Median, $"o resumo ({summary.Median:F0} ms) deveria ser mais rápido que o overview completo ({overview.Median:F0} ms)");
         Assert.True(summary.Bytes < overview.Bytes);
     }
+
+    /// <summary>
+    /// P1 (guia de configuração): tempo das consultas que o guia faz sozinho (contas, resumo PF, seis meses) contra as da Visão Geral completa (overview e plan-actual).
+    /// Mesmo conjunto de dados da medição acima.
+    /// </summary>
+    [Fact(Skip = "Medição manual (leva ~2 min e depende da máquina): remova o Skip para reproduzir os tempos registrados na entrega.")]
+    public async Task MeasureGuideQueriesVersusOverview()
+    {
+        await ArrangeAsync("bs-guia", 6);
+        foreach (var account in _accounts) for (var i = 0; i < 25; i++) await ExpenseAsync(account, $"{10 + i}.00", $"Despesa {i}");
+        for (var c = 0; c < 3; c++) { var card = await CardAsync($"Cartão {c}", _accounts[c]); for (var p = 0; p < 4; p++) await PurchaseAsync(card, $"{100 + p * 10}.00"); }
+        await ConfigureTotalAsync(20000m);
+
+        async Task<double> TimeAsync(string url)
+        {
+            async Task OnceAsync() { var r = await SendAsync(HttpMethod.Get, $"{Root}/{url}", _session); Assert.Equal(HttpStatusCode.OK, r.StatusCode); await r.Content.ReadAsStringAsync(); }
+            await OnceAsync();
+            var times = new List<double>();
+            for (var i = 0; i < 5; i++) { var watch = Stopwatch.StartNew(); await OnceAsync(); times.Add(watch.Elapsed.TotalMilliseconds); }
+            times.Sort(); return times[times.Count / 2];
+        }
+        foreach (var (name, url) in new[] {
+            ("contas (listAccounts)", "accounts"),
+            ("budget-summary", $"financial-dashboard/budget-summary?competence={Month}"),
+            ("six-months (primary)", $"monthly-plan/six-months?from={Month}&scope=primary"),
+            ("plan-actual (primary)", $"financial-dashboard/plan-actual?competence={Month}&scope=primary"),
+            ("overview (all)", $"financial-dashboard/overview?competence={Month}&scope=all") })
+            output.WriteLine($"MEDIÇÃO GUIA {name}: mediana {await TimeAsync(url):F0} ms");
+    }
 }

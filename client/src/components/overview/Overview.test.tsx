@@ -724,7 +724,7 @@ describe('Visão Geral — filtros', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }))
     await waitFor(() => expect(calls.some(url => url.includes('competence=2026-11'))).toBe(true))
     fireEvent.change(screen.getByLabelText('Conta ou consolidado'), { target: { value: 'account:pj' } })
-    await waitFor(() => expect(calls.filter(url => url.includes('scope=account') && url.includes('accountId=pj')).length).toBe(3)) // plan-actual, overview e evolução
+    await waitFor(() => expect(calls.filter(url => url.includes('scope=account') && url.includes('accountId=pj')).length).toBe(4)) // plan-actual, overview, evolução e a projeção do guia de configuração (mesmo planejamento de seis meses)
   })
 
   it('lista a conta principal, o consolidado e cada conta; novo lançamento reutiliza Lançamentos', async () => {
