@@ -139,6 +139,8 @@ export interface BudgetControl {
   total: BudgetControlTotal; cards: BudgetControlGroup; outsideCards: BudgetControlGroup; pressures: BudgetPressure[]; recommendations: BudgetRecommendation[]; notes: string[]
   /** T12.2: de onde vem a meta total (resolvedor único da T12.1); `totalTargetFrom` = início da vigência do padrão (AAAA-MM). Ausente em servidores antigos e quando a meta não se aplica a uma conta isolada. */
   totalTargetOrigin?: TargetOrigin | null; totalTargetFrom?: string | null
+  /** Aditivo: sincronização mais antiga das contas integradas do conjunto do controle (horário verificável da origem). Nulo sem integração; ausente em servidores antigos. */
+  dataUpdatedAt?: string | null
 }
 
 /**

@@ -94,7 +94,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
 
     <OverviewAlerts items={items} state={{ loading: planBlock.loading || overviewBlock.loading || queue.load.state === 'loading', failed: Boolean(planBlock.error || overviewBlock.error || queue.load.state === 'error' || queueData?.failedSources.length) }} onNavigate={onNavigate} onReload={reloadAll} />
     <OverviewSetupGuide workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} plan={sixMonths} onNavigate={onNavigate} />
-    <OverviewSummary competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
+    <OverviewSummary queriedAt={overview.loadedAt} competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
 
     <details className="ov-details ov-more">
       <summary>Resultado de caixa, composição e cheque especial</summary>
@@ -112,7 +112,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
       <div className="ov-grid__main">
         <div className="ov-budget-area">
           <OverviewBudgetProgress control={data?.pfBudgetControl ?? null} fixedTarget={data?.budget.state === 'Complete' ? data.budget.fixed?.planned ?? null : null}
-            scopeLabel="Orçamento PF · Todas as contas PF" monthLabel={monthTitle(competence)} workspaceId={workspaceId} competence={competence} {...overviewBlock}
+            scopeLabel="Todas as contas PF" queriedAt={overview.loadedAt} monthLabel={monthTitle(competence)} workspaceId={workspaceId} competence={competence} {...overviewBlock}
             onOpenBudget={() => onNavigate('budgets', { competence })} onOpenCards={() => onNavigate('cards')} />
         </div>
         <OverviewEvolutionSection competence={competence} plan={sixMonths} />

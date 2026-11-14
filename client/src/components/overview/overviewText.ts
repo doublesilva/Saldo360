@@ -32,6 +32,19 @@ export const dateTime = (iso: string | null) => iso
   ? `${formatDate(iso.slice(0, 10))} às ${new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`
   : null
 
+const brParts = (date: Date, options: Intl.DateTimeFormatOptions) => Object.fromEntries(new Intl.DateTimeFormat('pt-BR', { ...options, timeZone: 'America/Sao_Paulo' }).formatToParts(date).map(part => [part.type, part.value]))
+/** "DD/MM às HH:mm" no fuso do negócio, ou null se o instante não for válido. */
+export const dayTime = (iso: string): string | null => {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return null
+  const p = brParts(date, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  return `${p.day}/${p.month} às ${p.hour}:${p.minute}`
+}
+/** "HH:mm" de um instante do navegador (horário em que a consulta respondeu). */
+export const clockTime = (epoch: number): string => { const p = brParts(new Date(epoch), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); return `${p.hour}:${p.minute}` }
+/** Valor monetário do servidor igual a zero ("0.00"): meta zero definida é diferente de meta ausente (nula). */
+export const isZeroAmount = (value: string | null | undefined) => typeof value === 'string' && /^-?0+(\.0+)?$/.test(value)
+
 export const unavailableBalanceReasons: Record<string, string> = {
   OpeningBalanceNotConfigured: 'Sem saldo inicial configurado', BeforeOpeningBalanceDate: 'Anterior ao saldo inicial', Unavailable: 'Não foi possível calcular',
 }

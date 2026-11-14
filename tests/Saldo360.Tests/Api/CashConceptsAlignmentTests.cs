@@ -139,4 +139,14 @@ public sealed class CashConceptsAlignmentTests(PostgresFixture postgres) : Postg
         Assert.Equal(["0.00", "0.00", "0.00", "0.00"], [S(consolidated, "totalInflows"), S(consolidated, "totalOutflows"), S(consolidated, "externalIncome"), S(consolidated, "externalExpenses")]);
         Assert.Equal("0.00", S(consolidated, "net"));
     }
+
+    [Fact]
+    public async Task TheBudgetControlOnlyReportsASourceTimeWhenThereIsAnIntegrationNeverInventingOne()
+    {
+        await ArrangeAsync("conceitos-origem");
+        var overview = await OverviewAsync("all");
+        // Sem integração bancária nas contas, o horário da origem é nulo (o front mostra "Atualização da origem indisponível").
+        Assert.Equal(JsonValueKind.Null, overview.GetProperty("pfBudgetControl").GetProperty("dataUpdatedAt").ValueKind);
+        Assert.Equal(JsonValueKind.Null, overview.GetProperty("decision").GetProperty("context").GetProperty("lastSyncedAt").ValueKind);
+    }
 }

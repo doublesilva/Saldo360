@@ -362,7 +362,7 @@ describe('Visão Geral — orçamento mensal', () => {
     mockApi(); renderPage()
     const budget = await findCard('Orçamento mensal')
     await waitFor(() => expect(text(budget)).toContain('Meta total'))
-    expect(text(budget)).toContain('Orçamento PF · Todas as contas PF · Outubro de 2026')
+    expect(text(budget)).toContain('Outubro de 2026 · Todas as contas PF')
     expect(summary(row('Meta total'))).toBe('Meta total: ver despesas por categoria▾60,0%R$ 7.500,00 / R$ 12.500,00R$ 5.000,00 abaixo da meta')
     expect(summary(row('Cartões de crédito'))).toBe('Cartões de crédito▾70,0%R$ 3.500,00 / R$ 5.000,00R$ 1.500,00 abaixo da meta')
     expect(summary(row('Despesas fora dos cartões'))).toBe('Despesas fora dos cartões53,3%R$ 4.000,00 / R$ 7.500,00R$ 3.500,00 abaixo da meta')
@@ -386,7 +386,7 @@ describe('Visão Geral — orçamento mensal', () => {
     mockApi({ overview: control({ outsideCards: group('OutsideCards', { target: '0.00', projected: '4000.00', margin: '0.00', excess: '4000.00', realizedPercent: null, projectedPercent: null, status: 'Exceeded' }) }) }); renderPage()
     await findCard('Orçamento mensal')
     const outside = await waitFor(() => row('Despesas fora dos cartões'))
-    expect(summary(outside)).toBe('Despesas fora dos cartões—R$ 4.000,00 / R$ 0,00R$ 4.000,00 acima da meta')
+    expect(summary(outside)).toBe('Despesas fora dos cartões—R$ 4.000,00 / R$ 0,00Meta zero · R$ 4.000,00 acima da meta')
   })
 
   it('competência sem meta: gastos visíveis, sem percentual nem meta zero, e acesso para configurar', async () => {
@@ -424,7 +424,7 @@ describe('Visão Geral — orçamento mensal', () => {
     await waitFor(() => expect(summary(row('Meta total'))).toContain('R$ 12.500,00'))
     fireEvent.change(screen.getByLabelText('Conta ou consolidado'), { target: { value: 'account:pj' } })
     await waitFor(() => expect(calls.some(url => url.includes('accountId=pj'))).toBe(true))
-    expect(text(card('Orçamento mensal'))).toContain('Orçamento PF · Todas as contas PF'); expect(summary(row('Meta total'))).toContain('R$ 12.500,00')
+    expect(text(card('Orçamento mensal'))).toContain('Todas as contas PF'); expect(summary(row('Meta total'))).toContain('R$ 12.500,00')
   })
 
   it('meta total ausente: a meta de cartões continua comparável e nada é inventado para o resto', async () => {
@@ -856,5 +856,59 @@ describe('Visão Geral — resumo do mês no topo (T14.3)', () => {
     cleanup(); vi.unstubAllGlobals()
     mockApi({ overview: new Response('{}', { status: 500 }) }); renderPage()
     expect(await within(summary()).findByRole('button', { name: 'Recarregar o resumo' })).toBeTruthy()
+  })
+})
+
+describe('Visão Geral — origem e atualização dos valores', () => {
+  const resumo = () => card('Resumo do mês')
+  const synced = (iso: string | null) => { const base = decision(); return { ...base, context: { ...base.context, lastSyncedAt: iso } } }
+
+  it('Resumo e Orçamento mostram competência, escopo e o horário da origem só quando a resposta o informa', async () => {
+    mockApi({ overview: withSummary({ decision: synced('2026-10-14T17:05:00Z'), pfBudgetControl: budgetControl({ scopeKind: 'pf', dataUpdatedAt: '2026-10-14T16:30:00Z' }) }) }); renderPage()
+    await loaded()
+    await waitFor(() => expect(text(resumo())).toContain('Atualizado em 14/10 às 14:05'))
+    expect(text(resumo())).toContain('Outubro de 2026 · ')
+    expect(text(resumo())).toContain('Atualizado em 14/10 às 13:30') // o orçamento PF tem a sua própria origem
+    expect(text(card('Orçamento mensal'))).toContain('Atualizado em 14/10 às 13:30')
+    expect(text(card('Orçamento mensal'))).toContain('o disponível e os percentuais consideram o projetado')
+    expect(text(resumo())).not.toContain('Atualização da origem indisponível')
+  })
+
+  it('sem horário da origem: diz que está indisponível e mostra só a hora da consulta', async () => {
+    mockApi({ overview: withSummary({ decision: synced(null), pfBudgetControl: budgetControl({ scopeKind: 'pf', dataUpdatedAt: null }) }) }); renderPage()
+    await loaded()
+    await waitFor(() => expect(text(card('Orçamento mensal'))).toContain('Atualização da origem indisponível · Consultado às '))
+    expect(text(resumo())).toContain('Atualização da origem indisponível · Consultado às ')
+    expect(text(resumo())).not.toContain('Atualizado em')
+  })
+
+  it('cobertura parcial traz o motivo da resposta junto dos valores; meta ausente, meta zero e falha ficam distintas', async () => {
+    const base = budgetControl()
+    mockApi({ overview: withSummary({ pfBudgetControl: budgetControl({ scopeKind: 'pf', state: 'Partial', outsideCards: { ...base.outsideCards, reasons: ['MissingPayerAccount'] } }) }) }); renderPage()
+    await loaded()
+    await waitFor(() => expect(text(card('Orçamento mensal'))).toContain('Cobertura parcial · Há cartões sem conta pagadora.'))
+    cleanup()
+    mockApi({ overview: withSummary({ pfBudgetControl: budgetControl({ scopeKind: 'pf', total: { ...base.total, target: '0.00', targetDefined: true, projectedPercent: null, status: 'Exceeded', excess: '100.00', margin: '0.00' } }) }) }); renderPage()
+    await waitFor(() => expect(text(resumo())).toContain('Meta definida em R$ 0,00'))
+    expect(text(resumo())).not.toContain('Meta não configurada')
+    cleanup()
+    mockApi({ overview: withSummary({ pfBudgetControl: budgetControl({ scopeKind: 'pf', state: 'TargetNotDefined', total: { ...base.total, targetDefined: false, target: null, margin: null, excess: null, projectedPercent: null, status: 'NoTarget' } }) }) }); renderPage()
+    await waitFor(() => expect(text(resumo())).toContain('Meta não configurada'))
+    expect(text(resumo())).not.toContain('Cobertura parcial')
+    cleanup()
+    mockApi({ overview: new Response('{}', { status: 500 }) }); renderPage()
+    expect(await within(card('Orçamento mensal')).findByRole('button', { name: 'Recarregar' })).toBeTruthy()
+    expect(text(card('Orçamento mensal'))).not.toContain('Atualizado em'); expect(text(card('Orçamento mensal'))).not.toContain('Cobertura parcial')
+  })
+
+  it('ao trocar a competência o bloco volta a carregar e não mistura horário nem valores do recorte anterior', async () => {
+    mockApi({ overview: withSummary({ decision: synced('2026-10-14T17:05:00Z'), pfBudgetControl: budgetControl({ scopeKind: 'pf', dataUpdatedAt: '2026-10-14T16:30:00Z' }) }) }); renderPage()
+    await loaded()
+    await waitFor(() => expect(text(resumo())).toContain('Atualizado em 14/10 às 14:05'))
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-09' } })
+    await waitFor(() => expect(resumo().querySelectorAll('.ov-skeleton').length).toBeGreaterThan(0))
+    expect(text(resumo())).not.toContain('Atualizado em'); expect(text(resumo())).not.toMatch(/R\$/)
+    expect(text(card('Orçamento mensal'))).not.toContain('Atualizado em'); expect(text(card('Orçamento mensal'))).toContain('Setembro de 2026')
   })
 })

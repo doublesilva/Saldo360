@@ -3,7 +3,8 @@ import { useState, type ReactNode } from 'react'
 import { OverviewBudgetCardDetails } from './OverviewBudgetCardDetails'
 import { OverviewBudgetCategoryDetails } from './OverviewBudgetCategoryDetails'
 import { OperationalError, OperationalLoading } from '../OperationalFeedback'
-import { barWidth, money, percentNow, percentText } from './overviewText'
+import { barWidth, isZeroAmount, money, percentNow, percentText } from './overviewText'
+import { CoverageLine, SourceLine } from './OverviewProvenance'
 
 // Dashboard Folio — Orçamento mensal. Três barras (meta total, cartões e fora dos cartões) com o percentual PROJETADO, o total previsto sobre a meta e a diferença. Total previsto = efetivado +
 // comprometido + estimado, e cartões e fora dos cartões são exclusivos: tudo isso, os percentuais, a margem e o excesso vêm prontos do servidor (resolvedor único de metas da T12.1).
@@ -17,19 +18,19 @@ const icons = {
 
 interface Row { key: string; title: string; icon: keyof typeof icons; status: BudgetGroupStatus; target: string | null; realized: string; committed: string; estimated: string; projected: string; projectedPercent: string | null; margin: string | null; excess: string | null }
 
-export function OverviewBudgetProgress({ control, fixedTarget, scopeLabel, monthLabel, workspaceId, competence, loading, error, retry, onOpenBudget, onOpenCards }: {
-  control: BudgetControl | null; fixedTarget: string | null; scopeLabel: string; monthLabel: string; workspaceId: string; competence: string; loading: boolean; error: unknown; retry: () => void; onOpenBudget: () => void; onOpenCards: () => void
+export function OverviewBudgetProgress({ control, fixedTarget, scopeLabel, monthLabel, workspaceId, competence, loading, error, retry, queriedAt, onOpenBudget, onOpenCards }: {
+  queriedAt: number | null; control: BudgetControl | null; fixedTarget: string | null; scopeLabel: string; monthLabel: string; workspaceId: string; competence: string; loading: boolean; error: unknown; retry: () => void; onOpenBudget: () => void; onOpenCards: () => void
 }) {
   return <section className="ov-card ov-budget" aria-labelledby="ov-budget-title">
-    <header className="ov-card__head"><div><h3 id="ov-budget-title">Orçamento mensal</h3><p className="ov-meta">{scopeLabel ? `${scopeLabel} · ` : ''}{monthLabel}</p></div>
+    <header className="ov-card__head"><div><h3 id="ov-budget-title">Orçamento mensal</h3><p className="ov-meta">{monthLabel}{scopeLabel ? ` · ${scopeLabel}` : ''}</p></div>
       <button type="button" className="ov-link" onClick={onOpenBudget}>Ver detalhes ›</button></header>
     {error ? <OperationalError error={error} onRetry={retry} retryLabel="Recarregar" />
       : !control ? loading ? <OperationalLoading>Carregando o orçamento…</OperationalLoading> : <p className="ov-empty">O orçamento não está disponível.</p>
-        : <Body control={control} fixedTarget={fixedTarget} onOpenBudget={onOpenBudget} workspaceId={workspaceId} competence={competence} onOpenCards={onOpenCards} />}
+        : <Body control={control} fixedTarget={fixedTarget} queriedAt={queriedAt} onOpenBudget={onOpenBudget} workspaceId={workspaceId} competence={competence} onOpenCards={onOpenCards} />}
   </section>
 }
 
-function Body({ control, fixedTarget, onOpenBudget, workspaceId, competence, onOpenCards }: { control: BudgetControl; fixedTarget: string | null; onOpenBudget: () => void; workspaceId: string; competence: string; onOpenCards: () => void }) {
+function Body({ control, fixedTarget, queriedAt, onOpenBudget, workspaceId, competence, onOpenCards }: { control: BudgetControl; fixedTarget: string | null; queriedAt: number | null; onOpenBudget: () => void; workspaceId: string; competence: string; onOpenCards: () => void }) {
   const { total, cards, outsideCards } = control
   const rows: Row[] = [
     { ...total, key: 'total', title: 'Meta total', icon: 'target' },
@@ -46,6 +47,9 @@ function Body({ control, fixedTarget, onOpenBudget, workspaceId, competence, onO
       : row.key === 'cards' ? { open: open === 'cards', onToggle: () => toggle('cards'), hint: null, content: <OverviewBudgetCardDetails id="ov-card-details-cards" workspaceId={workspaceId} competence={competence} onOpenCards={onOpenCards} /> } : null
   return <>
     <ul className="ov-goal-rows">{rows.map(row => <GoalRow key={row.key} row={row} global={global} panel={panel(row)} />)}</ul>
+    <p className="ov-meta">Meta, realizado, comprometido e estimado: o disponível e os percentuais consideram o projetado (realizado + comprometido + estimado).</p>
+    <CoverageLine partial={control.state === 'Partial'} reasons={[...control.cards.reasons, ...control.outsideCards.reasons, ...control.notes]} />
+    <SourceLine updatedAt={control.dataUpdatedAt} queriedAt={queriedAt} />
     <p className="ov-meta">O orçamento PF considera todas as contas PF, independentemente da conta escolhida no topo. Pagamentos de fatura não entram como novo consumo.</p>
     {global && <p className="ov-meta">A meta mensal vale para todas as contas: aqui aparece só o consumo desta conta.</p>}
     {!global && !total.targetDefined && <button type="button" onClick={onOpenBudget}>Configurar orçamento</button>}
@@ -58,7 +62,7 @@ interface Panel { open: boolean; onToggle: () => void; hint: string | null; cont
 function GoalRow({ row, global, panel }: { row: Row; global: boolean; panel: Panel | null }) {
   const tone = global || row.target === null ? 'none' : row.status === 'Exceeded' ? 'over' : 'within'
   const difference = global ? 'Meta global' : row.target === null ? 'Meta não configurada'
-    : row.status === 'Exceeded' ? `${money(row.excess)} acima da meta` : `${money(row.margin)} abaixo da meta`
+    : `${isZeroAmount(row.target) ? 'Meta zero · ' : ''}${row.status === 'Exceeded' ? `${money(row.excess)} acima da meta` : `${money(row.margin)} abaixo da meta`}`
   return <li className={`ov-goal-row ov-goal-row--${tone}`} aria-label={row.title}>
     <span className="ov-goal-row__icon">{icons[row.icon]}</span>
     <div className="ov-goal-row__body">

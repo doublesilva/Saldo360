@@ -112,7 +112,10 @@ public sealed partial class DashboardOverviewService
             var input = new BudgetControlInput(month, period, kind, attributable, totalTarget, cardTarget, totals.CardsApplicable, cardsConfirmed, cardsPending, cardsEstimated, foodComplement, cardReasonsList,
                 outsideRealized, outsideCommitted, outsideReasons, totals.FinanceCharges, overTargets, pfAccounts is null ? Dec(decision?.Commitments.Overdue) : 0m, overdueIncome,
                 classification.State == "Complete" ? classification.NeedsReview + classification.NotEvaluated : 0, unconfirmed, pfAccounts is null && decision?.Context.OverdraftUsed is { } used ? Dec(used) : null);
-            return BudgetControlCalculator.Build(input) with { TotalTargetOrigin = totalOrigin, TotalTargetFrom = totalFrom };
+            // Horário verificável da origem: a sincronização mais antiga das contas integradas do conjunto (mesma regra de Decision.Context.LastSyncedAt). Sem integração, nulo: nunca inventado.
+            var scoped = pfAccounts ?? (selected is null ? [] : [selected]);
+            var synced = scoped.Select(a => a.Integration?.LastSyncedAt).Where(v => v is not null).Select(v => v!.Value).ToList();
+            return BudgetControlCalculator.Build(input) with { TotalTargetOrigin = totalOrigin, TotalTargetFrom = totalFrom, DataUpdatedAt = synced.Count > 0 ? synced.Min() : null };
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
