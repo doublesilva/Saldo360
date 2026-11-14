@@ -13,7 +13,7 @@ import { OverviewBudgetProgress } from './OverviewBudgetProgress'
 import { OverviewAccounts, OverviewGoals, OverviewRecent, OverviewUpcoming } from './OverviewLists'
 import { OverviewSetupGuide } from './OverviewSetupGuide'
 import { useSixMonthPlan } from './useSixMonthPlan'
-import { OverviewSyncLine } from './OverviewSync'
+import { OverviewSyncHealth, OverviewSyncLine } from './OverviewSync'
 import { buildPriorityItems } from './priorityItems'
 import { loadDecisionSummary } from '../decisionQueue/queueModel'
 import { monthTitle, periodLabels, scopeLabel } from './overviewText'
@@ -94,6 +94,7 @@ export function Overview({ workspaceId, refreshKey = 0, selection, onSelectionCh
 
     <OverviewAlerts items={items} state={{ loading: planBlock.loading || overviewBlock.loading || queue.load.state === 'loading', failed: Boolean(planBlock.error || overviewBlock.error || queue.load.state === 'error' || queueData?.failedSources.length) }} onNavigate={onNavigate} onReload={reloadAll} />
     <OverviewSetupGuide workspaceId={workspaceId} competence={competence} scope={scope} refreshKey={refreshKey} plan={sixMonths} onNavigate={onNavigate} />
+    {planData && <OverviewSyncHealth sync={planData.sync} onOpenAutomation={ids => onNavigate('automation', { automationTab: 'connections', connectionIds: ids })} />}
     <OverviewSummary queriedAt={overview.loadedAt} competence={competence} result={data?.monthlyResult ?? null} decision={data?.decision ?? null} plan={planData} control={data?.pfBudgetControl ?? null} block={overviewBlock} onNavigate={onNavigate} />
 
     <details className="ov-details ov-more">

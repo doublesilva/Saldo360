@@ -1,4 +1,5 @@
 import { requestJson } from './apiErrors'
+import type { SyncHealth } from './syncHealth'
 
 /**
  * T09.6: monitoramento da sincronização das conexões Pluggy. Vem do banco (não consulta a Pluggy). Nada aqui carrega token, credencial,
@@ -30,6 +31,7 @@ export interface SyncConnection {
   consentExpiringSoon: boolean
   sourceUpdatedAt: string | null
   recentRuns: SyncRunSummary[]
+  health?: SyncHealth | null
 }
 
 export interface SyncMonitor {

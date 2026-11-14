@@ -5,6 +5,7 @@ import type { OverviewNavigation, OverviewSection } from './Overview'
 import { actionText, pressureText, recommendationText } from './budgetControlText'
 import { caveat, coverageMessage, unavailableReason } from './decisionText'
 import { formatDate } from '../../money'
+import { needsIntervention } from '../../api/syncHealth'
 import type { DecisionQueue } from '../decisionQueue/queueModel'
 import { explain, isNegative, isPositiveAmount, money, monthTitle } from './overviewText'
 
@@ -26,7 +27,8 @@ export const severityText = { 1: 'Prioridade alta', 2: 'Atenção', 3: 'Dados' }
 
 // Desempate estável dentro da mesma gravidade: uso observado, falta de cobertura/vencimentos, risco projetado, recuperação, limitação dos dados.
 const urgencyOrder = ['overdraft-used', 'coverage', 'overdue', 'overdraft-projected', 'recovery', 'overdraft-unobserved']
-const urgencyOf = (item: PriorityItem) => { const index = urgencyOrder.indexOf(item.key); return index < 0 ? urgencyOrder.length : index }
+// Autorização expirada ou falha de importação (contrato de saúde, rank 2) vem antes dos demais excessos do mesmo grau: sem ela nada do banco é atualizado e o item não pode ficar atrás de "Ver todas".
+const urgencyOf = (item: PriorityItem) => { if (item.key === 'sync-attention' && item.rank === 2) return -1; const index = urgencyOrder.indexOf(item.key); return index < 0 ? urgencyOrder.length : index }
 
 export function budgetDestination(action: BudgetAction, context: string | null, competence: string): Destination {
   switch (action) {
@@ -167,9 +169,12 @@ function overdraftItems(plan: PriorityInput['plan'], competence: string): Priori
 const syncProblem: Record<string, string> = { ConsentExpired: 'Autorização do banco expirada', Failed: 'Falha na sincronização bancária', CompletedWithErrors: 'Sincronização bancária concluída com erros' }
 const lastSuccess = (iso: string | null) => iso ? `Último sucesso em ${formatDate(iso.slice(0, 10))} ${new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}.` : 'Ainda sem sincronização bem-sucedida.'
 
-/** Conexões que exigem atenção, pelos sinais do servidor (status e atraso por conexão). Não recalcula atraso aqui. */
+/**
+ * Conexões que exigem atenção, pelos sinais do servidor. Com o contrato de saúde, só entram aqui as que pedem intervenção (bloqueada, requer atenção): atraso, primeira
+ * importação e automação desativada aparecem na linha de status da Visão Geral, sem repetir o aviso. Servidor sem `health` mantém a regra anterior (status e atraso por conexão).
+ */
 export function affectedConnections(sync: NonNullable<PlanActualDashboard['sync']>) {
-  return sync.connections.filter(c => c.stale === true || c.status in syncProblem)
+  return sync.connections.filter(c => c.health ? needsIntervention(c.health.state) : c.stale === true || c.status in syncProblem)
 }
 
 function syncAttentionItem(plan: PlanActualDashboard | null): PriorityItem | null {
@@ -178,15 +183,17 @@ function syncAttentionItem(plan: PlanActualDashboard | null): PriorityItem | nul
   if (affected.length === 0) return null
   const name = (c: (typeof affected)[number]) => c.label ?? 'Conexão'
   const ids = affected.map(c => c.connectionId)
+  // Com o contrato de saúde, a intervenção exigida pelo banco (autorização, falha) sobe para "Atenção": não fica escondida atrás de "Ver todos".
+  const rank = affected.some(c => c.health) ? 2 : 3
   if (affected.length === 1) {
     const c = affected[0]
     return {
-      key: 'sync-attention', rank: 3, title: `${syncProblem[c.status] ?? 'Sincronização bancária atrasada'} · ${name(c)}`,
+      key: 'sync-attention', rank, title: `${syncProblem[c.status] ?? 'Sincronização bancária atrasada'} · ${name(c)}`,
       impact: `${lastSuccess(c.lastSuccessAt)} Os dados dessa conexão requerem atenção.`, action: { label: 'Ver conexão', to: { section: 'automation', context: { automationTab: 'connections', connectionIds: ids } } },
     }
   }
   return {
-    key: 'sync-attention', rank: 3, title: `Sincronização bancária com problema · ${affected.length} conexões`,
+    key: 'sync-attention', rank, title: `Sincronização bancária com problema · ${affected.length} conexões`,
     impact: `${affected.map(name).join(', ')}. Os dados dessas conexões requerem atenção.`, action: { label: 'Ver conexões', to: { section: 'automation', context: { automationTab: 'connections', connectionIds: ids } } },
   }
 }
@@ -214,7 +221,8 @@ function dataReliabilityCauses({ competence, decision, control, pfControl, plan 
   const sync = plan?.sync
   if (plan && !plan.snapshotConsistent || decision && !decision.snapshotConsistent) add({ key: 'snapshot', text: caveat('PositionsInconsistent'), action: { label: 'Atualizar', reload: true } })
   // Problemas de sincronização com conexão identificável têm item próprio (syncAttentionItem); aqui só o caso sem conexão apontada.
-  if (sync && affectedConnections(sync).length === 0 && (sync.stale || ['Failed', 'ConsentExpired', 'CompletedWithErrors'].includes(sync.state))) {
+  // Com o contrato de saúde, o estado da sincronização tem linha própria (e item próprio quando exige intervenção): não vira causa genérica aqui.
+  if (sync && !sync.health && affectedConnections(sync).length === 0 && (sync.stale || ['Failed', 'ConsentExpired', 'CompletedWithErrors'].includes(sync.state))) {
     add({
       key: 'sync', text: sync.state === 'ConsentExpired' ? 'A autorização do banco expirou.' : sync.state === 'Failed' ? 'A última sincronização com o banco falhou.' : 'Os dados do banco podem estar desatualizados.',
       action: { label: 'Ver conexões', to: { section: 'automation', context: { automationTab: 'connections' } } },

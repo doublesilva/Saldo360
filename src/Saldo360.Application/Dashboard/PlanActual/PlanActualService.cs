@@ -285,7 +285,7 @@ public sealed class PlanActualService(
         var ids = facts.Connections.Where(c => selected is null || c.AccountId == selected.Id || c.CardPayerAccountId == selected.Id).Select(c => c.ConnectionId).ToHashSet();
         var connections = view.Connections.Where(c => ids.Contains(c.ConnectionId))
             .Select(c => new SyncConnectionDto(c.ConnectionId, c.Label, c.Status, c.LastSuccessAt, c.LastAttemptAt, c.NextAttemptAt, c.ConsentExpiringSoon)).ToList();
-        return connections.Count == 0 ? null : PlanActualCalculator.Sync(connections, view.Auto.Enabled, view.Auto.IntervalHours, view.Now);
+        return connections.Count == 0 ? null : PlanActualCalculator.Sync(connections, view.Auto.Enabled, view.Auto.EffectiveIntervalHours, view.Now, view.Auto.Paused);
     }
 
     private static bool TryMonth(string text, out DateOnly month) =>

@@ -37,7 +37,7 @@ const review = (items: ReviewItem[], overrides: Partial<ClassificationReview> = 
   kind: 'nature', from: '2026-10-01', to: '2026-10-31', wholeBudget: false, items, total: items.length, page: 1, pageSize: 10, unclassifiableCount: 0, ...overrides,
 })
 
-interface Api { overview?: AutomationOverview | Response | 'fail'; runs?: AutomationRun[]; review?: ClassificationReview; failPut?: boolean }
+interface Api { syncMonitor?: unknown; overview?: AutomationOverview | Response | 'fail'; runs?: AutomationRun[]; review?: ClassificationReview; failPut?: boolean }
 function mockApi(api: Api = {}) {
   const calls: { url: string; method: string; body?: string }[] = []
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -51,6 +51,8 @@ function mockApi(api: Api = {}) {
     if (url.includes('/classification-review')) return json(api.review ?? review([reviewItem()]))
     if (url.includes('/pluggy-integration/connections')) return json([{ id: 'c1', label: 'Itaú PF', itemReference: 'item', institution: 'MeuPluggy', institutionType: null, isOpenFinance: null, state: 'Healthy', status: null, executionStatus: null, lastUpdatedAt: '2026-10-29T09:00:00Z', consentExpiresAt: null, errorCode: null, errorMessage: null, integrationError: null, createdAt: '2026-09-01T10:00:00Z' }])
     if (url.endsWith('/pluggy-integration/links')) return json([{ id: 'l1', connectionId: 'c1', kind: 'Bank', displayName: 'Itaú corrente', status: 'Active', lastSyncedAt: '2026-10-29T10:31:00Z' }, { id: 'l2', connectionId: 'c1', kind: 'Card', displayName: 'Itaú Visa', status: 'Active', lastSyncedAt: null }])
+    if (url.endsWith('/pluggy-integration/sync-status') && api.syncMonitor === 'fail') return json({ title: 'Falha' }, 500)
+    if (url.endsWith('/pluggy-integration/sync-status') && api.syncMonitor) return json(api.syncMonitor)
     if (url.endsWith('/pluggy-integration/sync-status')) return json({ now: '2026-10-30T12:00:00Z', auto: { enabled: true, intervalHours: 24, windowStartHour: 0, windowEndHour: 24, maxConnectionsPerRun: 5, pollIntervalMinutes: 15 }, connections: [] })
     if (url.endsWith('/categories') || url.includes('/categories?')) return json([{ id: 'cat1', name: 'Livros', type: 'Expense', isActive: true, isAvailable: true, createdAt: '2026-01-01T00:00:00Z', path: 'Livros' }])
     return json({}, 404)
@@ -297,5 +299,50 @@ describe('Central de automação', () => {
     fireEvent.change(await within(item).findByLabelText('Categoria'), { target: { value: 'cat1' } })
     fireEvent.click(within(item).getByRole('button', { name: 'Salvar classificação' }))
     expect((await within(item).findByRole('alert')).textContent).toContain('fatura oficial fechada')
+  })
+})
+
+describe('Central de automação — saúde por conexão', () => {
+  const syncConnectionView = (id: string, label: string, status: string, health: Record<string, unknown>) => ({
+    connectionId: id, label, institution: 'MeuPluggy', integratedAccounts: 1, status, lastAttemptAt: '2026-10-29T10:31:00Z', lastSuccessAt: health.lastSuccessAt ?? null, nextAttemptAt: null, lastTrigger: 'Scheduled',
+    lastDurationSeconds: 5, lastCreated: 0, lastUpdated: 0, lastError: null, consecutiveFailures: 0, consentExpiresAt: null, consentExpiringSoon: false, sourceUpdatedAt: null, recentRuns: [], health,
+  })
+  const monitor = (connections: ReturnType<typeof syncConnectionView>[], enabled = true) => ({ now: '2026-10-30T12:00:00Z', auto: { enabled, intervalHours: 24, windowStartHour: 0, windowEndHour: 24, maxConnectionsPerRun: 5, pollIntervalMinutes: 15 }, connections })
+  const ok = syncConnectionView('c1', 'Banco A', 'Completed', { state: 'UpToDate', reason: null, lastSuccessAt: '2026-10-29T10:31:00Z', overdueSince: null })
+  const blocked = syncConnectionView('c2', 'Banco B', 'ConsentExpired', { state: 'Blocked', reason: 'ConsentExpired', lastSuccessAt: '2026-10-20T10:31:00Z', overdueSince: null })
+
+  it('mostra estado, última importação, motivo e próximo passo por conexão, e leva o foco ao título da conexão afetada', async () => {
+    mockApi({ syncMonitor: monitor([ok, blocked]) }); render(<AutomationCenter workspaceId="w" entry={{ key: 1, tab: 'connections', connectionIds: ['c2'] }} />)
+    const second = await screen.findByRole('listitem', { name: 'Sincronização de Banco B' })
+    const first = screen.getByRole('listitem', { name: 'Sincronização de Banco A' })
+    expect(text(first.querySelector('.pluggy-sync__health'))).toContain('Em dia'); expect(text(first.querySelector('.pluggy-sync__health'))).not.toContain('Próximo passo')
+    const health = text(second.querySelector('.pluggy-sync__health'))
+    expect(health).toContain('Bloqueada · A autorização do banco expirou'); expect(health).toContain('Última importação bem-sucedida: 20/10/2026'); expect(health).toContain('Próximo passo: Renove a autorização no Meu Pluggy.')
+    expect(second.getAttribute('aria-current')).toBe('true'); expect(first.getAttribute('aria-current')).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(within(second).getByRole('heading', { name: 'Banco B' })))
+  })
+
+  it('primeira importação pendente e automação desativada aparecem com estado próprio, sem inventar data', async () => {
+    const first = syncConnectionView('c1', 'Banco A', 'NeverSynced', { state: 'AwaitingFirstImport', reason: 'NoImportYet', lastSuccessAt: null, overdueSince: null })
+    const off = syncConnectionView('c2', 'Banco B', 'Completed', { state: 'AutomationDisabled', reason: 'AutomationOff', lastSuccessAt: '2026-09-01T10:00:00Z', overdueSince: null })
+    mockApi({ syncMonitor: monitor([first, off], false) }); render(<AutomationCenter workspaceId="w" />)
+    const a = text((await screen.findByRole('listitem', { name: 'Sincronização de Banco A' })).querySelector('.pluggy-sync__health'))
+    const b = text(screen.getByRole('listitem', { name: 'Sincronização de Banco B' }).querySelector('.pluggy-sync__health'))
+    expect(a).toContain('Aguardando primeira importação · Nenhuma importação foi concluída ainda.'); expect(a).toContain('Última importação bem-sucedida: nenhuma ainda')
+    expect(b).toContain('Automação desativada · A sincronização automática está desligada neste ambiente.'); expect(b).not.toContain('Atrasada'); expect(b).not.toContain('desatualizados')
+  })
+
+  it('atrasada mostra o impacto confirmado; falha de consulta tem estado próprio e "Tentar novamente" refaz só a leitura', async () => {
+    const late = syncConnectionView('c1', 'Banco A', 'Completed', { state: 'Delayed', reason: 'ImportOverdue', lastSuccessAt: '2026-10-25T10:00:00Z', overdueSince: '2026-10-26T22:00:00Z' })
+    const calls = mockApi({ syncMonitor: 'fail' }); render(<AutomationCenter workspaceId="w" />)
+    expect(await screen.findByText('Não foi possível consultar a saúde da automação.')).toBeTruthy()
+    const syncCalls = () => calls.filter(call => call.url.endsWith('/sync-status')).length
+    const before = syncCalls()
+    fireEvent.click(within(screen.getByLabelText('Sincronização por conexão')).getByRole('button', { name: 'Tentar novamente' }))
+    await waitFor(() => expect(syncCalls()).toBeGreaterThan(before))
+    expect(calls.filter(call => call.method !== 'GET')).toEqual([])
+    cleanup(); mockApi({ syncMonitor: monitor([late]) }); render(<AutomationCenter workspaceId="w" />)
+    const health = text((await screen.findByRole('listitem', { name: 'Sincronização de Banco A' })).querySelector('.pluggy-sync__health'))
+    expect(health).toContain('Atrasada · A importação esperada até'); expect(health).toContain('Os movimentos das contas desta conexão podem estar desatualizados.')
   })
 })

@@ -1,3 +1,5 @@
+using Saldo360.Application.Pluggy;
+
 namespace Saldo360.Application.Dashboard.PlanActual;
 
 // T10.1: Dashboard Planejado × Projetado × Realizado. Os contratos carregam decimais exatos em texto (duas casas, ponto) e percentuais com uma
@@ -64,12 +66,12 @@ public sealed record CoverageDto(
     bool Complete, int ReviewCount, int ReviewInMonth, int CardReviewCount, bool ReviewAffectsConfidence, bool PartialPeriod, IReadOnlyList<CoverageAccountDto> Accounts,
     IReadOnlyList<string> Reasons);
 
-public sealed record SyncConnectionDto(Guid ConnectionId, string? Label, string Status, DateTimeOffset? LastSuccessAt, DateTimeOffset? LastAttemptAt, DateTimeOffset? NextAttemptAt, bool ConsentExpiringSoon, bool Stale = false);
+public sealed record SyncConnectionDto(Guid ConnectionId, string? Label, string Status, DateTimeOffset? LastSuccessAt, DateTimeOffset? LastAttemptAt, DateTimeOffset? NextAttemptAt, bool ConsentExpiringSoon, bool Stale = false, SyncHealthDto? Health = null);
 
 /// <summary>Sincronização das conexões que alimentam o escopo. Nunca resume o escopo todo numa só data: <c>OldestSuccessAt</c> e <c>LatestSuccessAt</c> mostram a diferença.</summary>
 public sealed record SyncSummaryDto(
     bool AutoEnabled, int AutoIntervalHours, DateTimeOffset? OldestSuccessAt, DateTimeOffset? LatestSuccessAt, bool SameMoment, bool Stale, string State,
-    DateTimeOffset? NextAttemptAt, IReadOnlyList<SyncConnectionDto> Connections);
+    DateTimeOffset? NextAttemptAt, IReadOnlyList<SyncConnectionDto> Connections, SyncHealthSummaryDto? Health = null);
 
 public sealed record PlanActualDashboardDto(
     string Competence, DateOnly AsOf, string PeriodKind, PlanActualScopeDto Scope, IndicatorDto Income, ExpensesDto Expenses, OverdraftDto Overdraft, CardTargetDto Cards,

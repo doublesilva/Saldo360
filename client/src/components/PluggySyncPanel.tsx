@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeSyncError, getSyncMonitor, intervalSourceLabels, syncStatusLabels, triggerLabels, type SyncConnection, type SyncMonitor } from '../api/pluggySyncStatus'
 import { syncConnection } from '../api/pluggyPoc'
 import { toUserMessage } from '../api/apiErrors'
+import { syncHealthLabel, syncHealthNextStep, syncHealthQueryFailed, syncHealthReason, delayedImpact } from '../api/syncHealth'
 import { formatDate } from '../money'
 import { OperationalError, OperationalLoading } from './OperationalFeedback'
 import '../CardProjection.css'
@@ -35,7 +36,10 @@ export function PluggySyncPanel({ workspaceId, refreshKey = '', onChanged, highl
   return <section className="pluggy-sync" aria-labelledby="pluggy-sync-title">
     <h4 id="pluggy-sync-title">Sincronização</h4>
     {visible.state === 'loading' && <OperationalLoading>Carregando a sincronização…</OperationalLoading>}
-    {visible.state === 'error' && <OperationalError error={visible.error} onRetry={() => setReload(value => value + 1)} />}
+    {visible.state === 'error' && <>
+      <p className="pluggy-sync__query-failed"><strong>{syncHealthQueryFailed}</strong> O estado das conexões é desconhecido até a consulta funcionar.</p>
+      <OperationalError error={visible.error} onRetry={() => setReload(value => value + 1)} />
+    </>}
     {visible.state === 'loaded' && <>
       <AutoSummary auto={visible.data.auto} />
       <ul className="card-installments__list">{visible.data.connections.map(connection => <Connection key={connection.connectionId} workspaceId={workspaceId} connection={connection} autoEnabled={visible.data.auto.enabled} highlighted={highlight?.includes(connection.connectionId) ?? false} focusTitle={highlight?.[0] === connection.connectionId} error={errors[connection.connectionId] ?? null}
@@ -69,6 +73,11 @@ function Connection({ workspaceId, connection, autoEnabled, highlighted, focusTi
       <span className={`badge badge--sync-${connection.status.toLowerCase()}`}>{syncStatusLabels[connection.status]}</span>{' '}
       <span className="meta">{connection.integratedAccounts} conta(s)/cartão(ões) integrado(s)</span>
     </div>
+    {connection.health && <div className="pluggy-sync__health" data-state={connection.health.state}>
+      <p><strong>{syncHealthLabel[connection.health.state]}</strong>{syncHealthReason(connection.health, dateTime) && ` · ${syncHealthReason(connection.health, dateTime)}`}</p>
+      {connection.health.state === 'Delayed' && <p className="meta">{delayedImpact}</p>}
+      <p className="meta">Última importação bem-sucedida: {connection.health.lastSuccessAt ? dateTime(connection.health.lastSuccessAt) : 'nenhuma ainda'}{syncHealthNextStep(connection.health, autoEnabled) ? ` · Próximo passo: ${syncHealthNextStep(connection.health, autoEnabled)}` : ''}</p>
+    </div>}
     <dl className="card-overview__facts">
       <div><dt>Última atualização informada pelo banco</dt><dd>{dateTime(connection.sourceUpdatedAt)}</dd></div>
       <div><dt>Última tentativa</dt><dd>{dateTime(connection.lastAttemptAt)}{connection.lastTrigger ? ` · ${triggerLabels[connection.lastTrigger]}` : ''}</dd></div>
@@ -76,7 +85,7 @@ function Connection({ workspaceId, connection, autoEnabled, highlighted, focusTi
       <div><dt>Próxima sincronização</dt><dd>{autoEnabled ? dateTime(connection.nextAttemptAt) : 'Automática desligada'}</dd></div>
       <div><dt>Última execução</dt><dd>{duration(connection.lastDurationSeconds)} · {connection.lastCreated} novo(s), {connection.lastUpdated} atualizado(s)</dd></div>
     </dl>
-    {connection.status === 'ConsentExpired' && <p className="notice notice--warning" role="alert">A autorização desta conexão expirou: renove-a no Meu Pluggy. Enquanto isso nada é atualizado.</p>}
+    {connection.status === 'ConsentExpired' && !connection.health && <p className="notice notice--warning" role="alert">A autorização desta conexão expirou: renove-a no Meu Pluggy. Enquanto isso nada é atualizado.</p>}
     {connection.status === 'SourceNotUpdated' && <p className="meta">A instituição ainda não trouxe dados novos desde a última sincronização{autoEnabled ? '; o Saldo360 verifica de novo sozinho.' : '. A sincronização automática está desligada: use "Sincronizar agora" quando quiser verificar.'}</p>}
     {connection.consentExpiringSoon && connection.consentExpiresAt && <p className="notice notice--warning" role="status">A autorização vence em {formatDate(connection.consentExpiresAt.slice(0, 10))}. Renove-a no Meu Pluggy para não interromper a atualização.</p>}
     {problem && reason && connection.status !== 'ConsentExpired' && <p className="meta" role="status">{reason}{connection.consecutiveFailures > 1 ? ` (${connection.consecutiveFailures} falhas seguidas)` : ''}</p>}

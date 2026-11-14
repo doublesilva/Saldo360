@@ -1,4 +1,5 @@
 import { requestJson } from './apiErrors'
+import type { SyncHealth, SyncHealthSummary } from './syncHealth'
 
 /**
  * T10.1: Dashboard Planejado × Projetado × Realizado. Todo valor chega do backend como texto decimal exato e nenhuma fórmula financeira roda no
@@ -48,10 +49,10 @@ export interface PlanCoverage {
   complete: boolean; reviewCount: number; reviewInMonth: number; cardReviewCount: number; reviewAffectsConfidence: boolean; partialPeriod: boolean
   accounts: CoverageAccount[]; reasons: string[]
 }
-export interface SyncConnectionSummary { connectionId: string; label: string | null; status: string; lastSuccessAt: string | null; lastAttemptAt: string | null; nextAttemptAt: string | null; consentExpiringSoon: boolean; stale?: boolean }
+export interface SyncConnectionSummary { connectionId: string; label: string | null; status: string; lastSuccessAt: string | null; lastAttemptAt: string | null; nextAttemptAt: string | null; consentExpiringSoon: boolean; stale?: boolean; health?: SyncHealth | null }
 export interface PlanSync {
   autoEnabled: boolean; autoIntervalHours: number; oldestSuccessAt: string | null; latestSuccessAt: string | null; sameMoment: boolean; stale: boolean; state: string
-  nextAttemptAt: string | null; connections: SyncConnectionSummary[]
+  nextAttemptAt: string | null; connections: SyncConnectionSummary[]; health?: SyncHealthSummary | null
 }
 export interface PlanActualDashboard {
   competence: string; asOf: string; periodKind: 'Past' | 'Current' | 'Future'; scope: PlanActualScope; income: PlanIndicator; expenses: PlanExpenses

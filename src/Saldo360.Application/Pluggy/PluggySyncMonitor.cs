@@ -8,7 +8,7 @@ namespace Saldo360.Application.Pluggy;
 /// (<c>IntervalSource</c> = WorkspacePreference) ou, sem escolha, o padrão do servidor (ServerDefault). Falhas, origem sem novidade e consentimento vencido têm esperas próprias.
 /// </summary>
 public sealed record PluggyAutoSyncSettingsView(bool Enabled, int IntervalHours, int WindowStartHour, int WindowEndHour, int MaxConnectionsPerRun, int PollIntervalMinutes,
-    int EffectiveIntervalHours, string IntervalSource);
+    int EffectiveIntervalHours, string IntervalSource, bool Paused = false);
 
 /// <summary>
 /// Estado de sincronização de uma conexão. <c>Status</c>: NeverSynced, Running, Completed, CompletedWithErrors, Failed, ConsentExpired ou SourceNotUpdated
@@ -17,7 +17,7 @@ public sealed record PluggyAutoSyncSettingsView(bool Enabled, int IntervalHours,
 public sealed record PluggySyncConnectionView(
     Guid ConnectionId, string? Label, string? Institution, int IntegratedAccounts, string Status, DateTimeOffset? LastAttemptAt, DateTimeOffset? LastSuccessAt,
     DateTimeOffset? NextAttemptAt, string? LastTrigger, int? LastDurationSeconds, int LastCreated, int LastUpdated, string? LastError, int ConsecutiveFailures,
-    DateTimeOffset? ConsentExpiresAt, bool ConsentExpiringSoon, DateTimeOffset? SourceUpdatedAt, IReadOnlyList<PluggySyncRunView> RecentRuns);
+    DateTimeOffset? ConsentExpiresAt, bool ConsentExpiringSoon, DateTimeOffset? SourceUpdatedAt, IReadOnlyList<PluggySyncRunView> RecentRuns, SyncHealthDto? Health = null);
 
 public sealed record PluggySyncMonitorView(DateTimeOffset Now, PluggyAutoSyncSettingsView Auto, IReadOnlyList<PluggySyncConnectionView> Connections);
 
@@ -37,6 +37,7 @@ public sealed class PluggySyncMonitorService(IFinancialWorkspaceRepository works
         var settings = await automation.FindSettingsAsync(workspaceId, ct);
         var paused = settings?.SyncPaused == true;
         var preferred = settings?.SyncIntervalHours;
+        var cadence = new SyncCadence(auto.Enabled && !paused, paused, Math.Max(1, preferred ?? auto.IntervalHours));
         var views = new List<PluggySyncConnectionView>();
         foreach (var link in connections)
         {
@@ -49,12 +50,14 @@ public sealed class PluggySyncMonitorService(IFinancialWorkspaceRepository works
             DateTimeOffset? next = !auto.Enabled || paused ? null : PluggyAutoSyncPolicy.NextWindowOpen(state?.NextAttemptAt is { } due && due > now ? due : now, auto);
             var lastRun = last is { FinishedAt: not null } ? last : runs.FirstOrDefault(r => r.FinishedAt is not null);
             accounts.TryGetValue(link.Id, out var info);
-            views.Add(new(link.Id, link.Label, info?.Institution, info?.Accounts ?? 0, status, state?.LastAttemptAt ?? last?.StartedAt, state?.LastSuccessAt, next, state?.LastTrigger?.ToString() ?? last?.Trigger,
+            var lastAttemptAt = state?.LastAttemptAt ?? last?.StartedAt;
+            views.Add(new(link.Id, link.Label, info?.Institution, info?.Accounts ?? 0, status, lastAttemptAt, state?.LastSuccessAt, next, state?.LastTrigger?.ToString() ?? last?.Trigger,
                 lastRun is { FinishedAt: { } finished } ? (int)Math.Max(0, (finished - lastRun.StartedAt).TotalSeconds) : null, lastRun?.Created ?? 0, lastRun?.Updated ?? 0,
                 state?.LastError ?? lastRun?.ErrorSummary, state?.ConsecutiveFailures ?? 0, state?.ConsentExpiresAt,
-                PluggyAutoSyncPolicy.ConsentExpiringSoon(state?.ConsentExpiresAt, now, auto), state?.SourceUpdatedAt, runs));
+                PluggyAutoSyncPolicy.ConsentExpiringSoon(state?.ConsentExpiresAt, now, auto), state?.SourceUpdatedAt, runs,
+                SyncHealth.Evaluate(status, state?.LastSuccessAt, lastAttemptAt, cadence, now)));
         }
         return PluggyResult<PluggySyncMonitorView>.Ok(new(now, new(auto.Enabled, auto.IntervalHours, auto.WindowStartHour, auto.WindowEndHour, auto.MaxConnectionsPerRun, auto.PollIntervalMinutes,
-            Math.Max(1, preferred ?? auto.IntervalHours), preferred is null ? "ServerDefault" : "WorkspacePreference"), views));
+            Math.Max(1, preferred ?? auto.IntervalHours), preferred is null ? "ServerDefault" : "WorkspacePreference", paused), views));
     }
 }

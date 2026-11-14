@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Overview, type OverviewNavigation, type OverviewSection, type OverviewSelection } from './Overview'
 import type { BankSource, BudgetCardItem, BudgetCards, BudgetCategories, BudgetCategoryLine, BudgetControl, DashboardOverview, ExpenseCategoryShare, ExpenseDistribution, FinancialDecision } from '../../api/overview'
-import type { PlanActualDashboard } from '../../api/planActual'
+import type { PlanActualDashboard, PlanSync } from '../../api/planActual'
+import type { SyncHealthState } from '../../api/syncHealth'
 import type { SixMonthPlan } from '../../api/monthlyPlan'
 import { planActual } from '../planActualFixtures'
 import { sixMonths } from '../monthlyPlanFixtures'
@@ -927,5 +928,66 @@ describe('Visão Geral — origem e atualização dos valores', () => {
     await waitFor(() => expect(resumo().querySelectorAll('.ov-skeleton').length).toBeGreaterThan(0))
     expect(text(resumo())).not.toContain('Sincronização bancária'); expect(text(resumo())).not.toMatch(/R\$/)
     expect(text(card('Orçamento mensal'))).not.toContain('Sincronização bancária'); expect(text(card('Orçamento mensal'))).toContain('Setembro de 2026')
+  })
+})
+
+describe('Visão Geral — saúde da automação bancária', () => {
+  const connection = (id: string, label: string, state: SyncHealthState, reason: string | null, extra: Record<string, unknown> = {}) => ({
+    connectionId: id, label, status: state === 'Blocked' ? 'ConsentExpired' : state === 'NeedsAttention' ? 'Failed' : state === 'AwaitingFirstImport' ? 'NeverSynced' : 'Completed',
+    lastSuccessAt: state === 'AwaitingFirstImport' ? null : '2026-10-14T17:05:00Z', lastAttemptAt: '2026-10-14T17:05:00Z', nextAttemptAt: null, consentExpiringSoon: false, stale: false,
+    health: { state, reason, lastSuccessAt: state === 'AwaitingFirstImport' ? null : '2026-10-14T17:05:00Z', overdueSince: state === 'Delayed' ? '2026-10-16T05:05:00Z' : null }, ...extra,
+  })
+  const withSync = (connections: ReturnType<typeof connection>[], health: PlanSync['health']) => plan({
+    sync: { autoEnabled: true, autoIntervalHours: 24, oldestSuccessAt: '2026-10-14T17:05:00Z', latestSuccessAt: '2026-10-14T17:05:00Z', sameMoment: true, stale: false, state: 'Completed', nextAttemptAt: null, connections, health },
+  })
+  const healthLine = () => document.querySelector<HTMLElement>('.ov-health')
+
+  it('em dia: estado em texto, sem ação e sem aviso de impacto', async () => {
+    mockApi({ plan: withSync([connection('c1', 'Banco A', 'UpToDate', null)], { state: 'UpToDate', connections: 1, inState: 1, upToDate: 1, affectedConnectionIds: [] }) }); renderPage()
+    await loaded()
+    await waitFor(() => expect(healthLine()).not.toBeNull())
+    expect(text(healthLine())).toContain('Em dia')
+    expect(within(healthLine()!).queryByRole('button')).toBeNull()
+    expect(text(healthLine())).not.toContain('desatualizados')
+  })
+
+  it('atrasada: motivo, impacto confirmado e "Ver automação" abrindo só a conexão afetada, sem sincronizar', async () => {
+    mockApi({ plan: withSync([connection('c1', 'Banco A', 'UpToDate', null), connection('c2', 'Banco B', 'Delayed', 'ImportOverdue')], { state: 'Delayed', connections: 2, inState: 1, upToDate: 1, affectedConnectionIds: ['c2'] }) }); renderPage()
+    await loaded()
+    await waitFor(() => expect(healthLine()).not.toBeNull())
+    expect(text(healthLine())).toContain('Atrasada · 1 de 2 conexões · Banco B'); expect(text(healthLine())).not.toContain('Banco A')
+    expect(text(healthLine())).toContain('A importação esperada até'); expect(text(healthLine())).toContain('Os movimentos das contas desta conexão podem estar desatualizados.')
+    navigations.length = 0; const before = calls.length
+    fireEvent.click(within(healthLine()!).getByRole('button', { name: 'Ver automação' }))
+    expect(navigations).toEqual([{ section: 'automation', context: { automationTab: 'connections', connectionIds: ['c2'] } }])
+    expect(calls.slice(before).filter(url => url.includes('/sync'))).toEqual([])
+  })
+
+  it('bloqueada: a linha só diz o estado e o aviso fica em "Próximas ações", sem repetir motivo nem ação', async () => {
+    mockApi({ plan: withSync([connection('c1', 'Banco A', 'Blocked', 'ConsentExpired')], { state: 'Blocked', connections: 1, inState: 1, upToDate: 0, affectedConnectionIds: ['c1'] }) }); renderPage()
+    await loaded()
+    await waitFor(() => expect(healthLine()).not.toBeNull())
+    expect(text(healthLine())).toContain('Bloqueada · Banco A'); expect(text(healthLine())).not.toContain('autorização'); expect(within(healthLine()!).queryByRole('button')).toBeNull()
+    // O item de intervenção fica entre os visíveis (sem "Ver todas"), à frente dos demais excessos de orçamento, e aparece uma única vez.
+    await waitFor(() => expect(screen.getAllByText(/Autorização do banco expirada · Banco A/).length).toBe(1))
+  })
+
+  it('primeira importação pendente e automação desativada têm estados próprios, mesmo sem importação anterior', async () => {
+    mockApi({ plan: withSync([connection('c1', 'Banco A', 'AwaitingFirstImport', 'NoImportYet')], { state: 'AwaitingFirstImport', connections: 1, inState: 1, upToDate: 0, affectedConnectionIds: ['c1'] }) }); renderPage()
+    await loaded()
+    await waitFor(() => expect(healthLine()).not.toBeNull())
+    expect(text(healthLine())).toContain('Aguardando primeira importação · Banco A'); expect(text(healthLine())).toContain('Nenhuma importação foi concluída ainda.')
+    expect(text(healthLine())).not.toContain('desatualizados'); expect(within(healthLine()!).getByRole('button', { name: 'Ver automação' })).toBeTruthy()
+    cleanup()
+    mockApi({ plan: withSync([connection('c1', 'Banco A', 'AutomationDisabled', 'AutomationPaused')], { state: 'AutomationDisabled', connections: 1, inState: 1, upToDate: 0, affectedConnectionIds: ['c1'] }) }); renderPage()
+    await loaded()
+    await waitFor(() => expect(text(healthLine())).toContain('Automação desativada · Banco A'))
+    expect(text(healthLine())).toContain('pausada'); expect(text(healthLine())).not.toContain('Atrasada')
+  })
+
+  it('servidor sem o contrato de saúde não mostra a linha nova e mantém o comportamento anterior', async () => {
+    mockApi({ plan: withSync([connection('c1', 'Banco A', 'UpToDate', null, { health: undefined })], undefined) }); renderPage()
+    await loaded()
+    expect(healthLine()).toBeNull()
   })
 })

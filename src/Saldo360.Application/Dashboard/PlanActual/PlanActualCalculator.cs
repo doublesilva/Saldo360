@@ -245,7 +245,7 @@ public static class PlanActualCalculator
 
     private static readonly string[] StatePrecedence = ["ConsentExpired", "Failed", "NeverSynced", "Running", "CompletedWithErrors", "SourceNotUpdated", "Completed"];
 
-    public static SyncSummaryDto Sync(IReadOnlyList<SyncConnectionDto> connections, bool autoEnabled, int intervalHours, DateTimeOffset now)
+    public static SyncSummaryDto Sync(IReadOnlyList<SyncConnectionDto> connections, bool autoEnabled, int intervalHours, DateTimeOffset now, bool paused = false)
     {
         var successes = connections.Where(c => c.LastSuccessAt is not null).Select(c => c.LastSuccessAt!.Value).ToList();
         var neverSynced = connections.Any(c => c.LastSuccessAt is null);
@@ -258,7 +258,9 @@ public static class PlanActualCalculator
         DateTimeOffset? next = autoEnabled && upcoming.Count > 0 ? upcoming.Min() : null;
         // Mesmo limiar do agregado, aplicado a cada conexão: nunca sincronizada ou último sucesso além do limite.
         var limit = StaleAfter(autoEnabled, intervalHours);
-        var marked = connections.Select(c => c with { Stale = c.LastSuccessAt is null || now - c.LastSuccessAt.Value > limit }).ToList();
-        return new(autoEnabled, intervalHours, oldest, latest, same, stale, state, next, marked);
+        // Saúde: regra única do contrato SyncHealth (a mesma da Central de Automação). "Stale" acima continua como antes, para quem já o consome.
+        var cadence = new SyncCadence(autoEnabled && !paused, paused, intervalHours);
+        var marked = connections.Select(c => c with { Stale = c.LastSuccessAt is null || now - c.LastSuccessAt.Value > limit, Health = SyncHealth.Evaluate(c.Status, c.LastSuccessAt, c.LastAttemptAt, cadence, now) }).ToList();
+        return new(autoEnabled, intervalHours, oldest, latest, same, stale, state, next, marked, SyncHealth.Summarize(marked.Select(c => (c.ConnectionId, c.Health!)).ToList()));
     }
 }

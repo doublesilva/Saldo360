@@ -41,3 +41,6 @@
 .pluggy-sync__title { display: inline; margin: 0; font-size: inherit; font-weight: 650; }
 .pluggy-sync__item--highlight { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; }
 .pluggy-sync dd, .pluggy-sync dt, .pluggy-sync .meta { overflow-wrap: anywhere; }
+.pluggy-sync__health { display: grid; gap: .15rem; margin: .4rem 0; padding: .4rem .75rem; border-left: 3px solid currentColor; overflow-wrap: anywhere; }
+.pluggy-sync__health p { margin: 0; }
+.pluggy-sync__query-failed { margin: 0 0 .5rem; overflow-wrap: anywhere; }

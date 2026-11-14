@@ -168,6 +168,30 @@ describe('pontos de atenção — sincronização bancária por conexão', () =>
   })
 })
 
+describe('pontos de atenção — contrato de saúde da automação', () => {
+  const withHealth = (connections: { state: 'UpToDate' | 'Delayed' | 'Blocked' | 'NeedsAttention' | 'AwaitingFirstImport' | 'AutomationDisabled'; status?: string; stale?: boolean }[]) => ({
+    ...calm(), plan: { ...planActual, sync: { ...planActual.sync!, stale: connections.some(c => c.stale), health: { state: connections[0].state, connections: connections.length, inState: 1, upToDate: 0, affectedConnectionIds: [] }, connections: connections.map((c, i) => ({
+      connectionId: `c${i + 1}`, label: `Banco ${i + 1}`, status: c.status ?? 'Completed', lastSuccessAt: '2026-11-11T12:00:00Z', lastAttemptAt: '2026-11-11T12:00:00Z', nextAttemptAt: null, consentExpiringSoon: false, stale: c.stale ?? false,
+      health: { state: c.state, reason: null, lastSuccessAt: '2026-11-11T12:00:00Z', overdueSince: null },
+    })) } },
+  }) as PriorityInput
+  const find = (input: PriorityInput) => buildPriorityItems(input).find(item => item.key === 'sync-attention')
+
+  it('atraso, primeira importação e automação desativada ficam fora de "Próximas ações": têm a linha própria da Visão Geral', () => {
+    for (const state of ['Delayed', 'AwaitingFirstImport', 'AutomationDisabled'] as const) expect(find(withHealth([{ state, stale: true }])), state).toBeUndefined()
+    expect(buildPriorityItems(withHealth([{ state: 'Delayed', stale: true }])).some(item => item.key === 'reliability-data')).toBe(false)
+  })
+
+  it('com duas conexões, uma em dia e outra bloqueada, só a afetada é apontada e o item sobe para "Atenção"', () => {
+    const item = find(withHealth([{ state: 'UpToDate' }, { state: 'Blocked', status: 'ConsentExpired' }]))!
+    expect(item.title).toBe('Autorização do banco expirada · Banco 2')
+    expect(item.rank).toBe(2)
+    expect(item.action?.to?.context?.connectionIds).toEqual(['c2'])
+  })
+
+  it('requer atenção (falha) também pede intervenção', () => expect(find(withHealth([{ state: 'NeedsAttention', status: 'Failed' }]))?.title).toBe('Falha na sincronização bancária · Banco 1'))
+})
+
 describe('Cheque especial, vencimentos e ordenação', () => {
   const account = (changes: Record<string, unknown> = {}) => ({
     accountId: 'a1', name: 'Conta Exemplo', state: 'Complete', contractedLimit: '5000.00', usedLatest: '520.00', observedAt: '2026-11-11T11:00:00Z', observedAsOf: '2026-11-11',

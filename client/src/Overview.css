@@ -76,6 +76,13 @@
 .ov-sync { display: grid; gap: .3rem; }
 .ov-bank { color: var(--ov-muted); font-size: .8125rem; overflow-wrap: anywhere; }
 .ov-bank button { margin-left: .4rem; min-height: 2rem; padding: .15rem .6rem; font-size: .8125rem; }
+/* Saúde da automação: o estado é sempre texto; a borda só reforça. Em tela larga estado, motivo e ação ficam na mesma linha quando cabem; em telas estreitas quebram naturalmente. */
+.ov-health { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; padding: .6rem .9rem; border: 1px solid var(--ov-border); border-left-width: 4px; border-radius: var(--ov-radius); background: var(--ov-card); font-size: .875rem; overflow-wrap: anywhere; min-width: 0; }
+.ov-health--Delayed, .ov-health--NeedsAttention, .ov-health--Blocked { border-left-color: var(--ov-warning); }
+.ov-health--UpToDate { border-left-color: var(--ov-positive); }
+.ov-health p, .ov-health span { min-width: 0; }
+.ov-health__reason, .ov-health__impact { color: var(--ov-muted); min-width: 0; order: 2; }
+.ov-health__action { min-height: 2rem; padding: .15rem .75rem; font-size: .8125rem; order: 1; }
 .ov-kpi { display: grid; gap: .5rem; align-content: start; min-width: 0; }
 .ov-kpi__value { font-family: var(--ov-mono); font-size: clamp(1.15rem, 2vw, 1.35rem); font-weight: 600; overflow-wrap: anywhere; line-height: 1.25; }
 .ov-kpi__value--income { color: var(--ov-positive); }
@@ -316,6 +323,8 @@
   .ov-filters { width: 100%; }
   .ov-filters select { flex: 1 1 12rem; }
   .ov-new { flex: 1 1 100%; }
+  .ov-health__reason, .ov-health__impact, .ov-health__action { flex: 1 1 100%; }
+  .ov-health__action { order: 3; }
   .ov .ov-details > summary { min-height: 2.75rem; }
 }
 
