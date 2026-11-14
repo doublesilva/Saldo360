@@ -4,6 +4,8 @@ using Saldo360.Application.Pluggy;
 namespace Saldo360.Tests.Application;
 
 /// <summary>Contrato único de saúde da automação bancária: estados, motivos, precedência entre conexões e uso pelo Plano × Realizado. Dados fictícios, sem Pluggy.</summary>
+[Trait("Category", "CORE")]
+[Trait("Area", "Pluggy")]
 public sealed class SyncHealthTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 14, 12, 0, 0, TimeSpan.Zero);
