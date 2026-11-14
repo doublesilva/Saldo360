@@ -306,6 +306,14 @@
 @container ovmain (max-width: 34rem) {
   .ov-recent__table .ov-wide { display: none; }
   .ov-recent__table .ov-narrow { display: block; }
+  /* Cada lançamento vira um bloco: data ao lado da descrição (que quebra) e o valor completo em linha própria, sem largura mínima de tabela. */
+  .ov-recent__table, .ov-recent__table tbody { display: block; }
+  .ov-recent__table thead { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .ov-recent__table tr { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); column-gap: .5rem; padding: .65rem .5rem; border-top: 1px solid var(--ov-border); }
+  .ov-recent__table td { display: block; min-width: 0; padding: 0; border-top: 0; }
+  .ov-recent__table .ov-recent__date { grid-column: 1; grid-row: 1 / span 2; }
+  .ov-recent__table .ov-recent__desc { grid-column: 2; grid-row: 1; }
+  .ov-recent__table td.ov-num { grid-column: 2; grid-row: 2; margin-top: .25rem; text-align: right; overflow-wrap: anywhere; white-space: normal; }
 }
 @container ov (max-width: 26rem) {
   .ov-result__kpis, .ov-result__split, .ov-overdraft__limit, .ov-goal-row__parts { grid-template-columns: minmax(0, 1fr); }

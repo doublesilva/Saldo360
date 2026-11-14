@@ -34,6 +34,10 @@ describe('Responsividade da Visão Geral', () => {
     expect(css).not.toMatch(/@container[^{]*\{[^@]*\.ov-budget-area/)
     // Em larguras estreitas a tabela de lançamentos esconde Categoria e Conta e as mostra sob a descrição.
     expect(css).toMatch(/@container ovmain \(max-width: 34rem\)\s*\{\s*\.ov-recent__table \.ov-wide\s*\{\s*display:\s*none/)
+    // No celular cada lançamento é um bloco (sem largura mínima de tabela): descrição quebra e o valor completo ocupa linha própria, sem rolagem horizontal da página.
+    expect(css).toMatch(/@container ovmain \(max-width: 34rem\)\s*\{[^@]*\.ov-recent__table, \.ov-recent__table tbody\s*\{\s*display:\s*block/)
+    expect(css).toMatch(/\.ov-recent__table tr\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*2\.75rem minmax\(0, 1fr\)/)
+    expect(css).toMatch(/\.ov-recent__table td\.ov-num\s*\{[^}]*white-space:\s*normal/)
     expect(css).not.toMatch(/position:\s*sticky/)
   })
 

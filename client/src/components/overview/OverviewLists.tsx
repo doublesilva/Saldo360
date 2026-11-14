@@ -93,16 +93,16 @@ export function OverviewRecent({ recent, onOpenAll, ...block }: Block & { recent
     {!recent ? <State block={block} what="os lançamentos" />
       : recent.state === 'Unavailable' ? <p className="ov-empty" role="alert">Não foi possível carregar os lançamentos.</p>
         : recent.items.length === 0 ? <div className="ov-empty"><p>Nenhum lançamento efetivo neste período.</p><button type="button" onClick={onOpenAll}>Novo lançamento</button></div>
-          : <table className="ov-recent__table">
+          : <table className="ov-recent__table" role="table">
             <caption className="visually-hidden">Últimos lançamentos de {formatDate(recent.from)} a {formatDate(recent.through)}</caption>
-            <thead><tr><th scope="col">Data</th><th scope="col">Descrição</th><th scope="col" className="ov-wide">Categoria</th><th scope="col" className="ov-wide">Conta</th><th scope="col" className="ov-num">Valor</th></tr></thead>
-            <tbody>{recent.items.map(item => <tr key={item.id}>
-              <td className="ov-mono ov-muted">{formatDate(item.date).slice(0, 5)}</td>
-              <td><strong>{item.description}</strong><small className="ov-narrow">{item.categoryName ?? 'Sem categoria'} · {item.accountName}</small>
+            <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Data</th><th scope="col" role="columnheader">Descrição</th><th scope="col" role="columnheader" className="ov-wide">Categoria</th><th scope="col" role="columnheader" className="ov-wide">Conta</th><th scope="col" role="columnheader" className="ov-num">Valor</th></tr></thead>
+            <tbody role="rowgroup">{recent.items.map(item => <tr key={item.id} role="row">
+              <td role="cell" className="ov-mono ov-muted ov-recent__date">{formatDate(item.date).slice(0, 5)}</td>
+              <td role="cell" className="ov-recent__desc"><strong>{item.description}</strong><small className="ov-narrow">{item.categoryName ?? 'Sem categoria'} · {item.accountName}</small>
                 {item.awaitingClassification && <span className="ov-tag ov-tag--warning">Aguardando classificação</span>}</td>
-              <td className="ov-wide">{item.categoryName ?? 'Sem categoria'}</td>
-              <td className="ov-wide">{item.accountName}</td>
-              <td className={`ov-num ov-mono${item.type === 'Income' ? ' ov-positive' : ''}`}><span className="visually-hidden">{item.type === 'Income' ? 'Receita ' : 'Despesa '}</span>{item.type === 'Income' ? '+' : '−'} {money(item.amount)}</td>
+              <td role="cell" className="ov-wide">{item.categoryName ?? 'Sem categoria'}</td>
+              <td role="cell" className="ov-wide">{item.accountName}</td>
+              <td role="cell" className={`ov-num ov-mono${item.type === 'Income' ? ' ov-positive' : ''}`}><span className="visually-hidden">{item.type === 'Income' ? 'Receita ' : 'Despesa '}</span>{item.type === 'Income' ? '+' : '−'} {money(item.amount)}</td>
             </tr>)}</tbody>
           </table>}
   </section>
