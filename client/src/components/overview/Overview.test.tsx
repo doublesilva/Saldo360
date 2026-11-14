@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Overview, type OverviewNavigation, type OverviewSection, type OverviewSelection } from './Overview'
-import type { BudgetCardItem, BudgetCards, BudgetCategories, BudgetCategoryLine, BudgetControl, DashboardOverview, ExpenseCategoryShare, ExpenseDistribution, FinancialDecision } from '../../api/overview'
+import type { BankSource, BudgetCardItem, BudgetCards, BudgetCategories, BudgetCategoryLine, BudgetControl, DashboardOverview, ExpenseCategoryShare, ExpenseDistribution, FinancialDecision } from '../../api/overview'
 import type { PlanActualDashboard } from '../../api/planActual'
 import type { SixMonthPlan } from '../../api/monthlyPlan'
 import { planActual } from '../planActualFixtures'
@@ -861,33 +861,50 @@ describe('Visão Geral — resumo do mês no topo (T14.3)', () => {
 
 describe('Visão Geral — origem e atualização dos valores', () => {
   const resumo = () => card('Resumo do mês')
-  const synced = (iso: string | null) => { const base = decision(); return { ...base, context: { ...base.context, lastSyncedAt: iso } } }
+  const withSource = (resumoSource: BankSource | null, pfSource: BankSource | null, extra: Partial<BudgetControl> = {}) => {
+    const base = decision()
+    return withSummary({ decision: { ...base, context: { ...base.context, lastSyncedAt: null, source: resumoSource } }, pfBudgetControl: budgetControl({ scopeKind: 'pf', dataUpdatedAt: null, source: pfSource, ...extra }) })
+  }
+  const src = (accounts: number, integrated: number, synced: number, oldestSyncAt: string | null): BankSource => ({ accounts, integrated, synced, oldestSyncAt })
 
-  it('Resumo e Orçamento mostram competência, escopo e o horário da origem só quando a resposta o informa', async () => {
-    mockApi({ overview: withSummary({ decision: synced('2026-10-14T17:05:00Z'), pfBudgetControl: budgetControl({ scopeKind: 'pf', dataUpdatedAt: '2026-10-14T16:30:00Z' }) }) }); renderPage()
+  it('recorte misto diz que o horário é das contas integradas e da mais antiga; todas integradas dispensa o prefixo; nada diz "Atualizado em"', async () => {
+    mockApi({ overview: withSource(src(3, 2, 2, '2026-10-14T17:05:00Z'), src(1, 1, 1, '2026-10-14T16:30:00Z')) }); renderPage()
     await loaded()
-    await waitFor(() => expect(text(resumo())).toContain('Atualizado em 14/10 às 14:05'))
-    expect(text(resumo())).toContain('Outubro de 2026 · ')
-    expect(text(resumo())).toContain('Atualizado em 14/10 às 13:30') // o orçamento PF tem a sua própria origem
-    expect(text(card('Orçamento mensal'))).toContain('Atualizado em 14/10 às 13:30')
+    await waitFor(() => expect(text(resumo())).toContain('Contas integradas · Sincronização bancária mais antiga em 14/10 às 14:05'))
+    expect(text(resumo())).toContain('Sincronização bancária em 14/10 às 13:30') // orçamento PF: uma só conta integrada, sem prefixo nem "mais antiga"
+    expect(text(card('Orçamento mensal'))).toContain('Sincronização bancária em 14/10 às 13:30')
+    expect(text(card('Orçamento mensal'))).not.toContain('Contas integradas ·')
     expect(text(card('Orçamento mensal'))).toContain('o disponível e os percentuais consideram o projetado')
-    expect(text(resumo())).not.toContain('Atualização da origem indisponível')
-  })
-
-  it('sem horário da origem: diz que está indisponível e mostra só a hora da consulta', async () => {
-    mockApi({ overview: withSummary({ decision: synced(null), pfBudgetControl: budgetControl({ scopeKind: 'pf', dataUpdatedAt: null }) }) }); renderPage()
-    await loaded()
-    await waitFor(() => expect(text(card('Orçamento mensal'))).toContain('Atualização da origem indisponível · Consultado às '))
-    expect(text(resumo())).toContain('Atualização da origem indisponível · Consultado às ')
     expect(text(resumo())).not.toContain('Atualizado em')
   })
 
-  it('cobertura parcial traz o motivo da resposta junto dos valores; meta ausente, meta zero e falha ficam distintas', async () => {
-    const base = budgetControl()
-    mockApi({ overview: withSummary({ pfBudgetControl: budgetControl({ scopeKind: 'pf', state: 'Partial', outsideCards: { ...base.outsideCards, reasons: ['MissingPayerAccount'] } }) }) }); renderPage()
+  it('só contas manuais: sem linha de sincronização; integração sem sincronização e origem desconhecida: atualização indisponível', async () => {
+    mockApi({ overview: withSource(src(2, 0, 0, null), src(2, 0, 0, null)) }); renderPage()
     await loaded()
-    await waitFor(() => expect(text(card('Orçamento mensal'))).toContain('Cobertura parcial · Há cartões sem conta pagadora.'))
+    await waitFor(() => expect(text(card('Orçamento mensal'))).toContain('Consultado às '))
+    for (const block of [resumo(), card('Orçamento mensal')]) { expect(text(block)).not.toContain('Sincronização bancária'); expect(text(block)).not.toContain('Atualização da origem indisponível') }
     cleanup()
+    mockApi({ overview: withSource(src(1, 1, 0, null), src(2, 1, 0, null)) }); renderPage()
+    await waitFor(() => expect(text(resumo())).toContain('Atualização da origem indisponível · integração sem sincronização bancária registrada'))
+    expect(text(card('Orçamento mensal'))).toContain('Atualização da origem indisponível · contas integradas sem sincronização bancária registrada')
+    cleanup()
+    mockApi({ overview: withSource(null, null) }); renderPage()
+    await waitFor(() => expect(text(resumo())).toContain('Atualização da origem indisponível'))
+    expect(text(card('Orçamento mensal'))).toContain('Atualização da origem indisponível'); expect(text(resumo())).not.toContain('Sincronização bancária')
+  })
+
+  it('horário bancário, horário da consulta e cobertura parcial são informações distintas, cada uma com o seu rótulo', async () => {
+    const base = budgetControl()
+    mockApi({ overview: withSource(src(2, 2, 2, '2026-10-14T17:05:00Z'), src(2, 2, 2, '2026-10-14T16:30:00Z'), { state: 'Partial', outsideCards: { ...base.outsideCards, reasons: ['MissingPayerAccount'] } }) }); renderPage()
+    await loaded()
+    const budget = card('Orçamento mensal')
+    await waitFor(() => expect(text(budget)).toContain('Cobertura parcial · Há cartões sem conta pagadora.'))
+    expect(text(budget)).toContain('Sincronização bancária mais antiga em 14/10 às 13:30'); expect(text(budget)).toMatch(/Consultado às \d{2}:\d{2} \(chegada da resposta\)/)
+    expect(budget.querySelector('.ov-coverage')?.textContent).not.toContain('Sincronização'); expect(budget.querySelector('.ov-source')?.textContent).not.toContain('Cobertura')
+  })
+
+  it('cobertura parcial, meta ausente, meta zero e falha ficam distintas', async () => {
+    const base = budgetControl()
     mockApi({ overview: withSummary({ pfBudgetControl: budgetControl({ scopeKind: 'pf', total: { ...base.total, target: '0.00', targetDefined: true, projectedPercent: null, status: 'Exceeded', excess: '100.00', margin: '0.00' } }) }) }); renderPage()
     await waitFor(() => expect(text(resumo())).toContain('Meta definida em R$ 0,00'))
     expect(text(resumo())).not.toContain('Meta não configurada')
@@ -898,17 +915,17 @@ describe('Visão Geral — origem e atualização dos valores', () => {
     cleanup()
     mockApi({ overview: new Response('{}', { status: 500 }) }); renderPage()
     expect(await within(card('Orçamento mensal')).findByRole('button', { name: 'Recarregar' })).toBeTruthy()
-    expect(text(card('Orçamento mensal'))).not.toContain('Atualizado em'); expect(text(card('Orçamento mensal'))).not.toContain('Cobertura parcial')
+    expect(text(card('Orçamento mensal'))).not.toContain('Sincronização bancária'); expect(text(card('Orçamento mensal'))).not.toContain('Cobertura parcial')
   })
 
   it('ao trocar a competência o bloco volta a carregar e não mistura horário nem valores do recorte anterior', async () => {
-    mockApi({ overview: withSummary({ decision: synced('2026-10-14T17:05:00Z'), pfBudgetControl: budgetControl({ scopeKind: 'pf', dataUpdatedAt: '2026-10-14T16:30:00Z' }) }) }); renderPage()
+    mockApi({ overview: withSource(src(2, 2, 2, '2026-10-14T17:05:00Z'), src(2, 2, 2, '2026-10-14T16:30:00Z')) }); renderPage()
     await loaded()
-    await waitFor(() => expect(text(resumo())).toContain('Atualizado em 14/10 às 14:05'))
+    await waitFor(() => expect(text(resumo())).toContain('Sincronização bancária mais antiga em 14/10 às 14:05'))
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
     fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-09' } })
     await waitFor(() => expect(resumo().querySelectorAll('.ov-skeleton').length).toBeGreaterThan(0))
-    expect(text(resumo())).not.toContain('Atualizado em'); expect(text(resumo())).not.toMatch(/R\$/)
-    expect(text(card('Orçamento mensal'))).not.toContain('Atualizado em'); expect(text(card('Orçamento mensal'))).toContain('Setembro de 2026')
+    expect(text(resumo())).not.toContain('Sincronização bancária'); expect(text(resumo())).not.toMatch(/R\$/)
+    expect(text(card('Orçamento mensal'))).not.toContain('Sincronização bancária'); expect(text(card('Orçamento mensal'))).toContain('Setembro de 2026')
   })
 })

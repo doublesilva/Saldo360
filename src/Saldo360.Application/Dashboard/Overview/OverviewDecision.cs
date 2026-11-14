@@ -56,7 +56,7 @@ public sealed partial class DashboardOverviewService
             var context = new DecisionContextDto(month, currentCompetence, period, kind, selected?.Id, selected?.Name, selected?.FinancialScope.ToString(), today,
                 positions.Count == 0 ? null : positions.Min(p => p.AsOfDate), positions.Count == 0 ? null : positions.Min(p => p.ObservedAt), integrated.Count == 0 ? null : integrated.Min(),
                 all.Select(a => new DecisionAccountRefDto(a.Id, a.Name, a.FinancialScope.ToString(), a.IsPrimary)).ToList(),
-                bankBalance is { } balance ? Cents(balance) : null, overdraftUsed is { } used ? Cents(used) : null);
+                bankBalance is { } balance ? Cents(balance) : null, overdraftUsed is { } used ? Cents(used) : null, BankSourceDto.From(scoped));
 
             var notes = new List<string>();
             if (cashFlow is { SnapshotConsistent: false }) notes.Add("PositionsInconsistent");

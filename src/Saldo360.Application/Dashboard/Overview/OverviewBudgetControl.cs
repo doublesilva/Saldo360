@@ -115,7 +115,7 @@ public sealed partial class DashboardOverviewService
             // Horário verificável da origem: a sincronização mais antiga das contas integradas do conjunto (mesma regra de Decision.Context.LastSyncedAt). Sem integração, nulo: nunca inventado.
             var scoped = pfAccounts ?? (selected is null ? [] : [selected]);
             var synced = scoped.Select(a => a.Integration?.LastSyncedAt).Where(v => v is not null).Select(v => v!.Value).ToList();
-            return BudgetControlCalculator.Build(input) with { TotalTargetOrigin = totalOrigin, TotalTargetFrom = totalFrom, DataUpdatedAt = synced.Count > 0 ? synced.Min() : null };
+            return BudgetControlCalculator.Build(input) with { TotalTargetOrigin = totalOrigin, TotalTargetFrom = totalFrom, DataUpdatedAt = synced.Count > 0 ? synced.Min() : null, Source = BankSourceDto.From(scoped) };
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {

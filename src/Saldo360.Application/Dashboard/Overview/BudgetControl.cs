@@ -28,7 +28,7 @@ public sealed record BudgetRecommendationDto(string Code, string Action, string?
 
 public sealed record BudgetControlDto(string State, string Competence, string Period, string ScopeKind, bool TargetsAttributable, BudgetTotalDto Total, BudgetGroupDto Cards, BudgetGroupDto OutsideCards,
     IReadOnlyList<BudgetPressureDto> Pressures, IReadOnlyList<BudgetRecommendationDto> Recommendations, IReadOnlyList<string> Notes,
-    string? TotalTargetOrigin = null, string? TotalTargetFrom = null, DateTimeOffset? DataUpdatedAt = null);
+    string? TotalTargetOrigin = null, string? TotalTargetFrom = null, DateTimeOffset? DataUpdatedAt = null, BankSourceDto? Source = null);
 
 /// <summary>Meta de despesa fixa ou de categoria JÁ excedida (visões complementares: nunca somadas ao total).</summary>
 public sealed record BudgetOverTarget(string Kind, string Name, Guid? CategoryId, decimal Exceeded, decimal Planned, bool Partial);

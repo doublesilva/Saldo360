@@ -10,12 +10,25 @@ namespace Saldo360.Application.Dashboard.Overview;
 public sealed record DecisionAccountRefDto(Guid AccountId, string Name, string Scope, bool IsPrimary);
 
 /// <summary>
+/// Origem bancária dos valores de um conjunto de contas: quantas contas há, quantas têm integração bancária e quantas dessas têm sincronização registrada. <c>OldestSyncAt</c> = a MAIS ANTIGA
+/// sincronização entre as contas integradas que já sincronizaram (não é edição manual nem alteração de meta). Conta sem integração é manual. Derivado do próprio conjunto de contas do bloco.
+/// </summary>
+public sealed record BankSourceDto(int Accounts, int Integrated, int Synced, DateTimeOffset? OldestSyncAt)
+{
+    public static BankSourceDto From(IReadOnlyCollection<Saldo360.Application.Accounts.FinancialAccountDto> accounts)
+    {
+        var synced = accounts.Select(a => a.Integration?.LastSyncedAt).Where(v => v is not null).Select(v => v!.Value).ToList();
+        return new(accounts.Count, accounts.Count(a => a.Integration is not null), synced.Count, synced.Count == 0 ? null : synced.Min());
+    }
+}
+
+/// <summary>
 /// Contexto da análise. <c>Period</c>: Current, Future ou Closed. <c>BankPositionDate</c>/<c>BankObservedAt</c> = a posição bancária mais antiga do conjunto (conservador);
 /// <c>LastSyncedAt</c> = a sincronização mais antiga das contas integradas do conjunto. Nulos quando não há integração (nunca inventados).
 /// </summary>
 public sealed record DecisionContextDto(string Competence, string CurrentCompetence, string Period, string ScopeKind, Guid? AccountId, string? AccountName, string? AccountScope,
     DateOnly ReferenceDate, DateOnly? BankPositionDate, DateTimeOffset? BankObservedAt, DateTimeOffset? LastSyncedAt, IReadOnlyList<DecisionAccountRefDto> Accounts,
-    string? BankBalance = null, string? OverdraftUsed = null);
+    string? BankBalance = null, string? OverdraftUsed = null, BankSourceDto? Source = null);
 
 /// <summary><c>Nature</c>: Expenses, CardInvoices, Debts ou PlannedTransfers. <c>Overdue</c> = vencido e ainda não liquidado; <c>InCompetence</c> = vence de hoje (ou do início) até o fim da competência.</summary>
 public sealed record DecisionCommitmentNatureDto(string Nature, string Overdue, string InCompetence, string BeforeCompetence, string Total, int Count);

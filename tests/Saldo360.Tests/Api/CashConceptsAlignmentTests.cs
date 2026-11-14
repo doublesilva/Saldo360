@@ -148,5 +148,11 @@ public sealed class CashConceptsAlignmentTests(PostgresFixture postgres) : Postg
         // Sem integração bancária nas contas, o horário da origem é nulo (o front mostra "Atualização da origem indisponível").
         Assert.Equal(JsonValueKind.Null, overview.GetProperty("pfBudgetControl").GetProperty("dataUpdatedAt").ValueKind);
         Assert.Equal(JsonValueKind.Null, overview.GetProperty("decision").GetProperty("context").GetProperty("lastSyncedAt").ValueKind);
+        // Contas manuais confirmadas: duas contas no consolidado, uma PF no orçamento PF, nenhuma integrada.
+        var decision = overview.GetProperty("decision").GetProperty("context").GetProperty("source");
+        Assert.Equal([2, 0, 0], [decision.GetProperty("accounts").GetInt32(), decision.GetProperty("integrated").GetInt32(), decision.GetProperty("synced").GetInt32()]);
+        var pf = overview.GetProperty("pfBudgetControl").GetProperty("source");
+        Assert.Equal([1, 0, 0], [pf.GetProperty("accounts").GetInt32(), pf.GetProperty("integrated").GetInt32(), pf.GetProperty("synced").GetInt32()]);
+        Assert.Equal(JsonValueKind.Null, pf.GetProperty("oldestSyncAt").ValueKind);
     }
 }

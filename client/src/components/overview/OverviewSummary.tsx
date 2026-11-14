@@ -42,7 +42,7 @@ export function OverviewSummary({ competence, result, decision, plan, control, b
       </div>
       <CoverageLine partial={partial} reasons={[...(result?.reasons ?? []), ...(plan?.coverage.reasons ?? [])]}
         extra={plan && plan.situation.unavailableAccounts > 0 ? [`${plan.situation.unavailableAccounts === 1 ? 'Uma conta ficou' : `${plan.situation.unavailableAccounts} contas ficaram`} fora do saldo projetado.`] : []} />
-      {!loading && <SourceLine updatedAt={decision?.context.lastSyncedAt} queriedAt={queriedAt} />}
+      {!loading && <SourceLine source={decision?.context.source} updatedAt={decision?.context.lastSyncedAt} queriedAt={queriedAt} />}
       <Budget control={control} loading={loading} month={month} queriedAt={queriedAt} onOpen={() => onNavigate('budgets', { competence })} />
     </>}
   </section>
@@ -79,7 +79,7 @@ function Budget({ control, loading, month, queriedAt, onOpen }: { control: Budge
           </div>
           <p className="ov-meta">{`Todas as contas PF · ${month} · ${defined ? 'Meta mensal' : 'Sem meta'} · Independente da conta escolhida no topo`}</p>
           <CoverageLine partial={control?.state === 'Partial'} reasons={[...(control?.cards.reasons ?? []), ...(control?.outsideCards.reasons ?? []), ...(control?.notes ?? [])]} />
-          <SourceLine updatedAt={control?.dataUpdatedAt} queriedAt={queriedAt} />
+          <SourceLine source={control?.source} updatedAt={control?.dataUpdatedAt} queriedAt={queriedAt} />
           <button type="button" className="ov-link" onClick={onOpen}>Ver orçamento ›</button>
         </>}
   </div>

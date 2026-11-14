@@ -83,10 +83,14 @@ export interface OverviewCashFlow {
 /** T11.1: decisão financeira (aditivo; null quando indisponível, servidores antigos não enviam). Tudo calculado no servidor; valores são texto decimal exato, null = indisponível. */
 export type DecisionPeriod = 'Current' | 'Future' | 'Closed'
 export type CoverageState = 'Covered' | 'CoveredWithCredit' | 'Insufficient' | 'Unavailable'
+/** Origem bancária do conjunto de contas do bloco: `oldestSyncAt` é a sincronização MAIS ANTIGA entre as contas integradas que já sincronizaram (nunca edição manual nem meta). Conta sem integração é manual. */
+export interface BankSource { accounts: number; integrated: number; synced: number; oldestSyncAt: string | null }
 export interface DecisionContext {
   competence: string; currentCompetence: string; period: DecisionPeriod; scopeKind: 'primary' | 'all' | 'account'; accountId: string | null; accountName: string | null; accountScope: string | null
   referenceDate: string; bankPositionDate: string | null; bankObservedAt: string | null; lastSyncedAt: string | null
   accounts: { accountId: string; name: string; scope: string; isPrimary: boolean }[]; bankBalance: string | null; overdraftUsed: string | null
+  /** Aditivo: origem bancária das contas do recorte. Ausente em servidores antigos. */
+  source?: BankSource | null
 }
 export interface DecisionCommitments {
   period: DecisionPeriod; reliability: 'Complete' | 'Preliminary'; total: string; overdue: string; inCompetence: string; beforeCompetence: string; paidInMonth: string | null
@@ -141,6 +145,8 @@ export interface BudgetControl {
   totalTargetOrigin?: TargetOrigin | null; totalTargetFrom?: string | null
   /** Aditivo: sincronização mais antiga das contas integradas do conjunto do controle (horário verificável da origem). Nulo sem integração; ausente em servidores antigos. */
   dataUpdatedAt?: string | null
+  /** Aditivo: origem bancária das contas do controle (contas PF no orçamento PF). Ausente em servidores antigos. */
+  source?: BankSource | null
 }
 
 /**

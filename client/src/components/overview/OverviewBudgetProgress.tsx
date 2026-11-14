@@ -49,7 +49,7 @@ function Body({ control, fixedTarget, queriedAt, onOpenBudget, workspaceId, comp
     <ul className="ov-goal-rows">{rows.map(row => <GoalRow key={row.key} row={row} global={global} panel={panel(row)} />)}</ul>
     <p className="ov-meta">Meta, realizado, comprometido e estimado: o disponível e os percentuais consideram o projetado (realizado + comprometido + estimado).</p>
     <CoverageLine partial={control.state === 'Partial'} reasons={[...control.cards.reasons, ...control.outsideCards.reasons, ...control.notes]} />
-    <SourceLine updatedAt={control.dataUpdatedAt} queriedAt={queriedAt} />
+    <SourceLine source={control.source} updatedAt={control.dataUpdatedAt} queriedAt={queriedAt} />
     <p className="ov-meta">O orçamento PF considera todas as contas PF, independentemente da conta escolhida no topo. Pagamentos de fatura não entram como novo consumo.</p>
     {global && <p className="ov-meta">A meta mensal vale para todas as contas: aqui aparece só o consumo desta conta.</p>}
     {!global && !total.targetDefined && <button type="button" onClick={onOpenBudget}>Configurar orçamento</button>}
