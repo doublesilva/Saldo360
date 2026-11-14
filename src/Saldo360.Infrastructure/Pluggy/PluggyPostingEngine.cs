@@ -295,12 +295,13 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
             // 2) Desfaz pares cujo dado de origem mudou ou cuja outra ponta foi cancelada pelo usuário; depois pareia o que sobrou.
             UnwindBrokenPairs();
             var pairing = Pair(linkOf);
+            var confirmedIncome = FindConfirmedExternalIncome(order);
 
             // 3) Aplica movimentos bancários, transferências e compras de cartão; salva; só então pagamentos de fatura (dependem das faturas salvas).
             foreach (var t in order)
             {
                 if (!decisions.TryGetValue(t.Id, out var movement)) continue;
-                await ApplyOneAsync(t, linkOf[t.Id], movement, pairing, ct);
+                await ApplyOneAsync(t, linkOf[t.Id], movement, pairing, confirmedIncome, ct);
             }
             ApplyTransfers(pairing, linkOf);
             ClearStaleLinkReviews();
@@ -778,7 +779,44 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
 
         // ---- Aplicação por transação -------------------------------------------------------------------------------------
 
-        private async Task ApplyOneAsync(PluggyImportedTransaction t, PluggyAccountLink link, PluggyMovement movement, Pairs pairs, CancellationToken ct)
+        private Dictionary<(Guid LinkId, string Payer), DateOnly> FindConfirmedExternalIncome(List<PluggyImportedTransaction> order)
+        {
+            var history = new Dictionary<(Guid, string), DateOnly>();
+            foreach (var transaction in order)
+            {
+                if (!postings.TryGetValue(transaction.Id, out var posting)
+                    || posting.Resolution != PluggyResolution.AsIncome
+                    || posting.State != PluggyPostingState.Applied
+                    || posting.Kind != PluggyPostingKind.BankMovement
+                    || posting.FinancialTransactionId is not { } coreId
+                    || !coreTransactions.TryGetValue(coreId, out var core)
+                    || core.IsCancelled || core.Type != CategoryType.Income
+                    || transaction.Date is not { } date
+                    || ExternalIncomePayer(transaction) is not { } payer) continue;
+
+                var key = (posting.AccountLinkId, payer);
+                history.TryAdd(key, PluggyFinancialMapper.BusinessDate(date));
+            }
+
+            return history;
+        }
+
+        private static string? ExternalIncomePayer(PluggyImportedTransaction transaction)
+        {
+            if (transaction.Status != PluggyTransactionStatus.Posted
+                || !string.Equals(transaction.Type, "CREDIT", StringComparison.OrdinalIgnoreCase)
+                || transaction.ClassificationReason != "SameInstitutionTransfer"
+                || PluggyFinancialMapper.DescribesRefund(transaction.Description, transaction.DescriptionRaw)) return null;
+
+            var description = PluggyFinancialMapper.Normalize(transaction.Description);
+            const string prefix = "entrada ";
+            if (!description.StartsWith(prefix, StringComparison.Ordinal)) return null;
+            var payer = description[prefix.Length..];
+            return payer.EndsWith(" ltda", StringComparison.Ordinal) && payer.Length > " ltda".Length ? payer : null;
+        }
+
+        private async Task ApplyOneAsync(PluggyImportedTransaction t, PluggyAccountLink link, PluggyMovement movement, Pairs pairs,
+            IReadOnlyDictionary<(Guid LinkId, string Payer), DateOnly> confirmedIncome, CancellationToken ct)
         {
             var posting = postings[t.Id];
             if (posting.State == PluggyPostingState.Ignored) return;
@@ -801,6 +839,10 @@ internal sealed class PluggyPostingEngine(Saldo360DbContext db) : IPluggyPosting
                 case PluggyDisposition.TransferCandidate:
                     if (pairs.TransferAmbiguous.Contains(t.Id)) LinkDoubt(posting, "AmbiguousTransferCounterpart");
                     else if (pairs.TransferDateMismatch.Contains(t.Id)) LinkDoubt(posting, "TransferDateMismatch");
+                    else if (posting.Resolution is null && ExternalIncomePayer(t) is { } payer
+                        && confirmedIncome.TryGetValue((link.Id, payer), out var firstConfirmedDate)
+                        && firstConfirmedDate < movement.Date)
+                        ApplyBankMovement(t, link, movement, posting);
                     else ToReview(posting, "TransferWithoutCounterpart");
                     break;
                 case PluggyDisposition.TransferProbe:

@@ -936,6 +936,20 @@ public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture post
 
         await SyncAsync(c);
         Assert.Single(await CoreAsync(c.Workspace));
+
+        Pluggy.TransactionsByAccount[BankA] =
+        [
+            .. Pluggy.TransactionsByAccount[BankA],
+            Tx("rent-next", BankA, 1, 2000m, operation: "TRANSFERENCIA_MESMA_INSTITUICAO", description: "Entrada GRPQA LTDA", category: "Transfer - Internal"),
+            Tx("unknown-payer", BankA, 1, 2000m, operation: "TRANSFERENCIA_MESMA_INSTITUICAO", description: "Entrada OUTRA LTDA", category: "Transfer - Internal"),
+        ];
+        await SyncAsync(c);
+        await SyncAsync(c);
+
+        var realized = await CoreAsync(c.Workspace);
+        Assert.Equal(2, realized.Count);
+        Assert.Contains(realized, t => t is { Type: CategoryType.Income, Amount: 2000m, Description: "Entrada GRPQA LTDA" });
+        Assert.Equal(["TransferWithoutCounterpart"], Reasons(await ReviewAsync(c)));
     }
 
     [Fact]
