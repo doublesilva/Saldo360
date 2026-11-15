@@ -17,6 +17,14 @@ internal static class IncomeForecastLoader
 
     public static async Task<IncomeForecastView> LoadAsync(Saldo360DbContext db, Guid workspaceId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct)
     {
+        var sharing = IncomeForecastSharing.For(db);
+        return sharing is null
+            ? await LoadCoreAsync(db, workspaceId, from, through, today, ct)
+            : await sharing.ReadAsync(workspaceId, from, through, today, () => LoadCoreAsync(db, workspaceId, from, through, today, ct));
+    }
+
+    private static async Task<IncomeForecastView> LoadCoreAsync(Saldo360DbContext db, Guid workspaceId, DateOnly from, DateOnly through, DateOnly today, CancellationToken ct)
+    {
         var row = await db.FinancialIncomeForecasts.AsNoTracking().SingleOrDefaultAsync(f => f.WorkspaceId == workspaceId, ct);
         InferredIncome? inferred = null; IncomeForecastSettings settings;
         if (row is null)

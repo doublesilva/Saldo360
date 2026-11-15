@@ -46,7 +46,7 @@ public sealed class PlanActualService(
     IFinancialWorkspaceRepository workspaces, IFinancialAccountRepository accounts, FinancialCalendarMonthlyProjectionService monthlyProjection,
     FinancialCalendarBalanceService calendar, CardProjectionService cardProjection, AccountBalanceReconciliationService reconciliation,
     IAccountBalanceReconciliationRepository reconciliationFacts, IFinancialCalendarBalanceRepository calendarSource, PluggySyncMonitorService syncMonitor, IMonthlyPlanRepository monthlyPlan, IPlanActualRepository repository,
-    ICardFactsSharing cardFacts, IAccountListSharing accountLists, TimeProvider time)
+    ICardFactsSharing cardFacts, IAccountListSharing accountLists, IIncomeForecastSharing incomeForecasts, TimeProvider time)
 {
     private const int MaxAttempts = 3;
 
@@ -78,6 +78,7 @@ public sealed class PlanActualService(
             {
                 cardFacts.Invalidate();
                 accountLists.Invalidate(); // o retrato mudou durante a montagem: listagens compartilhadas seguintes também voltam ao banco
+                incomeForecasts.Invalidate();
             }
             var before = await repository.FingerprintAsync(workspaceId, ct);
             var built = await BuildAsync(workspaceId, userId, month, today, requested, kind, selected, primary, all, ct);

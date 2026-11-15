@@ -110,6 +110,8 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.Dashboard.PlanActual.IPlanActualRepository, Saldo360.Infrastructure.Dashboard.PlanActualRepository>();
         services.AddScoped<Saldo360.Application.Dashboard.IOverdraftRecoveryRepository, Saldo360.Infrastructure.Dashboard.OverdraftRecoveryRepository>();
         services.AddScoped<Saldo360.Infrastructure.MonthlyPlan.MonthlyPlanRepository>();
+        services.AddScoped<Saldo360.Infrastructure.MonthlyPlan.IncomeForecastSharing>();
+        services.AddScoped<Saldo360.Application.MonthlyPlan.IIncomeForecastSharing>(sp => sp.GetRequiredService<Saldo360.Infrastructure.MonthlyPlan.IncomeForecastSharing>());
         services.AddScoped<Saldo360.Application.MonthlyPlan.IMonthlyPlanRepository>(sp => sp.GetRequiredService<Saldo360.Infrastructure.MonthlyPlan.MonthlyPlanRepository>());
         services.AddScoped<Saldo360.Application.MonthlyPlan.IPlanHistoryWriter>(sp => sp.GetRequiredService<Saldo360.Infrastructure.MonthlyPlan.MonthlyPlanRepository>());
         services.AddScoped<IFinancialCreditCardInvoicePaymentRepository, FinancialCreditCardInvoicePaymentRepository>();

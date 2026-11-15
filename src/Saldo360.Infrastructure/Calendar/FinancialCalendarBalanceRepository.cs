@@ -16,7 +16,7 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         DateOnly through,
         DateOnly today,
         CancellationToken cancellationToken) =>
-        ReadWithPlanAsync(workspaceId, accountId, null, through, today, cancellationToken);
+        ReadSnapshotAsync(workspaceId, accountId, null, through, today, includeAutoPlan: true, cancellationToken);
 
     public Task<FinancialCalendarBalanceSnapshot?> ReadMonthlyAsync(
         Guid workspaceId,
@@ -25,14 +25,38 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         DateOnly through,
         DateOnly today,
         CancellationToken cancellationToken) =>
-        ReadWithPlanAsync(workspaceId, accountId, from, through, today, cancellationToken);
+        ReadSnapshotAsync(workspaceId, accountId, from, through, today, includeAutoPlan: true, cancellationToken);
 
     /// <summary>Leitura da PJ para o planejamento do repasse: o mesmo saldo, SEM o repasse projetado (evita recursão e dupla contagem).</summary>
     public Task<FinancialCalendarBalanceSnapshot?> ReadWithoutAutoTransfersAsync(Guid workspaceId, Guid? accountId, DateOnly through, DateOnly today, CancellationToken cancellationToken) =>
-        ReadCoreAsync(workspaceId, accountId, null, through, today, null, cancellationToken);
+        ReadSnapshotAsync(workspaceId, accountId, null, through, today, includeAutoPlan: false, cancellationToken);
 
-    private async Task<FinancialCalendarBalanceSnapshot?> ReadWithPlanAsync(Guid workspaceId, Guid? accountId, DateOnly? periodFrom, DateOnly through, DateOnly today, CancellationToken cancellationToken) =>
-        await ReadCoreAsync(workspaceId, accountId, periodFrom, through, today, await PjTransferProjection.PlanAsync(db, workspaceId, today, through, cancellationToken), cancellationToken);
+    private async Task<FinancialCalendarBalanceSnapshot?> ReadSnapshotAsync(
+        Guid workspaceId, Guid? accountId, DateOnly? periodFrom, DateOnly through, DateOnly today, bool includeAutoPlan, CancellationToken cancellationToken)
+    {
+        // A leitura do plano de repasse e o snapshot precisam pertencer à mesma visão. A chamada recursiva que calcula
+        // o saldo da PJ sem o próprio repasse encontra a transação corrente e não abre nem encerra outra.
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        var transaction = ownsTransaction ? await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken) : null;
+        using var forecastBoundary = ownsTransaction ? Saldo360.Infrastructure.MonthlyPlan.IncomeForecastSharing.For(db)?.BeginConsistencyBoundary() : null;
+        try
+        {
+            if (ownsTransaction) await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
+            var autoPlan = includeAutoPlan ? await PjTransferProjection.PlanAsync(db, workspaceId, today, through, cancellationToken) : null;
+            var snapshot = await ReadCoreAsync(workspaceId, accountId, periodFrom, through, today, autoPlan, cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+            return snapshot;
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null) await transaction.DisposeAsync();
+        }
+    }
 
     private async Task<FinancialCalendarBalanceSnapshot?> ReadCoreAsync(
         Guid workspaceId,
@@ -43,10 +67,6 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         AutoTransferPlan? autoPlan,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(
-            IsolationLevel.RepeatableRead, cancellationToken);
-        await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
-
         // Saldo inicial efetivo: o manual (quando informado) ou, sem ele, o derivado da referência bancária confiável (âncora). Nada é gravado na conta.
         var selectedAccounts =
             from account in db.FinancialAccounts.AsNoTracking()
@@ -68,7 +88,6 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             .ToListAsync(cancellationToken);
         if (accountId is not null && accounts.Count == 0)
         {
-            await transaction.CommitAsync(cancellationToken);
             return null;
         }
         // Os mesmos IDs das contas já materializadas nesta transação: sem reler as selecionadas para transferências previstas, repasses, dívidas, cartões e pendências.
@@ -277,7 +296,6 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
                 db, workspaceId, firstPeriodDate, through.AddDays(1), null, cancellationToken, today);
         }
 
-        await transaction.CommitAsync(cancellationToken);
         return new FinancialCalendarBalanceSnapshot(accounts, realized, pending, periodRealized, cardPending, allCardObligations, debtPending, hasUnallocatedDebt, cardPayments, budgets, pendingBank, inferred, cardWithoutPayer, debtWithoutResponsible);
     }
 }
