@@ -45,7 +45,8 @@ public interface IPlanActualRepository
 public sealed class PlanActualService(
     IFinancialWorkspaceRepository workspaces, IFinancialAccountRepository accounts, FinancialCalendarMonthlyProjectionService monthlyProjection,
     FinancialCalendarBalanceService calendar, CardProjectionService cardProjection, AccountBalanceReconciliationService reconciliation,
-    IAccountBalanceReconciliationRepository reconciliationFacts, IFinancialCalendarBalanceRepository calendarSource, PluggySyncMonitorService syncMonitor, IMonthlyPlanRepository monthlyPlan, IPlanActualRepository repository, ICardFactsSharing cardFacts, TimeProvider time)
+    IAccountBalanceReconciliationRepository reconciliationFacts, IFinancialCalendarBalanceRepository calendarSource, PluggySyncMonitorService syncMonitor, IMonthlyPlanRepository monthlyPlan, IPlanActualRepository repository,
+    ICardFactsSharing cardFacts, IAccountListSharing accountLists, TimeProvider time)
 {
     private const int MaxAttempts = 3;
 
@@ -73,7 +74,11 @@ public sealed class PlanActualService(
         PlanActualDashboardDto? last = null;
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
-            if (attempt > 0) cardFacts.Invalidate(); // o retrato mudou durante a montagem: os fatos dos cartões compartilhados na requisição também são relidos
+            if (attempt > 0)
+            {
+                cardFacts.Invalidate();
+                accountLists.Invalidate(); // o retrato mudou durante a montagem: listagens compartilhadas seguintes também voltam ao banco
+            }
             var before = await repository.FingerprintAsync(workspaceId, ct);
             var built = await BuildAsync(workspaceId, userId, month, today, requested, kind, selected, primary, all, ct);
             if (built is null) return PlanActualResult<PlanActualDashboardDto>.NotFound;

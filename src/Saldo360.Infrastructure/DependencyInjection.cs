@@ -84,6 +84,8 @@ public static class DependencyInjection
         services.AddScoped<Saldo360.Application.Workspaces.IFinancialWorkspaceRepository, Saldo360.Infrastructure.Workspaces.FinancialWorkspaceRepository>();
         services.AddScoped<Saldo360.Application.Workspaces.IFinancialWorkspaceResetService, Saldo360.Infrastructure.Workspaces.FinancialWorkspaceResetService>();
         services.AddScoped<IFamilyInvitationRepository, FamilyInvitationRepository>();
+        services.AddScoped<AccountListSharing>();
+        services.AddScoped<IAccountListSharing>(sp => sp.GetRequiredService<AccountListSharing>());
         services.AddScoped<IFinancialAccountRepository, FinancialAccountRepository>();
         services.AddScoped<IFinancialCategoryRepository, FinancialCategoryRepository>();
         services.AddScoped<IFinancialTransactionRepository, FinancialTransactionRepository>();

@@ -13,6 +13,7 @@ public sealed partial class DashboardOverviewService
 {
     public async Task<PlanActualResult<BudgetSummaryDto>> GetBudgetSummaryAsync(Guid workspaceId, Guid userId, string? competence, CancellationToken ct)
     {
+        using var sharedAccountReads = accountLists.Begin();
         var resolved = await ResolveAsync(workspaceId, userId, competence, null, null, ct);
         if (resolved.Error is { } error) return new(error.Access, null, error.Errors);
         var (month, today) = (resolved.Month!, resolved.Today);

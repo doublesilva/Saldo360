@@ -104,6 +104,7 @@ public sealed partial class DashboardOverviewService(
     Saldo360.Application.Categories.IFinancialCategoryRepository categoryRepository,
     Saldo360.Application.CreditCards.IFinancialCreditCardRepository cardRepository,
     Saldo360.Application.CreditCards.Projection.ICardFactsSharing cardFacts,
+    IAccountListSharing accountLists,
     TimeProvider time)
 {
     public const int HorizonDays = 30;
@@ -163,6 +164,7 @@ public sealed partial class DashboardOverviewService(
 
     public async Task<PlanActualResult<DashboardOverviewDto>> GetAsync(Guid workspaceId, Guid userId, string? competence, string? scope, Guid? accountId, CancellationToken ct)
     {
+        using var sharedAccountReads = accountLists.Begin();
         var resolved = await ResolveAsync(workspaceId, userId, competence, scope, accountId, ct);
         if (resolved.Error is { } error) return new(error.Access, null, error.Errors);
         var (month, requested, selected, kind, all, today) = (resolved.Month!, resolved.Requested!, resolved.Selected, resolved.Kind!, resolved.All, resolved.Today);

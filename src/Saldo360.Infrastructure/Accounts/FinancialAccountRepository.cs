@@ -8,7 +8,7 @@ using Saldo360.Infrastructure.Persistence;
 
 namespace Saldo360.Infrastructure.Accounts;
 
-internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinancialAccountRepository
+internal sealed class FinancialAccountRepository(Saldo360DbContext db, AccountListSharing? sharing = null) : IFinancialAccountRepository
 {
     private const string UnnamedMember = "Membro";
 
@@ -64,9 +64,15 @@ internal sealed class FinancialAccountRepository(Saldo360DbContext db) : IFinanc
     public async Task<IReadOnlyList<FinancialAccountDto>> ListAsync(
         Guid workspaceId, bool includeInactive, CancellationToken cancellationToken)
     {
-        var rows = await Project(db.FinancialAccounts
-                .Where(a => a.WorkspaceId == workspaceId && (includeInactive || a.IsActive)))
-            .ToListAsync(cancellationToken);
+        var shared = sharing is null ? null : await sharing.ReadAsync(workspaceId, () => LoadAsync(workspaceId, true, cancellationToken));
+        if (shared is not null) return includeInactive ? shared : shared.Where(a => a.IsActive).ToList();
+        return await LoadAsync(workspaceId, includeInactive, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<FinancialAccountDto>> LoadAsync(
+        Guid workspaceId, bool includeInactive, CancellationToken cancellationToken)
+    {
+        var rows = await Project(db.FinancialAccounts.Where(a => a.WorkspaceId == workspaceId && (includeInactive || a.IsActive))).ToListAsync(cancellationToken);
 
         // Poucas contas por família: ordena em memória (ativas primeiro, depois por nome).
         return rows
