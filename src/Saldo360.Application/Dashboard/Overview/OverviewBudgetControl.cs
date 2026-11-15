@@ -56,6 +56,8 @@ public sealed partial class DashboardOverviewService
             {
                 if (pfAccounts.Count == 0) return null;
                 var parts = new List<BudgetTotals>(); var incompleteInactive = false;
+                // O Plano × Realizado de cada conta PF lê os fatos de todos os cartões (faturas, parcelas, ajustes e pagamentos) e recorta o pagador em memória: a leitura é uma só por requisição.
+                using var sharedCardReads = cardFacts.Begin();
                 foreach (var account in pfAccounts)
                 {
                     var plan = await PlanOnceAsync(workspaceId, userId, month, PlanActualScopes.Account, account.Id, ct);

@@ -15,10 +15,10 @@ namespace Saldo360.Infrastructure.CreditCards;
 /// parcelas devolvidas pela instituição são lidas das transações importadas, pela MESMA regra de decisão que as aplica quando forem lançadas
 /// (<see cref="PluggyFinancialMapper.Decide"/>), para que uma parcela nunca seja interpretada de um jeito aqui e de outro no lançamento.
 /// </summary>
-internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialCreditCardRepository cards, IFinancialCreditCardPurchaseRepository purchases) : ICardProjectionRepository
+internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialCreditCardRepository cards, IFinancialCreditCardPurchaseRepository purchases, CardFactsSharing? sharing = null) : ICardProjectionRepository
 {
     /// <summary>Leitor para repositórios que já têm o contexto e não recebem o leitor por injeção.</summary>
-    internal static CardProjectionRepository Create(Saldo360DbContext db) => new(db, new FinancialCreditCardRepository(db), new FinancialCreditCardPurchaseRepository(db));
+    internal static CardProjectionRepository Create(Saldo360DbContext db) => new(db, new FinancialCreditCardRepository(db), new FinancialCreditCardPurchaseRepository(db), CardFactsSharing.For(db));
     /// <summary>Cobrança recorrente detectada é projetada até o maior horizonte da projeção consolidada (36 meses) mais um mês de folga; a leitura recorta pelo período pedido. Compras futuras nunca são inventadas.</summary>
     public const int RecurringHorizonMonths = 37;
 
@@ -26,7 +26,11 @@ internal sealed class CardProjectionRepository(Saldo360DbContext db, IFinancialC
     internal static async Task<IReadOnlyList<CardObligationItem>> ReadItemsAsync(Saldo360DbContext db, Guid workspaceId, DateOnly today, CancellationToken ct) =>
         (await Create(db).LoadAsync(workspaceId, today, null, ct)).SelectMany(facts => CardProjectionEngine.Compute(facts, today).Items).ToList();
 
-    public async Task<IReadOnlyList<CardFacts>> LoadAsync(Guid workspaceId, DateOnly today, Guid? onlyCard, CancellationToken ct)
+    /// <summary>Todos os cartões podem vir da janela de reaproveitamento da requisição (<see cref="ICardFactsSharing"/>); um cartão específico sempre é lido do banco.</summary>
+    public Task<IReadOnlyList<CardFacts>> LoadAsync(Guid workspaceId, DateOnly today, Guid? onlyCard, CancellationToken ct) =>
+        onlyCard is null && sharing is not null ? sharing.ReadAsync(workspaceId, today, () => ReadAsync(workspaceId, today, null, ct)) : ReadAsync(workspaceId, today, onlyCard, ct);
+
+    private async Task<IReadOnlyList<CardFacts>> ReadAsync(Guid workspaceId, DateOnly today, Guid? onlyCard, CancellationToken ct)
     {
         // Cartão arquivado não aparece nas telas, mas as obrigações dele continuam valendo (fatura a pagar, parcelas conhecidas).
         var dtos = (await cards.ListAsync(workspaceId, true, ct)).Where(c => onlyCard == null || c.Id == onlyCard).OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase).ToList();

@@ -103,6 +103,7 @@ public sealed partial class DashboardOverviewService(
     IFinancialBudgetExecutionRepository budgetFacts,
     Saldo360.Application.Categories.IFinancialCategoryRepository categoryRepository,
     Saldo360.Application.CreditCards.IFinancialCreditCardRepository cardRepository,
+    Saldo360.Application.CreditCards.Projection.ICardFactsSharing cardFacts,
     TimeProvider time)
 {
     public const int HorizonDays = 30;
