@@ -71,6 +71,8 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
             await transaction.CommitAsync(cancellationToken);
             return null;
         }
+        // Os mesmos IDs das contas já materializadas nesta transação: sem reler as selecionadas para transferências previstas, repasses, dívidas, cartões e pendências.
+        var selectedAccountIds = accounts.Select(account => account.Id).ToList();
 
         var lastRealizedDate = through < today ? through : today;
         // Receita e despesa pela regra única dos indicadores (devolução bancária: entrada de caixa que reduz a despesa, nunca receita). O saldo não muda:
@@ -167,9 +169,8 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         var plannedTransfers = await (from item in db.FinancialPlannedTransfers.AsNoTracking()
                                       where item.WorkspaceId == workspaceId && !item.IsCancelled && item.RealizedTransferId == null && item.DueDate <= through
                                       select new { item.DueDate, item.SourceAccountId, item.DestinationAccountId, item.Amount }).ToListAsync(cancellationToken);
-        var selectedIds = await selectedAccounts.Select(account => account.Id).ToListAsync(cancellationToken);
         var plannedTransferRows = plannedTransfers
-            .Select(item => new { item.DueDate, In = selectedIds.Contains(item.DestinationAccountId) ? item.Amount : 0m, Out = selectedIds.Contains(item.SourceAccountId) ? item.Amount : 0m })
+            .Select(item => new { item.DueDate, In = selectedAccountIds.Contains(item.DestinationAccountId) ? item.Amount : 0m, Out = selectedAccountIds.Contains(item.SourceAccountId) ? item.Amount : 0m })
             .GroupBy(item => item.DueDate)
             .Select(daily => new { Date = daily.Key, In = daily.Sum(item => item.In), Out = daily.Sum(item => item.Out) })
             .Where(row => row.In != 0m || row.Out != 0m)
@@ -183,14 +184,13 @@ internal sealed class FinancialCalendarBalanceRepository(Saldo360DbContext db)
         {
             var autoRows = autoPlan.Transfers.GroupBy(item => item.Date)
                 .Select(daily => new { Date = daily.Key, Amount = daily.Sum(item => item.Amount) })
-                .Select(daily => new { daily.Date, In = selectedIds.Contains(autoPlan.PfAccountId) ? daily.Amount : 0m, Out = selectedIds.Contains(autoPlan.PjAccountId) ? daily.Amount : 0m })
+                .Select(daily => new { daily.Date, In = selectedAccountIds.Contains(autoPlan.PfAccountId) ? daily.Amount : 0m, Out = selectedAccountIds.Contains(autoPlan.PjAccountId) ? daily.Amount : 0m })
                 .Where(row => row.In != 0m || row.Out != 0m)
                 .Select(row => new FinancialCalendarDailyTotals(row.Date, 0m, 0m, accountId is null ? Math.Max(0m, row.In - row.Out) : row.In, accountId is null ? Math.Max(0m, row.Out - row.In) : row.Out)).ToList();
             pending = pending.Concat(autoRows).ToList();
             inferred.AddRange(autoRows);
         }
 
-        var selectedAccountIds = await selectedAccounts.Select(account => account.Id).ToListAsync(cancellationToken);
         var debtRows = await (from installment in db.FinancialDebtInstallments.AsNoTracking()
                               join debt in db.FinancialDebts.AsNoTracking() on new { installment.WorkspaceId, DebtId = installment.DebtId } equals new { debt.WorkspaceId, DebtId = debt.Id }
                               where installment.WorkspaceId == workspaceId && debt.Status != Saldo360.Domain.Debts.DebtStatus.Archived
