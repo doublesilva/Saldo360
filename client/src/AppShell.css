@@ -34,14 +34,18 @@
 .app-sidebar__brand { display: flex; align-items: center; gap: .7rem; font-size: 1.35rem; letter-spacing: -.04em; margin: 0 .4rem 2rem; }
 .brand-mark { display: grid; place-items: center; width: 2.1rem; height: 2.1rem; background: #93a7ff; color: #101827; border-radius: .7rem; font-weight: 800; }
 .app-sidebar__group { margin-bottom: 1.1rem; }
-.app-sidebar__group > p { color: var(--muted); text-transform: uppercase; font-size: .65rem; letter-spacing: .15em; margin: 0 .85rem .5rem; }
-.app-sidebar__group button { display: flex; gap: .7rem; align-items: center; width: 100%; border: 1px solid transparent; text-align: left; background: transparent; color: #b7c3d8; padding: .6rem .8rem; margin-top: .15rem; font-size: .88rem; border-radius: .65rem; }
+.app-sidebar__group .app-sidebar__group-toggle { display: flex; justify-content: space-between; align-items: center; width: 100%; border: 1px solid transparent; background: transparent; color: var(--muted); text-transform: uppercase; font-size: .65rem; letter-spacing: .12em; padding: .45rem .8rem; border-radius: .65rem; }
+.app-sidebar__group[data-active] .app-sidebar__group-toggle { color: var(--accent); border-color: #344362; background: #172238; }
+.app-sidebar__chevron { font-size: 1rem; transition: transform .15s ease; }
+.app-sidebar__group-toggle[aria-expanded='true'] .app-sidebar__chevron { transform: rotate(180deg); }
+.app-sidebar__items { margin-top: .25rem; }
+.app-sidebar__items > button { display: flex; gap: .7rem; align-items: center; width: 100%; border: 1px solid transparent; text-align: left; background: transparent; color: #b7c3d8; padding: .6rem .8rem; margin-top: .15rem; font-size: .88rem; border-radius: .65rem; }
 .app-sidebar__group button:hover:not(:disabled) { color: white; background: #1c2940; }
-.app-sidebar__group button[aria-current='page'] { background: #253350; color: #e4eaff; border-color: #3a4b70; font-weight: 650; }
+.app-sidebar__items > button[aria-current='page'] { background: #253350; color: #e4eaff; border-color: #3a4b70; font-weight: 650; }
 .app-sidebar__group button:disabled { cursor: not-allowed; opacity: .65; }
 .app-sidebar__group button small { font-size: .58rem; margin-left: auto; white-space: nowrap; }
 .nav-marker { width: .4rem; height: .4rem; border: 1px solid var(--muted); border-radius: 50%; flex-shrink: 0; }
-.app-sidebar__group button[aria-current='page'] .nav-marker { border-color: var(--accent); background: var(--accent); }
+.app-sidebar__items > button[aria-current='page'] .nav-marker { border-color: var(--accent); background: var(--accent); }
 .app-sidebar__workspace { margin: 1.5rem .5rem 0; border-top: 1px solid var(--border); padding-top: 1rem; }
 .app-sidebar__workspace h2 { margin: .2rem 0; font-size: .9rem; overflow-wrap: anywhere; }
 .app-sidebar__workspace small { color: var(--muted); font-size: .75rem; }
@@ -98,6 +102,7 @@
   .workspace-reset-result { margin-left: 0; }
   .app-menu-toggle, .app-sidebar__close { display: block; }
   .app-sidebar__close { margin-left: auto; padding: .25rem .65rem; font-size: 1.3rem; }
+  .app-sidebar__group .app-sidebar__group-toggle { min-height: 2.75rem; font-size: .72rem; }
   .app-shell__scrim { display: block; position: fixed; z-index: 25; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; background: #030711bd; }
 }
 @media (max-width: 48rem) {

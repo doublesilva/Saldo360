@@ -460,8 +460,8 @@ describe('FinancialCalendarPage — erros, família e concorrência', () => {
     render(<PersonalFinance />)
 
     const navigation = await screen.findByRole('navigation', { name: 'Navegação do orçamento pessoal' })
-    expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual([
-      'Visão Geral', 'Lançamentos', 'Contas', 'Cartões', 'Orçamento', 'Agenda', 'Metas', 'Planejamento', 'Categorias', 'Recorrências', 'Previsões', 'Transferências', 'Dívidas', 'Configurações',
+    expect(Array.from(navigation.querySelectorAll<HTMLButtonElement>('.app-sidebar__items > button')).map((button) => button.textContent)).toEqual([
+      'Visão Geral', 'Lançamentos', 'Contas', 'Cartões', 'Transferências', 'Orçamento', 'Agenda', 'Metas', 'Plano mensal', 'Previsões', 'Recorrências', 'Dívidas', 'Categorias', 'Configurações',
     ])
     fireEvent.click(within(navigation).getByRole('button', { name: 'Agenda' }))
 

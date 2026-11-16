@@ -76,7 +76,7 @@ export const unavailableAccountNotice = 'A conta do link não está disponível.
 
 /** Destino em linguagem simples ("Entre para abrir a Agenda"). */
 export const sectionPhrases: Record<RouteSection, string> = {
-  overview: 'a Visão Geral', transactions: 'os Lançamentos', accounts: 'as Contas', cards: 'os Cartões', budgets: 'o Orçamento', calendar: 'a Agenda', goals: 'as Metas', planning: 'o Planejamento',
+  overview: 'a Visão Geral', transactions: 'os Lançamentos', accounts: 'as Contas', cards: 'os Cartões', budgets: 'o Orçamento', calendar: 'a Agenda', goals: 'as Metas', planning: 'o Plano mensal',
   categories: 'as Categorias', recurrences: 'as Recorrências', planned: 'as Previsões', transfers: 'as Transferências', debts: 'as Dívidas', settings: 'as Configurações', automation: 'a Automação',
 }
 
