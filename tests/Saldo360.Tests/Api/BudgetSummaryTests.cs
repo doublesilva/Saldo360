@@ -87,6 +87,9 @@ public sealed class BudgetSummaryTests(PostgresFixture postgres, ITestOutputHelp
         Assert.Equal(pf.GetProperty("state").GetString(), summary.GetProperty("state").GetString());
         Assert.Equal(pf.GetProperty("competence").GetString(), summary.GetProperty("competence").GetString());
         Assert.Equal(pf.GetProperty("notes").GetRawText(), summary.GetProperty("notes").GetRawText());
+        var expectedReasons = pf.GetProperty("cards").GetProperty("reasons").EnumerateArray()
+            .Concat(pf.GetProperty("outsideCards").GetProperty("reasons").EnumerateArray()).Select(reason => reason.GetString()).Distinct().ToArray();
+        Assert.Equal(expectedReasons, summary.GetProperty("reasons").EnumerateArray().Select(reason => reason.GetString()).ToArray());
         Assert.Equal(pf.TryGetProperty("totalTargetOrigin", out var origin) ? origin.GetRawText() : "null", summary.TryGetProperty("totalTargetOrigin", out var o2) ? o2.GetRawText() : "null");
     }
 
@@ -132,7 +135,9 @@ public sealed class BudgetSummaryTests(PostgresFixture postgres, ITestOutputHelp
         await PurchaseAsync(card, "400.00");
         await ConfigureTotalAsync(5000m);
         await AssertSameAsOverviewAsync();
-        Assert.Equal("Partial", (await SummaryAsync()).GetProperty("state").GetString());
+        var summary = await SummaryAsync();
+        Assert.Equal("Partial", summary.GetProperty("state").GetString());
+        Assert.Contains("MissingPayerAccount", summary.GetProperty("reasons").EnumerateArray().Select(reason => reason.GetString()));
     }
 
     [Fact]

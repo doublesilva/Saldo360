@@ -204,6 +204,8 @@ export interface DashboardOverview {
  */
 export interface BudgetSummary {
   state: 'Complete' | 'Partial' | 'TargetNotDefined' | 'Unavailable'; competence: string; scopeKind: string; total: BudgetControlTotal | null; notes: string[]
+  /** Motivos de cobertura já calculados pelos grupos do orçamento; opcional para compatibilidade com respostas anteriores. */
+  reasons?: string[]
   totalTargetOrigin?: TargetOrigin | null; totalTargetFrom?: string | null
 }
 export function getBudgetSummary(workspaceId: string, competence: string, signal?: AbortSignal): Promise<BudgetSummary> {

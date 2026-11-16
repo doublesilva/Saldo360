@@ -76,7 +76,8 @@ function mockApi(options: { budgets?: FinancialBudget[]; runs?: FinancialBudgetT
       const pf = options.pf?.(competence) ?? {}
       if (pf === 'fail') return new Response('x', { status: 500 })
       const control = budgetControl({ scopeKind: 'pf', competence, ...pf })
-      return Response.json({ state: control.state, competence, scopeKind: 'pf', total: control.total, notes: control.notes })
+      return Response.json({ state: control.state, competence, scopeKind: 'pf', total: control.total, notes: control.notes,
+        reasons: [...control.cards.reasons, ...control.outsideCards.reasons] })
     }
     if (options.effective && url.includes('/budgets/effective') && !url.includes('/execution')) return Response.json(options.effective)
     if (url.includes('/composition')) return Response.json(composition(Number(new URL(url, 'http://x').searchParams.get('page'))))
@@ -315,12 +316,24 @@ describe('FinancialBudgetsPage — Acompanhamento do mês', () => {
     expect(plain(figure(region, 'Disponível'))).toContain('R$ 800,00 acima da meta')
   })
 
-  it('cobertura parcial é dita em texto', async () => {
-    mockApi({ pf: () => ({ state: 'Partial', notes: ['Faturas de cartão sem confirmação.'] }) })
+  it('cobertura parcial mostra os motivos conhecidos em lista, sem códigos internos', async () => {
+    mockApi({ pf: () => ({ state: 'Partial', cards: { ...budgetControl().cards, reasons: ['CardCoverageIncomplete', 'MissingPayerAccount'] } }) })
     render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
     const region = await tracking()
-    expect(await within(region).findByText(/Cobertura parcial/)).toBeTruthy()
-    expect(region.textContent).toContain('Faturas de cartão sem confirmação.')
+    expect(await within(region).findByText('Cobertura parcial')).toBeTruthy()
+    const reasons = within(region).getByRole('list', { name: 'Motivos da cobertura parcial' })
+    expect(within(reasons).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+      'Parte das obrigações dos cartões ainda é estimativa ou aguarda a fatura do banco.', 'Há cartões sem conta pagadora.',
+    ])
+    expect(region.textContent).not.toContain('CardCoverageIncomplete')
+  })
+
+  it('cobertura parcial sem motivo utilizável mantém a mensagem genérica', async () => {
+    mockApi({ pf: () => ({ state: 'Partial', notes: ['InternalUnknownCode'] }) })
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    expect(await within(region).findByText(/parte dos dados deste mês ainda não pôde ser calculada/)).toBeTruthy()
+    expect(within(region).queryByRole('list', { name: 'Motivos da cobertura parcial' })).toBeNull()
   })
 
   it('erro de carregamento do acompanhamento: mensagem com Tentar novamente, sem valores', async () => {
@@ -356,6 +369,31 @@ describe('FinancialBudgetsPage — Acompanhamento do mês', () => {
     await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 9.000,00'))
     fireEvent.click(screen.getByRole('button', { name: 'Ver na Agenda' }))
     expect(agenda).toHaveBeenCalledWith('2026-11')
+  })
+
+  it('ao trocar de competência remove os motivos anteriores durante o carregamento', async () => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>(resolve => { release = resolve })
+    mockApi({ pf: competence => competence === '2026-10'
+      ? ({ state: 'Partial', cards: { ...budgetControl().cards, reasons: ['MissingPayerAccount'] } })
+      : ({ state: 'Complete' }) })
+    const original = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/budget-summary?competence=2026-11')) await gate
+      return original(input, init)
+    }))
+    render(<FinancialBudgetsPage workspaceId="f1" initialCompetence="2026-10" />)
+    const region = await tracking()
+    expect(await within(region).findByText('Há cartões sem conta pagadora.')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima competência' }))
+    await waitFor(() => expect(within(region).getByText('Carregando o acompanhamento…')).toBeTruthy())
+    expect(within(region).queryByText('Há cartões sem conta pagadora.')).toBeNull()
+    expect(within(region).queryByText('Cobertura parcial')).toBeNull()
+
+    release()
+    await waitFor(() => expect(plain(figure(region, 'Meta'))).toContain('R$ 12.500,00'))
+    expect(within(region).queryByText('Há cartões sem conta pagadora.')).toBeNull()
   })
 
   it('depois de salvar uma mudança de gestão, o resumo da competência é consultado de novo e substitui o anterior', async () => {

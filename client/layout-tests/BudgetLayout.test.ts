@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 /** Contrato visual do orçamento padrão (T12.1): lê os arquivos-fonte, pois o jsdom não calcula layout nem mede overflow. */
 const src = (relative: string) => readFileSync(join(process.cwd(), 'src', relative), 'utf8')
 const css = src('Budget.css')
+const trackingCss = src('components/budget/BudgetTracking.css')
 
 describe('Responsividade do orçamento padrão', () => {
   it('usa linhas fluidas que quebram em telas estreitas (390 e 360 px): sem larguras fixas nem rolagem horizontal', () => {
@@ -22,5 +23,12 @@ describe('Responsividade do orçamento padrão', () => {
     for (const file of ['components/budget/RecurringBudgetPanel.tsx', 'components/budget/recurringBudgetText.ts', 'api/effectiveBudget.ts']) {
       expect(src(file), file).not.toMatch(/toFixed|Math\.(round|floor|ceil)|\.reduce\(\s*\([^)]*\)\s*=>\s*[a-z]+\s*\+/)
     }
+  })
+
+  it('o aviso de cobertura e seus vários motivos quebram naturalmente em 1440, 390 e 320 px', () => {
+    expect(trackingCss).toMatch(/\.budget-tracking__coverage\s*\{[^}]*min-width:\s*0[^}]*overflow-wrap:\s*anywhere/)
+    expect(trackingCss).not.toMatch(/\.budget-tracking__coverage[^}]*white-space:\s*nowrap/)
+    expect(trackingCss).not.toMatch(/\.budget-tracking__coverage[^}]*overflow-x:\s*(?:auto|scroll)/)
+    expect(trackingCss).not.toMatch(/\.budget-tracking__coverage[^}]*width:\s*\d+px/)
   })
 })

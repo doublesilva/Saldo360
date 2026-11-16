@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { getBudgetSummary, type BudgetSummary } from '../../api/overview'
 import { OperationalLoading } from '../OperationalFeedback'
+import { reasonLines } from '../overview/OverviewProvenance'
 import { monthTitle, money } from '../overview/overviewText'
 import { useLoad } from '../overview/useLoad'
 import './BudgetTracking.css'
@@ -50,7 +51,14 @@ function Body({ summary }: { summary: BudgetSummary & { total: NonNullable<Budge
     <p className="budget-tracking__projected meta">
       <strong>Projetado:</strong> total previsto de {money(total.projected)} (realizado + comprometido + estimado). Isto é uma projeção, não é consumo realizado.
     </p>
-    {summary.state === 'Partial' && <p className="notice notice--warning" role="status">
-      Cobertura parcial: parte dos dados deste mês ainda não pôde ser calculada, então os valores podem mudar.{summary.notes.length > 0 ? ` ${summary.notes.join(' ')}` : ''}</p>}
+    {summary.state === 'Partial' && <PartialCoverage reasons={summary.reasons ?? summary.notes} />}
   </>
+}
+
+function PartialCoverage({ reasons }: { reasons: string[] }) {
+  const lines = reasonLines(reasons)
+  return <div className="budget-tracking__coverage notice notice--warning" role="status">
+    <p><strong>Cobertura parcial</strong>{lines.length === 0 && ': parte dos dados deste mês ainda não pôde ser calculada, então os valores podem mudar.'}</p>
+    {lines.length > 0 && <ul aria-label="Motivos da cobertura parcial">{lines.map(line => <li key={line}>{line}</li>)}</ul>}
+  </div>
 }

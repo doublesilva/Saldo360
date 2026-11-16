@@ -7,7 +7,8 @@ namespace Saldo360.Application.Dashboard.Overview;
 /// É o MESMO cálculo de <c>pfBudgetControl.total</c> da Visão Geral (mesma rotina, mesmas contas PF e mesmo resolvedor de metas), sem montar os demais blocos do dashboard.
 /// <c>Total</c> nulo = indisponível (estado "Unavailable"): nunca zerado.
 /// </summary>
-public sealed record BudgetSummaryDto(string State, string Competence, string ScopeKind, BudgetTotalDto? Total, IReadOnlyList<string> Notes, string? TotalTargetOrigin, string? TotalTargetFrom);
+public sealed record BudgetSummaryDto(string State, string Competence, string ScopeKind, BudgetTotalDto? Total, IReadOnlyList<string> Notes,
+    IReadOnlyList<string> Reasons, string? TotalTargetOrigin, string? TotalTargetFrom);
 
 public sealed partial class DashboardOverviewService
 {
@@ -22,7 +23,8 @@ public sealed partial class DashboardOverviewService
         // Metas excedidas (fixas e categorias) e pendências de classificação só alimentam pressões e recomendações, não o total: ficam de fora do resumo.
         var control = await BuildBudgetControlAsync(workspaceId, userId, month, PlanActualScopes.All, null, "pf", today, new("Complete", false, null, month, null, null, NoCategories()), new("Unavailable", 0, 0), null, ct, pfAccounts);
         return PlanActualResult<BudgetSummaryDto>.Ok(control is null
-            ? new("Unavailable", month, "pf", null, [], null, null)
-            : new(control.State, control.Competence, control.ScopeKind, control.Total, control.Notes, control.TotalTargetOrigin, control.TotalTargetFrom));
+            ? new("Unavailable", month, "pf", null, [], [], null, null)
+            : new(control.State, control.Competence, control.ScopeKind, control.Total, control.Notes,
+                control.Cards.Reasons.Concat(control.OutsideCards.Reasons).Distinct().ToList(), control.TotalTargetOrigin, control.TotalTargetFrom));
     }
 }
