@@ -23,10 +23,28 @@ public static class FixedObligationMatcher
     {
         if (t.AccountId != o.AccountId || t.Type != o.Type || t.Amount <= 0m) return false;
         if (t.Date < o.DueDate.AddDays(-DaysBefore) || t.Date > o.DueDate.AddDays(DaysAfter)) return false;
-        if (!DescriptionCompatible(o.Description, t.Description)) return false;
+        if (!DescriptionCompatible(o.Description, t.Description))
+            return MatchesCasaSalsoPropertyTaxDebit(o, t);
         return o.IsEstimated
             ? o.PlannedAmount > 0m && Math.Abs(t.Amount - o.PlannedAmount) <= o.PlannedAmount * EstimateTolerance
             : Math.Abs(t.Amount - o.PlannedAmount) < 0.005m;
+    }
+
+    private static bool MatchesCasaSalsoPropertyTaxDebit(FixedObligation obligation, SettlementCandidate transaction)
+    {
+        const string bankDebit = "DEBITO AUTOMATICO DA PM P ALEGR 02584";
+        const string obligationName = "IPTU CASA SALSO";
+        const decimal estimatedAmountTolerance = 0.01m;
+        var name = Normalize(obligation.Description);
+
+        if (obligation.Type != CategoryType.Expense
+            || !(name == obligationName || name.StartsWith(obligationName + " ", StringComparison.Ordinal))
+            || Normalize(transaction.Description) != bankDebit) return false;
+
+        var difference = Math.Abs(transaction.Amount - obligation.PlannedAmount);
+        return obligation.IsEstimated
+            ? obligation.PlannedAmount > 0m && difference <= obligation.PlannedAmount * estimatedAmountTolerance
+            : difference < 0.005m;
     }
 
     public static bool DescriptionCompatible(string obligation, string transaction)

@@ -71,6 +71,24 @@ public sealed class FixedObligationMatcherTests
     }
 
     [Fact]
+    public void CasaSalsoPropertyTax_MatchesKnownBankReferenceAndEstimatedAmount()
+    {
+        var due = new DateOnly(2026, 11, 8);
+        var obligation = Obligation("IPTU Casa Salso - parcela 2/3 (estimada)", 319.35m, estimated: true, due: due);
+        var debit = Tx("Débito automático DA PM P ALEGR 02584", 319.30m, due.AddDays(2));
+
+        Assert.Single(FixedObligationMatcher.UniquePairs([obligation], [debit]));
+        Assert.Empty(FixedObligationMatcher.UniquePairs([obligation], [debit with { Description = "Débito automático DA PM P ALEGR 02585" }]));
+        Assert.Empty(FixedObligationMatcher.UniquePairs([obligation], [debit with { Amount = 300m }]));
+        Assert.Empty(FixedObligationMatcher.UniquePairs([obligation], [debit with { Date = due.AddDays(21) }]));
+        Assert.Empty(FixedObligationMatcher.UniquePairs([obligation], [debit with { AccountId = Guid.NewGuid() }]));
+        Assert.Empty(FixedObligationMatcher.UniquePairs([obligation], [debit, debit with { Id = Guid.NewGuid() }]));
+
+        var next = Obligation("IPTU Casa Salso - parcela 3/3 (estimada)", 319.35m, estimated: true, due: due.AddMonths(1));
+        Assert.Single(FixedObligationMatcher.UniquePairs([next], [debit with { Date = debit.Date.AddMonths(1) }]));
+    }
+
+    [Fact]
     public void Ambiguity_InEitherDirection_StaysForManualReview()
     {
         var o = Obligation();
