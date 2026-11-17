@@ -214,6 +214,11 @@ public static class PluggyFinancialMapper
         if (resolution == PluggyResolution.AsIncome && isCredit) return result(PluggyDisposition.BankMovement, "UserDecision", CategoryType.Income);
         if (resolution == PluggyResolution.AsExpense && isDebit) return result(PluggyDisposition.BankMovement, "UserDecision", CategoryType.Expense);
 
+        // Reavaliar também registros importados antes da revisão do classificador.
+        if (isDebit && f.Class == PluggyTransactionClass.PotentialExpense
+            && PluggyTransactionClassifier.HasCardBillPaymentHint(f.Description, f.DescriptionRaw))
+            return result(PluggyDisposition.BankDebitBillHint, "PossibleCardBillPayment", CategoryType.Expense);
+
         var operation = PluggyOperationCodes.Normalize(f.OperationType);
         switch (f.Class)
         {

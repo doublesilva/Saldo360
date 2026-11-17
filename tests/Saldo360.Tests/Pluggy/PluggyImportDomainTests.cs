@@ -35,6 +35,20 @@ public sealed class PluggyImportDomainTests
     public void ClassifiesBankAccountRecordsFromStructuredFields(string type, string operation, string description, PluggyTransactionClass expected) =>
         Assert.Equal(expected, PluggyTransactionClassifier.Classify(Bank(type, operation, description)).Class);
 
+    [Theory]
+    [InlineData("Débito automático Fatura Person Mult Black")]
+    [InlineData("DEBITO AUTOMATICO FATURA PERSONNALITE MULT BLACK")]
+    public void AutomaticBlackPaymentIsRecognizedInEitherDescription(string description)
+    {
+        var transaction = Bank(description: description);
+        var result = PluggyTransactionClassifier.Classify(transaction);
+        Assert.Equal((PluggyTransactionClass.PotentialTransfer, "PossibleCardBillPayment"), (result.Class, result.Reason));
+
+        result = PluggyTransactionClassifier.Classify(transaction with { DescriptionRaw = "OUTROS" });
+        Assert.Equal("PossibleCardBillPayment", result.Reason);
+        Assert.False(PluggyTransactionClassifier.HasCardBillPaymentHint("Débito automático FATURA DE ENERGIA", null));
+    }
+
     [Fact]
     public void CardBillPaymentIsATransferNeverAConsumptionExpense()
     {

@@ -1290,6 +1290,36 @@ public sealed partial class PluggyFinancialIntegrationTests(PostgresFixture post
     }
 
     [Fact]
+    public async Task AutomaticBlackBankDebitSettlesInvoiceOnceWithoutDuplicatingConsumption()
+    {
+        var c = await ArrangeAsync("t932-black-auto", seed: false);
+        Pluggy.TransactionsByAccount[BankA] = [BankPayment("pay", 10, 230m) with { Description = "Débito automático Fatura Person Mult Black", DescriptionRaw = "OUTROS", Category = null }, Tx("other", BankA, 4, -12m)];
+        SeedCycle(230m, payments: [(230m, 10)]);
+        await LinkBankAsync(c);
+        var cardLink = await LinkCardAsync(c, 3, 12);
+
+        await SyncAsync(c);
+
+        var bill = (await BillsOfAsync(c, cardLink))[0];
+        Assert.Equal(("Closed", "Paid", "Reconciled"), States(bill));
+        Assert.Equal(("230.00", "230.00"), (Money2(bill, "paidAmount"), Money2(bill, "bankReportedPaid")));
+        var core = await CoreAsync(c.Workspace);
+        Assert.Equal(2, core.Count);
+        var payment = core.Single(t => t.Amount == 230m);
+        Assert.Equal(FinancialTransactionOrigin.CreditCardInvoicePayment, payment.Origin);
+        Assert.Null(payment.CategoryId); // saída de caixa sem categoria de consumo
+        await using var db = Db();
+        Assert.Equal(1, await db.FinancialCreditCardInvoicePayments.CountAsync());
+        Assert.Equal(PluggyPostingKind.CardBillPayment, (await db.PluggyPostings.AsNoTracking().SingleAsync(p => p.FinancialTransactionId == payment.Id)).Kind);
+        // Caixa: só o pagamento (230) e a outra despesa (12) aparecem; as compras (230) ficam no cartão e não somam outra vez.
+        var calendar = await JsonGetAsync(c, $"/api/financial-workspaces/{c.Workspace}/financial-calendar?from={D(40)}&through={D(0)}");
+        Assert.Equal("242.00", calendar.GetProperty("summary").GetProperty("realizedExpense").GetString());
+
+        await SyncAsync(c);
+        Assert.Equal(1, await db.FinancialCreditCardInvoicePayments.CountAsync()); // idempotente
+    }
+
+    [Fact]
     public async Task APartialPaymentSettlesPartOfTheInvoiceAndLeavesItPartiallyPaid()
     {
         var c = await ArrangeAsync("t932-partial", seed: false);

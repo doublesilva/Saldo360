@@ -45,7 +45,7 @@ public static partial class PluggyTransactionClassifier
             case "RENDIMENTO_APLIC_FINANCEIRA": return isCredit ? new(PluggyTransactionClass.PotentialIncome, "InvestmentYield") : new(PluggyTransactionClass.PotentialExpense, "InvestmentCharge");
         }
         // Dica fraca: só quando a própria descrição cita pagamento de fatura. Nunca vira despesa de consumo.
-        if (isDebit && PossibleBillPayment().IsMatch(t.DescriptionRaw ?? t.Description ?? string.Empty))
+        if (isDebit && HasCardBillPaymentHint(t.Description, t.DescriptionRaw))
             return new(PluggyTransactionClass.PotentialTransfer, "PossibleCardBillPayment");
         return isCredit ? new(PluggyTransactionClass.PotentialIncome, operation is null ? "BankCredit" : "BankCredit:" + operation)
                         : new(PluggyTransactionClass.PotentialExpense, operation is null ? "BankDebit" : "BankDebit:" + operation);
@@ -63,6 +63,16 @@ public static partial class PluggyTransactionClassifier
         if (operation is "PAGAMENTO") return new(PluggyTransactionClass.CardPurchase, "CardPurchase");
         return new(PluggyTransactionClass.InsufficientInformation, "UnclassifiedCardOperation");
     }
+
+    public static bool HasCardBillPaymentHint(string? description, string? raw) =>
+        PossibleBillPayment().IsMatch(description ?? string.Empty)
+        || PossibleBillPayment().IsMatch(raw ?? string.Empty)
+        || AutomaticBlackBillPayment().IsMatch(description ?? string.Empty)
+        || AutomaticBlackBillPayment().IsMatch(raw ?? string.Empty);
+
+    [GeneratedRegex(@"\bD[ÉE]BITO\s+AUTOM[ÁA]TICO\s+FATURA\s+PERSON(?:NALIT[ÉE])?\s+MULT\s+BLACK\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AutomaticBlackBillPayment();
 
     [GeneratedRegex(@"\b(PAG(AMENTO|TO)?|PGTO)\s+(DE\s+|DA\s+)?FATURA\b|\bFATURA\s+(DO\s+)?CART", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PossibleBillPayment();

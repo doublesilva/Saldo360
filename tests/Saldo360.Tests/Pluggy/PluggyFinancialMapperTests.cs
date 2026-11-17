@@ -23,6 +23,16 @@ public sealed class PluggyFinancialMapperTests
             classification.Class, classification.Reason);
     }
 
+    [Fact]
+    public void ExistingBlackDebitIsReevaluatedAndManualResolutionIsPreserved()
+    {
+        var facts = Facts(description: "Débito automático Fatura Person Mult Black",
+            cls: PluggyTransactionClass.PotentialExpense, reason: "BankDebit:BOLETO") with { DescriptionRaw = "OUTROS" };
+        Assert.Equal(PluggyDisposition.BankDebitBillHint, PluggyFinancialMapper.Decide(facts, Today).Disposition);
+        Assert.Equal("UserDecision", PluggyFinancialMapper.Decide(facts, Today, PluggyResolution.AsExpense).Reason);
+        Assert.Equal(PluggyDisposition.Waiting, PluggyFinancialMapper.Decide(facts with { Status = PluggyTransactionStatus.Pending }, Today).Disposition);
+    }
+
     [Theory]
     [InlineData("CHECKING_ACCOUNT", AccountType.Checking, true)]
     [InlineData("SAVINGS_ACCOUNT", AccountType.Savings, true)]
