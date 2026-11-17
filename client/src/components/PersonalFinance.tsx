@@ -160,7 +160,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
       params = new URLSearchParams()
       if (context.transactions.from) params.set('competencia', context.transactions.from.slice(0, 7))
       if (context.transactions.accountId) params.set('conta', context.transactions.accountId)
-      if (context.transactions.type === 'Income' || context.transactions.type === 'Expense' || context.transactions.type === 'Transfer' || context.transactions.type === 'Payment') params.set('tipo', context.transactions.type)
+      if (context.transactions.type === 'Transfer') params.set('tipo', context.transactions.type)
       else if (context.transactions.expenseNature) params.set('tipo', 'Expense')
     }
     if (target === 'planning') {
