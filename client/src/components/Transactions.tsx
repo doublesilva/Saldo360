@@ -85,12 +85,14 @@ const defaultFilters = (): EntriesFilters => ({
 const remembered = new Map<string, { filters: EntriesFilters; page: number }>()
 
 /** Recorte vindo de outra tela (período, conta, tipo): a competência é o mês do início do período. */
-function fromInitial(initial?: Partial<TransactionFilters>): Partial<EntriesFilters> {
+type TransactionInitialFilters = Partial<Omit<TransactionFilters, 'type'>> & { type?: EntriesFilters['type'] }
+
+function fromInitial(initial?: TransactionInitialFilters): Partial<EntriesFilters> {
   if (!initial) return {}
   const next: Partial<EntriesFilters> = {}
   if (initial.from) next.competence = initial.from.slice(0, 7)
   if (initial.accountId) next.accountId = initial.accountId
-  if (initial.type === 'Income' || initial.type === 'Expense' || initial.type === 'Transfer') next.type = initial.type
+  if (initial.type === 'Income' || initial.type === 'Expense' || initial.type === 'Transfer' || initial.type === 'Payment') next.type = initial.type
   if (initial.expenseNature) next.nature = initial.expenseNature
   if (initial.categoryId) next.categoryId = initial.categoryId
   if (initial.includeCancelled) next.includeCancelled = true
@@ -108,14 +110,17 @@ export function Transactions({
   initialFilters,
   startWithForm = false,
   onNavigate,
+  onFiltersChange,
 }: {
   workspaceId: string
   /** Recorte inicial vindo de outra tela (período e conta). */
-  initialFilters?: Partial<TransactionFilters>
+  initialFilters?: TransactionInitialFilters
   /** Abre o formulário de novo lançamento ao entrar (atalho da Visão Geral). */
   startWithForm?: boolean
   /** Leva a ação que pertence a outro módulo (previsões, cartões, dívidas, transferências, recorrências). */
   onNavigate?: (section: string) => void
+  /** Publica somente os filtros estáveis da rota; busca e estado de modal permanecem locais. */
+  onFiltersChange?: (filters: Pick<EntriesFilters, 'competence' | 'accountId' | 'type'>) => void
   onChanged?: () => void
   /** Muda quando outra seção altera lançamentos (ex.: realizar previsão): a lista é recarregada. */
   refreshKey?: number
@@ -168,7 +173,16 @@ export function Transactions({
   }, [menuId])
 
   const reload = () => setReloadKey(n => n + 1)
-  const change = (patch: Partial<EntriesFilters>) => { setFilters(current => ({ ...current, ...patch })); setPageNumber(1); setDetailId(null) }
+  const change = (patch: Partial<EntriesFilters>) => {
+    setFilters(current => {
+      const next = { ...current, ...patch }
+      if ('competence' in patch || 'accountId' in patch || 'type' in patch) {
+        onFiltersChange?.({ competence: next.competence, accountId: next.accountId, type: next.type })
+      }
+      return next
+    })
+    setPageNumber(1); setDetailId(null)
+  }
   const moveMonth = (months: number) => change({ competence: addCalendarMonths(`${filters.competence}-01`, months).slice(0, 7) })
   const sortBy = (sort: EntriesFilters['sort']) => change({ sort, direction: filters.sort === sort && filters.direction === 'desc' ? 'asc' : sort === 'description' ? 'asc' : 'desc' })
 

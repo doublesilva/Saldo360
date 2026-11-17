@@ -50,6 +50,16 @@ describe('rotas do shell autenticado', () => {
     expect(loginReturnUrl({ pathname: '/agenda', search: '?competencia=2026-09&tipo=Expense&login=failed&ref=x' })).toBe('/agenda?competencia=2026-09&tipo=Expense')
     expect(loginReturnUrl({ pathname: '/planejamento', search: `?aba=seis-meses&competencia=2026-11&conta=${ACCOUNT}&recuperacao=1` })).toBe(`/planejamento?aba=seis-meses&competencia=2026-11&conta=${ACCOUNT}&recuperacao=1`)
     expect(loginReturnUrl({ pathname: '/agenda', search: '?competencia=2026-13' })).toBe('/agenda')
+    expect(loginReturnUrl({ pathname: '/lancamentos', search: `?competencia=2026-11&conta=${ACCOUNT}&tipo=Payment&login=failed` })).toBe(`/lancamentos?competencia=2026-11&conta=${ACCOUNT}&tipo=Payment`)
+    expect(loginReturnUrl({ pathname: '/contas', search: '?competencia=2026-11&tipo=Expense' })).toBe('/contas')
+  })
+
+  it('Lançamentos aceita seu recorte e Contas descarta parâmetros de outros destinos', () => {
+    const entries = at('/lancamentos', `?competencia=2026-11&conta=${ACCOUNT}&tipo=Transfer&aba=seis-meses`)
+    expect(routeUrl(entries.section, entries.params)).toBe(`/lancamentos?competencia=2026-11&conta=${ACCOUNT}&tipo=Transfer`)
+    expect(entries.problems).toEqual([])
+    const accounts = at('/contas', `?competencia=2026-11&conta=${ACCOUNT}&tipo=Expense`)
+    expect(routeUrl(accounts.section, accounts.params)).toBe('/contas')
   })
 
   it('destino inválido ou externo volta para a Visão Geral', () => {

@@ -45,12 +45,24 @@ export function parseRoute(location: { pathname: string; search: string }): AppR
     if (valid(value)) params.set(name, name === 'conta' ? value.toLowerCase() : value)
     else problems.push(name)
   }
-  // Ordem canônica: a mesma das URLs que o app monta (aba, competência, conta, tipo, recuperação).
-  take('aba', value => Object.values(planningTabParams).includes(value as never))
-  take('competencia', isCompetence)
-  take('conta', value => value === 'todas' || isAccountId(value))
-  take('tipo', value => value === 'Income' || value === 'Expense')
-  take('recuperacao', value => value === '1')
+  const reportInvalidWhenPresent = (name: string, valid: (value: string) => boolean) => {
+    const value = raw.get(name)
+    if (value !== null && !valid(value)) problems.push(name)
+  }
+  if (section !== 'planning') reportInvalidWhenPresent('aba', value => Object.values(planningTabParams).includes(value as never))
+  // Cada destino aceita somente o seu contrato de URL. Assim, trocar de tela não
+  // transporta filtros que tenham outro significado no novo módulo.
+  if (section === 'planning') take('aba', value => Object.values(planningTabParams).includes(value as never))
+  if (section === 'overview' || section === 'transactions' || section === 'calendar' || section === 'planning') take('competencia', isCompetence)
+  if (section === 'overview' || section === 'transactions' || section === 'calendar' || section === 'planning') {
+    take('conta', value => value === 'todas' || isAccountId(value))
+  }
+  if (section === 'calendar') take('tipo', value => value === 'Income' || value === 'Expense')
+  if (section === 'transactions') take('tipo', value => value === 'Income' || value === 'Expense' || value === 'Transfer' || value === 'Payment')
+  if (section === 'planning') take('recuperacao', value => value === '1')
+  if (section !== 'planning') {
+    reportInvalidWhenPresent('recuperacao', value => value === '1')
+  }
   // Endereço desconhecido: os parâmetros não têm a quem se aplicar, então a Visão Geral abre com o padrão.
   if (!section) for (const name of [...params.keys()]) params.delete(name)
   return { section: section ?? 'overview', params, problems }

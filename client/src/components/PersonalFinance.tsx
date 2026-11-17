@@ -4,6 +4,7 @@ import { todayInSaoPaulo } from '../dates'
 import { listAccounts } from '../api/accounts'
 import { accountFromParams, accountToParam, isCompetence, parseRoute, planningTabFromParams, planningTabParams, problemNotice, routeUrl, sectionPaths, unavailableAccountNotice, type AppRoute, type RouteSection } from '../routing'
 import type { CategoryType } from '../api/categories'
+import type { EntriesFilters } from '../api/financialEntries'
 import type { PlanActualScopeChoice } from '../api/planActual'
 import { ensurePersonal, type PersonalWorkspace } from '../api/workspaces'
 import { Accounts } from './Accounts'
@@ -114,7 +115,7 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
 
   // Conta da URL (link colado, recarga, histórico): só vale se existir neste orçamento; senão cai no padrão do módulo, avisando no bloco de filtros.
   const urlAccount = accountFromParams(route.params)
-  const accountToCheck = urlAccount.kind === 'account' && (section === 'overview' || section === 'calendar' || section === 'planning') ? urlAccount.accountId : null
+  const accountToCheck = urlAccount.kind === 'account' && (section === 'overview' || section === 'transactions' || section === 'calendar' || section === 'planning') ? urlAccount.accountId : null
   const awaitingAccount = accountToCheck !== null && !validAccounts.has(accountToCheck)
   useEffect(() => {
     if (!accountToCheck || validAccounts.has(accountToCheck)) return
@@ -155,6 +156,13 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     if (target === 'automation') setAutomationEntry({ key: Date.now(), tab: context?.automationTab, review: context?.review, connectionIds: context?.connectionIds })
     let params: URLSearchParams | undefined
     if (target === 'calendar' && context?.month) params = new URLSearchParams({ competencia: context.month })
+    if (target === 'transactions' && context?.transactions) {
+      params = new URLSearchParams()
+      if (context.transactions.from) params.set('competencia', context.transactions.from.slice(0, 7))
+      if (context.transactions.accountId) params.set('conta', context.transactions.accountId)
+      if (context.transactions.type === 'Income' || context.transactions.type === 'Expense' || context.transactions.type === 'Transfer' || context.transactions.type === 'Payment') params.set('tipo', context.transactions.type)
+      else if (context.transactions.expenseNature) params.set('tipo', 'Expense')
+    }
     if (target === 'planning') {
       params = new URLSearchParams({ aba: planningTabParams[context?.planningTab ?? 'monthly'] })
       if (context?.competence) params.set('competencia', context.competence)
@@ -175,6 +183,12 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
     if (state.recovery) params.set('recuperacao', '1')
     go('planning', params, mode)
   }
+  const reportTransactions = (filters: { competence: string; accountId: string; type: string }) => {
+    const params = new URLSearchParams({ competencia: filters.competence })
+    if (filters.accountId) params.set('conta', filters.accountId)
+    if (filters.type) params.set('tipo', filters.type)
+    go('transactions', params)
+  }
   // Central de automação: só aparece quando a API habilita a Pluggy para este usuário (Pluggy:Enabled).
   const [pluggyLab, setPluggyLab] = useState(false)
   const [labChecked, setLabChecked] = useState(false)
@@ -189,6 +203,15 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
   const calendarType = route.params.get('tipo') as CategoryType | null
   const planningAccount: PlanActualScopeChoice | undefined = urlAccount.kind === 'all' ? { kind: 'all' } : urlAccount.kind === 'account' ? { kind: 'account', accountId: urlAccount.accountId } : undefined
   const planningTab = planningTabFromParams(route.params)
+  const transactionInitial = {
+    ...(transactionContext?.filters ? {
+      to: transactionContext.filters.to,
+      ...(transactionContext.filters.expenseNature ? { expenseNature: transactionContext.filters.expenseNature } : {}),
+    } : {}),
+    from: `${route.params.get('competencia') ?? todayInSaoPaulo().slice(0, 7)}-01`,
+    accountId: urlAccount.kind === 'account' ? urlAccount.accountId : '',
+    type: (route.params.get('tipo') ?? undefined) as EntriesFilters['type'],
+  }
   const waiting = <section className="card" role="status">Conferindo a conta do link…</section>
   return <AppShell section={section} onNavigate={navigate} automation={pluggyLab} workspaceName={workspace.name} userArea={userArea} subtitle={section === 'overview' ? 'Sua situação, o mês e os próximos compromissos.' : 'Seu orçamento pessoal, sem compartilhar dados com a família.'}>
     {section === 'automation' && pluggyLab && <AutomationCenter key={automationEntry?.key} workspaceId={workspaceId} refreshKey={String(version)} onChanged={changed} entry={automationEntry} />}
@@ -203,9 +226,9 @@ function WorkspaceArea({ workspace, onReset, userArea }: { workspace: PersonalWo
       recoveryScope={route.params.get('recuperacao') && planningAccount?.kind === 'account' ? planningAccount : undefined} notice={notice} onStateChange={reportPlanning} workspaceId={workspaceId} refreshKey={version} onChanged={changed} />)}
     {section === 'debts' && <FinancialDebts workspaceId={workspaceId} refreshKey={version} onChanged={changed} />}
     {section === 'goals' && <FinancialGoals key={goalId} initialGoalId={goalId} workspaceId={workspaceId} refreshKey={version} onChanged={changed} onNavigateToPlanning={() => go('planning')} />}
-    {section === 'accounts' && <Accounts workspaceId={workspaceId} members={[{ userId: workspace.ownerUserId, displayName: 'Você', isCurrentUser: true }]} balanceVersion={version} onOpenStatement={(filters) => { setTransactionContext({ key: Date.now(), filters: { from: filters.from, to: filters.to, accountId: filters.accountId, type: filters.type } }); go('transactions') }} />}
+    {section === 'accounts' && <Accounts workspaceId={workspaceId} members={[{ userId: workspace.ownerUserId, displayName: 'Você', isCurrentUser: true }]} balanceVersion={version} onOpenStatement={(filters) => { setTransactionContext({ key: Date.now(), filters: { from: filters.from, to: filters.to, accountId: filters.accountId, type: filters.type } }); const params = new URLSearchParams({ competencia: filters.from.slice(0, 7), conta: filters.accountId, tipo: filters.type }); go('transactions', params) }} />}
     {section === 'categories' && <Categories workspaceId={workspaceId} />}
-    {section === 'transactions' && <Transactions key={transactionContext?.key} workspaceId={workspaceId} onChanged={changed} refreshKey={version} initialFilters={transactionContext?.filters ? { from: transactionContext.filters.from, to: transactionContext.filters.to, accountId: transactionContext.filters.accountId ?? '', ...(transactionContext.filters.type === 'Transfer' ? { type: 'Transfer' as const } : {}), ...(transactionContext.filters.expenseNature ? { expenseNature: transactionContext.filters.expenseNature, type: 'Expense' as const } : {}) } : undefined} startWithForm={transactionContext?.newTransaction} onNavigate={navigate} />}
+    {section === 'transactions' && (awaitingAccount ? waiting : <Transactions key={`${routeKey}:${transactionContext?.key ?? ''}`} workspaceId={workspaceId} onChanged={changed} refreshKey={version} initialFilters={transactionInitial} startWithForm={transactionContext?.newTransaction} onNavigate={navigate} onFiltersChange={reportTransactions} />)}
     {section === 'transfers' && <Transfers workspaceId={workspaceId} onChanged={changed} />}
     {section === 'planned' && <Planned workspaceId={workspaceId} onChanged={changed} refreshKey={version} />}
   </AppShell>
